@@ -10,9 +10,9 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 > **Note** This README won't get much love until I truly nail out a quasi-decent model.
 
-* **Note** Distributed training seems broken? I'm not really sure how to test it, as my two 6800XTs have been redistributed for now, and the last time I tried using them for this, things weren't good.
+> **Note** Distributed training seems broken? I'm not really sure how to test it, as my two 6800XTs have been redistributed for now, and the last time I tried using them for this, things weren't good.
 
-* **Note** You can follow along with my pseudo-blog in an issue [here](https://git.ecker.tech/mrq/ai-voice-cloning/issues/152). I currently have a dataset clocking in at 3400+ trimmed hours.
+> **Note** You can follow along with my pseudo-blog in an issue [here](https://git.ecker.tech/mrq/ai-voice-cloning/issues/152). I currently have a dataset clocking in at 3400+ trimmed hours.
 
 ### Requirements
 
@@ -31,6 +31,7 @@ git clone --recurse-submodules https://git.ecker.tech/mrq/vall-e.git
 ```
 
 Note that the code is only tested under `Python 3.10.9`.
+* `fairseq` is not compatible with `Python 3.11`, a pseudo-dependency for `torchscale`.
 
 ### Train
 
@@ -38,20 +39,6 @@ Training is very dependent on:
 * the quality of your dataset.
 * how much data you have.
 * the bandwidth you quantized your audio to.
-
-#### Quick Preparations
-
-##### Prepared Dataset
-
-Under `./scripts/download_libritts-small.sh` is a script that will quickly set up an already prepared dataset to train. This leverages a repo I've published to HuggingFace that contains everything processsed, straight from the below method.
-
-##### Prepare It Yourself
-
-Under `./scripts/prepare_libri.sh` is a small script to quickly set up a dataset based on LibriSpeech-Finetuning. It'll handle everything from downloading, to extracting, to preparing, to quantizing and phonemizing.
-
-Afterwards, simply use `./config/libri/config.yaml` as your target YAML.
-
-However, you'll only train against a small subset of the data with the default settings, due to the maximum phoneme length configured. Increasing this will not only drastically increase VRAM usage, but also reduce iteration rates. It's recommended to further process your files by slicing them down (for example, through [mrq/ai-voice-cloning](https://git.ecker.tech/mrq/ai-voice-cloning)).
 
 #### Leverage Your Own
 
@@ -66,15 +53,15 @@ python -m vall_e.emb.qnt ./data/custom
 3. Generate phonemes based on the text:
 
 ```
-python -m vall_e.emb.g2p data/custom
+python -m vall_e.emb.g2p ./data/custom
 ```
 
-4. Customize your configuration by creating `./config/custom.yml`. Refer to the example configs in `./config/libri-quarter.yaml` and `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
+4. Customize your configuration modifying `./data/config.yml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
 
 5. Train the AR and NAR models using the following scripts:
 
 ```
-python -m vall_e.train yaml=config/custom/config.yml
+python -m vall_e.train yaml=./data/config.yml
 ```
 
 You may quit your training any time by just typing `quit` in your CLI. The latest checkpoint will be automatically saved.

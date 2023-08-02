@@ -15,8 +15,8 @@ dataset:
   workers: 8
   cache: True
 
-  phones_range: [4, 192]
-  duration_range: [1.0, 10.0]
+  phones_range: [4, 256]
+  duration_range: [1.0, 12.0]
 
   random_utterance: 1.0
   max_prompts: 3
@@ -25,24 +25,20 @@ dataset:
 models:
   _models:
   - name: "ar"
-    size: "full"
+    size: "quarter"
     resp_levels: 1
-    use_retnet: True
-    full_retnet: True
-    use_torchscale: True
+    arch_type: "retnet"
 
   - name: "nar"
-    size: "full"
+    size: "quarter"
     resp_levels: 1
-    use_retnet: True
-    full_retnet: True
-    use_torchscale: True
+    arch_type: "retnet"
   
   prom_levels: 2
 
 hyperparameters:
-  batch_size: 16
-  gradient_accumulation_steps: 8
+  batch_size: 32
+  gradient_accumulation_steps: 4
   gradient_clipping: 100
   
   optimizer: Adamw
@@ -68,11 +64,11 @@ hyperparameters:
   #  decay_mom_rate: 0.0
 
 evaluation:
-  batch_size: 64
+  batch_size: 32
   frequency: 250
-  size: 64
+  size: 32
   
-  steps: 500
+  steps: 300
   temperature: 1.0
 
 trainer:
@@ -97,3 +93,5 @@ trainer:
 
   zero_optimization_level: 2
   use_compression_training: True
+
+use_vocos: False
