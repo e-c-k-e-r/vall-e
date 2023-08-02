@@ -1,0 +1,9 @@
+__pycache__
+/data
+/logs
+/ckpts
+/.cache
+/config
+/*.egg-info
+/vall_e/version.py
+/build

@@ -1,0 +1,99 @@
+dataset:
+  training: [
+    
+  ]
+
+  validation: [
+
+  ]
+  
+  speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
+  
+  use_hdf5: True
+  validate: True
+
+  workers: 8
+  cache: True
+
+  phones_range: [4, 192]
+  duration_range: [1.0, 10.0]
+
+  random_utterance: 1.0
+  max_prompts: 3
+  prompt_duration: 3.0
+
+models:
+  _models:
+  - name: "ar"
+    size: "full"
+    resp_levels: 1
+    use_retnet: True
+    full_retnet: True
+    use_torchscale: True
+
+  - name: "nar"
+    size: "full"
+    resp_levels: 1
+    use_retnet: True
+    full_retnet: True
+    use_torchscale: True
+  
+  prom_levels: 2
+
+hyperparameters:
+  batch_size: 16
+  gradient_accumulation_steps: 8
+  gradient_clipping: 100
+  
+  optimizer: Adamw
+  learning_rate: 1.0e-4
+  
+  scheduler_type: ""
+  #scheduler_type: OneCycle
+  #scheduler_params:
+  #  cycle_first_step_size: 10_000
+  #  cycle_first_stair_count: 10_000
+
+  #  cycle_second_step_size: 15_000
+  #  cycle_second_stair_count: 15_000
+
+  #  decay_step_size: 5_000
+
+  #  cycle_min_lr: 2.5e-4 # 1.0e-5
+  #  cycle_max_lr: 2.5e-4 # 1.0e-4
+  #  decay_lr_rate: 0.0
+
+  #  cycle_min_mom: 0.90
+  #  cycle_max_mom: 0.99
+  #  decay_mom_rate: 0.0
+
+evaluation:
+  batch_size: 64
+  frequency: 250
+  size: 64
+  
+  steps: 500
+  temperature: 1.0
+
+trainer:
+  iterations: 100_000
+  
+  save_tag: step
+  save_on_oom: True
+  save_on_quit: True
+  save_frequency: 100
+
+  aggressive_optimizations: False
+
+  #load_tag: "9500"
+  #load_state_dict: True
+  #load_states: False
+  #strict_loading: False
+  #restart_step_count: True
+  
+  gc_mode: None # "global_step"
+
+  weight_dtype: bfloat16
+
+  zero_optimization_level: 2
+  use_compression_training: True
