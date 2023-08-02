@@ -5,7 +5,7 @@
 # to-do: replace this
 # to-do: swap out deepspeed
 
-from .config import Config
+from ..config import Config
 from .distributed import fix_unset_envs
 from .utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
 

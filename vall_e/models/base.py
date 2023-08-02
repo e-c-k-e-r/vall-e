@@ -16,8 +16,6 @@ from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, Mult
 from .retnet import RetNetDecoder, RetNetConfig
 from .transformer import SinusoidalEmbedding, Block as TransformerBlock
 
-from ..utils import wrapper as ml
-
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
 	seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)

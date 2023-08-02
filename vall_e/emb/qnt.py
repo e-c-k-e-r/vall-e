@@ -15,12 +15,10 @@ from einops import rearrange
 from torch import Tensor
 from tqdm import tqdm
 
-USE_VOCOS = False
 try:
 	from vocos import Vocos
-	USE_VOCOS = True
 except Exception as e:
-	USE_VOCOS = False
+	cfg.inference.use_vocos = False
 
 @cache
 def _load_encodec_model(device="cuda"):
@@ -35,9 +33,11 @@ def _load_encodec_model(device="cuda"):
 	elif cfg.models.levels == 8:
 		bandwidth_id = 6.0
 
-	model = EncodecModel.encodec_model_24khz()
+	model = EncodecModel.encodec_model_24khz().to(device)
 	model.set_target_bandwidth(bandwidth_id)
-	model.to(device)
+	model.bandwidth_id = bandwidth_id
+	model.sample_rate = cfg.sample_rate
+	model.backend = "encodec"
 
 	return model
 
@@ -58,11 +58,12 @@ def _load_vocos_model(device="cuda"):
 
 	model.bandwidth_id = torch.tensor([bandwidth_id], device=device)
 	model.sample_rate = cfg.sample_rate
+	model.backend = "vocos"
 
 	return model
 
 @cache
-def _load_model(device="cuda", vocos=USE_VOCOS):
+def _load_model(device="cuda", vocos=cfg.inference.use_vocos):
 	if vocos:
 		model = _load_vocos_model(device)
 	else:
@@ -99,7 +100,7 @@ def decode(codes: Tensor, device="cuda"):
 		codes = codes.to(torch.int32)
 
 	kwargs = {}
-	if USE_VOCOS:
+	if model.backend == "vocos":
 		x = model.codes_to_features(codes[0])
 		kwargs['bandwidth_id'] = model.bandwidth_id
 	else:  
@@ -107,7 +108,7 @@ def decode(codes: Tensor, device="cuda"):
 
 	wav = model.decode(x, **kwargs)
 
-	if not USE_VOCOS:
+	if model.backend == "encodec":
 		wav = wav[0]
 
 	return wav, model.sample_rate

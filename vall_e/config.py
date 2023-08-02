@@ -259,6 +259,19 @@ class Trainer:
 	zero_optimization_level: int = 0
 	use_compression_training: bool = False
 
+
+@dataclass()
+class Inference:
+	use_vocos: bool = True
+
+@dataclass()
+class BitsAndBytes:
+	enabled: bool = False
+	injects: bool = False
+
+	linear: bool = False
+	embedding: bool = False
+
 @dataclass()
 class Config(_Config):
 	device: str = "cuda"
@@ -268,8 +281,9 @@ class Config(_Config):
 	hyperparameters: Hyperparameters = field(default_factory=lambda: Hyperparameters)
 	evaluation: Evaluation = field(default_factory=lambda: Evaluation)
 	trainer: Trainer = field(default_factory=lambda: Trainer)
+	inference: Inference = field(default_factory=lambda: Inference)
+	bitsandbytes: BitsAndBytes = field(default_factory=lambda: BitsAndBytes)
 
-	use_vocos: bool = True
 
 	@property
 	def sample_rate(self):
@@ -438,6 +452,8 @@ cfg.models = Models(**cfg.models)
 cfg.hyperparameters = Hyperparameters(**cfg.hyperparameters)
 cfg.evaluation = Evaluation(**cfg.evaluation)
 cfg.trainer = Trainer(**cfg.trainer)
+cfg.inference = Inference(**cfg.inference)
+cfg.bitsandbytes = BitsAndBytes(**cfg.bitsandbytes)
 
 # cached_property stopped working...
 if cfg.dataset.use_hdf5:
