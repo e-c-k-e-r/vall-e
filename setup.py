@@ -48,6 +48,7 @@ setup(
         "numpy>=1.23.3",
         "omegaconf==2.0.6",
         "tqdm>=4.64.1",
+        "humanize>=4.4.0",
 
         "pandas>=1.5.0",
         "torch>=1.13.0",
