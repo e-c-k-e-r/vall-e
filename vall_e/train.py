@@ -83,12 +83,12 @@ def load_engines():
 	return trainer.load_engines(engines, cfg)
 
 def main():
+	setup_logging(cfg.log_dir)
+
 	#dist.init_distributed(dist_backend=get_accelerator().communication_backend_name())
 	if not deepspeed._initialized_dist:
 		deepspeed._initialized_dist = True
 		deepspeed.init_distributed()
-
-	setup_logging(cfg.log_dir)
 
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 

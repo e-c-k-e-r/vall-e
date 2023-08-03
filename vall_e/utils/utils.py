@@ -85,7 +85,7 @@ def load_state_dict_non_strict(model, state_dict, logger=None):
 	model.load_state_dict(state_dict, strict=False)
 
 class TqdmLoggingHandler(logging.Handler):
-	def __init__(self, level=logging.NOTSET):
+	def __init__(self, level=logging.INFO):
 		super().__init__(level)
 
 	def emit(self, record):
@@ -93,8 +93,8 @@ class TqdmLoggingHandler(logging.Handler):
 			msg = self.format(record)
 			tqdm.write(msg)
 			self.flush()
-		except Exception:
-			self.handleError(record)  
+		except Exception as e:
+			self.handleError(record) 
 
 @global_leader_only
 def setup_logging(log_dir: str | Path | None = "log", log_level="info"):
@@ -116,12 +116,12 @@ def setup_logging(log_dir: str | Path | None = "log", log_level="info"):
 		file_handler.setLevel(logging.DEBUG)
 		handlers.append(file_handler)
 
+
 	logging.basicConfig(
 		level=logging.getLevelName(log_level.upper()),
 		format="%(asctime)s - %(name)s - %(levelname)s - \n%(message)s",
 		handlers=handlers,
 	)
-
 
 @overload
 def tree_map(fn: Callable, x: list[T]) -> list[T]:

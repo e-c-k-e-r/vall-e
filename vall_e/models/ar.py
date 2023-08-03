@@ -66,24 +66,7 @@ class AR(Base):
 				shift_targ_list=True,
 				return_all_resp=False,
 			)
-		else:
-			return self._generate(
-				text_list,
-				proms_list,
-				max_steps,
-				sampling_temperature,
-				
-				naive=naive,
-			)
 
-	def _generate(
-		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
-		max_steps: int,
-		sampling_temperature: float,
-		naive: bool = True,
-	):
 		device = text_list[0].device
 		resp_list: list[Tensor] = [
 			torch.zeros(0, device=device).to(torch.int16) for _ in text_list

@@ -45,7 +45,7 @@ setup(
         "encodec>=0.1.1",
         "phonemizer>=2.1.0",
         "matplotlib>=3.6.0",
-        "numpy>=1.23.3",
+        "numpy==1.23.0",
         "omegaconf==2.0.6",
         "tqdm>=4.64.1",
         "humanize>=4.4.0",
@@ -58,8 +58,7 @@ setup(
         "auraloss[all]",
         "vocos",
         "h5py",
-        "git+https://github.com/microsoft/torchscale",
-        "fairseq",
+        "torchscale @ git+https://github.com/microsoft/torchscale",
     ],
     url="https://git.ecker.tech/mrq/vall-e",
 )
