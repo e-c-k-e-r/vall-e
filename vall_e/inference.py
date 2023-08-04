@@ -72,8 +72,8 @@ class TTS():
 		prom = to_device(prom, self.device).to(torch.int16)
 		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
 
-		resp_list = self.ar(text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, sampling_temperature=ar_temp)
-		resps_list = [r.unsqueeze(-1) for r in resp_list]
+		resps_list = self.ar(text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, sampling_temperature=ar_temp)
+		resps_list = [r.unsqueeze(-1) for r in resps_list]
 		resps_list = self.nar(text_list=[phns], proms_list=[prom], resps_list=resps_list, sampling_temperature=nar_temp)
 
 		wav, sr = qnt.decode_to_file(resps_list[0], out_path)

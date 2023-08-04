@@ -232,7 +232,121 @@ class Evaluation:
 	size: int = 64
   
 	steps: int = 500
-	temperature: float = 1.0
+	ar_temperature: float = 1.0
+	nar_temperature: float = 0.2
+
+@dataclass()
+class DeepSpeed:
+	zero_optimization_level: int = 0
+	use_compression_training: bool = False
+
+	def get_ds_cfg(self, model):
+		weights = [ name[0] for name in model.named_parameters() ]
+		bits = 8
+
+		scheduler_params = {}
+		for k in cfg.hyperparameters.scheduler_params:
+			scheduler_params[k] = cfg.hyperparameters.scheduler_params[k]
+
+		if cfg.hyperparameters.scheduler_type == "WarmupDecayLR" and 'total_num_steps' not in scheduler_params:
+			scheduler_params['total_num_steps'] = cfg.trainer.iterations
+
+		ds_cfg = {
+			"train_micro_batch_size_per_gpu": cfg.hyperparameters.batch_size,
+			"gradient_accumulation_steps": cfg.hyperparameters.gradient_accumulation_steps,
+			"optimizer": {
+				"type": cfg.hyperparameters.optimizer,
+				"params": {
+					"lr": cfg.hyperparameters.learning_rate,
+				}
+			},
+			"scheduler": {
+				"type": cfg.hyperparameters.scheduler_type,
+				"params": scheduler_params,
+			} if cfg.hyperparameters.scheduler_type != "" else None,
+			"gradient_clipping": cfg.hyperparameters.gradient_clipping,
+			"fp16": {
+				"enabled": True,
+				"auto_cast": True,
+			} if cfg.trainer.weight_dtype.lower() == "float16" else None,
+			"bf16": {
+				"enabled": cfg.trainer.weight_dtype.lower() == "bfloat16"
+			},
+			"compression_training": {
+				"weight_quantization": {
+					"shared_parameters":{
+						"enabled": True,
+						"quantizer_kernel": True,
+						"schedule_offset": 0,
+						"quantize_groups": 64,
+						"quantize_verbose": True,
+						"quantization_type": "symmetric",
+						"rounding": "nearest",
+						"quantize_weight_in_forward": True,
+						"fp16_mixed_quantize":{
+							"enabled": False,
+							"quantize_change_ratio": 1
+						}
+					},
+					"different_groups": {
+						"wq1": {
+							"params": {
+								"start_bits": bits,
+								"target_bits": bits,
+								"quantization_period": 0
+							},
+							"modules": weights
+						}
+					}
+				},
+				"activation_quantization": {
+					"shared_parameters":{
+						"enabled": True,
+						"quantization_type": "symmetric",
+						"range_calibration": "dynamic",
+						"schedule_offset": 0
+					},
+					"different_groups": {
+						"aq1": {
+							"params": {
+								"bits": bits
+							},
+							"modules": weights
+						}
+					}
+				}
+			} if self.use_compression_training else None,
+			"zero_optimization": {
+				"stage": self.zero_optimization_level,
+				"contiguous_gradients": True,
+				"overlap_comm": True,
+				"reduce_scatter": True,
+				"reduce_bucket_size": 5e8,
+				"allgather_bucket_size": 5e8,
+				"sub_group_size": 5e8,
+				"round_robin_gradients": True,
+				"offload_optimizer": {
+					"device": "cpu",
+					"pin_memory": True
+				},
+				"offload_param": {
+					"device": "cpu",
+					"pin_memory": True
+				}
+			} if self.zero_optimization_level > 0 else None,
+			"comms_logger": {
+				"enabled": False
+			}
+		}
+
+		null_keys = [ k for k in ds_cfg if not ds_cfg[k] ]
+		for k in null_keys:
+			del ds_cfg[k]
+
+		if os.path.exists("./config/ds_config.json"):
+			ds_cfg.update(json.load(open("./config/ds_config.json", "r", encoding="utf-8")))
+
+		return ds_cfg
 
 @dataclass()
 class Trainer:
@@ -256,8 +370,9 @@ class Trainer:
 
 	weight_dtype: str = "float16"
 
-	zero_optimization_level: int = 0
-	use_compression_training: bool = False
+	backend: str = "deepspeed"
+
+	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)
 
 
 @dataclass()
@@ -284,7 +399,6 @@ class Config(_Config):
 	inference: Inference = field(default_factory=lambda: Inference)
 	bitsandbytes: BitsAndBytes = field(default_factory=lambda: BitsAndBytes)
 
-
 	@property
 	def sample_rate(self):
 		return 24_000
@@ -292,142 +406,6 @@ class Config(_Config):
 	@cached_property
 	def get_spkr(self):
 		return eval(self.dataset.speaker_name_getter)
-
-	@property
-	def scheduler(self):
-		cfg = {
-			"type": self.hyperparameters.scheduler_type,
-			"params": {},
-		}
-
-		for k in self.hyperparameters.scheduler_params:
-			cfg['params'][k] = self.hyperparameters.scheduler_params[k]
-
-		if self.hyperparameters.scheduler_type == "WarmupDecayLR" and 'total_num_steps' not in cfg['params']:
-			cfg['params']['total_num_steps'] = self.trainer.iterations
-		return cfg
-
-	@property
-	def fp16_cfg(self):
-		if self.trainer.weight_dtype.lower() != "float16":
-			return None
-		return {
-			"enabled": True,
-			"auto_cast": True,
-		}
-
-	@property
-	def bf16_cfg(self):
-		return {
-			"enabled": self.trainer.weight_dtype.lower() == "bfloat16"
-		}
-	
-	def get_compression_cfg(self, model):
-		if not self.trainer.use_compression_training:
-			return None
-		
-		weights = [ name[0] for name in model.named_parameters() ]
-		bits = 8
-
-		return {
-			"weight_quantization": {
-				"shared_parameters":{
-					"enabled": True,
-					"quantizer_kernel": True,
-					"schedule_offset": 0,
-					"quantize_groups": 64,
-					"quantize_verbose": True,
-					"quantization_type": "symmetric",
-					"rounding": "nearest",
-					"quantize_weight_in_forward": True,
-					"fp16_mixed_quantize":{
-						"enabled": False,
-						"quantize_change_ratio": 1
-					}
-				},
-				"different_groups": {
-					"wq1": {
-						"params": {
-							"start_bits": bits,
-							"target_bits": bits,
-							"quantization_period": 0
-						},
-						"modules": weights
-					}
-				}
-			},
-			"activation_quantization": {
-				"shared_parameters":{
-					"enabled": True,
-					"quantization_type": "symmetric",
-					"range_calibration": "dynamic",
-					"schedule_offset": 0
-				},
-				"different_groups": {
-					"aq1": {
-						"params": {
-							"bits": bits
-						},
-						"modules": weights
-					}
-				}
-			}
-		}
-
-	@property
-	def zero_cfg(self):
-		if self.trainer.zero_optimization_level == 0:
-			return None
-
-		return {
-			"stage": self.trainer.zero_optimization_level,
-			"contiguous_gradients": True,
-			"overlap_comm": True,
-			"reduce_scatter": True,
-			"reduce_bucket_size": 5e8,
-			"allgather_bucket_size": 5e8,
-			"sub_group_size": 5e8,
-			"round_robin_gradients": True,
-			"offload_optimizer": {
-				"device": "cpu",
-				"pin_memory": True
-			},
-			"offload_param": {
-				"device": "cpu",
-				"pin_memory": True
-			}
-		}
-
-	def get_ds_cfg(self, model):
-		cfg = {
-			"train_micro_batch_size_per_gpu": self.hyperparameters.batch_size,
-			"gradient_accumulation_steps": self.hyperparameters.gradient_accumulation_steps,
-			"optimizer": {
-				"type": self.hyperparameters.optimizer,
-				"params": {
-					"lr": self.hyperparameters.learning_rate,
-				}
-			},
-			"scheduler": self.hyperparameters.scheduler if self.hyperparameters.scheduler_type != "" else None,
-			"gradient_clipping": self.hyperparameters.gradient_clipping,
-			"fp16": self.fp16_cfg,
-			"bf16": self.bf16_cfg,
-			"compression_training": self.get_compression_cfg(model),
-			"zero_optimization": self.zero_cfg,
-			"comms_logger": {
-				"enabled": False
-			}
-		}
-
-		null_keys = [ k for k in cfg if not cfg[k] ]
-		for k in null_keys:
-			del cfg[k]
-
-		if os.path.exists("./config/ds_config.json"):
-			ds_cfg = json.load(open("./config/ds_config.json", "r", encoding="utf-8"))
-			cfg.update(ds_cfg)
-
-		return cfg
 
 	@property
 	def cache_dir(self):
@@ -454,6 +432,8 @@ cfg.evaluation = Evaluation(**cfg.evaluation)
 cfg.trainer = Trainer(**cfg.trainer)
 cfg.inference = Inference(**cfg.inference)
 cfg.bitsandbytes = BitsAndBytes(**cfg.bitsandbytes)
+
+cfg.trainer.deepspeed = DeepSpeed(**cfg.trainer.deepspeed)
 
 # cached_property stopped working...
 if cfg.dataset.use_hdf5:

@@ -15,12 +15,12 @@ dataset:
   workers: 8
   cache: True
 
-  phones_range: [4, 256]
-  duration_range: [1.0, 12.0]
+  phones_range: [4, 512]
+  duration_range: [1.0, 24.0]
 
   random_utterance: 1.0
-  max_prompts: 3
-  prompt_duration: 3.0
+  max_prompts: 6
+  prompt_duration: 6.0
 
 models:
   _models:
@@ -69,7 +69,8 @@ evaluation:
   size: 32
   
   steps: 300
-  temperature: 1.0
+  ar_temperature: 1.0
+  nar_temperature: 0.2
 
 trainer:
   iterations: 100_000
@@ -91,7 +92,13 @@ trainer:
 
   weight_dtype: bfloat16
 
-  zero_optimization_level: 2
-  use_compression_training: True
+  backend: deepspeed
+  deepspeed:
+    zero_optimization_level: 0
+    use_compression_training: True
 
-use_vocos: False
+inference:
+  use_vocos: True
+
+bitsandbytes:
+  enabled: false

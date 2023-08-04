@@ -176,17 +176,7 @@ class Base(nn.Module):
 			self.retnet = RetNetDecoder(
 				self.retnet_config
 			)
-		elif self.arch_type == "retnet/local":
-			self.retnet = RetNet(
-				layers=n_layers,
-				hidden_dim=d_model,
-				ffn_size=d_model * 4,
-				heads=n_heads,
-				dropout=p_dropout,
-				norm_type=self.norm_type,
-				n_levels=self.n_resp_levels,
-				double_v_dim=True
-			)
+
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
 		self.accuracy_metric = MulticlassAccuracy(
@@ -272,7 +262,7 @@ class Base(nn.Module):
 			text_list: [t] * b
 			proms_list: [t' l] * b, l quantization levels.
 			resps_list: [t'' l] * b, l quantization levels.
-			targ_list: [t''] * b, one quantization level only, when given, loss will be computed
+			targ_list: [t''] * b, one quantization level only; when given, loss will be computed
 			quant_levels: specify which quant_levels to feed forward, used in NAR mode.
 			shift_targ_list: whether to shift target list when computing loss. True if AR.
 			return_all_resp: True if NAR.
@@ -298,23 +288,11 @@ class Base(nn.Module):
 		elif self.arch_type == "retnet":
 			x, _ = self.retnet(x, incremental_state=state, token_embeddings=x, features_only=True)
 			state = self.retnet.get_incremental_state( state, 'prev_state' )
-		elif self.arch_type == "retnet/local":
-			# recurrent inferencing
-			if self.causal and state is not None:
-				last = x.shape[1]
-				x, state = self.retnet.forward_recurrent(
-					x[:, last-1:last, :], # nasty way to grab the last embedding to forward
-					state,
-					last
-				)
-			else:
-				x = self.retnet( x, quant_levels )
 			
 		x = self.classifier(x) * m
 
 		# Remove padding
 		h_list = [hi[:li] for hi, li in zip(x, map(len, x_list))]
-
 
 		# compute loss if the target is given
 		if targ_list is not None:
@@ -337,20 +315,24 @@ class Base(nn.Module):
 				# the NAR doesn't need to compute the loss for it
 				if self.resp_loss_only:
 					text_prom_list[i][:] = self.ignore_index
+
 				# roll the text/prompt for loss computing
-				# the AR benefits from this
+				# the AR benefits from this, for some reason I'll figure out later
 				else:
 					text_prom_list[i] = text_prom_list[i].roll(-1, dims=0)
 					text_prom_list[i][-1] = self.ignore_index
 
-			# necessary to roll the target if recurrently/causally/autoregressively generating, or it won't be able to work
+			# for the AR, roll by one and mark the ending with a stop token
+			# this coerces the model into properly inferencing causally
+
+			#     why we don't just append a stop token in the dataloader, who knows
 			if shift_targ_list:
 				targ_list = [*targ_list] 
 				for i in range(len(targ_list)):
 					targ_list[i] = targ_list[i].roll(-1, dims=0)
 					targ_list[i][-1] = self.stop_token
 
-			# generate the sequence
+			# create the new target sequence to compute the loss against
 			y_list = self._samplewise_merge_tensors( text_prom_list, targ_list, sep=ignore_sep )
 
 			self.loss = dict(
@@ -367,6 +349,7 @@ class Base(nn.Module):
 			del prom_list
 			del text_prom_list
 			del y_list
+
 		
 		# return the entire generated token string
 		if return_all:
@@ -387,23 +370,27 @@ class Base(nn.Module):
 		return ret, state
 
 def example_usage():
+	from ..config import cfg
+	cfg.trainer.backend = "local"
+
 	from functools import partial
 
 	from einops import repeat
-	from tqdm import trange
-	
-	from ..utils import gather_attribute
+
 	from ..emb.qnt import decode_to_file
+	from ..engines import Engine, Engines
+	from tqdm import tqdm, trange
+
 	from .ar import AR
 	from .nar import NAR
 
+	device = "cpu"
+	x8 = partial(repeat, pattern="t -> t l", l=2) 
 	symmap = {'<s>': 1, '</s>': 2, ' ': 3, '.': 4, ',': 5, '!': 6, '?': 7, 'p': 7, 'iː': 8, 'ɚ': 9, 'ˌ': 10, 'dˌ': 11, 'mˌ': 12, 'd': 13, 'ɹ': 14, 'tˈ': 15, 'pˌ': 16, 'uː': 17, 'l': 18, 'æ': 19, 'ɛ': 20, 'ɪ': 21, 'j': 22, 'ʊ': 23, 't': 24, 'n': 25, 'v': 26, 'a': 27, 'o': 28, 'ŋ': 29, 'w': 30, 'ʌ': 31, 'hˈ': 32, 'ɡˈ': 33, 'ə': 34, 'θˈ': 35, 'dˈ': 36, 'wˌ': 37, 'h': 38, 'z': 39, 'k': 40, 'ð': 41, 'ɡˌ': 42, 'ˈ': 43, 'fˈ': 44, 'i': 45, 's': 46, 'ʃ': 47, 'wˈ': 48, 'ðˈ': 49, 'ɹˈ': 50, 'lˈ': 51, 'ɡ': 52, 'oː': 53, 'mˈ': 54, 'e': 55, 'ɑː': 56, 'nˈ': 57, 'm': 58, 'θˌ': 59, 'sˈ': 60, 'f': 61, 'ɔː': 62, 'hˌ': 63, 'b': 64, 'jˈ': 65, 'ɐ': 66, 'ʒˈ': 67, 'θ': 68, 'bˈ': 69, 'ɾ': 70, 'ɜː': 71, 'ʌˈ': 72, 'ʃˌ': 73, 'bˌ': 74, 'kˈ': 75, 'ɔ': 76, 'zˈ': 77, 'ᵻ': 78, 'kˌ': 79, 'vˈ': 80, 'fˌ': 81, 'ʒ': 82, 'ʃˈ': 83, 'ɹˌ': 84, 'tˌ': 85, 'pˈ': 86, 'ðˌ': 87, 'sˌ': 88, 'nˌ': 89, 'lˌ': 90, '̩': 91, 'ʔ': 92, 'vˌ': 93, 'ɪˈ': 94, '"': 95, 'ɪˌ': 96, 'ʒˌ': 97, 'uːˌ': 98, 'ʊˈ': 99, 'jˌ': 100, 'uːˈ': 101, 'iːˈ': 102, 'zˌ': 103, '.ˈ': 104, '…': 105, 'ŋˌ': 106, 'ɐˌ': 107, '—ˈ': 108, 'iˌ': 109, 'iːˌ': 110, 'ɛː': 111, ')': 112, ')ˈ': 113, '(': 114, 'u': 115, '-': 116, 'ɖˈ': 117, 'iˈ': 118, 'ʰˈ': 119, 'ɟˈ': 120, '̃': 121, 'eː': 122, 'ɾˈ': 123, 'r': 124, 'ʰ': 125, '-ˌ': 126, 'ɫ': 127, 'q': 128, '—': 129, 'ʊˌ': 130, 'aː': 131, 'cˈ': 132, '…ˈ': 133, 'c': 134, 'ɳ': 135, 'ɐˈ': 136, 'x': 137, 'ʔˌ': 138, '.ˌ': 139, 'ɑ': 140, '?ˈ': 141, '̩ˈ': 142, '"ˈ': 143, ',ˈ': 144, 'ŋˈ': 145, 'əˌ': 146, '!ˈ': 147, '"ˌ': 148, '?ˌ': 149, ',ˌ': 150, '—ˌ': 151, '̩ˌ': 152, 'əˈ': 153, '!ˌ': 154, 'ɬ': 155, 'ʲ': 156, '¡': 157, 'ɯ': 158, 'qˌ': 159, 'ʑ': 160, 'ʑˈ': 161, '¿': 162, 'ɑːˈ': 163, 'iːː': 164, 'ɛˈ': 165, '¡ˈ': 166, 'æˈ': 167, 'ç': 168, 'ɾˌ': 169, 'ᵻˈ': 170, 'xˈ': 171, 'ɔːˈ': 172, ';': 173, 'ɬˌ': 174, ':': 175, 'ʔˈ': 176, 'ɑːˌ': 177, 'ɬˈ': 178}
 	def tokenize(content, lang_marker="en"):
 		split = content.split(" ")
 		phones = [f"<s>"] + [ " " if not p else p for p in split ] + [f"</s>"]
 		return torch.tensor([*map(symmap.get, phones)]).to()
-
-	device = "cpu"
 
 	kwargs = {
 		'n_tokens': 1024,
@@ -411,100 +398,62 @@ def example_usage():
 		'n_heads': 16,
 		'n_layers': 12,
 	}
-	model_ar = AR(**kwargs).to(device)
-	model_nar = NAR(**kwargs).to(device)
+	models = { "ar": AR(**kwargs).to(device), "nar": NAR(**kwargs).to(device) }
+	engines = Engines({ name: Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=1e-4)) for name, model in models.items() })
 
 	train = True
 
-	if train:
-		qnt = torch.load("data/qnt.pt").to(device)
-		text_list = [
-			tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
-			#tokenize("ˌ ɔ n   ɡˌ o ʊ ɪ ŋ   hˈ o ʊ m   ð ə   tˈ uː   f ɹˈ ɛ n d z   fˈ a ʊ n d   ɐ   lˈ ɛ ɾ ɚ   f ɹ ʌ m  ˈ æ θ o ʊ z ,   hˌ uː   d ɪ zˈ a ɪ ɚ d   ðˌ ɛ m   t ə   mˈ iː t   hˌ ɪ m   æ t   ð ə   ɡ ɹˈ æ n d   t ʃˈ ɑː ɹ l ɪ mˌ æ ɡ n i   ɔ n ð ə   fˈ ɑː l o ʊ ɪ ŋ   dˈ e ɪ .").to(device),
-		]
 
-		x8 = partial(repeat, pattern="t -> t l", l=2) 
-		proms_list = [
-			qnt[0][:2,:].t().to(device),
-			#x8(torch.tensor([1, 2, 3], device=device)),
-			# x8(torch.tensor([2, 3], device=device)),
-		]
+	qnt = torch.load("data/qnt.pt")[0].t()[:, :2].to(device)
+	text_list = [
+		tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
+		#tokenize("ˌ ɔ n   ɡˌ o ʊ ɪ ŋ   hˈ o ʊ m   ð ə   tˈ uː   f ɹˈ ɛ n d z   fˈ a ʊ n d   ɐ   lˈ ɛ ɾ ɚ   f ɹ ʌ m  ˈ æ θ o ʊ z ,   hˌ uː   d ɪ zˈ a ɪ ɚ d   ðˌ ɛ m   t ə   mˈ iː t   hˌ ɪ m   æ t   ð ə   ɡ ɹˈ æ n d   t ʃˈ ɑː ɹ l ɪ mˌ æ ɡ n i   ɔ n ð ə   fˈ ɑː l o ʊ ɪ ŋ   dˈ e ɪ .").to(device),
+	]
 
-		resp_list_ar = [
-			qnt[0,0].to(device),
-			# qnt[0,0].to(device),
-		]
-
-		resp_list_nar = [
-			qnt[0][:2,:].t().to(device),
-			# qnt[0][:2,:].t().to(device),
-		]
-
-		model_ar.train()
-		optimizer = torch.optim.AdamW(model_ar.parameters(), lr=1e-4)
-		for i in trange(60):
-			optimizer.zero_grad()
-			_ = model_ar(text_list, proms_list, resp_list_ar)
-
-			losses = gather_attribute(model_ar, "loss")
-			loss = sum(losses.values())
-			loss.backward()
-			optimizer.step()
-
-			if i % 20 == 0:
-				print(f"iter={i}, {losses}.")
-
-		model_nar.train()
-		optimizer = torch.optim.AdamW(model_nar.parameters(), lr=1e-4)
-		for i in trange(60):
-			optimizer.zero_grad()
-
-			_ = model_nar(text_list, proms_list, resps_list=resp_list_nar)
-
-			losses = gather_attribute(model_nar, "loss")
-			loss = sum(losses.values())
-			loss.backward()
-			optimizer.step()
-
-			if i % 20 == 0:
-				stats = {k: v.item() for k, v in losses.items()}
-				stats["loss"] = loss.item()
-				print(f"iter={i}, {stats}.")
-	else:
-		qnt = torch.load("data/test/test.qnt.pt")[0][:2,:].t().to(device)
-		text_list = [
-			#tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
-			tokenize("ˌ ɔ n   ɡˌ o ʊ ɪ ŋ   hˈ o ʊ m   ð ə   tˈ uː   f ɹˈ ɛ n d z   fˈ a ʊ n d   ɐ   lˈ ɛ ɾ ɚ   f ɹ ʌ m  ˈ æ θ o ʊ z ,   hˌ uː   d ɪ zˈ a ɪ ɚ d   ðˌ ɛ m   t ə   mˈ iː t   hˌ ɪ m   æ t   ð ə   ɡ ɹˈ æ n d   t ʃˈ ɑː ɹ l ɪ mˌ æ ɡ n i   ɔ n ð ə   fˈ ɑː l o ʊ ɪ ŋ   dˈ e ɪ .").to(device),
-		]
-		proms_list = [
-			qnt.to(device),
-		]
-		model_ar.load_state_dict(torch.load("data/test/ar.pth"))
-		model_nar.load_state_dict(torch.load("data/test/nar.pth"))        
-
-	model_ar.eval()
-	resp_list = model_ar(text_list, proms_list, max_steps=300, sampling_temperature=1.0)
-	resps_list = [r.unsqueeze(-1) for r in resp_list]
+	proms_list = [
+		qnt.to(device),
+	]
+	resps_list = [
+		qnt.to(device),
+	]
 	
-	print("qnt:", qnt.shape, qnt)
-	print("out:", resp_list[0].shape, resp_list[0])
-	wav, sr = decode_to_file(resp_list[0], "data/test/test.ar.init.wav", device=device)
-	print(wav, sr)
+	def sample( name, steps=400 ):
+		AR = None
+		NAR = None
 
-	model_nar.eval()
-	codes = model_nar(
-		text_list,
-		proms_list,
-		resps_list=resps_list,
-		sampling_temperature=1.0,
-	)[0]
+		engines.eval()
+		for name, engine in engines.items():
+			if name[:2] == "ar":
+				AR = engine
+			elif name[:3] == "nar":
+				NAR = engine
 
+		resps_list = AR(text_list, proms_list, max_steps=steps, sampling_temperature=1.0)
+		resps_list = [r.unsqueeze(-1) for r in resps_list]		
+		codes = NAR( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 ) 
 
-	print("qnt:", qnt.shape, qnt)
-	print("codes:", codes.shape, codes)
+		decode_to_file(resps_list[0], f"./data/ar.{name}.wav", device=device)
+		decode_to_file(codes[0], f"./data/ar+nar.{name}.wav", device=device)
+	
+	if train:
+		sample("init", 15)
 
-	wav, sr = decode_to_file(codes, "data/test/test.ar+nar.init.wav", device=device)
-	print(wav, sr)
+		engines.train()
+		t = trange(60)
+		for i in t:
+			"""
+			stats = {"step": i}
+			for name, engine in engines.items():
+				stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)
+			"""
+			stats = engines.step({"text_list": text_list, "proms_list": proms_list, "resps_list": resps_list}, device="cpu")
+			t.set_description(f"{stats}")
+	else:
+		for name, engine in engines.items():
+			engine.module.load_state_dict(torch.load(f"./data/{name}.pth"))
+
+	sample("final")
+	
 
 if __name__ == "__main__":
 	example_usage()
