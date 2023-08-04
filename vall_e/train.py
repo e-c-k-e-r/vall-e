@@ -100,9 +100,9 @@ def run_eval(engines, eval_name, dl):
 		if AR is not None and NAR is not None:
 			name = "+".join(names)
 
-			resps_list = AR(text_list=batch["text"], proms_list=batch["proms"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.temperature)
+			resps_list = AR(text_list=batch["text"], proms_list=batch["proms"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
 			resps_list = [ r.unsqueeze(-1) for r in resps_list ]
-			resps_list = NAR(text_list=batch["text"], proms_list=batch["proms"], resps_list=resps_list, sampling_temperature=cfg.evaluation.temperature)
+			resps_list = NAR(text_list=batch["text"], proms_list=batch["proms"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
 
 			process( name, batch, resps_list )
 		else:

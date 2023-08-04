@@ -66,7 +66,6 @@ class Engine(DeepSpeedEngine):
 	def set_lr(self, lr):
 		try:
 			if hasattr(self.optimizer, 'param_groups'):
-				print(self.optimizer.param_groups)
 				for param_group in self.optimizer.param_groups:
 					param_group['lr'] = lr
 			else:
