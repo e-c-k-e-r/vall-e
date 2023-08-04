@@ -5,5 +5,4 @@ if cfg.trainer.backend == "deepspeed":
 elif cfg.trainer.backend == "local":
 	from .base import Engine
 
-from .base import Engines
-from .base import TrainFeeder
+from .base import Engines, TrainFeeder, default_feeder

@@ -11,10 +11,10 @@ def get_model(cfg):
 	name = cfg.name
 
 	model = Model(
-		n_tokens=model.tokens,
-		d_model=model.dim,
-		n_heads=model.heads,
-		n_layers=model.layers,
+		n_tokens=cfg.tokens,
+		d_model=cfg.dim,
+		n_heads=cfg.heads,
+		n_layers=cfg.layers,
 	)
 	model._cfg = cfg
 

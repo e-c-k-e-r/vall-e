@@ -9,7 +9,7 @@ class TrainFeeder(Protocol):
 	) -> None | tuple[Tensor, Stats]:
 		...
 
-def default_feed(engine, batch):
+def default_feeder(engine, batch):
 	if isinstance(batch, list):
 		engine( *batch )
 	elif isinstance(batch, dict):
@@ -257,7 +257,7 @@ class Engines(dict[str, Engine]):
 			stats.update(flatten_dict({ name.split("-")[0]: stat }))
 		return stats
 
-	def step(self, batch, feeder: TrainFeeder = default_feed, device=torch.cuda.current_device()):
+	def step(self, batch, feeder: TrainFeeder = default_feeder, device=torch.cuda.current_device()):
 		total_elapsed_time = 0
 
 		stats: Any = dict()
