@@ -365,6 +365,7 @@ class Trainer:
 	restart_step_count: bool = False
 
 	aggressive_optimizations: bool = False
+	check_for_oom: bool = True
 
 	gc_mode: str | None = None
 

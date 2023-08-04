@@ -6,9 +6,7 @@
 
 An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), based on the [EnCodec](https://github.com/facebookresearch/encodec) tokenizer.
 
-> **Note** this is highly experimental. While I've seem to have audited and tighened down as much as I can, I'm still trying to produce a decent model out of it. You're free to train your own model if you happen to have the massive compute for it, but it's quite the beast to properly feed.
-
-> **Note** This README won't get much love until I truly nail out a quasi-decent model.
+> **Note** this is highly experimental. While I've seem to have audited and tighened down as much as I can, I'm still trying to produce a decent model out of it. You're free to train your own model if you happen to have the massive compute for it, but it's quite the beast to properly feed. This README won't get much love until I truly nail out a quasi-decent model.
 
 > **Note** Distributed training seems broken? I'm not really sure how to test it, as my two 6800XTs have been redistributed for now, and the last time I tried using them for this, things weren't good.
 
@@ -16,7 +14,7 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 ### Requirements
 
-Since the trainer is based on [DeepSpeed](https://github.com/microsoft/DeepSpeed#requirements), you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
+If your config YAML has the training backend set to [`deepspeed`](https://github.com/microsoft/DeepSpeed#requirements), you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
 
 ### Install
 
@@ -31,7 +29,16 @@ git clone --recurse-submodules https://git.ecker.tech/mrq/vall-e.git
 ```
 
 Note that the code is only tested under `Python 3.10.9`.
-* `fairseq` is not compatible with `Python 3.11`, a pseudo-dependency for `torchscale`.
+
+### Try Me
+
+To quickly try it out, you can choose between the following modes:
+
+* AR only: `python -m vall_e.models.ar yaml="./data/config.yaml"`
+* NAR only: `python -m vall_e.models.nar yaml="./data/config.yaml"`
+* AR+NAR: `python -m vall_e.models.base yaml="./data/config.yaml"`
+
+Each model file has a barebones trainer and inference routine.
 
 ### Train
 
@@ -42,7 +49,7 @@ Training is very dependent on:
 
 #### Leverage Your Own
 
-1. Put your data into a folder, e.g. `./data/custom`. Audio files should be named with the suffix `.wav` and text files with `.normalized.txt`.
+1. Put your data into a folder, e.g. `./data/custom`. Audio files should be named with the suffix `.wav` and text files with `.txt`.
 
 2. Quantize the data:
 
@@ -56,7 +63,14 @@ python -m vall_e.emb.qnt ./data/custom
 python -m vall_e.emb.g2p ./data/custom
 ```
 
-4. Customize your configuration modifying `./data/config.yml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
+
+4. Customize your configuration and define the dataset by modifying `./data/config.yml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
+
+If you're interested in creating an HDF5 copy of your dataset, simply invoke:
+
+```
+python -m vall_e.data yaml='./data/config.yaml'
+```
 
 5. Train the AR and NAR models using the following scripts:
 

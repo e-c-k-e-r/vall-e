@@ -59,7 +59,7 @@ def encode(text: str, language="en-us", backend="espeak") -> list[str]:
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("folder", type=Path)
-	parser.add_argument("--suffix", type=str, default=".normalized.txt")
+	parser.add_argument("--suffix", type=str, default=".txt")
 	args = parser.parse_args()
 
 	paths = list(args.folder.rglob(f"*{args.suffix}"))

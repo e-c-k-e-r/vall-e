@@ -372,6 +372,7 @@ class Base(nn.Module):
 def example_usage():
 	from ..config import cfg
 	cfg.trainer.backend = "local"
+	cfg.trainer.check_for_oom = False
 
 	from functools import partial
 

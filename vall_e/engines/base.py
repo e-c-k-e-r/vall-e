@@ -281,36 +281,36 @@ class Engines(dict[str, Engine]):
 			if cfg.trainer.aggressive_optimizations:
 				batch = to_device(batch, device)
 
-			res = feeder( engine=engine, batch=batch )
-			"""
-			while tries >= 0:
-				try:
-					res = feeder( engine=engine, batch=batch )
-					break
-				except RuntimeError as e:
-					print("Forward", str(e))
+			if not cfg.trainer.check_for_oom:
+				res = feeder( engine=engine, batch=batch )
+			else:
+				while tries >= 0:
+					try:
+						res = feeder( engine=engine, batch=batch )
+						break
+					except RuntimeError as e:
+						print("Forward", str(e))
 
-					if "out of memory" not in str(e):
-						self.save_checkpoint()
-						raise e
+						if "out of memory" not in str(e):
+							self.save_checkpoint()
+							raise e
 
-					# shrink batch size until it's happy
-					for k in batch:
-						batch[k] = batch[k][:-1]
+						# shrink batch size until it's happy
+						for k in batch:
+							batch[k] = batch[k][:-1]
 
-					if tries <= 0:
-						# trigger OOM
-						n_ooms += 1
-					else:
-						# also do GC
-						do_gc()
-					continue
+						if tries <= 0:
+							# trigger OOM
+							n_ooms += 1
+						else:
+							# also do GC
+							do_gc()
+						continue
 
-			all_reduce(n_ooms)
-			if n_ooms.item() > 0:
-				self.save_checkpoint()
-				raise RuntimeError("Out of memory during forward pass!")
-			"""
+				all_reduce(n_ooms)
+				if n_ooms.item() > 0:
+					self.save_checkpoint()
+					raise RuntimeError("Out of memory during forward pass!")
 
 			if res is None:
 				continue
@@ -323,24 +323,24 @@ class Engines(dict[str, Engine]):
 			if cfg.trainer.aggressive_optimizations:
 				batch = to_device(batch, 'cpu')
 
-			engine.backward(loss)
-			"""
-			try:
+			if not cfg.trainer.check_for_oom:
 				engine.backward(loss)
-			except RuntimeError as e:
-				print("Backwards:", str(e))
+			else:
+				try:
+					engine.backward(loss)
+				except RuntimeError as e:
+					print("Backwards:", str(e))
 
-				if "out of memory" not in str(e):
+					if "out of memory" not in str(e):
+						self.save_checkpoint()
+						raise e
+					
+					n_ooms += 1
+
+				all_reduce(n_ooms)
+				if n_ooms.item() > 0:
 					self.save_checkpoint()
-					raise e
-				
-				n_ooms += 1
-
-			all_reduce(n_ooms)
-			if n_ooms.item() > 0:
-				self.save_checkpoint()
-				raise RuntimeError("Out of memory during backwards pass!")
-			"""
+					raise RuntimeError("Out of memory during backwards pass!")
 
 			engine.step()
 			
