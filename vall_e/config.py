@@ -442,6 +442,11 @@ if cfg.dataset.use_hdf5:
 		cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', 'a')
 	except Exception as e:
 		print("Error while opening HDF5 file:", f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', str(e))
+		cfg.dataset.use_hdf5 = False
+
+if not cfg.dataset.use_hdf5:
+	cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
+	cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
 
 if __name__ == "__main__":
 	print(cfg)
