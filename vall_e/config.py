@@ -375,6 +375,14 @@ class Trainer:
 
 	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)
 
+	@cached_property
+	def dtype(self):
+		if self.weight_dtype == "float16":
+			return torch.float16
+		if cfg.trainer.weight_dtype == "bfloat16":
+			return torch.bfloat16
+		return torch.float32
+
 
 @dataclass()
 class Inference:

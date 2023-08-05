@@ -21,14 +21,13 @@ from .base import TrainFeeder
 
 _logger = logging.getLogger(__name__)
 
-from deepspeed import DeepSpeedEngine, DeepSpeedConfig, comm as dist, init_distributed
+from deepspeed import DeepSpeedEngine, DeepSpeedConfig, comm as dist, init_distributed as init_deepspeed_dist
 from deepspeed.accelerator import get_accelerator
 
-#dist.init_distributed(dist_backend=get_accelerator().communication_backend_name())
-initialized_dist = False
-if not initialized_dist:
-	initialized_dist = True
-	init_distributed()
+from ..utils.distributed import init_distributed, distributed_initialized
+
+if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
+	init_distributed(init_deepspeed_dist)
 
 class Engine(DeepSpeedEngine):
 	def __init__(self, *args, **kwargs):

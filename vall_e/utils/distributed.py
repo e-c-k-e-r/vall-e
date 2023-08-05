@@ -14,6 +14,14 @@ def get_free_port():
 	return sock.getsockname()[1]
 
 
+_distributed_initialized = False
+def init_distributed( fn ):
+	fn()
+	_distributed_initialized = True
+
+def distributed_initialized():
+	return _distributed_initialized
+
 @cache
 def fix_unset_envs():
 	envs = dict(

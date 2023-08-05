@@ -134,7 +134,7 @@ def run_eval(engines, eval_name, dl):
 
 	iteration = engines.global_step
 	engines_stats['it'] = iteration
-	engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(train_dl)
+	engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
 
 	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
 

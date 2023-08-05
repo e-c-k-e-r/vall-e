@@ -18,8 +18,8 @@ from tqdm import tqdm
 from typing import Protocol
 
 from ..config import cfg
+from .distributed import init_distributed, distributed_initialized
 from .distributed import (
-	fix_unset_envs,
 	global_leader_only,
 	global_rank,
 	is_global_leader,
@@ -112,18 +112,46 @@ def _get_stdin_selector():
 	return selector
 
 
+if os.name == "nt":
+	import msvcrt
+	_buffer = []
+
 def _non_blocking_input():
 	global _command
+	global _buffer
 	l = [""]
-	if is_global_leader():
+
+	def _windows():
+		global _buffer
+
+		if msvcrt.kbhit():
+			s: str = msvcrt.getch().decode('utf-8')
+			if s == '\r':
+				s = "".join(_buffer)
+				_buffer = []
+				return s
+
+			_buffer.append(s)
+		return ""
+
+	def _linux():
 		s = ""
 		selector = _get_stdin_selector()
 		events = selector.select(timeout=0)
 		for key, _ in events:
 			s: str = key.fileobj.readline().strip()
+		return s
+
+	if is_global_leader():
+		s = _windows() if os.name == 'nt' else _linux()
+	
+		if s != "":
 			_logger.info(f'Get stdin "{s}".')
+
 		l[0] = s
-	broadcast_object_list(l, src=0)
+
+	if distributed_initialized():
+		broadcast_object_list(l, src=0)
 	_command = l[0]
 	return _command
 
@@ -152,8 +180,6 @@ def train(
 	eval_fn: EvalFn = lambda x: ...,
 	logger: Logger = logger,
 ):
-	fix_unset_envs()
-
 	engines = load_engines()
 
 	"""

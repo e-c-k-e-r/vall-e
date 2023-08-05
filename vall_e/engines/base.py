@@ -28,6 +28,7 @@ def default_feeder(engine, batch):
 
 from ..config import cfg
 from ..utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
+from ..utils.distributed import init_distributed, distributed_initialized
 
 import logging
 import time
@@ -43,10 +44,13 @@ from .base import TrainFeeder
 
 _logger = logging.getLogger(__name__)
 
+if not distributed_initialized() and cfg.trainer.backend == "local":
+	init_distributed(torch.distributed.init_process_group)
+
 # A very naive engine implementation using barebones PyTorch
 class Engine():
 	def __init__(self, *args, **kwargs):
-		self.module = kwargs['model'].to(cfg.device)
+		self.module = kwargs['model'].to(cfg.device).to(cfg.trainer.dtype)
 		self.optimizer = kwargs['optimizer'] if 'optimizer' in kwargs else None
 		self.lr_scheduler = kwargs['lr_scheduler'] if 'lr_scheduler' in kwargs else None
 
@@ -93,6 +97,8 @@ class Engine():
 			"lr_scheduler": self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
 		}, save_path)
 
+		open(save_dir / "latest", 'w').write( tag )
+
 	def load_checkpoint(self, load_dir, tag=None, load_module_strict=True, load_optimizer_states=True, load_lr_scheduler_states=True):
 		if tag is None:
 			tag_path = load_dir / "latest"
@@ -105,8 +111,8 @@ class Engine():
 			return
 
 		state = torch.load(load_path)
-		self.global_step = state['global_step']
-		self.micro_step = state['micro_step']
+		self.global_steps = state['global_step']
+		self.micro_steps = state['micro_step']
 		self.module.load_state_dict(state['module'])
 
 		load_optimizer_states = load_optimizer_states and self.optimizer is not None and 'optimizer' in state
