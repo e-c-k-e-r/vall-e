@@ -24,6 +24,9 @@ class TTS():
 		else:
 			self.load_models( config )
 
+		self.ar.eval()
+		self.nar.eval()
+
 		self.loading = False 
 
 	def load_models( self, config_path ):
