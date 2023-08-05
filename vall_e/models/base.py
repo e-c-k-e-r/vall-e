@@ -342,9 +342,10 @@ class Base(nn.Module):
 					ignore_index=self.ignore_index,
 				)
 			)
-			self.loss['acc'] = self.accuracy_metric( torch.cat(h_list), torch.cat(y_list) )
-			self.loss['precision'] = self.precision_metric( torch.cat(h_list), torch.cat(y_list) )
-
+			self.stats = dict(
+				acc = self.accuracy_metric( torch.cat(h_list), torch.cat(y_list) ),
+				precision = self.precision_metric( torch.cat(h_list), torch.cat(y_list) ),
+			)
 			del targ_list
 			del prom_list
 			del text_prom_list

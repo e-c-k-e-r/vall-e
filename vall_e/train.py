@@ -35,11 +35,13 @@ def train_feeder(engine, batch):
 	engine( text_list=batch["text"], proms_list=batch["proms"], resps_list=batch["resps"] )
 
 	losses = engine.gather_attribute("loss")
+	stat = engine.gather_attribute("stats")
 
 	loss = torch.stack([*losses.values()]).sum()
 
 	stats = {}
 	stats |= {k: v.item() for k, v in losses.items()}
+	stats |= {k: v.item() for k, v in stat.items()}
 
 	return loss, stats
 

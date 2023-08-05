@@ -10,6 +10,7 @@ import random
 import selectors
 import sys
 import torch
+import os
 
 from functools import cache
 from torch.distributed import broadcast_object_list
