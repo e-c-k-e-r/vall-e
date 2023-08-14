@@ -101,10 +101,10 @@ Training a VALL-E model is very, very meticulous. I've fiddled with a lot of """
 Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run:
 
 ```
-python -m vall_e.export ./models/ yaml=./config/custom.yml
+python -m vall_e.export yaml=./config/custom.yml
 ```
 
-This will export the latest checkpoint.
+This will export the latest checkpoints.
 
 ### Synthesis
 

@@ -17,6 +17,8 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
+from .utils.distributed import world_size
+
 @dataclass()
 class _Config:
 	cfg_path: str | None = None
@@ -401,7 +403,7 @@ class BitsAndBytes:
 @dataclass()
 class Config(_Config):
 	device: str = "cuda"
-	distributed: bool = False
+	#distributed: bool = False
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: Models = field(default_factory=lambda: Models)
@@ -414,6 +416,10 @@ class Config(_Config):
 	@property
 	def sample_rate(self):
 		return 24_000
+
+	@property
+	def distributed(self):
+		return world_size() > 1
 
 	@cached_property
 	def get_spkr(self):
@@ -447,20 +453,21 @@ try:
 	cfg.bitsandbytes = BitsAndBytes(**cfg.bitsandbytes)
 
 	cfg.trainer.deepspeed = DeepSpeed(**cfg.trainer.deepspeed)
+	
+	# cached_property stopped working...
+	if cfg.dataset.use_hdf5:
+		try:
+			cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', 'r' if cfg.distributed else 'a')
+		except Exception as e:
+			print("Error while opening HDF5 file:", f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', str(e))
+			cfg.dataset.use_hdf5 = False
+
+	if not cfg.dataset.use_hdf5:
+		cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
+		cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
 except Exception as e:
 	pass
 
-# cached_property stopped working...
-if cfg.dataset.use_hdf5:
-	try:
-		cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', 'r' if cfg.distributed else 'a')
-	except Exception as e:
-		print("Error while opening HDF5 file:", f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', str(e))
-		cfg.dataset.use_hdf5 = False
-
-if not cfg.dataset.use_hdf5:
-	cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
-	cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
 
 if __name__ == "__main__":
 	print(cfg)

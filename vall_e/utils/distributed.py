@@ -48,6 +48,9 @@ def local_rank():
 def global_rank():
 	return int(os.getenv("RANK", 0))
 
+def world_size():
+	return int(os.getenv("WORLD_SIZE", 1))
+
 
 def is_local_leader():
 	return local_rank() == 0

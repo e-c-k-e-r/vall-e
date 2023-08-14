@@ -19,6 +19,9 @@ class TTS():
 
 		self.input_sample_rate = 24000
 		self.output_sample_rate = 24000
+
+		if config:
+			cfg.load_yaml( config )
 		
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
@@ -33,7 +36,7 @@ class TTS():
 					self.nar = model.to(self.device, dtype=torch.float32)
 					self.nar.load_state_dict(torch.load(self.nar_ckpt)['module'])
 		else:
-			self.load_models( config )
+			self.load_models()
 
 		self.symmap = get_phone_symmap()
 		self.ar.eval()
@@ -41,10 +44,7 @@ class TTS():
 
 		self.loading = False 
 
-	def load_models( self, config_path ):
-		if config_path:
-			cfg.load_yaml( config_path )
-
+	def load_models( self ):
 		print("Loading models...")
 		models = load_models()
 		print("Loaded models")

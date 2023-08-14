@@ -4,31 +4,22 @@ import torch
 
 from .data import get_phone_symmap
 from .train import load_engines
-
-def load_models():
-	models = {}
-	engines = load_engines()
-	for name in engines:
-		model = engines[name].module.cpu()
-		
-		model.phone_symmap = get_phone_symmap()
-
-		models[name] = model
-
-	return models
+from .config import cfg
 
 def main():
 	parser = argparse.ArgumentParser("Save trained model to path.")
-	parser.add_argument("path")
+	#parser.add_argument("--yaml", type=Path, default=None)
 	args = parser.parse_args()
 
-	models = load_models()
-	for name in models:
-		model = models[name]
-
-		outpath = f'{args.path}/{name}.pt'
+	engines = load_engines()
+	for name, engine in engines.items():
+		outpath = cfg.ckpt_dir / name / "fp32.pth"
 		torch.save({
-			'module': model.state_dict()
+			"global_step": engine.global_step,
+			"micro_step": engine.micro_step,
+			'module': engine.module.to('cpu', dtype=torch.float32).state_dict(),
+			#'optimizer': engine.optimizer.state_dict(),
+			'symmap': get_phone_symmap(),
 		}, outpath)
 		print(f"Exported {name} to {outpath}")
 
