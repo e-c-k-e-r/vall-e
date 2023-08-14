@@ -313,7 +313,7 @@ def _create_dataloader(dataset, training):
 	return DataLoader(
 		dataset=dataset,
 		batch_size=cfg.hyperparameters.batch_size if training else cfg.evaluation.batch_size,
-		shuffle=False if cfg.distributed else True, # training
+		shuffle=False, # if cfg.distributed else True, # training
 		drop_last=training,
 		num_workers=cfg.dataset.workers,
 		collate_fn=collate_fn,
