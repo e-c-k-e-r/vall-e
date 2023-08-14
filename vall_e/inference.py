@@ -9,6 +9,8 @@ from .utils import to_device
 
 from .config import cfg
 from .export import load_models
+from .models import get_models
+from .data import get_phone_symmap
 
 class TTS():
 	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device="cuda" ):
@@ -19,11 +21,21 @@ class TTS():
 		self.output_sample_rate = 24000
 		
 		if ar_ckpt and nar_ckpt:
-			self.load_ar( ar_ckpt )
-			self.load_nar( nar_ckpt )
+			self.ar_ckpt = ar_ckpt
+			self.nar_ckpt = nar_ckpt
+
+			models = get_models(cfg.models.get())
+			for name, model in models.items():
+				if name.startswith("ar"):
+					self.ar = model.to(self.device, dtype=torch.float32)
+					self.ar.load_state_dict(torch.load(self.ar_ckpt)['module'])
+				elif name.startswith("nar"):
+					self.nar = model.to(self.device, dtype=torch.float32)
+					self.nar.load_state_dict(torch.load(self.nar_ckpt)['module'])
 		else:
 			self.load_models( config )
 
+		self.symmap = get_phone_symmap()
 		self.ar.eval()
 		self.nar.eval()
 
@@ -39,23 +51,12 @@ class TTS():
 		for name in models:
 			model = models[name]
 			if name[:2] == "ar":
-				self.ar = model.to(self.device)
+				self.ar = model.to(self.device, dtype=torch.float32)
 				self.symmap = self.ar.phone_symmap
 			elif name[:3] == "nar":
-				self.nar = model.to(self.device)
+				self.nar = model.to(self.device, dtype=torch.float32)
 			else:
 				print("Unknown:", name)
-
-	def load_ar( self, ckpt ):
-		self.ar_ckpt = ckpt
-
-		self.ar = torch.load(self.ar_ckpt).to(self.device)
-		self.symmap = self.ar.phone_symmap
-
-	def load_nar( self, ckpt ):
-		self.nar_ckpt = nar_ckpt
-
-		self.nar = torch.load(self.nar_ckpt).to(self.device)
 
 	def encode_text( self, text, lang_marker="en" ):
 		text = g2p.encode(text)
@@ -70,7 +71,7 @@ class TTS():
 
 	def inference( self, text, reference, mode="both", max_ar_steps=6 * 75, ar_temp=1.0, nar_temp=1.0, out_path="./.tmp.wav" ):
 		prom = self.encode_audio( reference )
-		phns = self.encode_text(text)
+		phns = self.encode_text( text )
 
 		prom = to_device(prom, self.device).to(torch.int16)
 		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)

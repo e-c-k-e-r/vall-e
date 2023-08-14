@@ -19,7 +19,7 @@ from collections import defaultdict
 
 from tqdm import tqdm
 
-mel_stft_loss = auraloss.freq.MelSTFTLoss(24_000, device="cuda")
+mel_stft_loss = auraloss.freq.MelSTFTLoss(24_000, device="cpu")
 
 def center_crop(x, len):
 	start = (x.shape[-1] - len) // 2
@@ -89,10 +89,10 @@ def run_eval(engines, eval_name, dl):
 			min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )
 			ref_audio = ref_audio[..., 0:min_length]
 			hyp_audio = hyp_audio[..., 0:min_length]
-			
 			try:
 				stats['loss'].append(mel_stft_loss(hyp_audio, ref_audio).item())
 			except Exception as e:
+				stats['loss'].append(0)
 				print(str(e))
 	
 	for batch in tqdm(dl):

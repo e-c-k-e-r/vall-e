@@ -20,6 +20,7 @@ from typing import Any
 
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset as _Dataset
+from torch.utils.data.distributed import DistributedSampler
 from tqdm.auto import tqdm
 
 # torch.multiprocessing.set_sharing_strategy("file_system")
@@ -312,13 +313,14 @@ def _create_dataloader(dataset, training):
 	return DataLoader(
 		dataset=dataset,
 		batch_size=cfg.hyperparameters.batch_size if training else cfg.evaluation.batch_size,
-		shuffle=True, # training
+		shuffle=False if cfg.distributed else True, # training
 		drop_last=training,
 		num_workers=cfg.dataset.workers,
 		collate_fn=collate_fn,
 		persistent_workers=True,
 		pin_memory=False, # True,
 		worker_init_fn=_seed_worker,
+        sampler=DistributedSampler(dataset) if cfg.distributed else dataset.sampler
 	)
 
 def _load_dataset_paths():

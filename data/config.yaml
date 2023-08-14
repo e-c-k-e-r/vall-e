@@ -1,10 +1,8 @@
 dataset:
   training: [
-    
   ]
 
   validation: [
-
   ]
   
   speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
@@ -15,30 +13,30 @@ dataset:
   workers: 8
   cache: True
 
-  phones_range: [4, 512]
-  duration_range: [1.0, 24.0]
+  phones_range: [4, 128]
+  duration_range: [1.0, 12.0]
 
   random_utterance: 1.0
-  max_prompts: 6
-  prompt_duration: 6.0
+  max_prompts: 3
+  prompt_duration: 3.0
 
 models:
   _models:
   - name: "ar"
-    size: "quarter"
+    size: "full"
     resp_levels: 1
     arch_type: "retnet"
 
   - name: "nar"
-    size: "quarter"
+    size: "full"
     resp_levels: 1
     arch_type: "retnet"
   
   prom_levels: 2
 
 hyperparameters:
-  batch_size: 32
-  gradient_accumulation_steps: 4
+  batch_size: 8
+  gradient_accumulation_steps: 16
   gradient_clipping: 100
   
   optimizer: Adamw
@@ -90,11 +88,11 @@ trainer:
   
   gc_mode: None # "global_step"
 
-  weight_dtype: bfloat16
+  weight_dtype: bfloat16 # float16, float32
 
   backend: deepspeed
   deepspeed:
-    zero_optimization_level: 0
+    zero_optimization_level: 2
     use_compression_training: True
 
 inference:
@@ -102,3 +100,6 @@ inference:
 
 bitsandbytes:
   enabled: false
+
+device: cuda
+distributed: False

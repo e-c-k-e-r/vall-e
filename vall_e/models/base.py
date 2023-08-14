@@ -272,6 +272,7 @@ class Base(nn.Module):
 		"""
 
 		batch_size = len(text_list)
+		
 		x_list = self._samplewise_merge_tensors(
 			self.text_emb(text_list),
 			self.proms_emb(proms_list),
@@ -280,6 +281,7 @@ class Base(nn.Module):
 		)
 
 		x, m = list_to_tensor(x_list)
+
 
 		if self.arch_type == "transformer":
 			x = self.sin_emb.add_pe(x)

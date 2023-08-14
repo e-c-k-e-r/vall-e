@@ -7,6 +7,8 @@ import subprocess
 import sys
 import time
 
+import torch
+
 from dataclasses import asdict, dataclass
 from dataclasses import dataclass, field
 
@@ -379,7 +381,7 @@ class Trainer:
 	def dtype(self):
 		if self.weight_dtype == "float16":
 			return torch.float16
-		if cfg.trainer.weight_dtype == "bfloat16":
+		if self.weight_dtype == "bfloat16":
 			return torch.bfloat16
 		return torch.float32
 
@@ -399,6 +401,7 @@ class BitsAndBytes:
 @dataclass()
 class Config(_Config):
 	device: str = "cuda"
+	distributed: bool = False
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: Models = field(default_factory=lambda: Models)
@@ -433,21 +436,24 @@ class Config(_Config):
 
 cfg = Config.from_cli()
 
-# OmegaConf doesn't actually coerce the dicts into the @dataclass decorated classes, for some god forsaken reason, so we coerce them ourselves
-cfg.dataset = Dataset(**cfg.dataset)
-cfg.models = Models(**cfg.models)
-cfg.hyperparameters = Hyperparameters(**cfg.hyperparameters)
-cfg.evaluation = Evaluation(**cfg.evaluation)
-cfg.trainer = Trainer(**cfg.trainer)
-cfg.inference = Inference(**cfg.inference)
-cfg.bitsandbytes = BitsAndBytes(**cfg.bitsandbytes)
+# OmegaConf might not coerce the dicts into the @dataclass decorated classes, so we (try to) coerce them ourselves
+try:
+	cfg.dataset = Dataset(**cfg.dataset)
+	cfg.models = Models(**cfg.models)
+	cfg.hyperparameters = Hyperparameters(**cfg.hyperparameters)
+	cfg.evaluation = Evaluation(**cfg.evaluation)
+	cfg.trainer = Trainer(**cfg.trainer)
+	cfg.inference = Inference(**cfg.inference)
+	cfg.bitsandbytes = BitsAndBytes(**cfg.bitsandbytes)
 
-cfg.trainer.deepspeed = DeepSpeed(**cfg.trainer.deepspeed)
+	cfg.trainer.deepspeed = DeepSpeed(**cfg.trainer.deepspeed)
+except Exception as e:
+	pass
 
 # cached_property stopped working...
 if cfg.dataset.use_hdf5:
 	try:
-		cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', 'a')
+		cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', 'r' if cfg.distributed else 'a')
 	except Exception as e:
 		print("Error while opening HDF5 file:", f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', str(e))
 		cfg.dataset.use_hdf5 = False

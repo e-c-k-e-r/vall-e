@@ -80,7 +80,7 @@ def load_engines():
 
 		if cfg.trainer.load_state_dict:
 			load_path = cfg.ckpt_dir / name / "fp32.pth"
-			model.load_state_dict(torch.load(load_path))
+			model.load_state_dict(torch.load(load_path)['module'])
 
 		engines[name] = Engine(
 			model=model,

@@ -275,7 +275,7 @@ class Engines(dict[str, Engine]):
 			stats.update(flatten_dict({ name.split("-")[0]: stat }))
 		return stats
 
-	def step(self, batch, feeder: TrainFeeder = default_feeder, device=torch.cuda.current_device()):
+	def step(self, batch, feeder: TrainFeeder = default_feeder):
 		total_elapsed_time = 0
 
 		stats: Any = dict()
@@ -283,10 +283,9 @@ class Engines(dict[str, Engine]):
 		if cfg.trainer.gc_mode == 'step':
 			do_gc()
 
-		batch = to_device(batch, device)
 
 		for name, engine in self.items():
-			#torch.cuda.synchronize()
+			device = engine.device
 
 			if cfg.trainer.gc_mode == 'substep':
 				do_gc()
@@ -294,10 +293,9 @@ class Engines(dict[str, Engine]):
 			start_time = time.time()
 
 			tries = 4
-			n_ooms = torch.zeros([], device=cfg.device)
+			n_ooms = torch.zeros([], device=device)			
 			
-			if cfg.trainer.aggressive_optimizations:
-				batch = to_device(batch, device)
+			batch = to_device(batch, device)
 
 			if not cfg.trainer.check_for_oom:
 				res = feeder( engine=engine, batch=batch )
@@ -336,7 +334,7 @@ class Engines(dict[str, Engine]):
 			loss, engine_stats = res
 			engine_stats |= self.gather_attribute("scalar")
 
-			n_ooms = torch.zeros([], device=cfg.device)
+			n_ooms = torch.zeros([], device=device)
 			
 			if cfg.trainer.aggressive_optimizations:
 				batch = to_device(batch, 'cpu')

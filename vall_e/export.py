@@ -27,7 +27,9 @@ def main():
 		model = models[name]
 
 		outpath = f'{args.path}/{name}.pt'
-		torch.save(model, outpath)
+		torch.save({
+			'module': model.state_dict()
+		}, outpath)
 		print(f"Exported {name} to {outpath}")
 
 if __name__ == "__main__":
