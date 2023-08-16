@@ -126,6 +126,17 @@ Some additional flags you can pass are:
 * `--nar-temp`: sampling temperature to use for the NAR pass.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
 
+
+## To-Do
+
+* properly pass in `modules` names to `weight_quantization` and `activation_quantization`.
+
+* fix `quit` hanging when using distributed training.
+
+* train and release a model.
+
+* extend to multiple languages (VALL-E X) and extend to SpeechX features.
+
 ## Notice
 
 - [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.

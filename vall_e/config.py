@@ -336,7 +336,10 @@ class DeepSpeed:
 				"offload_param": {
 					"device": "cpu",
 					"pin_memory": True
-				}
+				},
+				"zero_quantized_weights": self.use_compression_training,
+				"zero_hpz_partition_size": world_size(),
+				"zero_quantized_gradients": self.use_compression_training,
 			} if self.zero_optimization_level > 0 else None,
 			"comms_logger": {
 				"enabled": False
@@ -439,21 +442,24 @@ class Config(_Config):
 		tmp = Config.from_yaml( config_path )
 		self.__dict__.update(tmp.__dict__)
 
+	def format( self ):
+		self.dataset = Dataset(**self.dataset)
+		self.models = Models(**self.models)
+		self.hyperparameters = Hyperparameters(**self.hyperparameters)
+		self.evaluation = Evaluation(**self.evaluation)
+		self.trainer = Trainer(**self.trainer)
+		self.inference = Inference(**self.inference)
+		self.bitsandbytes = BitsAndBytes(**self.bitsandbytes)
+
+		self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
+
 
 cfg = Config.from_cli()
 
 # OmegaConf might not coerce the dicts into the @dataclass decorated classes, so we (try to) coerce them ourselves
 try:
-	cfg.dataset = Dataset(**cfg.dataset)
-	cfg.models = Models(**cfg.models)
-	cfg.hyperparameters = Hyperparameters(**cfg.hyperparameters)
-	cfg.evaluation = Evaluation(**cfg.evaluation)
-	cfg.trainer = Trainer(**cfg.trainer)
-	cfg.inference = Inference(**cfg.inference)
-	cfg.bitsandbytes = BitsAndBytes(**cfg.bitsandbytes)
+	cfg.format()
 
-	cfg.trainer.deepspeed = DeepSpeed(**cfg.trainer.deepspeed)
-	
 	# cached_property stopped working...
 	if cfg.dataset.use_hdf5:
 		try:

@@ -8,9 +8,20 @@ from .emb import g2p, qnt
 from .utils import to_device
 
 from .config import cfg
-from .export import load_models
 from .models import get_models
+from .train import load_engines
 from .data import get_phone_symmap
+
+import random
+
+def trim( qnt, trim_length  ):
+	length = qnt.shape[0]
+	start = int(length * random.random())
+	end = start + trim_length
+	if end >= length:
+		start = length - trim_length
+		end = length
+	return qnt[start:end]
 
 class TTS():
 	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device="cuda" ):
@@ -22,6 +33,8 @@ class TTS():
 
 		if config:
 			cfg.load_yaml( config )
+
+		cfg.format()
 		
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
@@ -45,18 +58,12 @@ class TTS():
 		self.loading = False 
 
 	def load_models( self ):
-		print("Loading models...")
-		models = load_models()
-		print("Loaded models")
-		for name in models:
-			model = models[name]
+		engines = load_engines()
+		for name, engine in engines.items():
 			if name[:2] == "ar":
-				self.ar = model.to(self.device, dtype=torch.float32)
-				self.symmap = self.ar.phone_symmap
+				self.ar = engine.module.to(self.device)
 			elif name[:3] == "nar":
-				self.nar = model.to(self.device, dtype=torch.float32)
-			else:
-				print("Unknown:", name)
+				self.nar = engine.module.to(self.device)
 
 	def encode_text( self, text, lang_marker="en" ):
 		text = g2p.encode(text)
@@ -66,7 +73,10 @@ class TTS():
 
 	def encode_audio( self, path ):
 		enc = qnt.encode_from_file( path )
-		return enc[0].t().to(torch.int16)
+		res = enc[0].t().to(torch.int16)
+		if trim:
+			res = trim( res, int( 75 * cfg.dataset.duration_range[1] ) )
+		return res
 
 
 	def inference( self, text, reference, mode="both", max_ar_steps=6 * 75, ar_temp=1.0, nar_temp=1.0, out_path="./.tmp.wav" ):
