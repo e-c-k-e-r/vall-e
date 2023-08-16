@@ -151,8 +151,7 @@ def _non_blocking_input():
 
 		l[0] = s
 
-	if distributed_initialized():
-		broadcast_object_list(l, src=0)
+	broadcast_object_list(l, src=0)
 	_command = l[0]
 	return _command
 
