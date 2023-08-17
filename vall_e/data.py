@@ -466,9 +466,9 @@ def create_train_val_dataloader():
 	train_dataset.sample_type = cfg.dataset.sample_type #"speaker"
 
 	subtrain_dataset = copy.deepcopy(train_dataset)
-	subtrain_dataset.head_(cfg.evaluation.size)
-	subtrain_dataset.interleaved_reorder_(cfg.get_spkr)
-	#subtrain_dataset.training_(False)
+	if subtrain_dataset.sample_type == "path":
+		subtrain_dataset.head_(cfg.evaluation.size)
+		subtrain_dataset.interleaved_reorder_(cfg.get_spkr)
 
 	train_dl = _create_dataloader(train_dataset, training=True)
 	val_dl = _create_dataloader(val_dataset, training=False)
@@ -564,8 +564,19 @@ def create_dataset_hdf5():
 	hf.close()
 
 if __name__ == "__main__":
-	create_dataset_hdf5()
+	import argparse
+
+	parser = argparse.ArgumentParser("Save trained model to path.")
+	parser.add_argument("--create-hdf5", action="store_true")
+	args = parser.parse_args()
+
+	if args.create_hdf5:
+		create_dataset_hdf5()
 
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
-	sample = train_dl.dataset[0]
-	print(sample)
+	print("Training DL:", next(iter(train_dl)))
+	print("Training DL:", next(iter(train_dl)))
+	print("Evaluation DL:", next(iter(subtrain_dl)))
+	print("Evaluation DL:", next(iter(subtrain_dl)))
+	print("Validation DL:", next(iter(val_dl)))
+	print("Validation DL:", next(iter(val_dl)))
