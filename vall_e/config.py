@@ -129,6 +129,8 @@ class Dataset:
 	max_prompts: int = 3
 	prompt_duration: float = 3.0
 
+	sample_type: str = "path" # path | speaker
+
 @dataclass()
 class Model:
 	name: str = ""
