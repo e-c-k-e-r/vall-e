@@ -95,6 +95,7 @@ def run_eval(engines, eval_name, dl):
 				stats['loss'].append(0)
 				print(str(e))
 	
+	processed = 0
 	for batch in tqdm(dl):
 		batch: dict = to_device(batch, cfg.device)
 
@@ -130,6 +131,10 @@ def run_eval(engines, eval_name, dl):
 					raise NotImplementedError(name)
 
 				process( name, batch, resps_list )
+
+		processed += len(batch["text"])
+		if processed > cfg.evaluation.size:
+			break
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}
 	engines_stats.update(flatten_dict({ name: stats }))
