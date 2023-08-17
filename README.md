@@ -130,11 +130,7 @@ Some additional flags you can pass are:
 ## To-Do
 
 * properly pass in `modules` names to `weight_quantization` and `activation_quantization`.
-
-* fix `quit` hanging when using distributed training.
-
 * train and release a model.
-
 * extend to multiple languages (VALL-E X) and extend to SpeechX features.
 
 ## Notice

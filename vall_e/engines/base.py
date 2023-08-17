@@ -218,7 +218,16 @@ class Engines(dict[str, Engine]):
 
 		cfg.ckpt_dir.mkdir(parents=True, exist_ok=True)
 		for name, engine in self.items():
-			engine.save_checkpoint(cfg.ckpt_dir / name, tag=tag)
+			save_dir = cfg.ckpt_dir / name
+			engine.save_checkpoint(save_dir, tag=tag)
+			if cfg.trainer.keep_last_checkpoints > 0:
+				checkpoints = list(save_dir.rglob("*/"))
+				checkpoints.sort(key=lambda x: x.stat().st_mtime)
+				checkpoints = checkpoints[:-cfg.trainer.keep_last_checkpoints]
+				for d in checkpoints:
+					for p in d.iterdir():
+						p.unlink()
+					d.rmdir()
 
 	def load_checkpoint(self, tag=None):
 		if not tag:

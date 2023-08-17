@@ -368,6 +368,8 @@ class Trainer:
 	save_on_quit: bool = True
 	save_frequency: int = 100
 
+	keep_last_checkpoints: int = 0
+
 	load_state_dict: bool = False
 	load_states: bool = True
 	strict_loading: bool = True
