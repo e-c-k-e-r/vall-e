@@ -456,7 +456,7 @@ def create_datasets():
 
 def create_train_val_dataloader():
 	train_dataset, val_dataset = create_datasets()
-	#train_dataset.sample_type = "speaker"
+	train_dataset.sample_type = cfg.dataset.sample_type #"speaker"
 
 	subtrain_dataset = copy.deepcopy(train_dataset)
 	subtrain_dataset.head_(cfg.evaluation.size)
