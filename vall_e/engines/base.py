@@ -223,10 +223,13 @@ class Engines(dict[str, Engine]):
 
 			# might be better to prune before saving for safety, but [:0] returns an empty list, but I could do [:-cfg.trainer.keep_last_checkpoints - 1 if cfg.trainer.keep_last_checkpoints > 1 else None]
 			if cfg.trainer.keep_last_checkpoints > 0 and is_global_leader():
-				checkpoints = list(save_dir.rglob("*/"))
+				checkpoints = [ d for d in list(save_dir.glob("*")) if d.is_dir() ]
 				checkpoints.sort(key=lambda x: x.stat().st_mtime)
 				checkpoints = checkpoints[:-cfg.trainer.keep_last_checkpoints]
 				for d in checkpoints:
+					if not d.is_dir() or not d.exists():									
+						continue
+					print("Removing", d)
 					for p in d.iterdir():
 						p.unlink()
 					d.rmdir()
