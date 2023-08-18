@@ -35,6 +35,16 @@ class TTS():
 			cfg.load_yaml( config )
 
 		cfg.format()
+
+		"""
+		if cfg.trainer.load_state_dict:
+			for model in cfg.models.get():
+				path = cfg.ckpt_dir / model.full_name / "fp32.pth"
+				if model.name.startswith("ar"):
+					ar_ckpt = path
+				if model.name.startswith("nar"):
+					nar_ckpt = path
+		"""
 		
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
@@ -44,10 +54,16 @@ class TTS():
 			for name, model in models.items():
 				if name.startswith("ar"):
 					self.ar = model.to(self.device, dtype=torch.float32)
-					self.ar.load_state_dict(torch.load(self.ar_ckpt)['module'])
+					state = torch.load(self.ar_ckpt)
+					if "module" in state:
+						state = state['module']
+					self.ar.load_state_dict(state)
 				elif name.startswith("nar"):
 					self.nar = model.to(self.device, dtype=torch.float32)
-					self.nar.load_state_dict(torch.load(self.nar_ckpt)['module'])
+					state = torch.load(self.nar_ckpt)
+					if "module" in state:
+						state = state['module']
+					self.nar.load_state_dict(state)
 		else:
 			self.load_models()
 

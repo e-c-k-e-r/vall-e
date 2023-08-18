@@ -10,7 +10,6 @@ import random
 import torch
 
 from .config import cfg
-from .utils.sampler import Sampler
 
 from collections import defaultdict
 from functools import cache, cached_property
@@ -168,12 +167,6 @@ class Dataset(_Dataset):
 					self.durations[spkr_id] = duration
 				else:
 					self.durations[spkr_id] += duration
-
-		if training and not cfg.distributed and self.sample_type == "path":
-			self.sampler = Sampler(self.paths, [cfg.get_spkr])
-		else:
-			self.sampler = None
-
 	def _get_paths_by_spkr_name(self, extra_paths_by_spkr_name: dict[str, list]):
 		ret = defaultdict(list)
 		for path in self.paths:
@@ -267,10 +260,7 @@ class Dataset(_Dataset):
 			spkr_id = self.spkr_symmap[spkr_name]
 			path = random.choice([*set(self.paths_by_spkr_name[spkr_name])])
 		else:
-			if self.training and self.sampler is not None:
-				path = self.sampler.sample()
-			else:
-				path = self.paths[index]
+			path = self.paths[index]
 			spkr_name = cfg.get_spkr(path)
 			spkr_id = self.spkr_symmap[spkr_name]
 
@@ -299,12 +289,18 @@ class Dataset(_Dataset):
 			resps = self.sample_noise()
 			resps = extend_audio(resps, proms.shape[0])
 			# something to prepend a sr token to the beginning of proms
-		elif task == "tse:
+		elif task == "tse":
 			proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
 			other_speaker = self.sample_speaker(ignore=[spkr_name])
 			other_proms = self.sample_prompts(other_speaker, ignore="")
 			proms = merge_audio(proms, other_proms)
-			# something to prepend a ns token to the beginning of proms
+			# something to prepend a tse token to the beginning of proms
+		"""
+		"""
+		# speech editing would require higher quality transcription data (phoneme level/word level) unfortunately
+		# as I need to get a good clean point to trim into
+		elif task == "cse":
+		elif task == "nse":
 		"""
 
 
@@ -595,9 +591,16 @@ if __name__ == "__main__":
 		create_dataset_hdf5()
 
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
-	print("Training DL:", next(iter(train_dl)))
-	print("Training DL:", next(iter(train_dl)))
-	print("Evaluation DL:", next(iter(subtrain_dl)))
-	print("Evaluation DL:", next(iter(subtrain_dl)))
-	print("Validation DL:", next(iter(val_dl)))
-	print("Validation DL:", next(iter(val_dl)))
+
+	samples = {
+		"training": [ next(iter(train_dl)),  next(iter(train_dl)) ],
+		"evaluation": [ next(iter(subtrain_dl)),  next(iter(subtrain_dl)) ],
+		"validation": [ next(iter(val_dl)),  next(iter(val_dl)) ],
+	}
+
+	for k, v in samples.items():
+		for i in range(len(v)):
+			del v[i]['proms']
+			del v[i]['resps']
+		print(f'{k}:', v)
+

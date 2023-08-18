@@ -118,6 +118,7 @@ class Dataset:
 	
 	hdf5_name: str = "data.h5"
 	use_hdf5: bool = False
+	hdf5_flag: str = "a"
 	validate: bool = True
 	workers: int = 8
 	cache: bool = True
@@ -467,7 +468,7 @@ try:
 	# cached_property stopped working...
 	if cfg.dataset.use_hdf5:
 		try:
-			cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', 'r' if cfg.distributed else 'a') # to-do, have an easy to set flag that determines if training or creating the dataset
+			cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', cfg.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
 		except Exception as e:
 			print("Error while opening HDF5 file:", f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', str(e))
 			cfg.dataset.use_hdf5 = False
