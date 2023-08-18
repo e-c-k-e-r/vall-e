@@ -133,7 +133,7 @@ def run_eval(engines, eval_name, dl):
 				process( name, batch, resps_list )
 
 		processed += len(batch["text"])
-		if processed > cfg.evaluation.size:
+		if processed >= cfg.evaluation.size:
 			break
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}
