@@ -1,49 +1,49 @@
 dataset:
-  training: [
-  ]
+  training: []
 
-  validation: [
-  ]
+  validation: []
   
   speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
   
   use_hdf5: True
+  hdf5_flag: r
   validate: True
 
-  workers: 8
+  workers: 4
   cache: True
 
-  phones_range: [4, 128]
-  duration_range: [1.0, 12.0]
+  phones_range: [4, 256]
+  duration_range: [1.0, 16.0]
 
   random_utterance: 1.0
   max_prompts: 3
   prompt_duration: 3.0
+
+  sample_type: speaker
 
 models:
   _models:
   - name: "ar"
     size: "full"
     resp_levels: 1
-    arch_type: "retnet"
     prom_levels: 2
     tasks: 8
+    arch_type: "retnet"
 
   - name: "nar"
     size: "full"
     resp_levels: 1
-    arch_type: "retnet"
     prom_levels: 2
     tasks: 8
-  
+    arch_type: "retnet"
 
 hyperparameters:
-  batch_size: 8
-  gradient_accumulation_steps: 16
+  batch_size: 16
+  gradient_accumulation_steps: 2
   gradient_clipping: 100
   
   optimizer: Adamw
-  learning_rate: 1.0e-4
+  learning_rate: 1.0e-5
   
   scheduler_type: ""
   #scheduler_type: OneCycle
@@ -66,36 +66,38 @@ hyperparameters:
 
 evaluation:
   batch_size: 32
-  frequency: 250
+  frequency: 500
   size: 32
   
   steps: 300
   ar_temperature: 1.0
-  nar_temperature: 0.2
+  nar_temperature: 1.0
 
 trainer:
-  iterations: 100_000
+  iterations: 1_000_000
   
   save_tag: step
   save_on_oom: True
   save_on_quit: True
-  save_frequency: 100
+  save_frequency: 1000
+
+  keep_last_checkpoints: 4
 
   aggressive_optimizations: False
 
-  #load_tag: "9500"
   #load_state_dict: True
-  #load_states: False
   #strict_loading: False
+  #load_tag: "9500"
+  #load_states: False
   #restart_step_count: True
   
   gc_mode: None # "global_step"
 
-  weight_dtype: bfloat16 # float16, float32
+  weight_dtype: bfloat16
 
   backend: deepspeed
   deepspeed:
-    zero_optimization_level: 2
+    zero_optimization_level: 0
     use_compression_training: True
 
 inference:

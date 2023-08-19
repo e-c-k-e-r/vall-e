@@ -20,15 +20,6 @@ from collections import defaultdict
 from tqdm import tqdm
 
 mel_stft_loss = auraloss.freq.MelSTFTLoss(24_000, device="cpu")
-
-def center_crop(x, len):
-	start = (x.shape[-1] - len) // 2
-	stop = start + len
-	return x[..., start:stop]
-
-def left_crop(x, len):
-	return x[..., 0:len]
-
 _logger = logging.getLogger(__name__)
 
 def train_feeder(engine, batch):
@@ -87,17 +78,18 @@ def run_eval(engines, eval_name, dl):
 
 			# pseudo loss calculation since we don't get the logits during eval
 			min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )
-			ref_audio = center_crop(ref_audio, min_length) #ref_audio[..., 0:min_length]
-			hyp_audio = center_crop(hyp_audio, min_length) #hyp_audio[..., 0:min_length]
+			ref_audio = ref_audio[..., 0:min_length]
+			hyp_audio = hyp_audio[..., 0:min_length]
 			try:
-				stats['loss'].append(mel_stft_loss(hyp_audio, ref_audio).item())
+				stats['loss'].append(mel_stft_loss(hyp_audio[None, :, :], ref_audio[None, :, :]).item())
 			except Exception as e:
 				stats['loss'].append(0)
 				print(traceback.format_exc())
 	
 	processed = 0
-	for batch in tqdm(dl):
-		batch: dict = to_device(batch, cfg.device)
+	while processed < cfg.evaluation.size:
+		batch: dict = to_device(next(iter(dl)), cfg.device)
+		processed += len(batch["text"])
 
 		# if we're training both models, provide output for both
 		if AR is not None and NAR is not None:
@@ -132,9 +124,6 @@ def run_eval(engines, eval_name, dl):
 
 				process( name, batch, resps_list )
 
-		processed += len(batch["text"])
-		if processed >= cfg.evaluation.size:
-			break
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}
 	engines_stats.update(flatten_dict({ name: stats }))
