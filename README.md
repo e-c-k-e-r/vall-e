@@ -63,7 +63,7 @@ If you're wanting to increase the `prom_levels` for a given model, or increase t
 
 4. Customize your configuration and define the dataset by modifying `./data/config.yaml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
 
-If you're interested in creating an HDF5 copy of your dataset, simply invoke: `python -m vall_e.data --create-hdf5 yaml='./data/config.yaml'`
+If you're interested in creating an HDF5 copy of your dataset, simply invoke: `python -m vall_e.data --action='hdf5' yaml='./data/config.yaml'`
 
 5. Train the AR and NAR models using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
 
@@ -81,32 +81,18 @@ Two dataset formats are supported:
 
 ## Export
 
-Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run:
+Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run: `python -m vall_e.export yaml=./data/config.yaml`.
 
-```
-python -m vall_e.export yaml=./data/config.yaml
-```
-
-This will export the latest checkpoints.
+This will export the latest checkpoints under `./data/ckpt/ar-retnet-2/fp32.pth` and `./data/ckpt/nar-retnet-2/fp32.pth` to be loaded on any system with PyTorch.
 
 ## Synthesis
 
-To synthesize speech, invoke either (if exported the models):
-
-```
-python -m vall_e <text> <ref_path> <out_path> --ar-ckpt ./models/ar.pt --nar-ckpt ./models/nar.pt
-```
-
-or:
-
-```
-python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>
-```
+To synthesize speech, invoke either (if exported the models): `python -m vall_e <text> <ref_path> <out_path> --ar-ckpt ./models/ar.pt --nar-ckpt ./models/nar.pt` or `python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>`
 
 Some additional flags you can pass are:
 * `--max-ar-steps`: maximum steps for inferencing through the AR model. Each second is 75 steps.
-* `--ar-temp`: sampling temperature to use for the AR pass.
-* `--nar-temp`: sampling temperature to use for the NAR pass.
+* `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output.
+* `--nar-temp`: sampling temperature to use for the NAR pass. During experimentation, `0.2` provides the most clean output.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
 
 ## To-Do

@@ -72,7 +72,7 @@ evaluation:
   
   steps: 300
   ar_temperature: 1.0
-  nar_temperature: 1.0
+  nar_temperature: 0.2
 
 trainer:
   iterations: 1_000_000

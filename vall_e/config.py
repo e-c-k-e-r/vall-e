@@ -446,6 +446,18 @@ class Config(_Config):
 		tmp = Config.from_yaml( config_path )
 		self.__dict__.update(tmp.__dict__)
 
+	def load_hdf5( self, write=False ):
+		if hasattr(self, 'hdf5'):
+			self.hdf5.close()
+
+		if self.distributed:
+			self.dataset.hdf5_flag = "r"
+		try:
+			self.hdf5 = h5py.File(f'{self.cfg_path}/{self.dataset.hdf5_name}', 'a' if write else self.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
+		except Exception as e:
+			print("Error while opening HDF5 file:", f'{self.cfg_path}/{self.dataset.hdf5_name}', str(e))
+			self.dataset.use_hdf5 = False
+
 	def format( self ):
 		self.dataset = Dataset(**self.dataset)
 		self.models = Models(**self.models)
@@ -466,13 +478,7 @@ try:
 
 	# cached_property stopped working...
 	if cfg.dataset.use_hdf5:
-		if cfg.distributed:
-			cfg.dataset.hdf5_flag = "r"
-		try:
-			cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', cfg.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
-		except Exception as e:
-			print("Error while opening HDF5 file:", f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', str(e))
-			cfg.dataset.use_hdf5 = False
+		cfg.load_hdf5()
 
 	if not cfg.dataset.use_hdf5:
 		cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
