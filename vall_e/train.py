@@ -57,11 +57,14 @@ def run_eval(engines, eval_name, dl):
 	stats['loss'] = []
 
 	def process( name, batch, resps_list ):
-		for speaker, path, ref, hyp, prom in zip(batch["spkr_name"], batch["path"], batch["resps"], resps_list, batch["proms"]):
+		for speaker, path, ref, hyp, prom, task in zip(batch["spkr_name"], batch["path"], batch["resps"], resps_list, batch["proms"], batch["task"]):
 			if len(hyp) == 0:
 				continue
 
 			filename = f'{speaker}_{path.parts[-1]}'
+
+			if task != "tts":
+				filename = f"{filename}_{task}"
 
 			# to-do, refine the output dir to be sane-er
 			ref_path = (cfg.log_dir / str(engines.global_step) / "ref" / filename).with_suffix(".wav")
