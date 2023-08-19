@@ -132,6 +132,8 @@ class Dataset:
 	prompt_duration: float = 3.0
 
 	sample_type: str = "path" # path | speaker
+	
+	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 
 @dataclass()
 class Model:
@@ -475,7 +477,8 @@ try:
 	if not cfg.dataset.use_hdf5:
 		cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
 		cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
-		cfg.dataset.noise = [ Path(dir) for dir in cfg.dataset.noise ]
+	
+	cfg.dataset.noise = [ Path(dir) for dir in cfg.dataset.noise ]
 except Exception as e:
 	pass
 

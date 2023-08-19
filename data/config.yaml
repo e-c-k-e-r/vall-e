@@ -20,6 +20,7 @@ dataset:
   prompt_duration: 3.0
 
   sample_type: speaker
+  tasks_list: ["tts"] # do NOT change this until you're ready to train for SpeechX tasks # ["tts", "tts", "ns", "sr", "tse", "tts", "tts"]
 
 models:
   _models:
@@ -102,6 +103,7 @@ trainer:
 
 inference:
   use_vocos: True
+  normalize: False # do NOT change this unless you know exactly what you are doing.
 
 bitsandbytes:
   enabled: false
