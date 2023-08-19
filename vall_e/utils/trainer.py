@@ -86,13 +86,13 @@ def load_engines():
 			if "module" in state:
 				state = state["module"]
 			
-			print(model.proms_emb.weight.shape, state['proms_emb.weight'].shape)
-
 			# extend the proms_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
 			if model.proms_emb.weight.shape[0] > state['proms_emb.weight'].shape[0] or model.proms_emb.weight.shape[1] > state['proms_emb.weight'].shape[1]:
 				n_prom_levels, n_prom_tokens, d_model = state['proms_emb.weight'].shape
 
+				# copy weights from the dict into the old portion
 				model.proms_emb.weight.data[:n_prom_levels, :n_prom_tokens, :] = state['proms_emb.weight'].data[:n_prom_levels, :n_prom_tokens, :]
+				# copy the full tensors back
 				state['proms_emb.weight'] = model.proms_emb.weight
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)

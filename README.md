@@ -2,7 +2,7 @@
 <img src="./vall-e.png" width="500px"></img>
 </p>
 
-# VALL'Ecker
+# VALL'E
 
 An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), based on the [EnCodec](https://github.com/facebookresearch/encodec) tokenizer.
 
@@ -10,11 +10,11 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 > **Note** You can follow along with my pseudo-blog in an issue [here](https://git.ecker.tech/mrq/ai-voice-cloning/issues/152). I currently have a dataset clocking in at 3400+ trimmed hours.
 
-### Requirements
+## Requirements
 
 If your config YAML has the training backend set to [`deepspeed`](https://github.com/microsoft/DeepSpeed#requirements), you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
 
-### Install
+## Install
 
 ```
 pip install git+https://git.ecker.tech/mrq/vall-e
@@ -26,9 +26,9 @@ Or you may clone by:
 git clone --recurse-submodules https://git.ecker.tech/mrq/vall-e.git
 ```
 
-Note that the code is only tested under `Python 3.10.9`.
+I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
-### Try Me
+## Try Me
 
 To quickly try it out, you can choose between the following modes:
 
@@ -38,45 +38,34 @@ To quickly try it out, you can choose between the following modes:
 
 Each model file has a barebones trainer and inference routine.
 
-### Train
+## Train
 
 Training is very dependent on:
 * the quality of your dataset.
 * how much data you have.
 * the bandwidth you quantized your audio to.
 
-#### Leverage Your Own
+### Notices
+
+#### Modifying `prom_levels` or `tasks` For a Model
+
+If you're wanting to increase the `prom_levels` for a given model, or increase the `tasks` levels a model accepts, you will need to export your weights and set `train.load_state_dict` to `True` in your configuration YAML.
+
+### Leverage Your Own Dataset
 
 > **Note** It is highly recommended to utilize [mrq/ai-voice-cloning](https://git.ecker.tech/mrq/ai-voice-cloning) with `--tts-backend="vall-e"` to handle transcription and dataset preparations.
 
 1. Put your data into a folder, e.g. `./data/custom`. Audio files should be named with the suffix `.wav` and text files with `.txt`.
 
-2. Quantize the data:
+2. Quantize the data: `python -m vall_e.emb.qnt ./data/custom`
 
-```
-python -m vall_e.emb.qnt ./data/custom
-```
-
-3. Generate phonemes based on the text:
-
-```
-python -m vall_e.emb.g2p ./data/custom
-```
-
+3. Generate phonemes based on the text: `python -m vall_e.emb.g2p ./data/custom`
 
 4. Customize your configuration and define the dataset by modifying `./data/config.yaml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
 
-If you're interested in creating an HDF5 copy of your dataset, simply invoke:
+If you're interested in creating an HDF5 copy of your dataset, simply invoke: `python -m vall_e.data --create-hdf5 yaml='./data/config.yaml'`
 
-```
-python -m vall_e.data --create-hdf5 yaml='./data/config.yaml'
-```
-
-5. Train the AR and NAR models using the following scripts:
-
-```
-python -m vall_e.train yaml=./data/config.yaml
-```
+5. Train the AR and NAR models using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
 
 You may quit your training any time by just typing `quit` in your CLI. The latest checkpoint will be automatically saved.
 
@@ -90,7 +79,7 @@ Two dataset formats are supported:
   - this will shove everything into a single HDF5 file and store some metadata alongside (for now, the symbol map generated, and text/audio lengths)
   - be sure to also define `use_hdf5` in your config YAML.
 
-### Export
+## Export
 
 Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run:
 
@@ -100,7 +89,7 @@ python -m vall_e.export yaml=./data/config.yaml
 
 This will export the latest checkpoints.
 
-### Synthesis
+## Synthesis
 
 To synthesize speech, invoke either (if exported the models):
 
@@ -119,7 +108,6 @@ Some additional flags you can pass are:
 * `--ar-temp`: sampling temperature to use for the AR pass.
 * `--nar-temp`: sampling temperature to use for the NAR pass.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
-
 
 ## To-Do
 
