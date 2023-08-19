@@ -128,7 +128,7 @@ def _replace_file_extension(path, suffix):
 
 
 @torch.inference_mode()
-def encode(wav: Tensor, sr: int, device="cuda"):
+def encode(wav: Tensor, sr: int = 24_000, device="cuda"):
 	"""
 	Args:
 		wav: (t)
@@ -177,6 +177,36 @@ def encode_from_file(path, device="cuda"):
 
 	return qnt
 
+# Helper Functions
+
+# trims a random piece of audio, up to `target`
+def trim_random( qnt, target ):
+	length = qnt.shape[0]
+	start = int(length * random.random())
+	end = start + target
+	if end >= length:
+		start = length - target
+		end = length                
+
+	return qnt[start:end]
+
+# repeats the audio to fit the target size
+def repeat_extend_audio( qnt, target ):
+	pieces = []
+	length = 0
+	while length < target:
+		pieces.append(qnt)
+		length += qnt.shape[0]
+
+	return trim_random(torch.cat(pieces), target)
+
+# merges two quantized audios together
+# I don't know if this works
+def merge_audio( *args, device="cpu" ):
+	qnts = [*args]
+	decoded = [ decode_to_wave(qnt, device=device)[0] for qnt in qnts ]
+	combined = sum(decoded) / len(decoded)
+	return encode(combined, 24_000, device="cpu")
 
 def main():
 	parser = argparse.ArgumentParser()

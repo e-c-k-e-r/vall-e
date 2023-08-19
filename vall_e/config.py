@@ -311,8 +311,8 @@ class DeepSpeed:
 								"quantization_period": 0
 							},
 							"modules": [
-								"blocks",
-								"retnet",
+								"blocks", # for transformer-based models
+								"retnet", # for RetNets-based models
 							]
 						}
 					}

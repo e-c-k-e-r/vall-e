@@ -5,23 +5,13 @@ import soundfile
 from einops import rearrange
 
 from .emb import g2p, qnt
+from .emb.qnt import trim_random
 from .utils import to_device
 
 from .config import cfg
 from .models import get_models
 from .train import load_engines
 from .data import get_phone_symmap
-
-import random
-
-def trim( qnt, trim_length  ):
-	length = qnt.shape[0]
-	start = int(length * random.random())
-	end = start + trim_length
-	if end >= length:
-		start = length - trim_length
-		end = length
-	return qnt[start:end]
 
 class TTS():
 	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device="cuda" ):
@@ -91,7 +81,7 @@ class TTS():
 		enc = qnt.encode_from_file( path )
 		res = enc[0].t().to(torch.int16)
 		if trim:
-			res = trim( res, int( 75 * cfg.dataset.duration_range[1] ) )
+			res = trim_random( res, int( 75 * cfg.dataset.duration_range[1] ) )
 		return res
 
 
