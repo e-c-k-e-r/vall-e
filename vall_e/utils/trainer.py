@@ -88,12 +88,25 @@ def load_engines():
 			
 			# extend the proms_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
 			if model.proms_emb.weight.shape[0] > state['proms_emb.weight'].shape[0] or model.proms_emb.weight.shape[1] > state['proms_emb.weight'].shape[1]:
-				n_prom_levels, n_prom_tokens, d_model = state['proms_emb.weight'].shape
+				o_prom_levels, o_prom_tokens, d_model = state['proms_emb.weight'].shape
 
 				# copy weights from the dict into the old portion
-				model.proms_emb.weight.data[:n_prom_levels, :n_prom_tokens, :] = state['proms_emb.weight'].data[:n_prom_levels, :n_prom_tokens, :]
+				model.proms_emb.weight.data[:o_prom_levels, :o_prom_tokens, :] = state['proms_emb.weight'].data[:o_prom_levels, :o_prom_tokens, :]
 				# copy the full tensors back
 				state['proms_emb.weight'] = model.proms_emb.weight
+
+			# extend the resps_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
+			if model.resps_emb.weight.shape[0] > state['resps_emb.weight'].shape[0] or model.resps_emb.weight.shape[1] > state['resps_emb.weight'].shape[1]:
+				o_resp_levels, o_resp_tokens, d_model = state['resps_emb.weight'].shape
+				n_resp_levels, n_resp_tokens, d_model = model.resps_emb.weight.shape
+
+				# copy weights from the dict into the old portion
+				model.resps_emb.weight.data[:o_resp_levels, :o_resp_tokens, :] = state['resps_emb.weight'].data[:o_resp_levels, :o_resp_tokens, :]
+				# reuse additional levels, probably bad
+				for n in range(o_resp_tokens, n_resp_tokens):
+					model.resps_emb.weight.data[n] = model.resps_emb.weight.data[o_resp_tokens-1]
+				# copy the full tensors back
+				state['resps_emb.weight'] = model.resps_emb.weight
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
@@ -101,6 +114,7 @@ def load_engines():
 			model=model,
 			optimizer=optimizer,
 			lr_scheduler=lr_scheduler,
+			_cfg=model._cfg,
 		)
 
 	engines = Engines(engines)

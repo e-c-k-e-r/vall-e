@@ -21,16 +21,16 @@ except Exception as e:
 	cfg.inference.use_vocos = False
 
 @cache
-def _load_encodec_model(device="cuda"):
+def _load_encodec_model(device="cuda", levels=cfg.models.max_levels):
 	# Instantiate a pretrained EnCodec model
 	assert cfg.sample_rate == 24_000
 
 	# too lazy to un-if ladder this shit
-	if cfg.models.prom_levels == 2:
+	if levels == 2:
 		bandwidth_id = 1.5
-	elif cfg.models.prom_levels == 4:
+	elif levels == 4:
 		bandwidth_id = 3.0
-	elif cfg.models.prom_levels == 8:
+	elif levels == 8:
 		bandwidth_id = 6.0
 
 	model = EncodecModel.encodec_model_24khz().to(device)
@@ -43,18 +43,18 @@ def _load_encodec_model(device="cuda"):
 	return model
 
 @cache
-def _load_vocos_model(device="cuda"):
+def _load_vocos_model(device="cuda", levels=cfg.models.max_levels):
 	assert cfg.sample_rate == 24_000
 
 	model = Vocos.from_pretrained("charactr/vocos-encodec-24khz")
 	model = model.to(device)
 
 	# too lazy to un-if ladder this shit
-	if cfg.models.prom_levels == 2:
+	if levels == 2:
 		bandwidth_id = 0
-	elif cfg.models.prom_levels == 4:
+	elif levels == 4:
 		bandwidth_id = 1
-	elif cfg.models.prom_levels == 8:
+	elif levels == 8:
 		bandwidth_id = 2
 
 	model.bandwidth_id = torch.tensor([bandwidth_id], device=device)
@@ -64,11 +64,11 @@ def _load_vocos_model(device="cuda"):
 	return model
 
 @cache
-def _load_model(device="cuda", vocos=cfg.inference.use_vocos):
+def _load_model(device="cuda", vocos=cfg.inference.use_vocos, levels=cfg.models.max_levels):
 	if vocos:
-		model = _load_vocos_model(device)
+		model = _load_vocos_model(device, levels=levels)
 	else:
-		model = _load_encodec_model(device)
+		model = _load_encodec_model(device, levels=levels)
 
 	return model
 
@@ -78,7 +78,7 @@ def unload_model():
 
 
 @torch.inference_mode()
-def decode(codes: Tensor, device="cuda"):
+def decode(codes: Tensor, device="cuda", levels=cfg.models.max_levels):
 	"""
 	Args:
 		codes: (b q t)
@@ -94,7 +94,7 @@ def decode(codes: Tensor, device="cuda"):
 		codes = rearrange(codes, "t q -> 1 q t")
 
 	assert codes.dim() == 3, f'Requires shape (b q t) but got {codes.shape}'
-	model = _load_model(device)
+	model = _load_model(device, levels=levels)
 
 	# upcast so it won't whine
 	if codes.dtype == torch.int8 or codes.dtype == torch.int16 or codes.dtype == torch.uint8:
@@ -115,8 +115,8 @@ def decode(codes: Tensor, device="cuda"):
 	return wav, model.sample_rate
 
 # huh
-def decode_to_wave(resps: Tensor, device="cuda"):
-	return decode(resps, device=device)
+def decode_to_wave(resps: Tensor, device="cuda", levels=cfg.models.max_levels):
+	return decode(resps, device=device, levels=levels)
 
 def decode_to_file(resps: Tensor, path: Path, device="cuda"):
 	wavs, sr = decode(resps, device=device)
@@ -129,14 +129,14 @@ def _replace_file_extension(path, suffix):
 
 
 @torch.inference_mode()
-def encode(wav: Tensor, sr: int = 24_000, device="cuda"):
+def encode(wav: Tensor, sr: int = 24_000, device="cuda", levels=cfg.models.max_levels):
 	"""
 	Args:
 		wav: (t)
 		sr: int
 	"""
 
-	model = _load_encodec_model(device)
+	model = _load_encodec_model(device, levels=levels)
 	wav = wav.unsqueeze(0)
 	wav = convert_audio(wav, sr, model.sample_rate, model.channels)
 	wav = wav.to(device)
@@ -203,16 +203,16 @@ def repeat_extend_audio( qnt, target ):
 
 # merges two quantized audios together
 # I don't know if this works
-def merge_audio( *args, device="cpu", scale=[] ):
+def merge_audio( *args, device="cpu", scale=[], levels=cfg.models.max_levels ):
 	qnts = [*args]
-	decoded = [ decode_to_wave(qnt, device=device)[0] for qnt in qnts ]
+	decoded = [ decode(qnt, device=device, levels=levels)[0] for qnt in qnts ]
 
 	if len(scale) == len(decoded):
 		for i in range(len(scale)):
 			decoded[i] = decoded[i] * scale[i]
 
 	combined = sum(decoded) / len(decoded)
-	return encode(combined, 24_000, device="cpu")[0].t()
+	return encode(combined, 24_000, device="cpu", levels=levels)[0].t()
 
 def main():
 	parser = argparse.ArgumentParser()

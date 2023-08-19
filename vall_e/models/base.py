@@ -113,6 +113,10 @@ class Base(nn.Module):
 	@property
 	def n_prom_levels(self) -> int:
 		raise NotImplementedError
+
+	@property
+	def n_max_levels(self) -> int:
+		raise NotImplementedError
 	
 	@property
 	def n_tasks(self) -> int:

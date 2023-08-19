@@ -1,7 +1,14 @@
 dataset:
-  training: []
+  training: [
+  # "./training/valle/data/LibriTTS/994/",
+  ]
 
-  validation: []
+  validation: [
+  #  "./training/valle/data/Validation/1188/",
+  ]
+  noise: [
+  #  "./training/valle/data/Other/noise/",
+  ]
   
   speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
   
@@ -12,7 +19,7 @@ dataset:
   workers: 4
   cache: True
 
-  phones_range: [4, 256]
+  phones_range: [4, 512]
   duration_range: [1.0, 16.0]
 
   random_utterance: 1.0
@@ -20,9 +27,11 @@ dataset:
   prompt_duration: 3.0
 
   sample_type: speaker
-  tasks_list: ["tts"] # do NOT change this until you're ready to train for SpeechX tasks # ["tts", "tts", "ns", "sr", "tse", "tts", "tts"]
+
+  tasks_list: ["tts"] # ["tts", "ns", "sr", "tse", "cse", "nse"]
 
 models:
+  _max_levels: 8
   _models:
   - name: "ar"
     size: "full"
@@ -38,13 +47,14 @@ models:
     tasks: 8
     arch_type: "retnet"
 
+
 hyperparameters:
   batch_size: 16
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 4
   gradient_clipping: 100
   
-  optimizer: Adamw
-  learning_rate: 1.0e-5
+  optimizer: AdamW
+  learning_rate: 1.0e-4
   
   scheduler_type: ""
   #scheduler_type: OneCycle
@@ -66,13 +76,13 @@ hyperparameters:
   #  decay_mom_rate: 0.0
 
 evaluation:
-  batch_size: 32
+  batch_size: 16
   frequency: 500
-  size: 32
+  size: 16
   
   steps: 300
-  ar_temperature: 1.0
-  nar_temperature: 0.2
+  ar_temperature: 0.95
+  nar_temperature: 0.25
 
 trainer:
   iterations: 1_000_000
@@ -106,4 +116,7 @@ inference:
   normalize: False # do NOT change this unless you know exactly what you are doing.
 
 bitsandbytes:
-  enabled: false
+  enabled: False
+  injects: True
+  linear: True
+  embedding: True

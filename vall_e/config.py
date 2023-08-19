@@ -196,6 +196,8 @@ class Model:
 
 @dataclass()
 class Models:
+	_max_levels: int = 0
+
 	_models: list[Model] = field(default_factory=lambda: [
 		Model(name="ar", resp_levels=1, prom_levels=8, tasks=1),
 		Model(name="nar", resp_levels=7, prom_levels=8, tasks=1),
@@ -232,6 +234,10 @@ class Models:
 		for model in self._models:
 			tasks = max(tasks, model.tasks)
 		return tasks
+
+	@property
+	def max_levels(self):
+		return self._max_levels if self._max_levels > 0 else self.prom_levels
 	
 @dataclass()
 class Hyperparameters:
@@ -261,7 +267,8 @@ class DeepSpeed:
 	use_compression_training: bool = False
 	compression_bits: int = 8
 
-	def get_ds_cfg(self, model):
+	@cached_property
+	def ds_cfg(self):
 		scheduler_params = {}
 		for k in cfg.hyperparameters.scheduler_params:
 			scheduler_params[k] = cfg.hyperparameters.scheduler_params[k]
@@ -277,7 +284,7 @@ class DeepSpeed:
 				"params": {
 					"lr": cfg.hyperparameters.learning_rate,
 				}
-			},
+			} if not cfg.hyperparameters.optimizer.endswith("-torch") else None,
 			"scheduler": {
 				"type": cfg.hyperparameters.scheduler_type,
 				"params": scheduler_params,
@@ -351,8 +358,8 @@ class DeepSpeed:
 		for k in null_keys:
 			del ds_cfg[k]
 
-		if os.path.exists("./config/ds_config.json"):
-			ds_cfg.update(json.load(open("./config/ds_config.json", "r", encoding="utf-8")))
+		if os.path.exists("./data/ds_config.json"):
+			ds_cfg.update(json.load(open("./data/ds_config.json", "r", encoding="utf-8")))
 
 		return ds_cfg
 
@@ -404,8 +411,8 @@ class BitsAndBytes:
 	enabled: bool = False
 	injects: bool = False
 
-	linear: bool = False
-	embedding: bool = False
+	linear: bool = True
+	embedding: bool = True
 
 @dataclass()
 class Config(_Config):

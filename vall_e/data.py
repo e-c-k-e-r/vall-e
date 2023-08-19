@@ -63,11 +63,8 @@ def _get_quant_path(path):
 def _get_phone_path(path):
 	return _replace_file_extension(path, ".phn.txt")
 
-
 def _load_quants(path) -> Tensor:
-	path = _get_quant_path(path)
-	return torch.load(path)[0][:cfg.models.prom_levels, :].t().to(torch.int16)
-
+	return torch.load(path)[0][:, :].t().to(torch.int16)
 
 @cache
 def _get_phones(path, lang_marker="en"):
@@ -215,12 +212,12 @@ class Dataset(_Dataset):
 	def _get_task_symmap(self):
 		return get_task_symmap()
 
-	def get_task_token( self, token ):
+	def get_task_token( self, token, levels=cfg.models.max_levels ):
 		if not hasattr(self, "task_symmap"):
 			self.task_symmap = self._get_task_symmap()
-		return torch.Tensor([[ self.task_symmap[f'<{token}>'] for _ in range(cfg.models.prom_levels) ]]).to(dtype=torch.int16)
+		return torch.Tensor([[ self.task_symmap[f'<{token}>'] for _ in range(levels) ]]).to(dtype=torch.int16)
 
-	def sample_noise(self):		
+	def sample_noise(self):
 		paths = []
 		for data_dir in cfg.dataset.noise:
 			paths.extend(data_dir.rglob("*.qnt.pt"))
@@ -228,7 +225,7 @@ class Dataset(_Dataset):
 
 		if False and cfg.dataset.use_hdf5:
 			key = f'/noise/{_get_hdf5_path(path)}'
-			qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.prom_levels]).to(torch.int16)
+			qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 		else:
 			qnt = _load_quants(path)
 		return qnt
@@ -260,7 +257,7 @@ class Dataset(_Dataset):
 			path = random.choice(choices)
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
-				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.prom_levels]).to(torch.int16)
+				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 			else:
 				qnt = _load_quants(path)
 
@@ -293,7 +290,7 @@ class Dataset(_Dataset):
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)
 			text = torch.from_numpy(cfg.hdf5[key]["text"][:]).to(self.text_dtype)
-			resps = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.prom_levels]).to(torch.int16)
+			resps = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 		else:
 			text = torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype)
 			resps = _load_quants(path)
@@ -316,7 +313,7 @@ class Dataset(_Dataset):
 			# extend the noise to fill the target audio
 			noise = repeat_extend_audio(noise, resps.shape[0])
 			# create the input prompt by merging the target audio with the noise
-			proms = merge_audio(resps, noise, scale=[1, noise_scale], device="cpu")
+			proms = merge_audio( resps, noise, scale=[1, noise_scale], device="cpu" )
 			# set the target to just be the noise if <sr>
 			if task == "sr":
 				resps = noise
@@ -358,7 +355,7 @@ class Dataset(_Dataset):
 
 			if cfg.dataset.use_hdf5:
 				texts = [ torch.from_numpy(cfg.hdf5[_get_hdf5_path(path)]["text"][:]).to(self.text_dtype) for path in sampled ]
-				qnts = [ torch.from_numpy(cfg.hdf5[_get_hdf5_path(path)]["audio"][:, :cfg.models.prom_levels]).to(torch.int16) for path in sampled ]
+				qnts = [ torch.from_numpy(cfg.hdf5[_get_hdf5_path(path)]["audio"][:, :]).to(torch.int16) for path in sampled ]
 			else:
 				texts = [ torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype) for path in sampled ]
 				qnts = [ _load_quants(path) for path in sampled ]
@@ -394,15 +391,15 @@ class Dataset(_Dataset):
 
 				# it might be better to extend the noise to the sum of the pre+mid+post or pre+edit+post to keep the noise truly coherent
 				# but it's noise, it's supposed to be random
-				def noise_proms( proms ):
+				def noise_proms( p ):
 					# ignore if we turned it off
-					if proms is None:
+					if p is None:
 						return None
 
 					# extend the noise to fill the target audio
-					n = repeat_extend_audio(noise, proms.shape[0])
+					n = repeat_extend_audio(noise, p.shape[0])
 					# merge the noise over the utterance
-					return merge_audio(proms, n, scale=[1, noise_scale], device="cpu")
+					return merge_audio(p, n, scale=[1, noise_scale], device="cpu")
 				
 				# apply noise to all pieces
 				pre_prom = noise_proms( pre_prom )
@@ -426,6 +423,8 @@ class Dataset(_Dataset):
 				[ edit_prom ] +
 				([ post_prom ] if post_prom is not None else [])
 			)
+		else:
+			raise f'Undefined task: {task}'
 
 		"""
 		# emulate SVC
@@ -449,6 +448,10 @@ class Dataset(_Dataset):
 			if random.random() < 0.5:
 				text = torch.tensor([1, 2]).to(self.text_dtype)
 		"""
+
+		# trim to fit to requested prom/resps levels
+		proms = proms[:, :cfg.models.prom_levels]
+		resps = resps[:, :cfg.models.prom_levels]
 
 
 		return dict(

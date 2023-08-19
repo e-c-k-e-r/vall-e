@@ -39,6 +39,7 @@ import os
 from torch import Tensor
 from torch.distributed import all_reduce
 from typing import Any, Protocol
+from functools import cached_property
 
 from .base import TrainFeeder
 
@@ -50,6 +51,10 @@ if not distributed_initialized() and cfg.trainer.backend == "local":
 # A very naive engine implementation using barebones PyTorch
 class Engine():
 	def __init__(self, *args, **kwargs):
+		if '_cfg' in kwargs:
+			self._cfg = kwargs['_cfg']
+			kwargs.pop("_cfg")
+
 		self.module = kwargs['model'].to(cfg.device).to(cfg.trainer.dtype)
 		self.optimizer = kwargs['optimizer'] if 'optimizer' in kwargs else None
 		self.lr_scheduler = kwargs['lr_scheduler'] if 'lr_scheduler' in kwargs else None
@@ -136,6 +141,10 @@ class Engine():
 
 	def __call__(self, *args, **kwargs):
 		return self.forward(*args, **kwargs)
+
+	@cached_property
+	def device(self):
+		return next(self.module.parameters()).device
 
 	def forward(self, *args, **kwargs):
 		return self.module.forward(*args, **kwargs)

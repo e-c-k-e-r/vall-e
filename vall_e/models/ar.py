@@ -9,10 +9,6 @@ from tqdm import trange
 
 class AR(Base):
 	@property
-	def n_resp_levels(self) -> int:
-		return cfg.models.ar.resp_levels
-
-	@property
 	def causal(self):
 		return True
 
@@ -31,6 +27,14 @@ class AR(Base):
 	@property
 	def n_prom_levels(self) -> int:
 		return cfg.models.prom_levels
+
+	@property
+	def n_resp_levels(self) -> int:
+		return cfg.models.ar.resp_levels
+
+	@property
+	def n_max_levels(self) -> int:
+		return cfg.models.max_levels
 
 	@property
 	def n_tasks(self) -> int:

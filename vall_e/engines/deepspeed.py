@@ -31,7 +31,11 @@ if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
 
 class Engine(DeepSpeedEngine):
 	def __init__(self, *args, **kwargs):
-		kwargs['config'] = cfg.trainer.deepspeed.get_ds_cfg(model=kwargs['model'])
+		if '_cfg' in kwargs:
+			self._cfg = kwargs['_cfg']
+			kwargs.pop("_cfg")
+
+		kwargs['config'] = cfg.trainer.deepspeed.ds_cfg
 		kwargs['config_class'] = DeepSpeedConfig(kwargs['config'])
 
 		super().__init__(None, *args, **kwargs)
