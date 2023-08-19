@@ -26,13 +26,16 @@ models:
     size: "full"
     resp_levels: 1
     arch_type: "retnet"
+    prom_levels: 2
+    tasks: 8
 
   - name: "nar"
     size: "full"
     resp_levels: 1
     arch_type: "retnet"
+    prom_levels: 2
+    tasks: 8
   
-  prom_levels: 2
 
 hyperparameters:
   batch_size: 8

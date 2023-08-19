@@ -93,7 +93,7 @@ def run_eval(engines, eval_name, dl):
 				stats['loss'].append(mel_stft_loss(hyp_audio, ref_audio).item())
 			except Exception as e:
 				stats['loss'].append(0)
-				print(str(e))
+				print(traceback.format_exc())
 	
 	processed = 0
 	for batch in tqdm(dl):

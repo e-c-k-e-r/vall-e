@@ -26,11 +26,11 @@ def _load_encodec_model(device="cuda"):
 	assert cfg.sample_rate == 24_000
 
 	# too lazy to un-if ladder this shit
-	if cfg.models.levels == 2:
+	if cfg.models.prom_levels == 2:
 		bandwidth_id = 1.5
-	elif cfg.models.levels == 4:
+	elif cfg.models.prom_levels == 4:
 		bandwidth_id = 3.0
-	elif cfg.models.levels == 8:
+	elif cfg.models.prom_levels == 8:
 		bandwidth_id = 6.0
 
 	model = EncodecModel.encodec_model_24khz().to(device)
@@ -49,11 +49,11 @@ def _load_vocos_model(device="cuda"):
 	model = model.to(device)
 
 	# too lazy to un-if ladder this shit
-	if cfg.models.levels == 2:
+	if cfg.models.prom_levels == 2:
 		bandwidth_id = 0
-	elif cfg.models.levels == 4:
+	elif cfg.models.prom_levels == 4:
 		bandwidth_id = 1
-	elif cfg.models.levels == 8:
+	elif cfg.models.prom_levels == 8:
 		bandwidth_id = 2
 
 	model.bandwidth_id = torch.tensor([bandwidth_id], device=device)
@@ -142,8 +142,6 @@ def encode(wav: Tensor, sr: int, device="cuda"):
 
 	encoded_frames = model.encode(wav)
 	qnt = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)  # (b q t)
-	
-	# duration = qnt.shape[-1] / 75
 
 	return qnt
 

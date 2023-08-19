@@ -64,20 +64,18 @@ python -m vall_e.emb.g2p ./data/custom
 ```
 
 
-4. Customize your configuration and define the dataset by modifying `./data/config.yml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
-
-> **Note** Be sure to set `distributd: True` to ensure the `DistributedSampler` is used. In the future, I'll have it automagically detect this.
+4. Customize your configuration and define the dataset by modifying `./data/config.yaml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
 
 If you're interested in creating an HDF5 copy of your dataset, simply invoke:
 
 ```
-python -m vall_e.data yaml='./data/config.yaml'
+python -m vall_e.data --create-hdf5 yaml='./data/config.yaml'
 ```
 
 5. Train the AR and NAR models using the following scripts:
 
 ```
-python -m vall_e.train yaml=./data/config.yml
+python -m vall_e.train yaml=./data/config.yaml
 ```
 
 You may quit your training any time by just typing `quit` in your CLI. The latest checkpoint will be automatically saved.
@@ -92,16 +90,12 @@ Two dataset formats are supported:
   - this will shove everything into a single HDF5 file and store some metadata alongside (for now, the symbol map generated, and text/audio lengths)
   - be sure to also define `use_hdf5` in your config YAML.
 
-### Training Tip
-
-Training a VALL-E model is very, very meticulous. I've fiddled with a lot of """clever""" tricks, but it seems the best is just to pick the highest LR you can get (this heavily depends on your batch size, but hyperparameters of bs=64 * ga=16 on the quarter sized model has an LR of 1.0e-3 stable, while the full size model with hyperparameters of bs=16 * ga=64 needed smaller). Like typical training, it entirely depends on your tradeoff betweeen stability and time.
-
 ### Export
 
 Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run:
 
 ```
-python -m vall_e.export yaml=./config/custom.yml
+python -m vall_e.export yaml=./data/config.yaml
 ```
 
 This will export the latest checkpoints.

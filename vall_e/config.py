@@ -138,7 +138,7 @@ class Model:
 	size: str = "full"
 	resp_levels: int = 1
 	prom_levels: int = 8
-	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
+	tasks: int = 1 # 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
 
 	@property
