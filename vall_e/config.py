@@ -111,6 +111,7 @@ class _Config:
 class Dataset:
 	training: list[Path] = field(default_factory=lambda: [])
 	validation: list[Path] = field(default_factory=lambda: [])
+	noise: list[Path] = field(default_factory=lambda: [])
 	
 	temp: list[Path] = field(default_factory=lambda: [])
 
@@ -393,6 +394,7 @@ class Trainer:
 
 @dataclass()
 class Inference:
+	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
 	use_vocos: bool = True
 
 @dataclass()
@@ -473,6 +475,8 @@ try:
 	if not cfg.dataset.use_hdf5:
 		cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
 		cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
+	
+	cfg.dataset.noise = [ Path(dir) for dir in cfg.dataset.noise ]
 except Exception as e:
 	pass
 

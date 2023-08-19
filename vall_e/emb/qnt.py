@@ -37,6 +37,7 @@ def _load_encodec_model(device="cuda"):
 	model.set_target_bandwidth(bandwidth_id)
 	model.bandwidth_id = bandwidth_id
 	model.sample_rate = cfg.sample_rate
+	model.normalize = cfg.inference.normalize
 	model.backend = "encodec"
 
 	return model
@@ -202,25 +203,32 @@ def repeat_extend_audio( qnt, target ):
 
 # merges two quantized audios together
 # I don't know if this works
-def merge_audio( *args, device="cpu" ):
+def merge_audio( *args, device="cpu", scale=[] ):
 	qnts = [*args]
 	decoded = [ decode_to_wave(qnt, device=device)[0] for qnt in qnts ]
+
+	if len(scale) == len(decoded):
+		for i in range(len(scale)):
+			decoded[i] = decoded[i] * scale[i]
+
 	combined = sum(decoded) / len(decoded)
-	return encode(combined, 24_000, device="cpu")
+	return encode(combined, 24_000, device="cpu")[0].t()
 
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("folder", type=Path)
 	parser.add_argument("--suffix", default=".wav")
+	parser.add_argument("--device", default="cuda")
 	args = parser.parse_args()
 
+	device = args.device
 	paths = [*args.folder.rglob(f"*{args.suffix}")]
 
 	for path in tqdm(paths):
 		out_path = _replace_file_extension(path, ".qnt.pt")
 		if out_path.exists():
 			continue
-		qnt = encode_from_file(path)
+		qnt = encode_from_file(path, device=device)
 		torch.save(qnt.cpu(), out_path)
 
 
