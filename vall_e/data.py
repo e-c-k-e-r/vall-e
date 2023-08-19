@@ -638,6 +638,10 @@ def create_dataset_hdf5():
 	for data_dir in tqdm(cfg.dataset.validation, desc='Processing Validation'):
 		add( data_dir, type="validation" )
 
+	# noise
+	for data_dir in tqdm(cfg.dataset.noise, desc='Processing Noise'):
+		add( data_dir, type="noise" )
+
 	# write symmap
 	hf.create_dataset('symmap', data=json.dumps(symmap))
 
