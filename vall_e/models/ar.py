@@ -33,6 +33,10 @@ class AR(Base):
 		return cfg.models.prom_levels
 
 	@property
+	def n_tasks(self) -> int:
+		return cfg.models.tasks
+
+	@property
 	def resp_loss_only(self):
 		return False
 

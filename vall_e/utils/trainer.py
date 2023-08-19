@@ -81,9 +81,21 @@ def load_engines():
 		if cfg.trainer.load_state_dict:
 			load_path = cfg.ckpt_dir / name / "fp32.pth"
 			state = torch.load(load_path)
+			# exporting the model from the zero_to_fp32.py exports the actual module's dict
+			# exporting with vall_e.export exports the state dict under .module
 			if "module" in state:
 				state = state["module"]
-			model.load_state_dict(state)
+			
+			print(model.proms_emb.weight.shape, state['proms_emb.weight'].shape)
+
+			# extend the proms_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
+			if model.proms_emb.weight.shape[0] > state['proms_emb.weight'].shape[0] or model.proms_emb.weight.shape[1] > state['proms_emb.weight'].shape[1]:
+				n_prom_levels, n_prom_tokens, d_model = state['proms_emb.weight'].shape
+
+				model.proms_emb.weight.data[:n_prom_levels, :n_prom_tokens, :] = state['proms_emb.weight'].data[:n_prom_levels, :n_prom_tokens, :]
+				state['proms_emb.weight'] = model.proms_emb.weight
+
+			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
 		engines[name] = Engine(
 			model=model,

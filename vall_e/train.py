@@ -87,8 +87,8 @@ def run_eval(engines, eval_name, dl):
 
 			# pseudo loss calculation since we don't get the logits during eval
 			min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )
-			ref_audio = ref_audio[..., 0:min_length]
-			hyp_audio = hyp_audio[..., 0:min_length]
+			ref_audio = center_crop(ref_audio, min_length) #ref_audio[..., 0:min_length]
+			hyp_audio = center_crop(hyp_audio, min_length) #hyp_audio[..., 0:min_length]
 			try:
 				stats['loss'].append(mel_stft_loss(hyp_audio, ref_audio).item())
 			except Exception as e:
@@ -141,7 +141,7 @@ def run_eval(engines, eval_name, dl):
 
 	iteration = engines.global_step
 	engines_stats['it'] = iteration
-	engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
+	#engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
 
 	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
 

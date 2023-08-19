@@ -51,7 +51,7 @@ def _get_phone_path(path):
 
 def _load_quants(path) -> Tensor:
 	path = _get_quant_path(path)
-	return torch.load(path)[0][:cfg.models.levels, :].t().to(torch.int16)
+	return torch.load(path)[0][:cfg.models.prom_levels, :].t().to(torch.int16)
 
 
 @cache
@@ -118,7 +118,6 @@ class Dataset(_Dataset):
 		max_duration=cfg.dataset.duration_range[1],
 		training=False,
 		extra_paths_by_spkr_name: dict[str, list] = {},
-		sample_type=cfg.dataset.sample_type # path | speaker
 	):
 		super().__init__()
 		self._head = None
@@ -126,7 +125,7 @@ class Dataset(_Dataset):
 		self.max_phones = max_phones
 		self.min_duration = min_duration
 		self.max_duration = max_duration
-		self.sample_type = sample_type
+		self.sampler = None
 
 		if cfg.dataset.validate:
 			self.paths = [
@@ -148,6 +147,9 @@ class Dataset(_Dataset):
 			self.paths = [
 				p for p in self.paths if len(self.paths_by_spkr_name[cfg.get_spkr(p)]) > 1
 			]
+
+		if cfg.dataset.sample_type == "path":
+			self.paths = [*_interleaved_reorder(self.paths, cfg.get_spkr)]
 
 		if len(self.paths) == 0 and training:
 			raise ValueError("No valid path is found for training.")
@@ -227,7 +229,7 @@ class Dataset(_Dataset):
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
 				#qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:]).to(torch.int16)
-				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.levels]).to(torch.int16)
+				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.prom_levels]).to(torch.int16)
 			else:
 				qnt = _load_quants(path)
 
@@ -255,7 +257,7 @@ class Dataset(_Dataset):
 		return ["tts"] # "ns", "sr", "tse", "cse", "nse"
 
 	def __getitem__(self, index):
-		if hasattr(self, "sample_type") and self.sample_type == "speaker":
+		if cfg.dataset.sample_type == "speaker":
 			spkr_name = self.spkrs[index]
 			spkr_id = self.spkr_symmap[spkr_name]
 			path = random.choice([*set(self.paths_by_spkr_name[spkr_name])])
@@ -267,7 +269,7 @@ class Dataset(_Dataset):
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)
 			text = torch.from_numpy(cfg.hdf5[key]["text"][:]).to(self.text_dtype)
-			resps = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.levels]).to(torch.int16)
+			resps = torch.from_numpy(cfg.hdf5[key]["audio"][:, :cfg.models.prom_levels]).to(torch.int16)
 		else:
 			text = torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype)
 			resps = _load_quants(path)
@@ -321,11 +323,8 @@ class Dataset(_Dataset):
 	def training_(self, value):
 		self.training = value
 
-	def interleaved_reorder_(self, fn):
-		self.paths = [*_interleaved_reorder(self.paths, fn)]
-
 	def __len__(self):
-		if hasattr(self, "sample_type") and self.sample_type == "speaker":
+		if cfg.dataset.sample_type == "speaker":
 			return min(len(self.spkrs), self._head or len(self.spkrs))
 		return min(len(self.paths), self._head or len(self.paths))
 
@@ -472,7 +471,6 @@ def create_datasets():
 		#extra_paths_by_spkr_name=train_dataset.paths_by_spkr_name,
 	)
 
-	val_dataset.interleaved_reorder_(cfg.get_spkr)
 	val_dataset.head_(cfg.evaluation.size)
 
 	return train_dataset, val_dataset
@@ -480,12 +478,10 @@ def create_datasets():
 
 def create_train_val_dataloader():
 	train_dataset, val_dataset = create_datasets()
-	train_dataset.sample_type = cfg.dataset.sample_type #"speaker"
 
 	subtrain_dataset = copy.deepcopy(train_dataset)
-	if subtrain_dataset.sample_type == "path":
+	if cfg.dataset.sample_type == "path":
 		subtrain_dataset.head_(cfg.evaluation.size)
-		subtrain_dataset.interleaved_reorder_(cfg.get_spkr)
 
 	train_dl = _create_dataloader(train_dataset, training=True)
 	val_dl = _create_dataloader(val_dataset, training=False)

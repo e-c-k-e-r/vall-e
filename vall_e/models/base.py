@@ -113,6 +113,10 @@ class Base(nn.Module):
 	@property
 	def n_prom_levels(self) -> int:
 		raise NotImplementedError
+	
+	@property
+	def n_tasks(self) -> int:
+		raise NotImplementedError
 
 	@property
 	def resp_loss_only(self):
@@ -120,7 +124,7 @@ class Base(nn.Module):
 
 	def __init__(
 		self,
-		n_tokens: int,
+		n_tokens: int = 1024,
 		d_model: int = 512,
 		n_heads: int = 8,
 		n_layers: int = 12,
@@ -132,16 +136,12 @@ class Base(nn.Module):
 		self.n_heads = n_heads
 		self.n_layers = n_layers
 
-		causal = self.causal
-
 		# +1 to include the stop token
-		n_stop_tokens = 1 if self.use_stop_token else 0
-		n_resp_tokens = n_tokens + n_stop_tokens
+		n_prom_tokens = n_tokens + (self.n_tasks - 1) # - 1 because tts is an inherent task
+		n_resp_tokens = n_tokens + (1 if self.use_stop_token else 0) # AR requires a stop token to... know when to stop
 
 		self.text_emb = Embedding(n_tokens, d_model)
-
-		# Here I simply use all prom levels
-		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_tokens, d_model)
+		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
 		self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
@@ -152,14 +152,13 @@ class Base(nn.Module):
 				d_model=d_model,
 				n_heads=n_heads,
 				p_dropout=p_dropout,
-				causal=causal,
+				causal=self.causal,
 				norm_type=self.norm_type,
 				n_levels=self.n_resp_levels,
-				#tention="retention" if self.use_retnet else "attention"
 			) for _ in range(n_layers) ])
 
 		elif self.arch_type == "retnet":
-			self.retnet_config = RetNetConfig(
+			self.retnet = RetNetDecoder(RetNetConfig(
 				vocab_size=n_tokens,
 				decoder_embed_dim=d_model,
 				decoder_retention_heads=n_heads,
@@ -169,13 +168,10 @@ class Base(nn.Module):
 				checkpoint_activations=True,
 
 				chunkwise_recurrent=self.causal,
-				recurrent_chunkwise_size=128,
+				recurrent_chunkwise_size=64,
 				no_output_layer=True,
 				decoder_normalize_before=True,
-			)
-			self.retnet = RetNetDecoder(
-				self.retnet_config
-			)
+			))
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
@@ -281,13 +277,14 @@ class Base(nn.Module):
 		)
 
 		x, m = list_to_tensor(x_list)
-
+		device = x.device
 
 		if self.arch_type == "transformer":
 			x = self.sin_emb.add_pe(x)
 			for block in self.blocks:
 				x = block(x, m, quant_levels)
 		elif self.arch_type == "retnet":
+			# to-do: actually make this work and verify it works with recurrent_forward / chunkwise_forward
 			x, _ = self.retnet(x, incremental_state=state, token_embeddings=x, features_only=True)
 			state = self.retnet.get_incremental_state( state, 'prev_state' )
 			
@@ -301,7 +298,7 @@ class Base(nn.Module):
 			if any([l == 0 for l in map(len, targ_list)]):
 				raise ValueError("Cannot compute loss given empty targ_list.")
 
-			ignore_sep = torch.tensor(self.ignore_index, device=x.device)
+			ignore_sep = torch.tensor(self.ignore_index, device=device)
 
 			# ignore the prompt when computing loss
 			prom_list = [
@@ -348,11 +345,6 @@ class Base(nn.Module):
 				acc = self.accuracy_metric( torch.cat(h_list), torch.cat(y_list) ),
 				precision = self.precision_metric( torch.cat(h_list), torch.cat(y_list) ),
 			)
-			del targ_list
-			del prom_list
-			del text_prom_list
-			del y_list
-
 		
 		# return the entire generated token string
 		if return_all:
@@ -366,9 +358,6 @@ class Base(nn.Module):
 		else:
 			logits = torch.stack([hi[-1] for hi in h_list])
 			ret = Categorical(logits=logits / sampling_temperature).sample()
-
-		del x_list
-		del h_list
 		
 		return ret, state
 

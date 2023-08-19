@@ -137,6 +137,8 @@ class Model:
 	name: str = ""
 	size: str = "full"
 	resp_levels: int = 1
+	prom_levels: int = 8
+	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
 
 	@property
@@ -157,7 +159,7 @@ class Model:
 		if self.arch_type != "transformer":
 			name.append(self.arch_type.replace("/", "-"))
 
-		name.append(f'{cfg.models.levels}')
+		name.append(f'{cfg.models.prom_levels}')
 
 		return "-".join(name)
 
@@ -192,8 +194,8 @@ class Model:
 @dataclass()
 class Models:
 	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1),
-		Model(name="nar", resp_levels=7),
+		Model(name="ar", resp_levels=1, prom_levels=8, tasks=1),
+		Model(name="nar", resp_levels=7, prom_levels=8, tasks=1),
 	])
 
 	def get(self, name=None):
@@ -215,11 +217,19 @@ class Models:
 		return self.get("nar")
 
 	@property
-	def levels(self):
-		return self.prom_levels
-	
-	prom_levels: int = 8
+	def prom_levels(self):
+		prom_levels = 1
+		for model in self._models:
+			prom_levels = max(prom_levels, model.prom_levels)
+		return prom_levels
 
+	@property
+	def tasks(self):
+		tasks = 1
+		for model in self._models:
+			tasks = max(tasks, model.tasks)
+		return tasks
+	
 @dataclass()
 class Hyperparameters:
 	batch_size: int = 8
@@ -246,11 +256,9 @@ class Evaluation:
 class DeepSpeed:
 	zero_optimization_level: int = 0
 	use_compression_training: bool = False
+	compression_bits: int = 8
 
 	def get_ds_cfg(self, model):
-		weights = [ name[0] for name in model.named_parameters() ]
-		bits = 8
-
 		scheduler_params = {}
 		for k in cfg.hyperparameters.scheduler_params:
 			scheduler_params[k] = cfg.hyperparameters.scheduler_params[k]
@@ -298,30 +306,17 @@ class DeepSpeed:
 					"different_groups": {
 						"wq1": {
 							"params": {
-								"start_bits": bits,
-								"target_bits": bits,
+								"start_bits": self.compression_bits,
+								"target_bits": self.compression_bits,
 								"quantization_period": 0
 							},
-							"modules": weights
+							"modules": [
+								"blocks",
+								"retnet",
+							]
 						}
 					}
 				},
-				"activation_quantization": {
-					"shared_parameters":{
-						"enabled": True,
-						"quantization_type": "symmetric",
-						"range_calibration": "dynamic",
-						"schedule_offset": 0
-					},
-					"different_groups": {
-						"aq1": {
-							"params": {
-								"bits": bits
-							},
-							"modules": weights
-						}
-					}
-				}
 			} if self.use_compression_training else None,
 			"zero_optimization": {
 				"stage": self.zero_optimization_level,
@@ -467,6 +462,8 @@ try:
 
 	# cached_property stopped working...
 	if cfg.dataset.use_hdf5:
+		if cfg.distributed:
+			cfg.dataset.hdf5_flag = "r"
 		try:
 			cfg.hdf5 = h5py.File(f'{cfg.cfg_path}/{cfg.dataset.hdf5_name}', cfg.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
 		except Exception as e:
