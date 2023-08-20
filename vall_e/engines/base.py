@@ -228,7 +228,10 @@ class Engines(dict[str, Engine]):
 		cfg.ckpt_dir.mkdir(parents=True, exist_ok=True)
 		for name, engine in self.items():
 			save_dir = cfg.ckpt_dir / name
-			engine.save_checkpoint(save_dir, tag=tag)
+			try:
+				engine.save_checkpoint(save_dir, tag=tag)
+			except Exception as e:
+				print(f'Failed to save checkpoint for engine {name}:', str(e))
 
 			# might be better to prune before saving for safety, but [:0] returns an empty list, but I could do [:-cfg.trainer.keep_last_checkpoints - 1 if cfg.trainer.keep_last_checkpoints > 1 else None]
 			if cfg.trainer.keep_last_checkpoints > 0 and is_global_leader():

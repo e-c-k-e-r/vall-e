@@ -302,7 +302,7 @@ class Dataset(_Dataset):
 		if len(set(self.paths_by_spkr_name[spkr_name]) - {path}) < 4:
 			task = "tts"
 
-		noise_scale = 0.125
+		noise_scale = 0.25
 		# text-to-speech
 		if task == "tts":
 			proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
@@ -749,6 +749,8 @@ if __name__ == "__main__":
 
 	task = args.action
 
+	cfg.dataset.workers = 1
+
 	if args.action == "hdf5":
 		create_dataset_hdf5()
 	elif args.action == "sample":
@@ -776,7 +778,7 @@ if __name__ == "__main__":
 			if task not in cfg.dataset.tasks_list:
 				continue
 
-			print(text, task)
-			decode_to_file( proms, f"./.{task}.proms.wav", device="cpu" )
-			decode_to_file( resps, f"./.{task}.resps.wav", device="cpu" )
+			print(text, task, cfg.models.prom_levels)
+			decode_to_file( proms, f"./data/{task}.proms.wav", device="cpu" )
+			decode_to_file( resps, f"./data/{task}.resps.wav", device="cpu" )
 			break
