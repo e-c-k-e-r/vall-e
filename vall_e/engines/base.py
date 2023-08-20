@@ -261,7 +261,7 @@ class Engines(dict[str, Engine]):
 						p.unlink()
 					d.rmdir()
 
-	def load_checkpoint(self, tag=None, module_only=False):
+	def load_checkpoint(self, tag=None):
 		if not tag:
 			tag = cfg.trainer.load_tag
 
@@ -271,9 +271,9 @@ class Engines(dict[str, Engine]):
 				tag=tag,
 				load_dir=load_dir,
 				load_module_strict=cfg.trainer.strict_loading,
-				load_optimizer_states=False if module_only else cfg.trainer.load_states,
-				load_lr_scheduler_states=False if module_only else cfg.trainer.load_states,
-				load_module_only=module_only,
+				load_optimizer_states=False if cfg.trainer.load_module_only else cfg.trainer.load_states,
+				load_lr_scheduler_states=False if cfg.trainer.load_module_only else cfg.trainer.load_states,
+				load_module_only=cfg.trainer.load_module_only,
 			)
 			if cfg.trainer.restart_step_count:
 				engine.global_steps = 0
