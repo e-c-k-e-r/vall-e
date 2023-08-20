@@ -33,6 +33,7 @@ from ..models import get_models
 
 from .utils import to_device, do_gc
 from ..utils import wrapper as ml
+from ..data import get_phone_symmap # should decouple from this trainer script
 
 _logger = logging.getLogger(__name__)
 _engines: Engines
@@ -69,6 +70,9 @@ def load_engines():
 		optimizer = None
 		lr_scheduler = None
 
+		# yuck, should instead check be optimier == "adamw" and backend != "deepspeed"
+		# and then have ds_cfg pass in the config flag to use pytorch adamw
+		# I genuinely cannot validate if this ever actually gets used in DeepSpeed
 		if cfg.hyperparameters.optimizer.lower() == "adamw-torch":
 			optimizer = ml.AdamW(
 				model.parameters(),
@@ -86,6 +90,9 @@ def load_engines():
 			if "module" in state:
 				state = state["module"]
 			
+			# should decouple the following from this trainer script
+			# probably with passing a fun that defaults to a lambda x: x deal
+
 			# extend the proms_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
 			if model.proms_emb.weight.shape[0] > state['proms_emb.weight'].shape[0] or model.proms_emb.weight.shape[1] > state['proms_emb.weight'].shape[1]:
 				o_prom_levels, o_prom_tokens, d_model = state['proms_emb.weight'].shape
@@ -301,8 +308,18 @@ def train(
 
 			if "lr" in command:
 				rate = float(command.split(" ")[-1])
-				engines.set_lr(rate)
-				print("Updating LR to:", rate)
+				try:
+					engines.set_lr(rate)
+					print("Updating LR to:", rate)
+				except Exception as e:
+					print("Failed to set LR rate to:", rate, str(e))
+
+			if "export" in command:
+				engines.save_checkpoint()
+				last_save_step = engines.global_step
+
+				if is_global_leader():
+					engines.export(userdata={"symmap": get_phone_symmap()})
 
 			save_ckpt_every = cfg.trainer.save_frequency or cfg.evaluation.frequency
 

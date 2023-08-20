@@ -200,6 +200,9 @@ class Engines(dict[str, Engine]):
 		self._global_step = 0
 		self._micro_step = 0
 
+		for name, engine in self.items():
+			engine.name = name
+
 	@property
 	def global_step(self):
 		return self._global_step
@@ -217,6 +220,18 @@ class Engines(dict[str, Engine]):
 	def dispatch_attribute(self, *args, **kwargs):
 		for engine in self.values():
 			engine.dispatch_attribute(*args, **kwargs)
+
+	def export(self, userdata={}):
+		for name, engine in self.items():
+			outpath = cfg.ckpt_dir / name / "fp32.pth"
+			state_dict = {
+				"global_step": engine.global_step,
+				"micro_step": engine.micro_step,
+				'module': engine.module.state_dict(),
+			}
+			state_dict.update(userdata)
+			torch.save(state_dict, outpath)
+			print(f"Exported {name} to {outpath}")
 
 	def save_checkpoint(self, tag=None):
 		if not tag:
@@ -246,7 +261,7 @@ class Engines(dict[str, Engine]):
 						p.unlink()
 					d.rmdir()
 
-	def load_checkpoint(self, tag=None):
+	def load_checkpoint(self, tag=None, module_only=False):
 		if not tag:
 			tag = cfg.trainer.load_tag
 
@@ -256,8 +271,9 @@ class Engines(dict[str, Engine]):
 				tag=tag,
 				load_dir=load_dir,
 				load_module_strict=cfg.trainer.strict_loading,
-				load_optimizer_states=cfg.trainer.load_states,
-				load_lr_scheduler_states=cfg.trainer.load_states,
+				load_optimizer_states=False if module_only else cfg.trainer.load_states,
+				load_lr_scheduler_states=False if module_only else cfg.trainer.load_states,
+				load_module_only=module_only,
 			)
 			if cfg.trainer.restart_step_count:
 				engine.global_steps = 0
