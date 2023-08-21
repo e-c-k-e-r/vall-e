@@ -24,7 +24,10 @@ class TTS():
 		if config:
 			cfg.load_yaml( config )
 
-		cfg.format()
+		try:
+			cfg.format()
+		except Exception as e:
+			pass
 
 		"""
 		if cfg.trainer.load_state_dict:
@@ -72,12 +75,12 @@ class TTS():
 				self.nar = engine.module.to(self.device)
 
 	def encode_text( self, text, lang_marker="en" ):
-		text = g2p.encode(text)
-		phones = [f"<{lang_marker}>"] + [ " " if not p else p for p in text ] + [f"</{lang_marker}>"]
-		mapped = [self.symmap[p] for p in phones if p in self.symmap]
-		return torch.tensor( mapped )
+		content = g2p.encode(text)
+		#phones = ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
+		phones = [ " " if not p else p for p in content ]
+		return torch.tensor([ 1 ] + [*map(self.symmap.get, phones)] + [ 2 ])
 
-	def encode_audio( self, path ):
+	def encode_audio( self, path, trim=True ):
 		enc = qnt.encode_from_file( path )
 		res = enc[0].t().to(torch.int16)
 		if trim:
@@ -85,7 +88,7 @@ class TTS():
 		return res
 
 
-	def inference( self, text, reference, mode="both", max_ar_steps=6 * 75, ar_temp=1.0, nar_temp=1.0, out_path="./.tmp.wav" ):
+	def inference( self, text, reference, max_ar_steps=6 * 75, ar_temp=1.0, nar_temp=1.0, out_path="./.tmp.wav" ):
 		prom = self.encode_audio( reference )
 		phns = self.encode_text( text )
 
