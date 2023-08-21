@@ -182,14 +182,14 @@ def encode_from_file(path, device="cuda"):
 
 # trims a random piece of audio, up to `target`
 def trim_random( qnt, target ):
-	length = qnt.shape[0]
+	length = max( qnt.shape[0], qnt.shape[1] )
 	start = int(length * random.random())
 	end = start + target
 	if end >= length:
 		start = length - target
 		end = length                
 
-	return qnt[start:end]
+	return qnt[start:end] if qnt.shape[0] > qnt.shape[1] else qnt[:, start:end]
 
 # repeats the audio to fit the target size
 def repeat_extend_audio( qnt, target ):

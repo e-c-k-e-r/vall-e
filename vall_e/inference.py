@@ -2,7 +2,9 @@ import torch
 import torchaudio
 import soundfile
 
+from torch import Tensor
 from einops import rearrange
+from pathlib import Path
 
 from .emb import g2p, qnt
 from .emb.qnt import trim_random
@@ -28,16 +30,6 @@ class TTS():
 			cfg.format()
 		except Exception as e:
 			pass
-
-		"""
-		if cfg.trainer.load_state_dict:
-			for model in cfg.models.get():
-				path = cfg.ckpt_dir / model.full_name / "fp32.pth"
-				if model.name.startswith("ar"):
-					ar_ckpt = path
-				if model.name.startswith("nar"):
-					nar_ckpt = path
-		"""
 		
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
@@ -74,22 +66,39 @@ class TTS():
 			elif name[:3] == "nar":
 				self.nar = engine.module.to(self.device)
 
-	def encode_text( self, text, lang_marker="en" ):
-		content = g2p.encode(text)
+	def encode_text( self, text, language="en" ):
+		# already a tensor, return it
+		if isinstance( text, Tensor ):
+			return text
+
+		content = g2p.encode(text, language=language)
 		#phones = ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
 		phones = [ " " if not p else p for p in content ]
 		return torch.tensor([ 1 ] + [*map(self.symmap.get, phones)] + [ 2 ])
 
-	def encode_audio( self, path, trim=True ):
-		enc = qnt.encode_from_file( path )
-		res = enc[0].t().to(torch.int16)
+	def encode_audio( self, paths, trim=True ):
+		# already a tensor, return it
+		if isinstance( paths, Tensor ):
+			return paths
+
+		# split string into paths
+		if isinstance( paths, str ):
+			paths = [ Path(p) for p in paths.split(";") ]
+
+		# merge inputs
+		res = torch.cat([qnt.encode_from_file( path )[0].t().to(torch.int16) for path in paths])
+
 		if trim:
-			res = trim_random( res, int( 75 * cfg.dataset.duration_range[1] ) )
+			res = trim_random( res, int( 75 * cfg.dataset.prompt_duration ) )
+		
 		return res
 
+	@torch.inference_mode()
+	def inference( self, text, references, max_ar_steps=6 * 75, ar_temp=1.0, nar_temp=1.0, out_path=None ):
+		if out_path is None:
+			out_path = f"./data/{text}.wav"
 
-	def inference( self, text, reference, max_ar_steps=6 * 75, ar_temp=1.0, nar_temp=1.0, out_path="./.tmp.wav" ):
-		prom = self.encode_audio( reference )
+		prom = self.encode_audio( references )
 		phns = self.encode_text( text )
 
 		prom = to_device(prom, self.device).to(torch.int16)

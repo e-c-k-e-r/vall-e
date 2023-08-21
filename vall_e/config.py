@@ -404,8 +404,18 @@ class Trainer:
 
 @dataclass()
 class Inference:
+	weight_dtype: str = "float32"
+
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
 	use_vocos: bool = True
+
+	@cached_property
+	def dtype(self):
+		if self.weight_dtype == "float16":
+			return torch.float16
+		if self.weight_dtype == "bfloat16":
+			return torch.bfloat16
+		return torch.float32
 
 @dataclass()
 class BitsAndBytes:
