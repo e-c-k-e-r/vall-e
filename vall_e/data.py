@@ -119,21 +119,15 @@ class Dataset(_Dataset):
 		self,
 		paths,
 		phone_symmap=None,
-		spkr_symmap=None,
-		task_symmap=None,
-		min_phones=cfg.dataset.phones_range[0],
-		max_phones=cfg.dataset.phones_range[1],
-		min_duration=cfg.dataset.duration_range[0],
-		max_duration=cfg.dataset.duration_range[1],
 		training=False,
 		extra_paths_by_spkr_name: dict[str, list] = {},
 	):
 		super().__init__()
 		self._head = None
-		self.min_phones = min_phones
-		self.max_phones = max_phones
-		self.min_duration = min_duration
-		self.max_duration = max_duration
+		self.min_phones = cfg.dataset.phones_range[0]
+		self.max_phones = cfg.dataset.phones_range[1]
+		self.min_duration = cfg.dataset.duration_range[0]
+		self.max_duration = cfg.dataset.duration_range[1]
 		self.sampler = None
 
 		if cfg.dataset.validate:

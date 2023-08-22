@@ -6,25 +6,13 @@
 
 An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), based on the [EnCodec](https://github.com/facebookresearch/encodec) tokenizer.
 
-> **Note** this is highly experimental. While I've seem to have audited and tighened down as much as I can, I'm still trying to produce a decent model out of it. You're free to train your own model if you happen to have the massive compute for it, but it's quite the beast to properly feed. This README won't get much love until I truly nail out a quasi-decent model.
-
-> **Note** You can follow along with my pseudo-blog in an issue [here](https://git.ecker.tech/mrq/ai-voice-cloning/issues/152). I currently have a dataset clocking in at 3400+ trimmed hours.
-
 ## Requirements
 
 If your config YAML has the training backend set to [`deepspeed`](https://github.com/microsoft/DeepSpeed#requirements), you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
 
 ## Install
 
-```
-pip install git+https://git.ecker.tech/mrq/vall-e
-```
-
-Or you may clone by:
-
-```
-git clone --recurse-submodules https://git.ecker.tech/mrq/vall-e.git
-```
+Simply run `pip install git+https://git.ecker.tech/mrq/vall-e`, or, you may clone by: `git clone --recurse-submodules https://git.ecker.tech/mrq/vall-e.git`
 
 I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
@@ -38,6 +26,17 @@ To quickly try it out, you can choose between the following modes:
 
 Each model file has a barebones trainer and inference routine.
 
+## Pre-Trained Model
+
+My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
+
+For example:
+
+```
+git lfs clone --exclude "*.h5" https://huggingface.co/ecker/vall-e ./data/
+python -m vall_e "The birch canoe slid on the smooth planks." "./path/to/an/utterance.wav" --out-path="./output.wav" yaml="./data/config.yaml"
+```
+
 ## Train
 
 Training is very dependent on:
@@ -47,9 +46,15 @@ Training is very dependent on:
 
 ### Notices
 
-#### Modifying `prom_levels` or `tasks` For a Model
+#### Modifying `prom_levels`, `resp_levels`, Or `tasks` For A Model
 
 If you're wanting to increase the `prom_levels` for a given model, or increase the `tasks` levels a model accepts, you will need to export your weights and set `train.load_state_dict` to `True` in your configuration YAML.
+
+### Pre-Processed Dataset
+
+> **Note** A pre-processed "libre" is being prepared. This contains only data from the LibriTTS and LibriLight datasets (and MUSAN for noise), and culled out any non-libre datasets.
+
+
 
 ### Leverage Your Own Dataset
 
@@ -98,9 +103,8 @@ Some additional flags you can pass are:
 ## To-Do
 
 * reduce load time for creating / preparing dataloaders.
-* properly pass in `modules` names to `weight_quantization` and `activation_quantization`.
 * train and release a model.
-* extend to multiple languages (VALL-E X) and extend to SpeechX features.
+* extend to multiple languages (VALL-E X) and ~~extend to~~ train SpeechX features.
 
 ## Notice
 
