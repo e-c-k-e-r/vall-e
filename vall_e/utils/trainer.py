@@ -353,5 +353,4 @@ def train(
 					last_eval_step = engines.global_step
 
 			if command in ["quit"]:
-				if cfg.export_on_quit:
 				return
