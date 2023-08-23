@@ -428,7 +428,6 @@ class BitsAndBytes:
 @dataclass()
 class Config(_Config):
 	device: str = "cuda"
-	#distributed: bool = False
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: Models = field(default_factory=lambda: Models)
@@ -456,7 +455,7 @@ class Config(_Config):
 
 	@cached_property
 	def diskcache(self):
-		if self.dataset.cache:
+		if self.cfg_path is not None and self.dataset.cache:
 			return diskcache.Cache(self.cache_dir).memoize
 		return lambda: lambda x: x
 
