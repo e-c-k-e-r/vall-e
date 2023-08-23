@@ -10,7 +10,7 @@ import random
 import torch
 
 from .config import cfg
-from .emb.qnt import trim_random, repeat_extend_audio, merge_audio, decode_to_file
+from .emb.qnt import trim, trim_random, repeat_extend_audio, merge_audio, decode_to_file
 
 from collections import defaultdict
 from functools import cache, cached_property
@@ -253,7 +253,7 @@ class Dataset(_Dataset):
 				qnt = _load_quants(path)
 
 			if cfg.dataset.prompt_duration > 0 and trim_length < qnt.shape[0]:
-				qnt = trim_random( qnt, trim_length )
+				qnt = trim( qnt, trim_length )
 
 			prom_list.append(qnt)
 			prom_length += qnt.shape[0]
@@ -264,7 +264,7 @@ class Dataset(_Dataset):
 		prom = torch.cat(prom_list)
 
 		if cfg.dataset.prompt_duration > 0 and trim_length < prom.shape[0]:
-			prom = trim_random( prom, trim_length )
+			prom = trim( prom, trim_length )
 
 		return prom
 

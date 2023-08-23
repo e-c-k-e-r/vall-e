@@ -180,7 +180,19 @@ def encode_from_file(path, device="cuda"):
 
 # Helper Functions
 
+# trims from the start, up to `target`
+def trim( qnt, target ):
+	length = max( qnt.shape[0], qnt.shape[1] )
+	start = 0
+	end = start + target
+	if end >= length:
+		start = length - target
+		end = length                
+
+	return qnt[start:end] if qnt.shape[0] > qnt.shape[1] else qnt[:, start:end]
+
 # trims a random piece of audio, up to `target`
+# to-do: try and align to EnCodec window
 def trim_random( qnt, target ):
 	length = max( qnt.shape[0], qnt.shape[1] )
 	start = int(length * random.random())

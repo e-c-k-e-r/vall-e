@@ -324,14 +324,24 @@ def train(
 			save_ckpt_every = cfg.trainer.save_frequency or cfg.evaluation.frequency
 
 			saving_commands = ["save"]
+			export_commands = ["export"]
 
 			if cfg.trainer.save_on_quit:
 				saving_commands.append("quit")
+
+			if cfg.trainer.export_on_quit:
+				export_commands.append("quit")
+
+			if cfg.trainer.export_on_save:
+				export_commands.append("save")
 
 			if engines.global_step != last_save_step:
 				if engines.global_step % save_ckpt_every == 0 or command in saving_commands:
 					engines.save_checkpoint()
 					last_save_step = engines.global_step
+					
+					if command in export_commands and is_global_leader():
+						engines.export(userdata={"symmap": get_phone_symmap()})
 
 			if engines.global_step != last_eval_step:
 				if engines.global_step % cfg.evaluation.frequency == 0 or command in ["eval"]:
@@ -343,4 +353,5 @@ def train(
 					last_eval_step = engines.global_step
 
 			if command in ["quit"]:
+				if cfg.export_on_quit:
 				return

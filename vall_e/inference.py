@@ -7,7 +7,7 @@ from einops import rearrange
 from pathlib import Path
 
 from .emb import g2p, qnt
-from .emb.qnt import trim_random
+from .emb.qnt import trim, trim_random
 from .utils import to_device
 
 from .config import cfg
@@ -25,12 +25,14 @@ class TTS():
 
 		if config:
 			cfg.load_yaml( config )
+			cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 
 		try:
 			cfg.format()
 		except Exception as e:
 			pass
 		
+		self.symmap = None
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
 			self.nar_ckpt = nar_ckpt
@@ -40,6 +42,8 @@ class TTS():
 				if name.startswith("ar"):
 					self.ar = model
 					state = torch.load(self.ar_ckpt)
+					if "symmap" in state:
+						self.symmap = state['symmap']
 					if "module" in state:
 						state = state['module']
 					self.ar.load_state_dict(state)
@@ -47,6 +51,8 @@ class TTS():
 				elif name.startswith("nar"):
 					self.nar = model
 					state = torch.load(self.nar_ckpt)
+					if "symmap" in state:
+						self.symmap = state['symmap']
 					if "module" in state:
 						state = state['module']
 					self.nar.load_state_dict(state)
@@ -54,7 +60,9 @@ class TTS():
 		else:
 			self.load_models()
 
-		self.symmap = get_phone_symmap()
+		if self.symmap is None:
+			self.symmap = get_phone_symmap()
+
 		self.ar.eval()
 		self.nar.eval()
 
@@ -78,7 +86,7 @@ class TTS():
 		phones = [ " " if not p else p for p in content ]
 		return torch.tensor([ 1 ] + [*map(self.symmap.get, phones)] + [ 2 ])
 
-	def encode_audio( self, paths, trim=True ):
+	def encode_audio( self, paths, should_trim=True ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
 			return paths
@@ -90,7 +98,7 @@ class TTS():
 		# merge inputs
 		res = torch.cat([qnt.encode_from_file( path )[0].t().to(torch.int16) for path in paths])
 
-		if trim:
+		if should_trim:
 			res = trim_random( res, int( 75 * cfg.dataset.prompt_duration ) )
 		
 		return res

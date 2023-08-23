@@ -372,6 +372,10 @@ class Trainer:
 
 	save_on_oom: bool = True
 	save_on_quit: bool = True
+	
+	export_on_save: bool = False
+	export_on_quit: bool = False
+	
 	save_frequency: int = 100
 
 	keep_last_checkpoints: int = 0
