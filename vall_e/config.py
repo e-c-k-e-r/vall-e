@@ -393,7 +393,7 @@ class Trainer:
 
 	weight_dtype: str = "float16"
 
-	backend: str = "deepspeed"
+	backend: str = "deepspeed" if not sys.platform.startswith("win") else "local"
 
 	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)
 

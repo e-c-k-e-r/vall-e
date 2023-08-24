@@ -8,11 +8,19 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 ## Requirements
 
-If your config YAML has the training backend set to [`deepspeed`](https://github.com/microsoft/DeepSpeed#requirements), you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
+* [`DeepSpeed`](https://github.com/microsoft/DeepSpeed#requirements):
+  - DeepSpeed training is Linux only. Installation under Windows should ignore trying to install DeepSpeed.
+  - If your config YAML has the training backend set to [`deepspeed`], you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
+
+* [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/):
+  - For phonemizing text, this repo requires `espeak`/`espeak-ng` installed.
+  - Linux users can consult their package managers on installing `espeak`/`espeak-ng`.
+  - Windows users are required to install [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/releases/tag/1.51#Assets).
+    + additionally, you may be require dto set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
 
 ## Install
 
-Simply run `pip install git+https://git.ecker.tech/mrq/vall-e`, or, you may clone by: `git clone --recurse-submodules https://git.ecker.tech/mrq/vall-e.git`
+Simply run `pip install git+https://git.ecker.tech/mrq/vall-e`.
 
 I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
