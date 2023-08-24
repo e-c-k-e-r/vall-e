@@ -41,7 +41,7 @@ My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/
 For example:
 
 ```
-git lfs clone --exclude "*.h5" https://huggingface.co/ecker/vall-e ./data/
+git lfs clone --exclude "*.h5" https://huggingface.co/ecker/vall-e ./data/ # remove the '--exclude "*.h5"' if you wish to also download the libre dataset.
 python -m vall_e "The birch canoe slid on the smooth planks." "./path/to/an/utterance.wav" --out-path="./output.wav" yaml="./data/config.yaml"
 ```
 
@@ -52,17 +52,9 @@ Training is very dependent on:
 * how much data you have.
 * the bandwidth you quantized your audio to.
 
-### Notices
-
-#### Modifying `prom_levels`, `resp_levels`, Or `tasks` For A Model
-
-If you're wanting to increase the `prom_levels` for a given model, or increase the `tasks` levels a model accepts, you will need to export your weights and set `train.load_state_dict` to `True` in your configuration YAML.
-
 ### Pre-Processed Dataset
 
-> **Note** A pre-processed "libre" is being prepared. This contains only data from the LibriTTS and LibriLight datasets (and MUSAN for noise), and culled out any non-libre datasets.
-
-
+A "libre" dataset can be found [here](https://huggingface.co/ecker/vall-e/blob/main/data.h5). Simply place it in the same folder as your `config.yaml`, and ensure its `dataset.use_hdf5` is set to `True`.
 
 ### Leverage Your Own Dataset
 
@@ -80,7 +72,7 @@ If you're interested in creating an HDF5 copy of your dataset, simply invoke: `p
 
 5. Train the AR and NAR models using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
 
-You may quit your training any time by just typing `quit` in your CLI. The latest checkpoint will be automatically saved.
+You may quit your training any time by just entering `quit` in your CLI. The latest checkpoint will be automatically saved.
 
 ### Dataset Formats
 
@@ -92,11 +84,33 @@ Two dataset formats are supported:
   - this will shove everything into a single HDF5 file and store some metadata alongside (for now, the symbol map generated, and text/audio lengths)
   - be sure to also define `use_hdf5` in your config YAML.
 
+### Notices
+
+#### Modifying `prom_levels`, `resp_levels`, Or `tasks` For A Model
+
+If you're wanting to increase the `prom_levels` for a given model, or increase the `tasks` levels a model accepts, you will need to export your weights and set `train.load_state_dict` to `True` in your configuration YAML.
+
+#### Training Under Windows
+
+As training under `deepspeed` is not supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
+
+Keep in mind that creature comforts like distributed training cannot be verified as working at the moment.
+
+#### Training on Low-VRAM Cards
+
+During experimentation, I've found I can comfortably train on a 4070Ti (12GiB VRAM) with `trainer.deepspeed.compression_training` enabled with both the AR and NAR at a batch size of 16.
+
+VRAM use is also predicated on your dataset; a mix of large and small utterances will cause VRAM usage to spike and can trigger OOM conditions during the backwards pass if you are not careful.
+
+Additionally, under Windows, I managed to finetune the AR on my 2060 (6GiB VRAM) with a batch size of 8 (although, with the card as a secondary GPU).
+
+If you need to, you are free to train only one model at a time. Just remove the definition for one model in your `config.yaml`'s `models._model` list.
+
 ## Export
 
 Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run: `python -m vall_e.export yaml=./data/config.yaml`.
 
-This will export the latest checkpoints under `./data/ckpt/ar-retnet-2/fp32.pth` and `./data/ckpt/nar-retnet-2/fp32.pth` to be loaded on any system with PyTorch.
+This will export the latest checkpoints, for example, under `./data/ckpt/ar-retnet-2/fp32.pth` and `./data/ckpt/nar-retnet-2/fp32.pth`, to be loaded on any system with PyTorch.
 
 ## Synthesis
 
@@ -110,8 +124,8 @@ Some additional flags you can pass are:
 
 ## To-Do
 
-* reduce load time for creating / preparing dataloaders.
-* train and release a model.
+* reduce load time for creating / preparing dataloaders (hint: remove use of `Path.glob` and `Path.rglob`).
+* train and release a ***good*** model.
 * extend to multiple languages (VALL-E X) and ~~extend to~~ train SpeechX features.
 
 ## Notice
