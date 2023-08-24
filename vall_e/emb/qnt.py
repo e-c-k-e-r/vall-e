@@ -26,6 +26,7 @@ def _load_encodec_model(device="cuda", levels=cfg.models.max_levels):
 	assert cfg.sample_rate == 24_000
 
 	# too lazy to un-if ladder this shit
+	bandwidth_id = 6.0
 	if levels == 2:
 		bandwidth_id = 1.5
 	elif levels == 4:
@@ -50,6 +51,7 @@ def _load_vocos_model(device="cuda", levels=cfg.models.max_levels):
 	model = model.to(device)
 
 	# too lazy to un-if ladder this shit
+	bandwidth_id = 2
 	if levels == 2:
 		bandwidth_id = 0
 	elif levels == 4:

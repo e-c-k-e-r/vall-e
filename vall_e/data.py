@@ -138,8 +138,8 @@ class Dataset(_Dataset):
 			self.paths = paths
 
 		self.phone_symmap = phone_symmap or self._get_phone_symmap()
-		self.spkr_symmap = spkr_symmap or self._get_spkr_symmap()
-		self.task_symmap = get_task_symmap or self._get_task_symmap()
+		self.spkr_symmap = self._get_spkr_symmap()
+		self.task_symmap = self._get_task_symmap()
 		self.training = training
 
 		# assert len(self.phone_symmap) < 256, "Unique token count should be [0,255] to fit within uint8"
