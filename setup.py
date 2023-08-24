@@ -1,5 +1,5 @@
 import subprocess
-
+import sys
 from pathlib import Path
 from datetime import datetime
 from setuptools import setup, find_packages
@@ -37,9 +37,8 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
-    install_requires=[
+    install_requires=(["deepspeed>=0.7.7"] if not sys.platform.startswith("win") else []) +[
         "coloredlogs>=15.0.1",
-        "deepspeed>=0.7.7",
         "diskcache>=5.4.0",
         "einops>=0.6.0",
         "encodec>=0.1.1",
