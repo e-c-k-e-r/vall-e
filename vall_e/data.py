@@ -69,7 +69,7 @@ def _load_quants(path) -> Tensor:
 @cache
 def _get_phones(path, language="en"):
 	content = open(_get_phone_path(path), "r", encoding="utf8").read().split(" ")
-	return ["<s>"] + [ " " if not p else p for p in split ] + ["</s>"]
+	return ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
 
 def _interleaved_reorder(l, fn):
 	groups = defaultdict(list)
