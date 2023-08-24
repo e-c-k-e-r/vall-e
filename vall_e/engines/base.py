@@ -28,7 +28,7 @@ def default_feeder(engine, batch):
 
 from ..config import cfg
 from ..utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
-from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader
+from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader, world_size
 
 import logging
 import time
@@ -45,7 +45,7 @@ from .base import TrainFeeder
 
 _logger = logging.getLogger(__name__)
 
-if not distributed_initialized() and cfg.trainer.backend == "local":
+if not distributed_initialized() and cfg.trainer.backend == "local" and world_size() > 1:
 	init_distributed(torch.distributed.init_process_group)
 
 # A very naive engine implementation using barebones PyTorch
@@ -104,7 +104,7 @@ class Engine():
 
 		open(save_dir / "latest", 'w').write( tag )
 
-	def load_checkpoint(self, load_dir, tag=None, load_module_strict=True, load_optimizer_states=True, load_lr_scheduler_states=True):
+	def load_checkpoint(self, load_dir, tag=None, load_module_strict=True, load_optimizer_states=True, load_lr_scheduler_states=True, load_module_only=False):
 		if tag is None:
 			tag_path = load_dir / "latest"
 			if not tag_path.exists():
@@ -365,7 +365,8 @@ class Engines(dict[str, Engine]):
 							do_gc()
 						continue
 
-				all_reduce(n_ooms)
+				if world_size() > 1:
+					all_reduce(n_ooms)
 				if n_ooms.item() > 0:
 					self.save_checkpoint()
 					raise RuntimeError("Out of memory during forward pass!")
@@ -395,7 +396,8 @@ class Engines(dict[str, Engine]):
 					
 					n_ooms += 1
 
-				all_reduce(n_ooms)
+				if world_size() > 1:
+					all_reduce(n_ooms)
 				if n_ooms.item() > 0:
 					self.save_checkpoint()
 					raise RuntimeError("Out of memory during backwards pass!")

@@ -501,7 +501,7 @@ def _create_dataloader(dataset, training):
 		drop_last=training,
 		num_workers=cfg.dataset.workers,
 		collate_fn=collate_fn,
-		persistent_workers=True,
+		persistent_workers=cfg.dataset.workers > 1,
 		pin_memory=False, # True,
 		worker_init_fn=_seed_worker,
 		sampler=sampler,

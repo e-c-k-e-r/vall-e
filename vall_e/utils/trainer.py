@@ -19,7 +19,7 @@ from tqdm import tqdm
 from typing import Protocol
 
 from ..config import cfg
-from .distributed import init_distributed, distributed_initialized
+from .distributed import init_distributed, distributed_initialized, world_size
 from .distributed import (
 	global_leader_only,
 	global_rank,
@@ -73,7 +73,7 @@ def load_engines():
 		# yuck, should instead check be optimier == "adamw" and backend != "deepspeed"
 		# and then have ds_cfg pass in the config flag to use pytorch adamw
 		# I genuinely cannot validate if this ever actually gets used in DeepSpeed
-		if cfg.hyperparameters.optimizer.lower() == "adamw-torch":
+		if (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "adamw") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "adamw-torch"):
 			optimizer = ml.AdamW(
 				model.parameters(),
 				lr=cfg.hyperparameters.learning_rate,
@@ -187,7 +187,8 @@ def _non_blocking_input():
 
 		l[0] = s
 
-	broadcast_object_list(l, src=0)
+	if world_size() > 1:
+		broadcast_object_list(l, src=0)
 	_command = l[0]
 	return _command
 
