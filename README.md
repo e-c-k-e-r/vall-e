@@ -10,7 +10,7 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 * [`DeepSpeed`](https://github.com/microsoft/DeepSpeed#requirements):
   - DeepSpeed training is Linux only. Installation under Windows should ignore trying to install DeepSpeed.
-  - If your config YAML has the training backend set to [`deepspeed`], you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
+  - If your config YAML has the training backend set to `deepspeed`, you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
 
 * [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/):
   - For phonemizing text, this repo requires `espeak`/`espeak-ng` installed.
