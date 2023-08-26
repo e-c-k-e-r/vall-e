@@ -171,7 +171,7 @@ class Base(nn.Module):
 				dropout=p_dropout,
 				checkpoint_activations=True,
 
-				chunkwise_recurrent=self.causal,
+				chunkwise_recurrent=False, # self.causal,
 				recurrent_chunkwise_size=64,
 				no_output_layer=True,
 				decoder_normalize_before=True,
