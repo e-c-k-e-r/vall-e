@@ -1,18 +1,21 @@
 import os
 import json
 
-for f in os.listdir(f'./LibriTTS/'):
-	if not os.path.isdir(f'./LibriTTS/{f}/'):
+input_dataset = "LibriTTS_R"
+output_dataset = "LibriTTS-Train"
+
+for dataset_name in os.listdir(f'./{input_dataset}/'):
+	if not os.path.isdir(f'./{input_dataset}/{dataset_name}/'):
 		continue
-	for j in os.listdir(f'./LibriTTS/{f}/'):
-		if not os.path.isdir(f'./LibriTTS/{f}/{j}'):
+	for speaker_id in os.listdir(f'./{input_dataset}/{dataset_name}/'):
+		if not os.path.isdir(f'./{input_dataset}/{dataset_name}/{speaker_id}'):
 			continue
-		for z in os.listdir(f'./LibriTTS/{f}/{j}'):
-			if not os.path.isdir(f'./LibriTTS/{f}/{j}/{z}'):
+		for book_id in os.listdir(f'./{input_dataset}/{dataset_name}/{speaker_id}'):
+			if not os.path.isdir(f'./{input_dataset}/{dataset_name}/{speaker_id}/{book_id}'):
 				continue
-			for i in os.listdir(f'./LibriTTS/{f}/{j}/{z}'):
-				if i[-4:] != ".wav":
+			for filename in os.listdir(f'./{input_dataset}/{dataset_name}/{speaker_id}/{book_id}'):
+				if filename[-4:] != ".wav":
 					continue
 
-				os.makedirs(f'./LibriTTS-Train/{j}/', exist_ok=True)
-				os.rename(f'./LibriTTS/{f}/{j}/{z}/{i}', f'./LibriTTS-Train/{j}/{i}')
+				os.makedirs(f'./{output_dataset}/{speaker_id}/', exist_ok=True)
+				os.rename(f'./{input_dataset}/{dataset_name}/{speaker_id}/{book_id}/{filename}', f'./{output_dataset}/{speaker_id}/{filename}')
