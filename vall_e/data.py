@@ -185,9 +185,11 @@ class Dataset(_Dataset):
 		
 		# would be a better cost saving if we could fetch the duration during the validation pass but oh well
 		self.duration = 0
+		"""
 		if cfg.dataset.use_hdf5:
-			for path in self.paths:
+			for path in tqdm(self.paths, desc="Calculating duration"):
 				self.duration += cfg.hdf5[_get_hdf5_path(path)].attrs['duration']
+		"""
 
 	@cached_property
 	def phones(self):

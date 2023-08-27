@@ -63,7 +63,7 @@ class AR(Base):
 		max_steps: int = 1000,
 		sampling_temperature: float = 1.0,
 
-		naive: bool = False,
+		naive: bool = True,
 	):
 		if resps_list is not None:
 			resps_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels

@@ -159,7 +159,7 @@ class Model:
 	size: str = "full"
 	resp_levels: int = 1
 	prom_levels: int = 8
-	tasks: int = 1 # 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
+	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
 
 	@property
@@ -217,8 +217,8 @@ class Models:
 	_max_levels: int = 0
 
 	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1, prom_levels=8, tasks=1),
-		Model(name="nar", resp_levels=7, prom_levels=8, tasks=1),
+		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8),
+		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8),
 	])
 
 	def get(self, name=None):
@@ -503,6 +503,10 @@ class Config(_Config):
 		self.bitsandbytes = BitsAndBytes(**self.bitsandbytes)
 
 		self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
+	
+		self.dataset.training = [ Path(dir) for dir in self.dataset.training ]
+		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
+		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
 
 
 cfg = Config.from_cli()
@@ -515,9 +519,6 @@ try:
 	if cfg.dataset.use_hdf5:
 		cfg.load_hdf5()
 
-	cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
-	cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
-	cfg.dataset.noise = [ Path(dir) for dir in cfg.dataset.noise ]
 
 except Exception as e:
 	pass
