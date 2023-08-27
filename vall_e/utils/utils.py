@@ -17,11 +17,20 @@ from torch import Tensor, nn
 from tqdm.auto import tqdm
 from typing import Callable, TypeVar, overload
 
+try:
+	from deepspeed.runtime.utils import empty_cache
+except Exception as e:
+	print(str(e))
+	def empty_cache():
+		...
+
 T = TypeVar("T")
 
 def do_gc():
 	gc.collect()
 	torch.cuda.empty_cache()
+
+	empty_cache()
 
 def flatten_dict(d):
 	records = pd.json_normalize(d).to_dict(orient="records")

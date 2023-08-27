@@ -459,7 +459,7 @@ class Dataset(_Dataset):
 
 		return dict(
 			index=index,
-			path=path,
+			path=Path(path),
 			spkr_name=spkr_name,
 			spkr_id=spkr_id,
 			task=task,

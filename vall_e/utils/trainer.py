@@ -28,7 +28,7 @@ from .distributed import (
 	local_leader_only,
 )
 
-from ..engines import Engine, Engines, TrainFeeder, default_feeder
+from ..engines import _Engine, Engine, Engines, TrainFeeder, default_feeder
 from ..models import get_models
 
 from .utils import to_device, do_gc
@@ -36,36 +36,28 @@ from ..utils import wrapper as ml
 from ..data import get_phone_symmap # should decouple from this trainer script
 
 _logger = logging.getLogger(__name__)
-_engines: Engines
 _command: str
 
-def get_global_step():
-	try:
-		return _engines.global_step
-	except:
-		return None
-
-def get_micro_step():
-	try:
-		return _engines.micro_step
-	except:
-		return None
-
-def get_cmd():
-	try:
-		return _command
-	except:
-		raise RuntimeError("Trainer has not been setup. Have you called trainer.train?")
-
-
-get_iteration = get_global_step
-
-def load_engines():
+def load_engines(invert=False):
 	models = get_models(cfg.models.get())
 	engines = dict()
 
-	for name in models:
-		model = models[name]
+	for name, model in models.items():
+		# load only the models for training initially
+		# loads disabled models at evaluation time (to load updated weights if training separately)
+		# I'm sure there's a more elegant solution to this
+		if cfg.evaluation.load_disabled_engines:
+			if not invert and not model._cfg.training:
+				continue
+			if invert and model._cfg.training:
+				continue
+		# load only the models for training initially
+		# if load_disabled_engines, then models not marked for training will be loaded but ignored
+		# DeepSpeed has some weird quirks where loading an engine and moving it to CPU will have a memory leak or something
+		# I recommend not using this pathway
+		elif not cfg.trainer.load_disabled_engines:
+			if model._cfg.training:
+				continue
 
 		optimizer = None
 		lr_scheduler = None
@@ -82,7 +74,11 @@ def load_engines():
 				weight_decay=0.01,
 			)
 
-		if cfg.trainer.load_state_dict:
+		if not model._cfg.training:
+			optimizer = None
+			lr_scheduler = None
+
+		if cfg.trainer.load_state_dict or not model._cfg.training:
 			load_path = cfg.ckpt_dir / name / "fp32.pth"
 			state = torch.load(load_path)
 			# exporting the model from the zero_to_fp32.py exports the actual module's dict
@@ -109,18 +105,18 @@ def load_engines():
 
 				# copy weights from the dict into the old portion
 				model.resps_emb.weight.data[:o_resp_levels, :o_resp_tokens, :] = state['resps_emb.weight'].data[:o_resp_levels, :o_resp_tokens, :]
-				# reuse additional levels, probably bad
-				for n in range(o_resp_tokens, n_resp_tokens):
-					model.resps_emb.weight.data[n] = model.resps_emb.weight.data[o_resp_tokens-1]
 				# copy the full tensors back
 				state['resps_emb.weight'] = model.resps_emb.weight
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
-		engines[name] = Engine(
+		# use base engine because DeepSpeed memory leaks
+		engines[name] = (Engine if model._cfg.training else _Engine)(
+		#engines[name] = Engine(
 			model=model,
 			optimizer=optimizer,
 			lr_scheduler=lr_scheduler,
+
 			_cfg=model._cfg,
 		)
 
@@ -129,6 +125,8 @@ def load_engines():
 
 	if not cfg.trainer.load_state_dict:
 		engines.load_checkpoint()
+
+	do_gc()
 
 	return engines
 

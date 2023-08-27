@@ -161,6 +161,7 @@ class Model:
 	prom_levels: int = 8
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
+	training: bool = True
 
 	@property
 	def scale(self):
@@ -215,10 +216,11 @@ class Model:
 @dataclass()
 class Models:
 	_max_levels: int = 0
+	_prom_levels: int = 1
 
 	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8),
-		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8),
+		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, training=True),
+		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, training=True),
 	])
 
 	def get(self, name=None):
@@ -241,7 +243,7 @@ class Models:
 
 	@property
 	def prom_levels(self):
-		prom_levels = 1
+		prom_levels = self._prom_levels
 		for model in self._models:
 			prom_levels = max(prom_levels, model.prom_levels)
 		return prom_levels
@@ -278,6 +280,8 @@ class Evaluation:
 	steps: int = 500
 	ar_temperature: float = 1.0
 	nar_temperature: float = 0.2
+
+	load_disabled_engines: bool = True
 
 @dataclass()
 class DeepSpeed:
@@ -406,6 +410,8 @@ class Trainer:
 
 	aggressive_optimizations: bool = False
 	check_for_oom: bool = True
+
+	load_disabled_engines: bool = False
 
 	gc_mode: str | None = None
 

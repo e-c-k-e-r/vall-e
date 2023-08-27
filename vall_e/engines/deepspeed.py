@@ -51,6 +51,10 @@ class Engine(DeepSpeedEngine):
 		for p in self._frozen_params:
 			p.requires_grad_(True)
 		self._frozen_params.clear()
+	
+	@property
+	def _training(self):
+		return self._cfg.training
 
 	@property
 	def global_step(self):
@@ -59,6 +63,10 @@ class Engine(DeepSpeedEngine):
 	@property
 	def micro_step(self):
 		return self.micro_steps
+
+	@property
+	def batch_size(self):
+		return cfg.hyperparameters.batch_size
 
 	def gather_attribute(self, *args, **kwargs):
 		return gather_attribute(self.module, *args, **kwargs)

@@ -75,6 +75,10 @@ class Engine():
 		self._frozen_params.clear()
 
 	@property
+	def _training(self):
+		return self._cfg.training
+
+	@property
 	def global_step(self):
 		return self.global_steps
 
@@ -82,7 +86,8 @@ class Engine():
 	def micro_step(self):
 		return self.micro_steps
 
-	def train_batch_size(self):
+	@property
+	def batch_size(self):
 		return cfg.hyperparameters.batch_size
 
 	def gather_attribute(self, *args, **kwargs):
@@ -137,7 +142,10 @@ class Engine():
 
 	def to(self, *args, **kwargs):
 		self.module = self.module.to(*args, **kwargs)
-		return self.module
+		if self.optimizer:
+			self.optimizer = self.optimizer.to(*args, **kwargs)
+
+		return self
 
 	def __call__(self, *args, **kwargs):
 		return self.forward(*args, **kwargs)
@@ -199,9 +207,7 @@ class Engines(dict[str, Engine]):
 	def setup(self):
 		self._global_step = 0
 		self._micro_step = 0
-
-		for name, engine in self.items():
-			engine.name = name
+		self._batch_size = 0
 
 	@property
 	def global_step(self):
@@ -210,6 +216,10 @@ class Engines(dict[str, Engine]):
 	@property
 	def micro_step(self):
 		return self._micro_step
+
+	@property
+	def batch_size(self):
+		return self._batch_size
 
 	def gather_attribute(self, *args, **kwargs):
 		ret = {}
@@ -242,6 +252,9 @@ class Engines(dict[str, Engine]):
 
 		cfg.ckpt_dir.mkdir(parents=True, exist_ok=True)
 		for name, engine in self.items():
+			if not engine._training:
+				continue
+
 			save_dir = cfg.ckpt_dir / name
 			try:
 				engine.save_checkpoint(save_dir, tag=tag)
@@ -282,25 +295,19 @@ class Engines(dict[str, Engine]):
 		if cfg.hyperparameters.scheduler_type == "":
 			self.set_lr(cfg.hyperparameters.learning_rate)
 
-		self._update_global_step()
-		self._update_micro_step()
+		self._update()
 
 	def set_lr(self, lr):
 		for engine in self.values():
+			if not engine._training:
+				continue
 			engine.set_lr(lr)
 
-	def _update_global_step(self):
+	def _update(self):
 		for engine in self.values():
 			self._global_step = max(self._global_step, engine.global_step)
-	
-	def _update_micro_step(self):
-		for engine in self.values():
 			self._micro_step = max(self._micro_step, engine.micro_step)
-
-	def train_batch_size(self):
-		batch_size = 0
-		for engine in self.values():
-			batch_size = max(batch_size, engine.train_batch_size())
+			self._batch_size = max(self._batch_size, engine.batch_size)
 
 	def eval(self):
 		for engine in self.values():
@@ -325,8 +332,10 @@ class Engines(dict[str, Engine]):
 		if cfg.trainer.gc_mode == 'step':
 			do_gc()
 
-
 		for name, engine in self.items():
+			if not engine._training:
+				continue
+
 			device = engine.device
 
 			if cfg.trainer.gc_mode == 'substep':
@@ -424,9 +433,9 @@ class Engines(dict[str, Engine]):
 				),
 			)
 
-		self._update_global_step()
-		self._update_micro_step()
-		stats["batch_size"] = self.train_batch_size() # len(batch["text"])
+		self._update()
+
+		stats["batch_size"] = self.batch_size
 		stats["elapsed_time"] = total_elapsed_time
 		stats["wall_time"] = time.time()
 		stats["global_step"] = self.global_step
