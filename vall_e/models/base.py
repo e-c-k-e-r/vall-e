@@ -149,6 +149,8 @@ class Base(nn.Module):
 		self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
+
+		self.causal_chunk_size = 0 # 64 if self.causal else 1
 		
 		if self.arch_type == "transformer":
 			self.sin_emb = SinusoidalEmbedding(d_model)
@@ -171,8 +173,8 @@ class Base(nn.Module):
 				dropout=p_dropout,
 				checkpoint_activations=True,
 
-				chunkwise_recurrent=False, # self.causal,
-				recurrent_chunkwise_size=64,
+				chunkwise_recurrent=self.causal and self.causal_chunk_size > 0,
+				recurrent_chunkwise_size=self.causal_chunk_size,
 				no_output_layer=True,
 				decoder_normalize_before=True,
 			))
@@ -357,6 +359,10 @@ class Base(nn.Module):
 		# return the entire generated response
 		elif return_all_resp:
 			logits = [hi[-li:] for hi, li in zip(h_list, map(len, resps_list))]
+			ret = [ Categorical(logits=hi / sampling_temperature).sample() for hi in logits ]
+		# return the last chunkwise piece
+		elif self.causal_chunk_size > 0:
+			logits = [hi[-self.causal_chunk_size:] for hi, li in zip(h_list, map(len, resps_list))]
 			ret = [ Categorical(logits=hi / sampling_temperature).sample() for hi in logits ]
 		# return just the last code
 		else:

@@ -2,6 +2,7 @@ from ..config import cfg
 from .base import Base, list_to_tensor, Categorical
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 
 from einops import rearrange
 from torch import Tensor
@@ -62,7 +63,7 @@ class AR(Base):
 		max_steps: int = 1000,
 		sampling_temperature: float = 1.0,
 
-		naive: bool = True,
+		naive: bool = False,
 	):
 		if resps_list is not None:
 			resps_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
@@ -83,30 +84,104 @@ class AR(Base):
 		]
 		stopped = torch.zeros(len(text_list), device=device).bool()
 
-		chunk_size = 1 # don't really know what to do about this desu
+		chunk_size = self.causal_chunk_size # don't really know what to do about this desu
 
 		state = None
 		start = 0
 
-		for n in trange(max_steps // chunk_size):
-			# get next in sequence
+		if naive:
+			for n in trange(max_steps // max(1, chunk_size)):
+				# get next in sequence
 
-			r, state = super().forward(
-				text_list,
-				proms_list,
-				self._unsqueeze_list(resps_list),
-				sampling_temperature=sampling_temperature,
-				state=state if not naive else None,
+				r, state = super().forward(
+					text_list,
+					proms_list,
+					self._unsqueeze_list(resps_list),
+					sampling_temperature=sampling_temperature,
+					state=state # if not naive else None,
+				)
+
+				# append outputted token
+				if self.causal_chunk_size > 0:
+					for i, ri in enumerate(r):
+						resps_list[i] = torch.cat([resps_list[i], ri])
+				else:
+					for i, ri in enumerate(r):
+						resps_list[i] = torch.cat([resps_list[i], ri[None]])
+
+
+				# stop token found
+				stopped |= r == self.stop_token
+				if stopped.all().item():
+					break
+		# to-do: make it work
+		# it seems anything that isn't a one-at-a-time sequence does not work, despite generating STOP tokens.
+		else:
+			resps_list: list[Tensor] = [
+				torch.zeros(0, device=device).to(torch.int16) for _ in text_list
+			]
+
+			test_list: list[Tensor] = [
+				torch.zeros(0, device=device).to(torch.int16) for _ in text_list
+			]
+
+			batch_size = len(text_list)
+
+			x_list = self._samplewise_merge_tensors(
+				self.text_emb(text_list),
+				self.proms_emb(proms_list),
+				self.resps_emb(self._unsqueeze_list(resps_list)),
+				sep=self.sep,
 			)
+
+			x, m = list_to_tensor(x_list)
+			device = x.device
+
+			if state is None:
+				state = {}
+
+			# pre-fill KV cache
+			for n in trange(x.shape[1]):
+				xs = x[:, n:(n + 1), :]
+				r, _ = self.retnet(xs, incremental_state=state, token_embeddings=xs, features_only=True)
+				r = self.classifier(r) * m
+
+				logits = torch.stack([hi[-1] for hi in r])
+				r = Categorical(logits=logits / sampling_temperature).sample()
+
+				for i, ri in enumerate(r):
+					test_list[i] = torch.cat([test_list[i], ri[None]])
 
 			# append outputted token
 			for i, ri in enumerate(r):
 				resps_list[i] = torch.cat([resps_list[i], ri[None]])
 
-			# stop token found
-			stopped |= r == self.stop_token
-			if stopped.all().item():
-				break
+			start = x.shape[1]
+			for n in trange(max_steps // max(1, chunk_size)):
+				x_list = self._samplewise_merge_tensors(
+					self.text_emb(text_list),
+					self.proms_emb(proms_list),
+					self.resps_emb(self._unsqueeze_list(resps_list)),
+					sep=self.sep,
+				)
+
+				x, m = list_to_tensor(x_list)
+
+				xs = x[:, start+n:start+(n+1), :]
+				r, _ = self.retnet(xs, incremental_state=state, token_embeddings=xs, features_only=True)
+				r = self.classifier(r) * m
+				
+				logits = torch.stack([hi[-1] for hi in r])
+				r = Categorical(logits=logits / sampling_temperature).sample()
+
+				# append outputted token
+				for i, ri in enumerate(r):
+					resps_list[i] = torch.cat([resps_list[i], ri[None]])
+
+				# stop token found
+				stopped |= r == self.stop_token
+				if stopped.all().item():
+					break
 
 		pruned = [self._prune(r) for r in resps_list]
 		return pruned

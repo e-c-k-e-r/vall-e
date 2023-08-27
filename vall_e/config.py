@@ -28,6 +28,10 @@ class _Config:
 		return Path(self.cfg_path)
 
 	@property
+	def cache_dir(self):
+		return self.relpath / ".cache"
+
+	@property
 	def ckpt_dir(self):
 		return self.relpath / "ckpt"
 
@@ -119,6 +123,7 @@ class Dataset:
 	
 	hdf5_name: str = "data.h5"
 	use_hdf5: bool = False
+	use_metadata: bool = False
 	hdf5_flag: str = "a"
 	validate: bool = True
 	workers: int = 8
@@ -134,6 +139,19 @@ class Dataset:
 	sample_type: str = "path" # path | speaker
 	
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
+
+	@property
+	def min_phones(self):
+		return self.phones_range[0]
+	@property
+	def max_phones(self):
+		return self.phones_range[1]
+	@property
+	def min_duration(self):
+		return self.duration_range[0]
+	@property
+	def max_duration(self):
+		return self.duration_range[1]
 
 @dataclass()
 class Model:
@@ -393,7 +411,7 @@ class Trainer:
 
 	weight_dtype: str = "float16"
 
-	backend: str = "deepspeed" if not sys.platform.startswith("win") else "local"
+	backend: str = "local" # "deepspeed" if not sys.platform.startswith("win") else "local"
 
 	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)
 
@@ -453,10 +471,6 @@ class Config(_Config):
 	def get_spkr(self):
 		return eval(self.dataset.speaker_name_getter)
 
-	@property
-	def cache_dir(self):
-		return ".cache" / self.relpath
-
 	@cached_property
 	def diskcache(self):
 		if self.cfg_path is not None and self.dataset.cache:
@@ -501,11 +515,10 @@ try:
 	if cfg.dataset.use_hdf5:
 		cfg.load_hdf5()
 
-	if not cfg.dataset.use_hdf5:
-		cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
-		cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
-	
+	cfg.dataset.training = [ Path(dir) for dir in cfg.dataset.training ]
+	cfg.dataset.validation = [ Path(dir) for dir in cfg.dataset.validation ]
 	cfg.dataset.noise = [ Path(dir) for dir in cfg.dataset.noise ]
+
 except Exception as e:
 	pass
 

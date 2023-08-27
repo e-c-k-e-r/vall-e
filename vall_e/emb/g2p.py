@@ -33,9 +33,12 @@ def _get_backend( language="en-us", backend="espeak" ):
 	return phonemizer
 
 
-def encode(text: str, language="en-us", backend="espeak") -> list[str]:
+def encode(text: str, language="en-us", backend="auto") -> list[str]:
 	if language == "en":
 		language = "en-us"
+
+	if not backend or backend == "auto":
+		backend = "espeak" # if language[:2] != "en" else "festival"
 
 	text = [ text ]
 
@@ -63,16 +66,13 @@ def main():
 	args = parser.parse_args()
 
 	paths = list(args.folder.rglob(f"*{args.suffix}"))
-	random.shuffle(paths)
 
 	for path in tqdm(paths):
 		phone_path = path.with_name(path.stem.split(".")[0] + ".phn.txt")
 		if phone_path.exists():
 			continue
-		graphs = _get_graphs(path)
-		phones = encode(graphs)
-		with open(phone_path, "w") as f:
-			f.write(" ".join(phones))
+		phones = encode(open(path, "r", encoding="utf-8").read())
+		open(phone_path, "w", encoding="utf-8").write(" ".join(phones))
 
 
 if __name__ == "__main__":

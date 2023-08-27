@@ -213,7 +213,7 @@ def repeat_extend_audio( qnt, target ):
 		pieces.append(qnt)
 		length += qnt.shape[0]
 
-	return trim_random(torch.cat(pieces), target)
+	return trim(torch.cat(pieces), target)
 
 # merges two quantized audios together
 # I don't know if this works
