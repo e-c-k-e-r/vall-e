@@ -746,6 +746,12 @@ if __name__ == "__main__":
 
 			print(text, task, cfg.models.prom_levels)
 			print( proms.shape, resps.shape )
+
+			tokens = 0
+			tokens += sum([ text.shape[0] for text in batch["text"] ])
+			tokens += sum([ resps.shape[0] for resps in batch["resps"] ])
+			print( tokens )
+
 			decode_to_file( proms, f"./data/{task}.proms.wav", device="cpu" )
 			decode_to_file( resps, f"./data/{task}.resps.wav", device="cpu" )
 			break

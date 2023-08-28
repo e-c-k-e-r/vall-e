@@ -38,6 +38,9 @@ def train_feeder(engine, batch):
 	stats |= {k: v.item() for k, v in losses.items()}
 	stats |= {k: v.item() for k, v in stat.items()}
 
+	engine.tokens_processed += sum([ text.shape[0] for text in batch["text"] ])
+	engine.tokens_processed += sum([ resps.shape[0] for resps in batch["resps"] ])
+
 	return loss, stats
 
 @torch.inference_mode()

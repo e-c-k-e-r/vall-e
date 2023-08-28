@@ -41,6 +41,8 @@ class Engine(DeepSpeedEngine):
 		super().__init__(None, *args, **kwargs)
 		self._frozen_params = set()
 
+		self.tokens_processed = 0
+
 	def freeze(self):
 		for p in self.module.parameters():
 			if p.requires_grad:
@@ -62,7 +64,7 @@ class Engine(DeepSpeedEngine):
 
 	@property
 	def micro_step(self):
-		return self.micro_steps
+		return self.micro_steps	
 
 	@property
 	def batch_size(self):

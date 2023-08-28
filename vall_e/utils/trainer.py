@@ -256,7 +256,7 @@ def train(
 		stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(train_dl)
 
 		stats['batch'] = {
-			'size': stats['batch_size'],
+			'size': len(batch['text']),
 			'id': batch['spkr_id'],
 			'index': [ index for index in batch['index'] ],
 			'text_len': [ text.shape[0] for text in batch['text'] ],
@@ -264,8 +264,6 @@ def train(
 			'resp_len': [ resp.shape[0] for resp in batch['resps'] ],
 		}
 
-		del stats['batch_size']
-		del stats['wall_time']
 		del stats['global_step']
 
 		elapsed_time = stats.get("elapsed_time", 0)
