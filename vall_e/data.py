@@ -163,6 +163,11 @@ class Dataset(_Dataset):
 		self.training = training
 		self.dataset_type = "training" if self.training else "validation"
 		self.dataset = cfg.dataset.training if self.training else cfg.dataset.validation
+
+		# to-do: do not do validation if there's nothing in the validation
+		# this just makes it be happy
+		if len(self.dataset) == 0:
+			self.dataset = cfg.dataset.training
 		
 		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type)
 		self.paths = list(itertools.chain.from_iterable(self.paths_by_spkr_name.values()))
