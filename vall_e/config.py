@@ -140,6 +140,8 @@ class Dataset:
 	
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 
+	continuous: bool = False # VALL-E continuous, as explained in the paper
+
 	@property
 	def min_phones(self):
 		return self.phones_range[0]
@@ -156,20 +158,13 @@ class Dataset:
 @dataclass()
 class Model:
 	name: str = ""
-	size: str = "full"
+	size: str | float | dict = "full"
 	resp_levels: int = 1
 	prom_levels: int = 8
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
 	training: bool = True
 
-	@property
-	def scale(self):
-		if self.size == "quarter":
-			return 0.25
-		if self.size == "half":
-			return 0.5
-		return 1.0
 
 	@property
 	def full_name(self):
@@ -187,30 +182,52 @@ class Model:
 
 	@property
 	def tokens(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "tokens"):
+			return self.size['tokens']
+
 		return 1024
 
 	@property
 	def dim(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "dim"):
+			return self.size['dim']
+
+		if isinstance(self.size, float):
+			return math.floor(1024 * self.size)
+
 		if self.size == "quarter":
 			return 256
 		if self.size == "half":
 			return 512
 		if self.size == "full":
 			return 1024
+		if self.size == "double":
+			return 2048
 		raise ValueError
 
 	@property
 	def heads(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "heads"):
+			return self.size['heads']
+
+		if isinstance(self.size, float):
+			return math.floor(16 * self.size)
+
 		if self.size == "quarter":
 			return 4
 		if self.size == "half":
 			return 8
 		if self.size == "full":
 			return 16
+		if self.size == "double":
+			return 32
 		raise ValueError
 
 	@property
 	def layers(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "layers"):
+			return self.size['layers']
+
 		return 12
 
 @dataclass()

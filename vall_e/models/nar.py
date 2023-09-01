@@ -17,6 +17,8 @@ class NAR(Base):
 
 	@property
 	def arch_type(self) -> bool:
+		if hasattr(self, "_cfg"):
+			return self._cfg.arch_type
 		return cfg.models.nar.arch_type
 
 	@property
@@ -29,6 +31,8 @@ class NAR(Base):
 
 	@property
 	def n_resp_levels(self) -> int:
+		if hasattr(self, "_cfg"):
+			return self._cfg.resp_levels
 		return cfg.models.nar.resp_levels
 
 	@property

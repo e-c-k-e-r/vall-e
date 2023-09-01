@@ -185,11 +185,18 @@ def encode_from_file(path, device="cuda"):
 # trims from the start, up to `target`
 def trim( qnt, target ):
 	length = max( qnt.shape[0], qnt.shape[1] )
-	start = 0
-	end = start + target
-	if end >= length:
-		start = length - target
-		end = length                
+	if target > 0:
+		start = 0
+		end = start + target
+		if end >= length:
+			start = length - target
+			end = length
+	# negative length specified, trim from end
+	else:
+		start = length + target
+		end = length
+		if start < 0:
+			start = 0
 
 	return qnt[start:end] if qnt.shape[0] > qnt.shape[1] else qnt[:, start:end]
 

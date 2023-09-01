@@ -23,6 +23,8 @@ class AR(Base):
 
 	@property
 	def arch_type(self) -> bool:
+		if hasattr(self, "_cfg"):
+			return self._cfg.arch_type
 		return cfg.models.ar.arch_type
 
 	@property
@@ -31,6 +33,8 @@ class AR(Base):
 
 	@property
 	def n_resp_levels(self) -> int:
+		if hasattr(self, "_cfg"):
+			return self._cfg.resp_levels
 		return cfg.models.ar.resp_levels
 
 	@property

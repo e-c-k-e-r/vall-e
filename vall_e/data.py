@@ -313,7 +313,15 @@ class Dataset(_Dataset):
 		noise_scale = 0.25
 		# text-to-speech
 		if task == "tts":
-			proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
+			trim_length = int(cfg.dataset.prompt_duration * 75)
+			# VALL-E continuous
+			# ignore if target utterance is shorter than prompt duration
+			# to-do: actually do this for the AR only as I don't think the paper trained the NAR for this
+			if cfg.dataset.continuous and trim_length > resps.shape[0]:
+				proms = resps[:trim_length, :]
+				resps = resps[trim_length:, :]
+			else:
+				proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
 		# noise suppression || speech removal
 		elif task == "ns" or task == "sr":
 			# sample random noise
