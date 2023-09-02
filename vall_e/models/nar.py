@@ -144,7 +144,7 @@ def example_usage():
 		return torch.tensor([*map(symmap.get, phones)]).to()
 
 	# to-do: unmangle this and the resp shit
-	qnt = torch.load("data/qnt.pt")[0].t()[:, :2].to(device)
+	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.models.prom_levels].to(device)
 
 	text_list = [
 		#torch.tensor([1, 2, 3], device=device),
@@ -180,7 +180,7 @@ def example_usage():
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)
 
-			t.set_description(f"{stats}")
+			tqdm.write(f"{stats}")
 
 	sample("init")
 	train()

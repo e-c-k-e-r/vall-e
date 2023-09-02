@@ -198,11 +198,7 @@ class Model:
 			return 256
 		if self.size == "half":
 			return 512
-		if self.size == "full":
-			return 1024
-		if self.size == "double":
-			return 2048
-		raise ValueError
+		return 1024
 
 	@property
 	def heads(self):
@@ -216,17 +212,15 @@ class Model:
 			return 4
 		if self.size == "half":
 			return 8
-		if self.size == "full":
-			return 16
-		if self.size == "double":
-			return 32
-		raise ValueError
+		return 16
 
 	@property
 	def layers(self):
 		if isinstance(self.size, dict) and hasattr(self.size, "layers"):
 			return self.size['layers']
 
+		if self.size == "double":
+			return 24
 		return 12
 
 @dataclass()

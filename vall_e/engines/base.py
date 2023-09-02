@@ -77,6 +77,8 @@ class Engine():
 
 	@property
 	def _training(self):
+		if not hasattr(self, "_cfg"):
+			return True
 		return self._cfg.training
 
 	@property
@@ -199,7 +201,6 @@ class Engine():
 		with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
 			self.forward(*args, **kwargs)
 			losses = self.gather_attribute("loss")
-			print(self.module.loss)
 			loss = torch.stack([*losses.values()]).sum()
 
 		stats = {}
