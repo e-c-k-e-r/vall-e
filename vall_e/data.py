@@ -314,12 +314,14 @@ class Dataset(_Dataset):
 		# text-to-speech
 		if task == "tts" or task == "tts-c":
 			trim_length = int(cfg.dataset.prompt_duration * 75)
-			continuous = task == "tts-c" and trim_length * 2 < resps.shape[0]
+			# demote if the target is too short
+			if task == "tts-c" and trim_length * 2 >= resps.shape[0]:
+				task = "tts"
 
 			# VALL-E continuous
 			# ignore if target utterance is shorter than prompt duration
 			# to-do: actually do this for the AR only as I don't think the paper trained the NAR for this
-			if continuous:
+			if task == "tts-c":
 				proms = resps[:trim_length, :]
 				resps = resps[trim_length:, :]
 			else:
