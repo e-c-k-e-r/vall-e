@@ -312,12 +312,14 @@ class Dataset(_Dataset):
 
 		noise_scale = 0.25
 		# text-to-speech
-		if task == "tts":
+		if task == "tts" or task == "tts-c":
 			trim_length = int(cfg.dataset.prompt_duration * 75)
+			continuous = task == "tts-c" and trim_length * 2 < resps.shape[0]
+
 			# VALL-E continuous
 			# ignore if target utterance is shorter than prompt duration
 			# to-do: actually do this for the AR only as I don't think the paper trained the NAR for this
-			if cfg.dataset.continuous and trim_length > resps.shape[0]:
+			if continuous:
 				proms = resps[:trim_length, :]
 				resps = resps[trim_length:, :]
 			else:
@@ -440,7 +442,7 @@ class Dataset(_Dataset):
 				([ post_prom ] if post_prom is not None else [])
 			)
 		else:
-			raise f'Undefined task: {task}'
+			raise Exception(f'Undefined task: {task}')
 
 		"""
 		# emulate SVC

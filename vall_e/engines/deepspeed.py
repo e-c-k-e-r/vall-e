@@ -87,7 +87,7 @@ class Engine(DeepSpeedEngine):
 			print(str(e))
 
 	def traverse(self, *args, **kwargs):
-		with torch.autocast(self.device, dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+		with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
 			self.forward(*args, **kwargs)
 			losses = self.gather_attribute("loss")
 			loss = torch.stack([*losses.values()]).sum()

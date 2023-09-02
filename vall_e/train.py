@@ -23,7 +23,7 @@ mel_stft_loss = auraloss.freq.MelSTFTLoss(24_000, device="cpu")
 _logger = logging.getLogger(__name__)
 
 def train_feeder(engine, batch):
-	with torch.autocast(engine.device, dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+	with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
 		engine(
 			text_list=batch["text"],
 			proms_list=[prom[:, :engine._cfg.prom_levels] for prom in batch["proms"]], # reduce the input prompt to the target prom level

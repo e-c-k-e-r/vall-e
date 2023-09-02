@@ -140,8 +140,6 @@ class Dataset:
 	
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 
-	continuous: bool = False # VALL-E continuous, as explained in the paper
-
 	@property
 	def min_phones(self):
 		return self.phones_range[0]
