@@ -84,6 +84,10 @@ Two dataset formats are supported:
   - this will shove everything into a single HDF5 file and store some metadata alongside (for now, the symbol map generated, and text/audio lengths)
   - be sure to also define `use_hdf5` in your config YAML.
 
+### Plotting Metrics
+
+Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 ./scripts/plot.py --log-dir ./training/valle/logs/1693675364 --out-dir ./data/ --xs=ar.engine_step --ys=ar.loss`
+
 ### Notices
 
 #### Modifying `prom_levels`, `resp_levels`, Or `tasks` For A Model
