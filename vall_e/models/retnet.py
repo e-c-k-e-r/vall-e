@@ -8,6 +8,10 @@ from typing import Dict, Optional
 
 from torch import Tensor
 
+from torchscale.architecture.config import RetNetConfig
+from torchscale.architecture.retnet import RetNetDecoder
+
+"""
 class FairseqIncrementalState(object):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -24,7 +28,6 @@ class FairseqIncrementalState(object):
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]],
         key: str,
     ) -> Optional[Dict[str, Optional[Tensor]]]:
-        """Helper for getting incremental state for an nn.Module."""
         full_key = self._get_full_incremental_state_key(key)
         if incremental_state is None or full_key not in incremental_state:
             return None
@@ -36,7 +39,6 @@ class FairseqIncrementalState(object):
         key: str,
         value: Dict[str, Optional[Tensor]],
     ) -> Optional[Dict[str, Dict[str, Optional[Tensor]]]]:
-        """Helper for setting incremental state for an nn.Module."""
         if incremental_state is not None:
             full_key = self._get_full_incremental_state_key(key)
             incremental_state[full_key] = value
@@ -66,3 +68,4 @@ class RetNetDecoder(Decoder):
 			for key in incremental_state[module]:
 				result = incremental_state[module][key].index_select(0, new_order)
 				incremental_state[module][key] = result
+"""

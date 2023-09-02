@@ -87,9 +87,10 @@ class Engine(DeepSpeedEngine):
 			print(str(e))
 
 	def traverse(self, *args, **kwargs):
-		self.forward(*args, **kwargs)
-		losses = self.gather_attribute("loss")
-		loss = torch.stack([*losses.values()]).sum()
+		with torch.autocast(self.device, dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+			self.forward(*args, **kwargs)
+			losses = self.gather_attribute("loss")
+			loss = torch.stack([*losses.values()]).sum()
 
 		stats = {}
 		stats |= {k: v.item() for k, v in losses.items()}

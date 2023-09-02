@@ -165,7 +165,6 @@ class Model:
 	arch_type: str = "transformer"
 	training: bool = True
 
-
 	@property
 	def full_name(self):
 		name = [ self.name ]
@@ -332,9 +331,9 @@ class DeepSpeed:
 			"fp16": {
 				"enabled": True,
 				"auto_cast": True,
-			} if cfg.trainer.weight_dtype.lower() == "float16" else None,
+			} if cfg.trainer.weight_dtype.lower() == "float16" and not cfg.trainer.amp else None,
 			"bf16": {
-				"enabled": cfg.trainer.weight_dtype.lower() == "bfloat16"
+				"enabled": cfg.trainer.weight_dtype.lower() == "bfloat16" and not cfg.trainer.amp
 			},
 			"compression_training": {
 				"weight_quantization": {
@@ -427,15 +426,13 @@ class Trainer:
 
 	aggressive_optimizations: bool = False
 	check_for_oom: bool = True
-
+	gc_mode: str | None = None
 	load_disabled_engines: bool = False
 
-	gc_mode: str | None = None
-
 	weight_dtype: str = "float16"
+	amp: bool = False
 
-	backend: str = "local" # "deepspeed" if not sys.platform.startswith("win") else "local"
-
+	backend: str = "local"
 	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)
 
 	@cached_property
@@ -450,9 +447,13 @@ class Trainer:
 @dataclass()
 class Inference:
 	weight_dtype: str = "float32"
+	amp: bool = False
 
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
 	use_vocos: bool = True
+
+	recurrent_chunk_size: int = 0
+	recurrent_forward: bool = False
 
 	@cached_property
 	def dtype(self):
@@ -473,6 +474,7 @@ class BitsAndBytes:
 @dataclass()
 class Config(_Config):
 	device: str = "cuda"
+	mode: str = "training" # "inferencing"
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: Models = field(default_factory=lambda: Models)

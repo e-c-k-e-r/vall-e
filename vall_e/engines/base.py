@@ -55,7 +55,7 @@ class Engine():
 			self._cfg = kwargs['_cfg']
 			kwargs.pop("_cfg")
 
-		self.module = kwargs['model'].to(cfg.device).to(cfg.trainer.dtype)
+		self.module = kwargs['model'].to(cfg.device).to(torch.float32 if cfg.trainer.amp else cfg.trainer.dtype)
 		self.optimizer = kwargs['optimizer'] if 'optimizer' in kwargs else None
 		self.lr_scheduler = kwargs['lr_scheduler'] if 'lr_scheduler' in kwargs else None
 
@@ -196,9 +196,11 @@ class Engine():
 		return 0.0
 
 	def traverse(self, *args, **kwargs):
-		self.forward(*args, **kwargs)
-		losses = self.gather_attribute("loss")
-		loss = torch.stack([*losses.values()]).sum()
+		with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+			self.forward(*args, **kwargs)
+			losses = self.gather_attribute("loss")
+			print(self.module.loss)
+			loss = torch.stack([*losses.values()]).sum()
 
 		stats = {}
 		stats |= {k: v.item() for k, v in losses.items()}

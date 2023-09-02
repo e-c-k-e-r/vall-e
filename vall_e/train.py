@@ -23,16 +23,17 @@ mel_stft_loss = auraloss.freq.MelSTFTLoss(24_000, device="cpu")
 _logger = logging.getLogger(__name__)
 
 def train_feeder(engine, batch):
-	engine(
-		text_list=batch["text"],
-		proms_list=[prom[:, :engine._cfg.prom_levels] for prom in batch["proms"]], # reduce the input prompt to the target prom level
-		resps_list=batch["resps"]
-	)
+	with torch.autocast(engine.device, dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+		engine(
+			text_list=batch["text"],
+			proms_list=[prom[:, :engine._cfg.prom_levels] for prom in batch["proms"]], # reduce the input prompt to the target prom level
+			resps_list=batch["resps"]
+		)
 
-	losses = engine.gather_attribute("loss")
-	stat = engine.gather_attribute("stats")
+		losses = engine.gather_attribute("loss")
+		stat = engine.gather_attribute("stats")
 
-	loss = torch.stack([*losses.values()]).sum()
+		loss = torch.stack([*losses.values()]).sum()
 
 	stats = {}
 	stats |= {k: v.item() for k, v in losses.items()}

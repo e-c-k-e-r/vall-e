@@ -44,8 +44,12 @@ class NAR(Base):
 		return cfg.models.tasks
 
 	@property
-	def resp_loss_only(self):
+	def resp_loss_only(self) -> bool:
 		return True
+
+	@property
+	def recurrent_chunk_size(self) -> int:
+		return 0
 
 	def forward(
 		self,
@@ -104,7 +108,7 @@ class NAR(Base):
 
 				quant_levels = torch.full((len(text_list),), level, device=device)
 
-				resps_list, _ = super().forward(
+				resps_list = super().forward(
 					text_list,
 					proms_list,
 					prev_list,

@@ -31,6 +31,8 @@ class TTS():
 			cfg.format()
 		except Exception as e:
 			pass
+
+		cfg.mode = "inferencing"
 		
 		self.symmap = None
 		if ar_ckpt and nar_ckpt:
@@ -47,7 +49,7 @@ class TTS():
 					if "module" in state:
 						state = state['module']
 					self.ar.load_state_dict(state)
-					self.ar = self.ar.to(self.device, dtype=cfg.inference.dtype)
+					self.ar = self.ar.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
 				elif name.startswith("nar"):
 					self.nar = model
 					state = torch.load(self.nar_ckpt)
@@ -56,7 +58,7 @@ class TTS():
 					if "module" in state:
 						state = state['module']
 					self.nar.load_state_dict(state)
-					self.nar = self.nar.to(self.device, dtype=cfg.inference.dtype)
+					self.nar = self.nar.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
 		else:
 			self.load_models()
 
@@ -72,9 +74,9 @@ class TTS():
 		engines = load_engines()
 		for name, engine in engines.items():
 			if name[:2] == "ar":
-				self.ar = engine.module.to(self.device, dtype=cfg.inference.dtype)
+				self.ar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
 			elif name[:3] == "nar":
-				self.nar = engine.module.to(self.device, dtype=cfg.inference.dtype)
+				self.nar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it
@@ -119,9 +121,10 @@ class TTS():
 		prom = to_device(prom, self.device).to(torch.int16)
 		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
 
-		resps_list = self.ar(text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, sampling_temperature=ar_temp)
-		resps_list = [r.unsqueeze(-1) for r in resps_list]
-		resps_list = self.nar(text_list=[phns], proms_list=[prom], resps_list=resps_list, sampling_temperature=nar_temp)
+		with torch.autocast(self.device, dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
+			resps_list = self.ar(text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, sampling_temperature=ar_temp)
+			resps_list = [r.unsqueeze(-1) for r in resps_list]
+			resps_list = self.nar(text_list=[phns], proms_list=[prom], resps_list=resps_list, sampling_temperature=nar_temp)
 
 		wav, sr = qnt.decode_to_file(resps_list[0], out_path)
 		
