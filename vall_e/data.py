@@ -46,6 +46,7 @@ def get_task_symmap():
 		"<mask>": start + 4,
 		"<eoe>": start + 5,
 		"<svc>": start + 6,
+		"<tts-c>": start + 7,
 	}
 	return symmap
 
@@ -58,6 +59,7 @@ def _get_quant_path(path):
 def _get_phone_path(path):
 	return _replace_file_extension(path, ".phn.txt")
 
+@cfg.diskcache()
 def _load_paths(dataset, type="training"):
 	return { cfg.get_spkr( data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
 
@@ -317,6 +319,8 @@ class Dataset(_Dataset):
 			# demote if the target is too short
 			if task == "tts-c" and trim_length * 2 >= resps.shape[0]:
 				task = "tts"
+			
+			task = "tts"
 
 			# VALL-E continuous
 			# ignore if target utterance is shorter than prompt duration
@@ -324,6 +328,8 @@ class Dataset(_Dataset):
 			if task == "tts-c":
 				proms = resps[:trim_length, :]
 				resps = resps[trim_length:, :]
+
+				proms = torch.cat( [self.get_task_token(task), proms] )
 			else:
 				proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
 		# noise suppression || speech removal
@@ -536,7 +542,6 @@ def _create_dataloader(dataset, training):
 		sampler=sampler,
 	)
 
-@cfg.diskcache()
 def create_datasets():
 	train_dataset = Dataset( training=True )
 	val_dataset = Dataset( phone_symmap=train_dataset.phone_symmap, training=False )

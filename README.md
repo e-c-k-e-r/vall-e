@@ -86,7 +86,9 @@ Two dataset formats are supported:
 
 ### Plotting Metrics
 
-Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 ./scripts/plot.py --log-dir ./training/valle/logs/1693675364 --out-dir ./data/ --xs=ar.engine_step --ys=ar.loss`
+Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot yaml="./training/valle/config.yaml"`
+
+You can specify what X and Y labels you want to plot against by passing `--xs tokens_processed --ys loss stats.acc`
 
 ### Notices
 
