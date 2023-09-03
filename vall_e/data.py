@@ -45,8 +45,7 @@ def get_task_symmap():
 		"<soe>": start + 3,
 		"<mask>": start + 4,
 		"<eoe>": start + 5,
-		"<svc>": start + 6,
-		"<tts-c>": start + 7,
+		"<tts-c>": start + 6,
 	}
 	return symmap
 
@@ -320,8 +319,6 @@ class Dataset(_Dataset):
 			if task == "tts-c" and trim_length * 2 >= resps.shape[0]:
 				task = "tts"
 			
-			task = "tts"
-
 			# VALL-E continuous
 			# ignore if target utterance is shorter than prompt duration
 			# to-do: actually do this for the AR only as I don't think the paper trained the NAR for this
