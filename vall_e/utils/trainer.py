@@ -251,9 +251,8 @@ def train(
 		#batch = to_device(batch, torch.cuda.current_device())
 		stats = engines.step(batch=batch, feeder=train_feeder)
 
-		iteration = stats['global_step'] # * cfg.hyperparameters.gradient_accumulation_steps
-		stats['it'] = iteration
-		stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(train_dl)
+		stats['it'] = stats['global_step']
+		stats['epoch'] = engines.global_samples / len(train_dl.dataset.paths)
 
 		stats['batch'] = {
 			'size': len(batch['text']),

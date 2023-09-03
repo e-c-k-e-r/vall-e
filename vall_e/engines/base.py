@@ -222,6 +222,7 @@ class Engines(dict[str, Engine]):
 		self._global_step = 0
 		self._micro_step = 0
 		self._batch_size = 0
+		self._global_samples = 0
 
 	@property
 	def global_step(self):
@@ -234,6 +235,10 @@ class Engines(dict[str, Engine]):
 	@property
 	def batch_size(self):
 		return self._batch_size
+
+	@property
+	def global_samples(self):
+		return self._global_samples
 
 	def gather_attribute(self, *args, **kwargs):
 		ret = {}
@@ -324,6 +329,7 @@ class Engines(dict[str, Engine]):
 			self._global_step = max(self._global_step, engine.global_step)
 			self._micro_step = max(self._micro_step, engine.micro_step)
 			self._batch_size = max(self._batch_size, engine.batch_size)
+			self._global_samples = max(self._global_samples, engine.global_samples)
 
 	def eval(self):
 		for engine in self.values():
