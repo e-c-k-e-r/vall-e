@@ -129,6 +129,10 @@ class Base(nn.Module):
 	@property
 	def recurrent_chunk_size(self) -> int:
 		raise NotImplementedError
+	
+	@property
+	def interleave(self) -> bool:
+		return False
 
 	def __init__(
 		self,
@@ -137,8 +141,11 @@ class Base(nn.Module):
 		n_heads: int = 8,
 		n_layers: int = 12,
 		p_dropout: float = 0.1,
+		config = None, 
 	):
 		super().__init__()
+		self.config = config
+
 		self.n_tokens = n_tokens
 		self.d_model = d_model
 		self.n_heads = n_heads

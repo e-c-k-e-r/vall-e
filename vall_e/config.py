@@ -162,7 +162,7 @@ class Model:
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
 	training: bool = True
-	interleave_pattern: str | None = None
+	interleave: bool = False
 
 	@property
 	def full_name(self):
@@ -173,6 +173,9 @@ class Model:
 
 		if self.arch_type != "transformer":
 			name.append(self.arch_type.replace("/", "-"))
+
+		if self.interleave:
+			name.append("interleaved")
 
 		name.append(f'{cfg.models.prom_levels}')
 
@@ -228,8 +231,8 @@ class Models:
 	_prom_levels: int = 1
 
 	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, training=True),
-		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, training=True),
+		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, training=True, interleave=False),
+		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, training=True, interleave=False),
 	])
 
 	def get(self, name=None):

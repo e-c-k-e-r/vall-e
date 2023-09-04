@@ -17,8 +17,8 @@ class NAR(Base):
 
 	@property
 	def arch_type(self) -> str:
-		if hasattr(self, "_cfg") and self._cfg:
-			return self._cfg.arch_type
+		if hasattr(self, "config") and self.config:
+			return self.config.arch_type
 		return cfg.models.nar.arch_type
 
 	@property
@@ -31,8 +31,8 @@ class NAR(Base):
 
 	@property
 	def n_resp_levels(self) -> int:
-		if hasattr(self, "_cfg") and self._cfg:
-			return self._cfg.resp_levels
+		if hasattr(self, "config") and self.config:
+			return self.config.resp_levels
 		return cfg.models.nar.resp_levels
 
 	@property
@@ -50,6 +50,10 @@ class NAR(Base):
 	@property
 	def recurrent_chunk_size(self) -> int:
 		return 0
+
+	@property
+	def interleave(self) -> bool:
+		return False
 
 	def forward(
 		self,

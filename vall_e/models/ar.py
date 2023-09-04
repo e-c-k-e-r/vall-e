@@ -23,8 +23,8 @@ class AR(Base):
 
 	@property
 	def arch_type(self) -> str:
-		if hasattr(self, "_cfg") and self._cfg:
-			return self._cfg.arch_type
+		if hasattr(self, "config") and self.config:
+			return self.config.arch_type
 		return cfg.models.ar.arch_type
 
 	@property
@@ -33,8 +33,8 @@ class AR(Base):
 
 	@property
 	def n_resp_levels(self) -> int:
-		if hasattr(self, "_cfg") and self._cfg:
-			return self._cfg.resp_levels
+		if hasattr(self, "config") and self.config:
+			return self.config.resp_levels
 		return cfg.models.ar.resp_levels
 
 	@property
@@ -55,11 +55,29 @@ class AR(Base):
 			return 0
 		return cfg.inference.recurrent_chunk_size
 
+	@property
+	def interleave(self) -> bool:
+		if hasattr(self, "config") and self.config:
+			return self.config.interleave
+		return False
+
 	def _prune(self, l: Tensor):
 		indices = (l == self.stop_token).nonzero()
 		if len(indices) == 0:
 			return l
 		return l[: indices.min().item()]
+
+	def _interleave( self, codes ):
+		if not self.interleave:
+			return codes
+
+		return codes.flatten()
+
+	def _deinterleave( self, codes, length = 0 ):
+		if not self.interleave:
+			return codes
+
+		return torch.unflatten( codes[:codes.shape[0] // self.n_prom_levels * self.n_prom_levels], 0, ( codes.shape[0] // self.n_prom_levels, self.n_prom_levels ) )
 
 	@staticmethod
 	def _unsqueeze_list(x_list, axis=-1):
@@ -74,7 +92,10 @@ class AR(Base):
 		sampling_temperature: float = 1.0,
 	):
 		if resps_list is not None:
-			resps_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
+			if self.interleave:
+				resps_list = [self._interleave(r) for r in resps_list]
+			else:
+				resps_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
 
 			return super().forward(
 				text_list=text_list,
@@ -93,6 +114,9 @@ class AR(Base):
 		stopped = torch.zeros(batch_size, device=device).bool()
 
 		state = {} if cfg.inference.recurrent_forward else None
+
+		if self.interleave:
+			max_steps *= self.n_prom_levels
 
 		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
 			# get next in sequence
@@ -116,9 +140,10 @@ class AR(Base):
 			if stopped.all().item():
 				break
 
-
-		pruned = [self._prune(r) for r in resps_list]
-		return pruned
+		res = [self._prune(r) for r in resps_list]
+		if self.interleave:
+			res = [self._deinterleave(r) for r in res]
+		return res
 
 
 def example_usage():
@@ -163,6 +188,10 @@ def example_usage():
 		'n_heads': 16,
 		'n_layers': 24,
 	}
+	try:
+		kwargs['config'] = cfg.models.ar
+	except Exception as e:
+		pass 
 	model = AR(**kwargs).to(device)
 	engine = Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=1e-4))
 	

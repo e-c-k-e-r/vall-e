@@ -135,7 +135,7 @@ class Base(nn.Module):
 
 	@property
 	def n_resp_levels(self) -> int:
-		return 4
+		return 1
 
 	@property
 	def n_max_levels(self) -> int:
@@ -155,7 +155,7 @@ class Base(nn.Module):
 
 	@property
 	def interleave_pattern(self) -> str | None:
-		return "musiclm"
+		return "flatten"
 
 	@property
 	def stop_token(self):
@@ -192,27 +192,12 @@ class Base(nn.Module):
 			return codes
 
 		return codes.flatten()
-		"""
-		pattern_provider = _get_pattern_provider( self.interleave_pattern )( self.n_resp_levels )
-		pattern = pattern_provider.get_pattern( codes.shape[0] )
-		res, _, _ = pattern.build_pattern_sequence( codes.t()[None, :, :], self.interleaved_token, keep_only_valid_steps=True )
-		return res[0].t().flatten()
-		"""
 
-	def _deinterleave( self, codes ):
+	def _deinterleave( self, codes, length = 0 ):
 		if not self.interleave_pattern:
 			return codes
 
-		return torch.unflatten( codes[:codes.shape[0] // self.n_resp_levels * self.n_resp_levels], 0, ( codes.shape[0] // self.n_resp_levels, self.n_resp_levels ) )
-		"""
-		if codes.dim() == 1:
-			codes = torch.unflatten( codes[:codes.shape[0] // self.n_resp_levels * self.n_resp_levels], 0, ( codes.shape[0] // self.n_resp_levels, self.n_resp_levels ) )
-
-		pattern_provider = _get_pattern_provider( self.interleave_pattern )( self.n_resp_levels )
-		pattern = pattern_provider.get_pattern( codes.shape[0] )
-		res, _, _ = pattern.revert_pattern_sequence( codes, special_token=self.interleaved_token)
-		return res[0].t()
-		"""
+		return torch.unflatten( codes[:codes.shape[0] // self.n_prom_levels * self.n_prom_levels], 0, ( codes.shape[0] // self.n_prom_levels, self.n_prom_levels ) )
 
 	def __init__(
 		self,
@@ -232,13 +217,13 @@ class Base(nn.Module):
 		self.n_layers = n_layers
 
 		# + tasks for each token they represent in the prom
-		n_prom_tokens = n_tokens + (self.n_tasks - 1) + (1 if self.interleave_pattern else 0) # - 1 because tts is an inherent task
+		n_prom_tokens = n_tokens + (self.n_tasks - 1) # - 1 because tts is an inherent task
 		# +1 to include the stop token + 1 to include interleave token
-		n_resp_tokens = n_tokens + (1 if self.use_stop_token else 0) + (1 if self.interleave_pattern else 0) # AR requires a stop token to... know when to stop
+		n_resp_tokens = n_tokens + (1 if self.use_stop_token else 0) # AR requires a stop token to... know when to stop
 
 		self.text_emb = Embedding(n_tokens, d_model)
 		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
-		self.resps_emb = MultiEmbedding(1, n_resp_tokens, d_model)
+		self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -270,7 +255,6 @@ class Base(nn.Module):
 			))
 
 		# I imagine because each step returns `resp_level`s tokens at once, so we need to have a classifier for each level
-		#self.classifier = nn.ModuleList([ nn.Linear(d_model, n_resp_tokens) for _ in range(self.n_resp_levels) ]) if self.interleave_pattern else nn.Linear(d_model, n_resp_tokens)
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
 		self.accuracy_metric = MulticlassAccuracy(
@@ -385,11 +369,6 @@ class Base(nn.Module):
 		# Remove padding
 		h_list = [hi[:li] for hi, li in zip(x, map(len, x_list))]
 
-		if True:
-			logits = [hi[:] for hi, li in zip(h_list, map(len, resps_list))]
-			ret = [ Categorical(logits=hi / sampling_temperature).sample() for hi in logits ]
-			print( [ r for r in ret ] )
-
 		# compute loss if the target is given
 		if targ_list is not None:
 			if any([l == 0 for l in map(len, targ_list)]):
@@ -487,6 +466,8 @@ class Base(nn.Module):
 
 		state = {} if cfg.inference.recurrent_forward else None
 
+		max_steps *= self.n_prom_levels
+
 		for n in range(max_steps // max(1, self.recurrent_chunk_size)):
 			# get next in sequence
 
@@ -502,6 +483,7 @@ class Base(nn.Module):
 			for i, ri in enumerate(r):
 				if self.stop_token in ri:
 					stopped[i] = True
+
 				resps_list[i] = torch.cat([resps_list[i], ri])
 
 			# stop token found
@@ -509,12 +491,7 @@ class Base(nn.Module):
 			if stopped.all().item():
 				break
 
-
-		pruned = [self._prune(r) for r in resps_list]
-		print( [ r for r in pruned ] )
-		deinterleaved = [ self._deinterleave(r) for r in pruned ]
-		print( [ r for r in deinterleaved ] )
-		return deinterleaved
+		return [self._deinterleave(self._prune(r)) for r in resps_list]
 
 def example_usage():
 	from ..config import cfg
@@ -548,7 +525,7 @@ def example_usage():
 	for name, model in models.items():
 		print(f"{name} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-	engines = Engines({ name: Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=1e-4)) for name, model in models.items() })
+	engines = Engines({ name: Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=5e-5)) for name, model in models.items() })
 
 	train = True
 
@@ -565,7 +542,7 @@ def example_usage():
 		qnt.to(device),
 	]
 	
-	def sample( filename, steps=450 * 4 ):
+	def sample( filename, steps=450 ):
 		AR = None
 
 		engines.eval()
@@ -578,10 +555,10 @@ def example_usage():
 		decode_to_file(resps_list[0].cpu(), f"./data/{filename}.wav", device="cpu")
 	
 	if train:
-		sample("init", 15)
+		sample("init", 75 )
 
 		engines.train()
-		t = trange(100)
+		t = trange(500)
 		for i in t:
 			stats = {"step": i}
 			"""
