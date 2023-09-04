@@ -162,6 +162,7 @@ class Model:
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	arch_type: str = "transformer"
 	training: bool = True
+	interleave_pattern: str | None = None
 
 	@property
 	def full_name(self):

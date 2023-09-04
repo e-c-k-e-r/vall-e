@@ -22,8 +22,8 @@ class AR(Base):
 		return "ln"
 
 	@property
-	def arch_type(self) -> bool:
-		if hasattr(self, "_cfg"):
+	def arch_type(self) -> str:
+		if hasattr(self, "_cfg") and self._cfg:
 			return self._cfg.arch_type
 		return cfg.models.ar.arch_type
 
@@ -33,7 +33,7 @@ class AR(Base):
 
 	@property
 	def n_resp_levels(self) -> int:
-		if hasattr(self, "_cfg"):
+		if hasattr(self, "_cfg") and self._cfg:
 			return self._cfg.resp_levels
 		return cfg.models.ar.resp_levels
 
@@ -146,8 +146,8 @@ def example_usage():
 		tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
 	]
 	proms_list = [
-		x8(torch.tensor([1, 2, 3], device=device)),
-		#qnt.to(device),
+		#x8(torch.tensor([1, 2, 3], device=device)),
+		qnt.to(device),
 	]
 	resps_list = [
 		qnt.to(device),
@@ -161,7 +161,7 @@ def example_usage():
 		'n_tokens': 1024,
 		'd_model': 1024,
 		'n_heads': 16,
-		'n_layers': 12,
+		'n_layers': 24,
 	}
 	model = AR(**kwargs).to(device)
 	engine = Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=1e-4))

@@ -12,6 +12,7 @@ import itertools
 
 from .config import cfg
 from .emb.qnt import trim, trim_random, repeat_extend_audio, merge_audio, decode_to_file
+from .utils.sampler import Sampler
 
 from collections import defaultdict
 from functools import cache, cached_property
@@ -173,6 +174,8 @@ class Dataset(_Dataset):
 		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type)
 		self.paths = list(itertools.chain.from_iterable(self.paths_by_spkr_name.values()))
 
+		self.samplers = { name: Sampler( paths, keep_all=True ) for name, paths in self.paths_by_spkr_name.items() }
+
 		if cfg.dataset.sample_type == "path":
 			self.paths = [*_interleaved_reorder(self.paths, self.get_speaker)]
 
@@ -214,6 +217,22 @@ class Dataset(_Dataset):
 	@cached_property
 	def tasks(self):
 		return cfg.dataset.tasks_list # ["tts", "tts", "ns", "sr", "tse", "tts", "tts"] # , "cse", "nse"
+
+	def save_state_dict(self, path):
+		state_dict = {
+			"samplers": { name: sampler.current_pool for name, sampler in self.samplers.items() }
+		}
+		torch.save(state_dict, path)
+
+	def load_state_dict(self, path):
+		state_dict = torch.load(path)
+
+		if "samplers" in state_dict:
+			# better than naively setting the entire object
+			for name, sampler in state_dict["samplers"].items():
+				if name not in self.samplers:
+					continue
+				self.samplers[name].current_pool = sampler
 
 	def _get_phone_symmap(self):
 		return get_phone_symmap()
@@ -290,7 +309,7 @@ class Dataset(_Dataset):
 		if cfg.dataset.sample_type == "speaker":
 			spkr_name = self.spkrs[index]
 			spkr_id = self.spkr_symmap[spkr_name]
-			path = random.choice([*set(self.paths_by_spkr_name[spkr_name])])
+			path = self.samplers[spkr_name].sample()
 		else:
 			path = self.paths[index]
 			spkr_name = self.get_speaker(path)
@@ -543,6 +562,10 @@ def create_datasets():
 	train_dataset = Dataset( training=True )
 	val_dataset = Dataset( phone_symmap=train_dataset.phone_symmap, training=False )
 
+	train_state_path = cfg.relpath / "train_dataset.pt"
+	if train_state_path.exists():
+		train_dataset.load_state_dict( train_state_path )
+
 	return train_dataset, val_dataset
 
 
@@ -751,6 +774,8 @@ if __name__ == "__main__":
 				del v[i]['proms']
 				del v[i]['resps']
 			print(f'{k}:', v)
+
+		train_dl.dataset.save_state_dict(cfg.relpath / "train_dataset.pt")
 
 	elif args.action == "tasks":
 		index = 0
