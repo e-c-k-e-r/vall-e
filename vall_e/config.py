@@ -225,6 +225,11 @@ class Model:
 			return 24
 		return 12
 
+	@property
+	def activation_checkpointing(self):
+		return cfg.trainer.activation_checkpointing
+	
+
 @dataclass()
 class Models:
 	_max_levels: int = 0
@@ -419,6 +424,8 @@ class Trainer:
 	strict_loading: bool = True
 	load_module_only: bool = False
 	restart_step_count: bool = False
+
+	activation_checkpointing: bool = True
 
 	aggressive_optimizations: bool = False
 	check_for_oom: bool = True

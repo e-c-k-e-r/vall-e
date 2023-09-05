@@ -153,9 +153,10 @@ class PrenormResidual(nn.Module):
 
 
 class Block(nn.Sequential):
-	def __init__(self, d_model, n_heads, p_dropout, causal, norm_type, n_levels):
+	def __init__(self, d_model, n_heads, p_dropout, causal, norm_type, n_levels, activation_checkpointing=True):
 		super().__init__()
 
+		self.activation_checkpointing = activation_checkpointing
 		self.attn = PrenormResidual(
 			Attention(d_model, n_heads, causal),
 			d_model=d_model,
@@ -186,8 +187,7 @@ class Block(nn.Sequential):
 			m: (b t 1)
 			l: (b)
 		"""
-		poor_in_vram = True
-		if x.requires_grad and poor_in_vram:
+		if x.requires_grad and self.activation_checkpointing:
 			x = checkpoint(self.attn, x, m, l, use_reentrant=False)
 		else:
 			x = self.attn(x, m, l)
