@@ -255,6 +255,10 @@ class Models:
 		return self.get("ar")
 
 	@property
+	def ar_nar(self):
+		return self.get("ar+nar")
+
+	@property
 	def nar(self):
 		return self.get("nar")
 
@@ -283,6 +287,7 @@ class Hyperparameters:
 	gradient_clipping: int = 100
 
 	optimizer: str = "Adamw"
+	optimizer_params: dict = field(default_factory=lambda: {})
 	learning_rate: float = 3.25e-4
 
 	scheduler_type: str = ""

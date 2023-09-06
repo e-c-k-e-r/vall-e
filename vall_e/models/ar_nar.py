@@ -4,11 +4,12 @@ from .base import Base, list_to_tensor, Categorical
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
+import random
 from einops import rearrange
 from torch import Tensor
 from tqdm import trange
 
-class AR(Base):
+class AR_NAR(Base):
 	@property
 	def causal(self):
 		return True
@@ -21,7 +22,7 @@ class AR(Base):
 	def arch_type(self) -> str:
 		if hasattr(self, "config") and self.config:
 			return self.config.arch_type
-		return cfg.models.ar.arch_type
+		return cfg.models.ar_nar.arch_type
 
 	@property
 	def n_prom_levels(self) -> int:
@@ -31,7 +32,7 @@ class AR(Base):
 	def n_resp_levels(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.resp_levels
-		return cfg.models.ar.resp_levels
+		return cfg.models.ar_nar.resp_levels
 
 	@property
 	def n_max_levels(self) -> int:
@@ -81,26 +82,67 @@ class AR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
-		sampling_temperature: float = 1.0,
+		sampling_temperature: float = 0.0,
 	):
-		if resps_list is not None:
-			if self.interleave:
-				resps_list = [self._interleave(r) for r in resps_list]
-			else:
-				resps_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
-
-			return super().forward(
-				text_list=text_list,
-				proms_list=proms_list,
-				resps_list=self._unsqueeze_list(resps_list),
-				targ_list=resps_list,
-				quant_levels=None,
-			)
-
 		device = text_list[0].device
 		batch_size = len(text_list)
 
-		resps_list: list[Tensor] = [ torch.zeros(0, device=device).to(torch.int16) for _ in text_list ]
+		# is training or NAR
+		if resps_list is not None:
+			n_levels_set = {r.shape[-1] for r in resps_list}
+			n_levels = next(iter(n_levels_set))
+
+			# is training
+			if n_levels == self.n_resp_levels:
+				if random.random() < 0.5:
+					quant_levels = None
+
+					targ_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
+					resps_list = self._unsqueeze_list(targ_list)
+				else:
+					quant_levels = torch.randint(1, self.n_resp_levels, (batch_size,))
+
+					targ_list = [o[...,   l] for o, l in zip(resps_list, quant_levels)]
+					resps_list = [o[..., : l] for o, l in zip(resps_list, quant_levels)]
+
+				if quant_levels is not None:
+					quant_levels.to(device=device)
+
+				return super().forward(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					targ_list=targ_list,
+					quant_levels=quant_levels,
+				)
+			# is NAR
+			prev_list = resps_list
+
+			while True:
+				level = prev_list[0].shape[-1] - 1
+
+				if level >= self.n_resp_levels:
+					break
+
+				quant_levels = torch.full((len(text_list),), level, device=device)
+
+				resps_list = super().forward(
+					text_list,
+					proms_list,
+					prev_list,
+					quant_levels=quant_levels,
+					sampling_temperature=sampling_temperature,
+				)
+
+				prev_list = [
+					torch.cat([rs, r.unsqueeze(-1)], dim=-1)
+					for rs, r in zip(prev_list, resps_list)
+				]
+
+			return prev_list
+
+		# is AR
+		resps_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in text_list ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 
 		state = {} if cfg.inference.recurrent_forward else None
@@ -112,10 +154,9 @@ class AR(Base):
 			# get next in sequence
 
 			r = super().forward(
-				text_list=text_list,
-				proms_list=proms_list,
-				resps_list=self._unsqueeze_list(resps_list),
-				quant_levels=None,
+				text_list,
+				proms_list,
+				self._unsqueeze_list(resps_list),
 				sampling_temperature=sampling_temperature,
 				state=state
 			)
@@ -131,10 +172,7 @@ class AR(Base):
 			if stopped.all().item():
 				break
 
-		res = [self._prune(r) for r in resps_list]
-		if self.interleave:
-			res = [self._deinterleave(r) for r in res]
-		return res
+		return [self._prune(r) for r in resps_list]
 
 
 def example_usage():
@@ -180,23 +218,32 @@ def example_usage():
 		'n_layers': 24,
 	}
 	
+	"""
 	try:
-		kwargs['config'] = cfg.models.ar
+		kwargs['config'] = cfg.models.ar_nar
 	except Exception as e:
 		pass
+	"""
 
-	model = AR(**kwargs).to(device)
-	engine = Engine(model=model, optimizer=torch.optim.SGD(model.parameters(), lr=0.1))
+	model = AR_NAR(**kwargs).to(device)
+	engine = Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=0.001))
 	
-	def sample( name, steps=400 ):
+	def sample( name, steps=600 ):
 		engine.eval()
-		out = engine(text_list, proms_list, max_steps=steps)
-		for i, o in enumerate(out):
-			wav, sr = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)
+		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
+		
+		for i, o in enumerate(resps_list):
+			_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)
+
+		resps_list = [r.unsqueeze(-1) for r in resps_list]
+		resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
+
+		for i, o in enumerate(resps_list):
+			_ = decode_to_file(o, f"data/ar+nar.{i}.{name}.wav", device=device)
 
 	def train():
 		engine.train()
-		t = trange(60)
+		t = trange(5000)
 		for i in t:
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)

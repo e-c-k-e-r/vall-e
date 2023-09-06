@@ -25,14 +25,17 @@ if cfg.bitsandbytes.enabled:
 			self.sparse,
 		)).to(self.weight.dtype) )
 
-Adam = torch.optim.Adam
-AdamW = torch.optim.AdamW
 
 if cfg.bitsandbytes.enabled:
 	import bitsandbytes as bnb
 
 	Adam = bnb.optim.Adam
 	AdamW = bnb.optim.AdamW
+	SGD = bnb.optim.SGD
+else:
+	Adam = torch.optim.Adam
+	AdamW = torch.optim.AdamW
+	SGD = torch.optim.SGD
 
 # handles generically converting to a specific tensor type and converting back (implemented solely for bfloat16)
 @contextmanager
@@ -73,3 +76,4 @@ if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 
 	torch.optim.Adam = Adam
 	torch.optim.AdamW = AdamW
+	torch.optim.SGD = SGD

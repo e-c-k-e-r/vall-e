@@ -95,14 +95,6 @@ class Base(nn.Module):
 		raise NotImplementedError
 
 	@property
-	def n_resp_levels(self) -> int:
-		raise NotImplementedError
-
-	@property
-	def use_stop_token(self) -> bool:
-		raise NotImplementedError
-
-	@property
 	def arch_type(self) -> str:
 		raise NotImplementedError
 
@@ -115,15 +107,15 @@ class Base(nn.Module):
 		raise NotImplementedError
 
 	@property
+	def n_resp_levels(self) -> int:
+		raise NotImplementedError
+
+	@property
 	def n_max_levels(self) -> int:
 		raise NotImplementedError
 	
 	@property
 	def n_tasks(self) -> int:
-		raise NotImplementedError
-
-	@property
-	def resp_loss_only(self):
 		raise NotImplementedError
 
 	@property
@@ -133,6 +125,24 @@ class Base(nn.Module):
 	@property
 	def interleave(self) -> bool:
 		return False
+
+	@property
+	def stop_token(self):
+		if not self.causal:
+			raise ValueError("Not using stop token!")
+		return self.n_tokens
+
+	@property
+	def ignore_index(self):
+		return -100
+
+	@staticmethod
+	def _samplewise_merge_tensors(*l, sep: Tensor | None):
+		if sep is None:
+			cat = torch.cat
+		else:
+			cat = partial(_join, sep=sep)
+		return [*map(cat, zip(*l))]
 
 	def __init__(
 		self,
@@ -155,7 +165,7 @@ class Base(nn.Module):
 
 		# +1 to include the stop token
 		n_prom_tokens = n_tokens + (self.n_tasks - 1) # - 1 because tts is an inherent task
-		n_resp_tokens = n_tokens + (1 if self.use_stop_token else 0) # AR requires a stop token to... know when to stop
+		n_resp_tokens = n_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
 
 		self.text_emb = Embedding(n_tokens, d_model)
 		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
@@ -208,24 +218,6 @@ class Base(nn.Module):
 			ignore_index=self.ignore_index,
 		)
 
-	@property
-	def stop_token(self):
-		if not self.use_stop_token:
-			raise ValueError("Not using stop token!")
-		return self.n_tokens
-
-	@property
-	def ignore_index(self):
-		return -100
-
-	@staticmethod
-	def _samplewise_merge_tensors(*l, sep: Tensor | None):
-		if sep is None:
-			cat = torch.cat
-		else:
-			cat = partial(_join, sep=sep)
-		return [*map(cat, zip(*l))]
-
 	@overload
 	def forward(
 		self,
@@ -234,9 +226,6 @@ class Base(nn.Module):
 		resps_list: list[Tensor],
 		targ_list: list[Tensor] | None = None,
 		quant_levels: Tensor | None = None,
-		shift_targ_list: bool = False,
-		return_all: Literal[False] = False,
-		return_all_resp: Literal[False] = False,
 		sampling_temperature: float = 1.0,
 	) -> Tensor:
 		...
@@ -249,9 +238,6 @@ class Base(nn.Module):
 		resps_list: list[Tensor],
 		targ_list: list[Tensor] | None = None,
 		quant_levels: Tensor | None = None,
-		shift_targ_list: bool = False,
-		return_all: Literal[True] = True,
-		return_all_resp: Literal[True] = True,
 		sampling_temperature: float = 1.0,
 	) -> list[Tensor]:
 		...
@@ -262,28 +248,12 @@ class Base(nn.Module):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor],
 		targ_list: list[Tensor] | None = None,
+
 		quant_levels: Tensor | None = None,
-		shift_targ_list: bool = False,
-		return_all: bool = False,
-		return_all_resp: bool = False,
 		sampling_temperature: float = 1.0,
 
 		state: dict | None = None,
 	):
-		"""
-		Args:
-			text_list: [t] * b
-			proms_list: [t' l] * b, l quantization levels.
-			resps_list: [t'' l] * b, l quantization levels.
-			targ_list: [t''] * b, one quantization level only; when given, loss will be computed
-			quant_levels: specify which quant_levels to feed forward, used in NAR mode.
-			shift_targ_list: whether to shift target list when computing loss. True if AR.
-			return_all_resp: True if NAR.
-			sampling_temperature: a lower temperature makes the result more robust but less diverse.
-		Returns:
-			y: sampled tokens
-		"""
-
 		x_list = self._samplewise_merge_tensors(
 			self.text_emb(text_list),
 			self.proms_emb(proms_list),
@@ -334,17 +304,16 @@ class Base(nn.Module):
 
 			# process each batch
 			for i in range(len(text_prom_list)):
-				# for the NAR, ignore completely computing the loss against the text prompt
-				if self.resp_loss_only:
-					text_prom_list[i][:] = self.ignore_index
-
 				# for the AR, shift the text/input prompt into the future by 1, and ignore the rolled back text token
-				else:
+				if quant_levels is None:
 					text_prom_list[i] = text_prom_list[i].roll(-1, dims=0)
 					text_prom_list[i][-1] = self.ignore_index
+				# for the NAR, ignore completely computing the loss against the text prompt
+				else:
+					text_prom_list[i][:] = self.ignore_index
 
 			# adjust the target sequence if needed for the AR
-			if shift_targ_list:
+			if quant_levels is None:
 				# creates a copy because this is aliased against input response sequence
 				targ_list = [*targ_list] 
 				# shift the target response into the future by 1, and mark the rolled back token / last token as a stop token
@@ -370,10 +339,11 @@ class Base(nn.Module):
 			)
 
 		# return the entire generated token string
+		return_all = False
 		if return_all:
 			logits = [hi[:] for hi, li in zip(h_list, map(len, resps_list))]
 		# return the entire generated response
-		elif return_all_resp:
+		elif quant_levels is not None:
 			logits = [hi[-li:] for hi, li in zip(h_list, map(len, resps_list))]
 		# return the last chunkwise piece
 		elif self.causal and self.recurrent_chunk_size > 0:

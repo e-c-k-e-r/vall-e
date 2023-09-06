@@ -62,16 +62,27 @@ def load_engines(invert=False):
 		optimizer = None
 		lr_scheduler = None
 
-		# yuck, should instead check be optimier == "adamw" and backend != "deepspeed"
-		# and then have ds_cfg pass in the config flag to use pytorch adamw
-		# I genuinely cannot validate if this ever actually gets used in DeepSpeed
+		# cfg.deepspeed.torch_adam
 		if (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "adamw") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "adamw-torch"):
+			params = {
+				"lr": cfg.hyperparameters.learning_rate,
+				"betas": (0.9, 0.96),
+				"eps": 1e-07,
+				"weight_decay": 0.01,
+			}
+			params.update(cfg.hyperparameters.optimizer_params)
 			optimizer = ml.AdamW(
 				model.parameters(),
-				lr=cfg.hyperparameters.learning_rate,
-				betas=(0.9, 0.96),
-				eps=1e-07,
-				weight_decay=0.01,
+				**params,
+			)
+		elif (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "sgd") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "sgd-torch"):
+			params = {
+				"lr": cfg.hyperparameters.learning_rate,
+			}
+			params.update(cfg.hyperparameters.optimizer_params)
+			optimizer = ml.SGD(
+				model.parameters(),
+				**params,
 			)
 
 		if not model._cfg.training:

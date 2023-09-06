@@ -12,10 +12,6 @@ class NAR(Base):
 		return False
 
 	@property
-	def use_stop_token(self):
-		return False
-
-	@property
 	def arch_type(self) -> str:
 		if hasattr(self, "config") and self.config:
 			return self.config.arch_type
@@ -42,10 +38,6 @@ class NAR(Base):
 	@property
 	def n_tasks(self) -> int:
 		return cfg.models.tasks
-
-	@property
-	def resp_loss_only(self) -> bool:
-		return True
 
 	@property
 	def recurrent_chunk_size(self) -> int:

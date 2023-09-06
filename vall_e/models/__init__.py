@@ -1,11 +1,14 @@
 from .ar import AR
 from .nar import NAR
+from .ar_nar import AR_NAR
 
 def get_model(cfg):
 	if cfg.name == "ar":
 		Model = AR
 	elif cfg.name == "nar":
 		Model = NAR
+	elif cfg.name == "ar+nar":
+		Model = AR_NAR
 	else:
 		raise f"invalid model name: {cfg.name}"
 	name = cfg.name
