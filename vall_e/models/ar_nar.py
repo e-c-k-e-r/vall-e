@@ -52,7 +52,7 @@ class AR_NAR(Base):
 		return False
 	
 	@property
-	def dual(self) -> bool:
+	def monolithic(self) -> bool:
 		return True
 
 	def _prune(self, l: Tensor):

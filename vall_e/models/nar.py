@@ -48,7 +48,7 @@ class NAR(Base):
 		return False
 
 	@property
-	def dual(self) -> bool:
+	def monolithic(self) -> bool:
 		return False
 
 	def forward(
