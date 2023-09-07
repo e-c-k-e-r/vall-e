@@ -127,6 +127,10 @@ class Base(nn.Module):
 		return False
 
 	@property
+	def dual(self) -> bool:
+		return False
+
+	@property
 	def stop_token(self):
 		if not self.causal:
 			raise ValueError("Not using stop token!")
@@ -151,7 +155,7 @@ class Base(nn.Module):
 		n_heads: int = 8,
 		n_layers: int = 12,
 		p_dropout: float = 0.1,
-		
+
 		config = None, 
 	):
 		super().__init__()
@@ -169,7 +173,11 @@ class Base(nn.Module):
 
 		self.text_emb = Embedding(n_tokens, d_model)
 		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
-		self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
+
+		if self.dual:
+			self.resps_emb = nn.ModuleList([MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model) for _ in range(2)])
+		else:
+			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -254,12 +262,20 @@ class Base(nn.Module):
 
 		state: dict | None = None,
 	):
-		x_list = self._samplewise_merge_tensors(
-			self.text_emb(text_list),
-			self.proms_emb(proms_list),
-			self.resps_emb(resps_list),
-			sep=self.sep,
-		)
+		if self.dual:
+			x_list = self._samplewise_merge_tensors(
+				self.text_emb(text_list),
+				self.proms_emb(proms_list),
+				self.resps_emb[0 if quant_levels is None else 1](resps_list),
+				sep=self.sep,
+			)
+		else:
+			x_list = self._samplewise_merge_tensors(
+				self.text_emb(text_list),
+				self.proms_emb(proms_list),
+				self.resps_emb(resps_list),
+				sep=self.sep,
+			)
 
 		x, m = list_to_tensor(x_list)
 		

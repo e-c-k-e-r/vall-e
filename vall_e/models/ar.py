@@ -53,6 +53,10 @@ class AR(Base):
 			return self.config.interleave
 		return False
 
+	@property
+	def dual(self) -> bool:
+		return False
+
 	def _prune(self, l: Tensor):
 		indices = (l == self.stop_token).nonzero()
 		if len(indices) == 0:

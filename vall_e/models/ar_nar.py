@@ -16,7 +16,7 @@ class AR_NAR(Base):
 
 	@property
 	def norm_type(self):
-		return "ln"
+		return "ln" if self.n_resp_levels == 1 else "adaln"
 
 	@property
 	def arch_type(self) -> str:
@@ -44,33 +44,21 @@ class AR_NAR(Base):
 
 	@property
 	def recurrent_chunk_size(self) -> int:
-		if cfg.mode == "training":
-			return 0
-		return cfg.inference.recurrent_chunk_size
+		return 0
 
 	@property
 	def interleave(self) -> bool:
-		if hasattr(self, "config") and self.config:
-			return self.config.interleave
 		return False
+	
+	@property
+	def dual(self) -> bool:
+		return True
 
 	def _prune(self, l: Tensor):
 		indices = (l == self.stop_token).nonzero()
 		if len(indices) == 0:
 			return l
 		return l[: indices.min().item()]
-
-	def _interleave( self, codes ):
-		if not self.interleave:
-			return codes
-
-		return codes.flatten()
-
-	def _deinterleave( self, codes, length = 0 ):
-		if not self.interleave:
-			return codes
-
-		return torch.unflatten( codes[:codes.shape[0] // self.n_prom_levels * self.n_prom_levels], 0, ( codes.shape[0] // self.n_prom_levels, self.n_prom_levels ) )
 
 	@staticmethod
 	def _unsqueeze_list(x_list, axis=-1):
@@ -243,7 +231,7 @@ def example_usage():
 
 	def train():
 		engine.train()
-		t = trange(5000)
+		t = trange(1000)
 		for i in t:
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)

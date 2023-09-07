@@ -47,6 +47,10 @@ class NAR(Base):
 	def interleave(self) -> bool:
 		return False
 
+	@property
+	def dual(self) -> bool:
+		return False
+
 	def forward(
 		self,
 		text_list: list[Tensor],
