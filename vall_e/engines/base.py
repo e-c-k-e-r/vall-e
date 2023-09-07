@@ -64,11 +64,15 @@ class Engine():
 		self.global_samples = 0
 		self.tokens_processed = 0
 
-	def freeze(self):
-		for p in self.module.parameters():
-			if p.requires_grad:
-				p.requires_grad_(False)
-				self._frozen_params.add(p)
+	def freeze(self, freeze_all=True):
+		# set to freeze 
+		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):
+			raise Exception("freeze_all=False yet self._cfg.frozen_params is None")
+
+		for name, param in self.module.named_parameters():
+			if (freeze_all and param.requires_grad) or (not freeze_all and name in self._cfg.frozen_params):
+				param.requires_grad_(False)
+				self._frozen_params.add(param)
 
 	def unfreeze(self):
 		for p in self._frozen_params:

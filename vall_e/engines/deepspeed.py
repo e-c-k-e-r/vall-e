@@ -31,6 +31,7 @@ if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
 
 class Engine(DeepSpeedEngine):
 	def __init__(self, *args, **kwargs):
+		self._cfg = None
 		if '_cfg' in kwargs:
 			self._cfg = kwargs['_cfg']
 			kwargs.pop("_cfg")
@@ -43,15 +44,18 @@ class Engine(DeepSpeedEngine):
 
 		self.tokens_processed = 0
 
-	def freeze(self):
-		for p in self.module.parameters():
-			if p.requires_grad:
-				p.requires_grad_(False)
-				self._frozen_params.add(p)
+	def freeze(self, freeze_all=True):
+		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):
+			raise Exception("freeze_all=False yet self._cfg.frozen_params is None")
+
+		for name, param in self.module.named_parameters():
+			if (freeze_all and param.requires_grad) or (not freeze_all and name in self._cfg.frozen_params):
+				param.requires_grad_(False)
+				self._frozen_params.add(param)
 
 	def unfreeze(self):
-		for p in self._frozen_params:
-			p.requires_grad_(True)
+		for param in self._frozen_params:
+			param.requires_grad_(True)
 		self._frozen_params.clear()
 	
 	@property

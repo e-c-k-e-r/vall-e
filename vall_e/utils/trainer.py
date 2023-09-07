@@ -110,6 +110,8 @@ def load_engines(invert=False):
 			# should decouple the following from this trainer script
 			# probably with passing a fun that defaults to a lambda x: x deal
 
+			"""
+			# can probably be done a lot more intelligently but oh well
 			# extend the proms_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
 			if model.proms_emb.weight.shape[0] > state['proms_emb.weight'].shape[0] or model.proms_emb.weight.shape[1] > state['proms_emb.weight'].shape[1]:
 				o_prom_levels, o_prom_tokens, d_model = state['proms_emb.weight'].shape
@@ -128,6 +130,7 @@ def load_engines(invert=False):
 				model.resps_emb.weight.data[:o_resp_levels, :o_resp_tokens, :] = state['resps_emb.weight'].data[:o_resp_levels, :o_resp_tokens, :]
 				# copy the full tensors back
 				state['resps_emb.weight'] = model.resps_emb.weight
+			"""
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
@@ -146,6 +149,10 @@ def load_engines(invert=False):
 
 	if not cfg.trainer.load_state_dict:
 		engines.load_checkpoint()
+
+	# freeze requested params
+	for name, engine in engines.items():
+		engine.freeze(freeze_all=False)
 
 	do_gc()
 
