@@ -163,6 +163,7 @@ class Model:
 	arch_type: str = "transformer"
 	training: bool = True
 	interleave: bool = False
+	use_multiembedding: bool = True # nasty bandaid I got myself into
 
 	@property
 	def full_name(self):
