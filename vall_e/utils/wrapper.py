@@ -29,9 +29,9 @@ if cfg.bitsandbytes.enabled:
 if cfg.bitsandbytes.enabled:
 	import bitsandbytes as bnb
 
-	Adam = bnb.optim.Adam
-	AdamW = bnb.optim.AdamW
-	SGD = bnb.optim.SGD
+	Adam = bnb.optim.Adam8bit
+	AdamW = bnb.optim.AdamW8bit
+	SGD = bnb.optim.SGD8bit
 else:
 	Adam = torch.optim.Adam
 	AdamW = torch.optim.AdamW
@@ -77,3 +77,9 @@ if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 	torch.optim.Adam = Adam
 	torch.optim.AdamW = AdamW
 	torch.optim.SGD = SGD
+
+# https://github.com/konstmish/prodigy
+try:
+	from prodigyopt import Prodigy
+except Exception as e:
+	pass

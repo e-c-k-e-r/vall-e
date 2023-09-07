@@ -84,6 +84,15 @@ def load_engines(invert=False):
 				model.parameters(),
 				**params,
 			)
+		elif (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "prodigy") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "prodigy-torch"):
+			params = {
+				"lr": cfg.hyperparameters.learning_rate,
+			}
+			params.update(cfg.hyperparameters.optimizer_params)
+			optimizer = ml.Prodigy(
+				model.parameters(),
+				**params,
+			)
 
 		if not model._cfg.training:
 			optimizer = None
