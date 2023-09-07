@@ -130,6 +130,7 @@ def example_usage():
 	from ..emb.qnt import decode_to_file
 	from ..engines import Engine
 	from tqdm import tqdm
+	from ..utils import wrapper as ml
 
 	device = "cuda"
 	x8 = partial(repeat, pattern="t -> t l", l=cfg.models.prom_levels)
@@ -162,7 +163,9 @@ def example_usage():
 		'n_layers': 12,
 	}
 	model = NAR(**kwargs).to(device)
-	engine = Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=1e-4))
+	steps = 500
+	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	engine = Engine(model=model, optimizer=optimizer)
 
 	def sample( name ):
 		engine.eval()
@@ -171,7 +174,7 @@ def example_usage():
 
 	def train():
 		engine.train()
-		t = trange(60)
+		t = trange(steps)
 		for i in t:
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)

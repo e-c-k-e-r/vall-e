@@ -150,6 +150,7 @@ def example_usage():
 	from ..emb.qnt import decode_to_file
 	from ..engines import Engine
 	from tqdm import tqdm
+	from ..utils import wrapper as ml
 
 	device = "cuda"
 	x8 = partial(repeat, pattern="t -> t l", l=cfg.models.prom_levels) 
@@ -183,16 +184,20 @@ def example_usage():
 		'n_heads': 16,
 		'n_layers': 24,
 	}
-	
+
+	"""	
 	try:
 		kwargs['config'] = cfg.models.ar
 	except Exception as e:
 		pass
+	"""	
 
 	model = AR(**kwargs).to(device)
-	engine = Engine(model=model, optimizer=torch.optim.SGD(model.parameters(), lr=0.1))
+	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	engine = Engine(model=model, optimizer=optimizer)
+	steps = 500
 	
-	def sample( name, steps=400 ):
+	def sample( name, steps=600 ):
 		engine.eval()
 		out = engine(text_list, proms_list, max_steps=steps)
 		for i, o in enumerate(out):
@@ -200,7 +205,7 @@ def example_usage():
 
 	def train():
 		engine.train()
-		t = trange(60)
+		t = trange(steps)
 		for i in t:
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)

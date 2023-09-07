@@ -33,6 +33,7 @@ class TTS():
 			pass
 
 		cfg.mode = "inferencing"
+		cfg.trainer.load_module_only = True
 		
 		self.symmap = None
 		if ar_ckpt and nar_ckpt:

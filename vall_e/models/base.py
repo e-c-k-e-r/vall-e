@@ -68,7 +68,9 @@ class MultiEmbedding(nn.Embedding):
 		self.n_tokens = n_tokens
 		self.weight = nn.Parameter(torch.randn(max_n_levels, n_tokens, token_dim))
 
-	def forward(self, x_list: list[Tensor]) -> list[Tensor]:
+	# to-do: select quant level from given quant_levels tensor if given (i.e. through the resp_emb)
+	# I imagine this is an oversight in the NAR.
+	def forward(self, x_list: list[Tensor], quant_levels: Tensor | None = None) -> list[Tensor]:
 		if len(x_list) == 0:
 			return []
 
@@ -151,8 +153,12 @@ class Base(nn.Module):
 		return False
 
 	@property
-	def n_embeddings(self):
+	def n_embeddings(self) -> int:
 		return self.n_resp_levels if self.monolithic else 1
+
+	@property
+	def use_old_embeddings(self) -> bool:
+		return True
 
 	@property
 	def stop_token(self):
@@ -199,14 +205,14 @@ class Base(nn.Module):
 
 		# use dedicated embeddings for each RVQ-bin level in the input acoustic prompt if requested
 		# n_embeddings == prom_levels because using the MultiEmbedding is more than fine for the input acoustic prompt
-		if self.n_embeddings == self.n_prom_levels:
+		if self.n_embeddings == self.n_prom_levels or not self.use_old_embeddings:
 			self.proms_emb = PromEmbedding(self.n_prom_levels, n_prom_tokens, d_model) 
 		else:
 			self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
 		
 		# use dedicated embeddings for each RVQ-bin level in the output response / target if requested
 		# n_embeddings > 1 because the using the MultiEmbedding "works" fine enough for split AR/NARs.
-		if self.n_embeddings > 1:
+		if self.n_embeddings > 1 or not self.use_old_embeddings:
 			self.resps_emb = RespEmbedding(self.n_embeddings, n_resp_tokens, d_model)
 		else:
 			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
@@ -409,6 +415,7 @@ def example_usage():
 	from ..emb.qnt import decode_to_file
 	from ..engines import Engine, Engines
 	from tqdm import tqdm, trange
+	from ..utils import wrapper as ml
 
 	from .ar import AR
 	from .nar import NAR
@@ -432,7 +439,7 @@ def example_usage():
 	for name, model in models.items():
 		print(f"{name} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-	engines = Engines({ name: Engine(model=model, optimizer=torch.optim.AdamW(model.parameters(), lr=1e-4)) for name, model in models.items() })
+	engines = Engines({ name: Engine(model=model, optimizer=ml.AdamW(model.parameters(), lr=1e-4)) for name, model in models.items() })
 
 	train = True
 
@@ -449,7 +456,7 @@ def example_usage():
 		qnt.to(device),
 	]
 	
-	def sample( name, steps=400 ):
+	def sample( name, steps=600 ):
 		AR = None
 		NAR = None
 
@@ -471,7 +478,7 @@ def example_usage():
 		sample("init", 15)
 
 		engines.train()
-		t = trange(60)
+		t = trange(500)
 		for i in t:
 			stats = {"step": i}
 			"""

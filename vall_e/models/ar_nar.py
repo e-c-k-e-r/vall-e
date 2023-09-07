@@ -1,5 +1,4 @@
 from .base import Base, list_to_tensor, Categorical
-from ..utils import wrapper as ml
 from ..config import cfg
 
 import torch
@@ -173,6 +172,7 @@ def example_usage():
 	from ..emb.qnt import decode_to_file, unload_model
 	from ..engines import Engine
 	from tqdm import tqdm
+	from ..utils import wrapper as ml
 
 	device = "cuda"
 	x8 = partial(repeat, pattern="t -> t l", l=cfg.models.prom_levels) 
@@ -215,8 +215,8 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
+	steps = 500
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
-	#optimizer = ml.AdamW(model.parameters(), lr=0.0001)
 	engine = Engine(model=model, optimizer=optimizer)
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
@@ -238,7 +238,7 @@ def example_usage():
 
 	def train():
 		engine.train()
-		t = trange(500)
+		t = trange(steps)
 		for i in t:
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)
