@@ -168,7 +168,7 @@ class Model:
 	def full_name(self):
 		name = [ self.name ]
 		
-		if self.size != "full":
+		if self.size != "full" and isinstance(self.size, str):
 			name.append(self.size)
 
 		if self.arch_type != "transformer":
@@ -287,6 +287,7 @@ class Hyperparameters:
 	gradient_clipping: int = 100
 
 	optimizer: str = "Adamw"
+	torch_optimizer: bool = False
 	optimizer_params: dict = field(default_factory=lambda: {})
 	learning_rate: float = 3.25e-4
 
@@ -328,7 +329,7 @@ class DeepSpeed:
 				"params": {
 					"lr": cfg.hyperparameters.learning_rate,
 				}
-			} if not cfg.hyperparameters.optimizer.endswith("-torch") else None,
+			} if not cfg.hyperparameters.torch_optimizer else None,
 			"scheduler": {
 				"type": cfg.hyperparameters.scheduler_type,
 				"params": scheduler_params,

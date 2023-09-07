@@ -17,7 +17,7 @@ class AR_NAR(Base):
 
 	@property
 	def norm_type(self):
-		return "ln" if self.n_resp_levels == 1 else "adaln"
+		return "ln" # if self.n_resp_levels == 1 else "adaln"
 
 	@property
 	def arch_type(self) -> str:
@@ -202,9 +202,9 @@ def example_usage():
 
 	kwargs = {
 		'n_tokens': 1024,
-		'd_model': 1536, # 1536
-		'n_heads': 24, # 24
-		'n_layers': 24, # 32
+		'd_model': 1024, # 1536
+		'n_heads': 16, # 24
+		'n_layers': 12, # 32
 	}
 	
 	"""
@@ -218,6 +218,8 @@ def example_usage():
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
 	#optimizer = ml.AdamW(model.parameters(), lr=0.0001)
 	engine = Engine(model=model, optimizer=optimizer)
+
+	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 	
 	def sample( name, steps=600 ):
 		engine.eval()
@@ -243,7 +245,7 @@ def example_usage():
 
 			tqdm.write(f"{stats}")
 
-	sample("init", 75)
+	#sample("init", 75)
 	train()
 	sample("final")
 

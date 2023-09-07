@@ -87,8 +87,31 @@ class MultiEmbedding(nn.Embedding):
 		x_list = x.split([*map(len, x_list)])
 
 		return x_list
+"""
+class PromEmbedding(nn.Module):
+	def __init__(self, n_levels, n_tokens, token_dim):
+		super().__init__()
+		self.n_levels = n_levels
+		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(self.n_levels)])
+	
+	def forward(self, x_list: list[Tensor] ) -> list[Tensor]:
+		if len(x_list) == 0:
+			return []
 
+		return [ sum([ self.embeddings[k](xi[:, k]) for k in range(xi.shape[-1]) ]) for i, xi in enumerate(x_list) ]
 
+class RespEmbedding(nn.Module):
+	def __init__(self, n_levels, n_tokens, token_dim):
+		super().__init__()
+		self.n_levels = n_levels
+		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(self.n_levels)])
+	
+	def forward(self, x_list: list[Tensor], quant_levels: Tensor | None = None) -> list[Tensor]:
+		if len(x_list) == 0:
+			return []
+		res = [ self.embeddings[quant_levels[i] if quant_levels is not None else 0](xi) for i, xi in enumerate(x_list) ]
+		return res
+"""
 class Base(nn.Module):
 	@property
 	def causal(self) -> bool:
@@ -129,6 +152,10 @@ class Base(nn.Module):
 	@property
 	def dual(self) -> bool:
 		return False
+
+	@property
+	def n_embeddings(self):
+		return self.n_resp_levels if self.dual else 1
 
 	@property
 	def stop_token(self):
@@ -172,12 +199,18 @@ class Base(nn.Module):
 		n_resp_tokens = n_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
 
 		self.text_emb = Embedding(n_tokens, d_model)
-		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
 
-		if self.dual:
-			self.resps_emb = nn.ModuleList([MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model) for _ in range(2)])
-		else:
+		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
+		if self.n_embeddings == 1:
 			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
+		else:
+			self.resps_emb = nn.ModuleList([ MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model) for _ in range(self.n_embeddings) ])
+		"""
+		if self.n_embeddings == 1:
+			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
+		else:
+			self.resps_emb = RespEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
+		"""
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -262,18 +295,19 @@ class Base(nn.Module):
 
 		state: dict | None = None,
 	):
-		if self.dual:
+		if self.n_embeddings == 1:
 			x_list = self._samplewise_merge_tensors(
 				self.text_emb(text_list),
 				self.proms_emb(proms_list),
-				self.resps_emb[0 if quant_levels is None else 1](resps_list),
+				self.resps_emb(resps_list),
 				sep=self.sep,
 			)
 		else:
 			x_list = self._samplewise_merge_tensors(
 				self.text_emb(text_list),
 				self.proms_emb(proms_list),
-				self.resps_emb(resps_list),
+				self.resps_emb[0 if quant_levels is None else 1](resps_list),
+				#self.resps_emb(resps_list, quant_levels),
 				sep=self.sep,
 			)
 
@@ -296,8 +330,11 @@ class Base(nn.Module):
 
 		if self.arch_type == "transformer":
 			x = self.sin_emb.add_pe(x)
+			l = torch.zeros((batch_size,), dtype=torch.int32) if quant_levels is None else quant_levels
+			l = l.to(device)
 			for block in self.blocks:
-				x = block(x, m, quant_levels)
+				x = block(x, m, l)
+
 		elif self.arch_type == "retnet":
 			x, _ = self.retnet(x, incremental_state=state, token_embeddings=x, features_only=True)
 			

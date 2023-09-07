@@ -62,37 +62,37 @@ def load_engines(invert=False):
 		optimizer = None
 		lr_scheduler = None
 
-		# cfg.deepspeed.torch_adam
-		if (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "adamw") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "adamw-torch"):
-			params = {
-				"lr": cfg.hyperparameters.learning_rate,
-				"betas": (0.9, 0.96),
-				"eps": 1e-07,
-				"weight_decay": 0.01,
-			}
-			params.update(cfg.hyperparameters.optimizer_params)
-			optimizer = ml.AdamW(
-				model.parameters(),
-				**params,
-			)
-		elif (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "sgd") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "sgd-torch"):
-			params = {
-				"lr": cfg.hyperparameters.learning_rate,
-			}
-			params.update(cfg.hyperparameters.optimizer_params)
-			optimizer = ml.SGD(
-				model.parameters(),
-				**params,
-			)
-		elif (cfg.trainer.backend == "local" and cfg.hyperparameters.optimizer.lower() == "prodigy") or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.optimizer.lower() == "prodigy-torch"):
-			params = {
-				"lr": cfg.hyperparameters.learning_rate,
-			}
-			params.update(cfg.hyperparameters.optimizer_params)
-			optimizer = ml.Prodigy(
-				model.parameters(),
-				**params,
-			)
+		if cfg.trainer.backend == "local" or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):
+			if cfg.hyperparameters.optimizer.lower() == "adamw":
+				params = {
+					"lr": cfg.hyperparameters.learning_rate,
+					"betas": (0.9, 0.96),
+					"eps": 1e-07,
+					"weight_decay": 0.01,
+				}
+				params.update(cfg.hyperparameters.optimizer_params)
+				optimizer = ml.AdamW(
+					model.parameters(),
+					**params,
+				)
+			elif cfg.hyperparameters.optimizer.lower() == "sgd":
+				params = {
+					"lr": cfg.hyperparameters.learning_rate,
+				}
+				params.update(cfg.hyperparameters.optimizer_params)
+				optimizer = ml.SGD(
+					model.parameters(),
+					**params,
+				)
+			elif cfg.hyperparameters.optimizer.lower() == "prodigy":
+				params = {
+					"lr": cfg.hyperparameters.learning_rate,
+				}
+				params.update(cfg.hyperparameters.optimizer_params)
+				optimizer = ml.Prodigy(
+					model.parameters(),
+					**params,
+				)
 
 		if not model._cfg.training:
 			optimizer = None

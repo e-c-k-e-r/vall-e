@@ -91,8 +91,6 @@ class NAR(Base):
 				proms_list,
 				prev_list,
 				targ_list,
-				return_all_resp=True,
-				shift_targ_list=False,
 				quant_levels=quant_levels,
 			)
 
@@ -112,8 +110,6 @@ class NAR(Base):
 					text_list,
 					proms_list,
 					prev_list,
-					return_all_resp=True,
-					shift_targ_list=False,
 					quant_levels=quant_levels,
 					sampling_temperature=sampling_temperature,
 				)
