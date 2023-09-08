@@ -62,11 +62,15 @@ class MultiEmbedding(nn.Embedding):
 	This embedding sums embeddings on different levels.
 	"""
 
-	def __init__(self, max_n_levels, n_tokens, token_dim):
+	def __init__(self, max_n_levels, n_tokens, token_dim, monolithic=False):
 		super().__init__(max_n_levels, token_dim)
 		self.max_n_levels = max_n_levels
 		self.n_tokens = n_tokens
-		self.weight = nn.Parameter(torch.randn(max_n_levels, n_tokens, token_dim))
+		self.monolithic = monolithic
+		if self.monolithic:
+			self.weights = nn.Parameter(torch.randn(2, max_n_levels, n_tokens, token_dim))
+		else:
+			self.weight = nn.Parameter(torch.randn(max_n_levels, n_tokens, token_dim))
 
 	# to-do: select quant level from given quant_levels tensor if given (i.e. through the resp_emb)
 	# I imagine this is an oversight in the NAR.
@@ -74,7 +78,10 @@ class MultiEmbedding(nn.Embedding):
 		if len(x_list) == 0:
 			return []
 
-		w = self.weight
+		if self.monolithic:
+			w = self.weights[0 if quant_levels is None else 1]
+		else:
+			w = self.weight
 
 		padded_x_list = []
 
@@ -91,6 +98,7 @@ class MultiEmbedding(nn.Embedding):
 
 		return x_list
 
+"""
 # Embedding that sums each RVQ-bin level within a given input acoustic prompt
 class PromEmbedding(nn.Module):
 	def __init__(self, n_levels, n_tokens, token_dim):
@@ -110,6 +118,7 @@ class RespEmbedding(nn.Module):
 	
 	def forward(self, x_list: list[Tensor], quant_levels: Tensor | None = None) -> list[Tensor]:
 		return [ self.embeddings[min(self.n_levels, quant_levels[i]) if quant_levels is not None else 0](xi)[:, 0, :] for i, xi in enumerate(x_list) ]
+"""
 
 class Base(nn.Module):
 	@property
@@ -154,7 +163,7 @@ class Base(nn.Module):
 
 	@property
 	def n_embeddings(self) -> int:
-		return self.n_resp_levels if self.monolithic else 1
+		return 2 if self.monolithic else 1
 
 	@property
 	def stop_token(self):
@@ -183,14 +192,10 @@ class Base(nn.Module):
 		p_dropout: float = 0.1,
 
 		config = None, 
-		use_multiembedding = False,
 	):
 		super().__init__()
 		self.config = config
 		self.activation_checkpointing = self.config.activation_checkpointing if self.config is not None else True
-
-		if self.config is not None and hasattr(self.config, "use_multiembedding"):
-			use_multiembedding = self.config.use_multiembedding
 
 		self.n_tokens = n_tokens
 		self.d_model = d_model
@@ -203,19 +208,8 @@ class Base(nn.Module):
 
 		self.text_emb = Embedding(n_tokens, d_model)
 
-		# use dedicated embeddings for each RVQ-bin level in the input acoustic prompt if requested
-		# n_embeddings == prom_levels because using the MultiEmbedding is more than fine for the input acoustic prompt
-		if self.n_embeddings == self.n_prom_levels or not use_multiembedding:
-			self.proms_emb = PromEmbedding(self.n_prom_levels, n_prom_tokens, d_model) 
-		else:
-			self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
-		
-		# use dedicated embeddings for each RVQ-bin level in the output response / target if requested
-		# n_embeddings > 1 because the using the MultiEmbedding "works" fine enough for split AR/NARs.
-		if self.n_embeddings > 1 or not use_multiembedding:
-			self.resps_emb = RespEmbedding(self.n_embeddings, n_resp_tokens, d_model)
-		else:
-			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
+		self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model) #, monolithic=self.monolithic)		
+		self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model, monolithic=self.monolithic)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 

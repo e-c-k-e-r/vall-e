@@ -82,7 +82,7 @@ class AR_NAR(Base):
 
 			# is training
 			if n_levels == self.n_resp_levels:
-				if random.random() < 0.5:
+				if random.random() < 0.25:
 					quant_levels = None
 
 					targ_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels

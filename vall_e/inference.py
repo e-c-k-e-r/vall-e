@@ -42,7 +42,17 @@ class TTS():
 
 			models = get_models(cfg.models.get())
 			for name, model in models.items():
-				if name.startswith("ar"):
+				if name.startswith("ar+nar"):
+					self.ar = model
+					state = torch.load(self.ar_ckpt)
+					if "symmap" in state:
+						self.symmap = state['symmap']
+					if "module" in state:
+						state = state['module']
+					self.ar.load_state_dict(state)
+					self.ar = self.ar.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+					self.nar = self.ar
+				elif name.startswith("ar"):
 					self.ar = model
 					state = torch.load(self.ar_ckpt)
 					if "symmap" in state:
@@ -74,7 +84,10 @@ class TTS():
 	def load_models( self ):
 		engines = load_engines()
 		for name, engine in engines.items():
-			if name[:2] == "ar":
+			if name[:6] == "ar+nar":
+				self.ar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+				self.nar = self.ar
+			elif name[:2] == "ar":
 				self.ar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
 			elif name[:3] == "nar":
 				self.nar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)

@@ -52,10 +52,13 @@ def run_eval(engines, disabled_engines, eval_name, dl):
 
 	AR = None
 	NAR = None
+	AR_NAR = None
 
 	names = []
 	for name, engine in engines.items():
-		if name[:2] == "ar":
+		if name[:6] == "ar+nar":
+			AR_NAR = engine
+		elif name[:2] == "ar":
 			AR = engine
 		elif name[:3] == "nar":
 			NAR = engine
@@ -127,7 +130,11 @@ def run_eval(engines, disabled_engines, eval_name, dl):
 			for name in engines:
 				model = engines[name]
 
-				if name.startswith("ar"):
+				if name.startswith("ar+nar"):
+					resps_list = AR_NAR(text_list=batch["text"], proms_list=batch["proms"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
+					resps_list = [ r.unsqueeze(-1) for r in resps_list ]
+					resps_list = AR_NAR(text_list=batch["text"], proms_list=batch["proms"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
+				elif name.startswith("ar"):
 					resps_list = model(
 						text_list=batch["text"],
 						proms_list=batch["proms"],
