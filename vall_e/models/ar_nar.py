@@ -107,7 +107,7 @@ class AR_NAR(Base):
 			prev_list = resps_list
 
 			while True:
-				level = prev_list[0].shape[-1] - 1
+				level = prev_list[0].shape[-1]
 
 				if level >= self.n_resp_levels:
 					break

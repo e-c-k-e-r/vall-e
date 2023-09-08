@@ -163,7 +163,6 @@ class Model:
 	arch_type: str = "transformer"
 	training: bool = True
 	interleave: bool = False
-	use_multiembedding: bool = True # nasty bandaid I got myself into
 	frozen_params: list[str] = field(default_factory=lambda: [])
 
 	@property
