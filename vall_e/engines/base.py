@@ -64,6 +64,8 @@ class Engine():
 		self.global_samples = 0
 		self.tokens_processed = 0
 
+		self._frozen_params = set()
+
 	def freeze(self, freeze_all=True):
 		# set to freeze 
 		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):
@@ -134,7 +136,7 @@ class Engine():
 		if not load_path.exists():
 			return
 
-		state = torch.load(load_path)
+		state = torch.load(load_path, map_location=torch.device(cfg.device))
 		self.global_steps = state['global_step']
 		self.micro_steps = state['micro_step']
 		self.global_samples = state['global_samples']
@@ -145,10 +147,10 @@ class Engine():
 		load_lr_scheduler_states = load_lr_scheduler_states and self.lr_scheduler is not None and 'lr_scheduler' in state
 		
 		if load_optimizer_states:
-			self.optimizer.load_state_dict(state['optimizer'])
+			self.optimizer.load_state_dict(state['optimizer'], map_location=torch.device(cfg.device))
 		
 		if load_lr_scheduler_states:
-			self.lr_scheduler.load_state_dict(state['lr_scheduler'])
+			self.lr_scheduler.load_state_dict(state['lr_scheduler'], map_location=torch.device(cfg.device))
 
 	def eval(self):
 		return self.module.eval()

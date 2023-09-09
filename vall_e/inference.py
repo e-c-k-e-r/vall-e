@@ -16,10 +16,9 @@ from .train import load_engines
 from .data import get_phone_symmap, _load_quants
 
 class TTS():
-	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device="cuda" ):
+	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device=None, amp=None, dtype=None ):
 		self.loading = True 
-		self.device = device
-
+		
 		self.input_sample_rate = 24000
 		self.output_sample_rate = 24000
 
@@ -32,9 +31,24 @@ class TTS():
 		except Exception as e:
 			pass
 
+		if amp is None:
+			amp = cfg.inference.amp
+		if dtype is None:
+			dtype = cfg.inference.dtype
+		if device is None:
+			device = cfg.device
+
 		cfg.mode = "inferencing"
-		cfg.trainer.load_module_only = True
-		
+		cfg.device = device
+		cfg.trainer.load_state_dict = True
+		cfg.trainer.backend = "local"
+		cfg.trainer.weight_dtype = dtype
+		cfg.inference.weight_dtype = dtype
+
+		self.device = device
+		self.dtype = cfg.inference.dtype
+		self.amp = amp
+
 		self.symmap = None
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
@@ -50,7 +64,7 @@ class TTS():
 					if "module" in state:
 						state = state['module']
 					self.ar.load_state_dict(state)
-					self.ar = self.ar.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+					self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 					self.nar = self.ar
 				elif name.startswith("ar"):
 					self.ar = model
@@ -60,7 +74,7 @@ class TTS():
 					if "module" in state:
 						state = state['module']
 					self.ar.load_state_dict(state)
-					self.ar = self.ar.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+					self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 				elif name.startswith("nar"):
 					self.nar = model
 					state = torch.load(self.nar_ckpt)
@@ -69,7 +83,7 @@ class TTS():
 					if "module" in state:
 						state = state['module']
 					self.nar.load_state_dict(state)
-					self.nar = self.nar.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+					self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 		else:
 			self.load_models()
 
@@ -85,12 +99,12 @@ class TTS():
 		engines = load_engines()
 		for name, engine in engines.items():
 			if name[:6] == "ar+nar":
-				self.ar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+				self.ar = engine.module.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 				self.nar = self.ar
 			elif name[:2] == "ar":
-				self.ar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+				self.ar = engine.module.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 			elif name[:3] == "nar":
-				self.nar = engine.module.to(self.device, dtype=cfg.inference.dtype if not cfg.inference.amp else torch.float32)
+				self.nar = engine.module.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it
@@ -135,12 +149,12 @@ class TTS():
 		prom = to_device(prom, self.device).to(torch.int16)
 		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
 
-		with torch.autocast(self.device, dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
+		with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 			resps_list = self.ar(text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, sampling_temperature=ar_temp, sampling_top_p=top_p, sampling_top_k=top_k, sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay, sampling_length_penalty=length_penalty)
 			resps_list = [r.unsqueeze(-1) for r in resps_list]
 			resps_list = self.nar(text_list=[phns], proms_list=[prom], resps_list=resps_list, sampling_temperature=nar_temp, sampling_top_p=top_p, sampling_top_k=top_k, sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay, sampling_length_penalty=length_penalty)
 
-		wav, sr = qnt.decode_to_file(resps_list[0], out_path)
+		wav, sr = qnt.decode_to_file(resps_list[0], out_path, device=self.device)
 		
 		return (wav, sr)
 		

@@ -101,7 +101,7 @@ def load_engines(invert=False):
 
 		if cfg.trainer.load_state_dict or not model._cfg.training:
 			load_path = cfg.ckpt_dir / name / "fp32.pth"
-			state = torch.load(load_path)
+			state = torch.load(load_path, map_location=torch.device(cfg.device))
 			# exporting the model from the zero_to_fp32.py exports the actual module's dict
 			# exporting with vall_e.export exports the state dict under .module
 			if "module" in state:

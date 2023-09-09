@@ -26,6 +26,12 @@ I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
 ## Try Me
 
+### Online
+
+A HuggingFace space hosting the code and models can be found [here](https://huggingface.co/spaces/ecker/vall-e).
+
+### Local
+
 To quickly try it out, you can choose between the following modes:
 
 * AR only: `python -m vall_e.models.ar yaml="./data/config.yaml"`
