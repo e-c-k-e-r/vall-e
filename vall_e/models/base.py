@@ -411,8 +411,6 @@ class Base(nn.Module):
 			)
 			
 			return logits
-
-
 		
 		# (NAR) return the entire generated response
 		if quant_levels is not None:
@@ -427,7 +425,7 @@ class Base(nn.Module):
 		# perform repetition penalizing	
 		logits = [ reptition_penalize(logit, previous=resps[:, 0], factor=sampling_repetition_penalty) for logit, resps in zip( logits, resps_list ) ]
 
-		# perform length penalizing
+		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:
 			logits = [ length_penalize(logit, length=l + 1, factor=sampling_length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
 
