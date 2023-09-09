@@ -49,13 +49,69 @@ def list_to_tensor(x_list: list[Tensor], pattern="t b c -> b t c"):
 	m = m.to(x)
 	return x, m
 
+# Simple filter to modify a token's probability if it shows up in the past
+# To-do: have its effect decay based on distance
+def reptition_penalize( logits, previous, factor=1.0 ):
+	if factor == 1.0:
+		return logits
+
+	priors = set(previous.tolist())
+
+	for token in priors:
+		logits[:, token] /= factor
+
+	return logits
+
+# Simple "filter" that modifies the logit for the stop token, based on the sequence length
+def length_penalize( logits, length, factor=0.0, token=-1 ):
+	if factor == 0.0:
+		return logits
+
+	logits[:, token] /= (length ** factor)
+	return logits
+
+# Credit to https://github.com/microsoft/unilm/blob/master/xtune/src/transformers/modeling_utils.py#L1145 / https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
+def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"), min_tokens=1 ):
+	"""Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
+	Args:
+		logits: logits distribution shape (batch size, vocabulary size)
+		if top_k > 0: keep only top k tokens with highest probability (top-k filtering).
+		if top_p < 1.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
+			Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
+		Make sure we keep at least min_tokens per batch example in the output
+	"""
+	if top_k > 0:
+		top_k = min(max(top_k, min_tokens), logits.size(-1))  # Safety check
+		# Remove all tokens with a probability less than the last token of the top-k
+		indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+		logits[indices_to_remove] = filter_value
+
+	if top_p < 1.0:
+		sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+		cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+		# Remove tokens with cumulative probability above the threshold (token with 0 are kept)
+		sorted_indices_to_remove = cumulative_probs > top_p
+		if min_tokens > 1:
+			# Keep at least min_tokens (set to min_tokens-1 because we add the first one below)
+			sorted_indices_to_remove[..., :min_tokens] = 0
+		# Shift the indices to the right to keep also the first token above the threshold
+		sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+		sorted_indices_to_remove[..., 0] = 0
+
+		# scatter sorted tensors to original indexing
+		indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+		logits[indices_to_remove] = filter_value
+	return logits
+
+
+# automagically parses a batch-list and returns it as a list
 class Embedding(nn.Embedding):
 	def forward(self, x_list: list[Tensor]) -> list[Tensor]:
 		if len(x_list) == 0:
 			return []
 
 		return super().forward(torch.cat(x_list)).split([*map(len, x_list)])
-
 
 class MultiEmbedding(nn.Embedding):
 	"""
@@ -257,30 +313,6 @@ class Base(nn.Module):
 			ignore_index=self.ignore_index,
 		)
 
-	@overload
-	def forward(
-		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
-		resps_list: list[Tensor],
-		targ_list: list[Tensor] | None = None,
-		quant_levels: Tensor | None = None,
-		sampling_temperature: float = 1.0,
-	) -> Tensor:
-		...
-
-	@overload
-	def forward(
-		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
-		resps_list: list[Tensor],
-		targ_list: list[Tensor] | None = None,
-		quant_levels: Tensor | None = None,
-		sampling_temperature: float = 1.0,
-	) -> list[Tensor]:
-		...
-
 	def forward(
 		self,
 		text_list: list[Tensor],
@@ -290,6 +322,10 @@ class Base(nn.Module):
 
 		quant_levels: Tensor | None = None,
 		sampling_temperature: float = 1.0,
+		sampling_top_k: int = -100,
+		sampling_top_p: float = 1.0,
+		sampling_repetition_penalty: float = 1.0,
+		sampling_length_penalty: float = 0.0,
 
 		state: dict | None = None,
 	):
@@ -330,13 +366,10 @@ class Base(nn.Module):
 		x = self.classifier(x) * m
 
 		# Remove padding
-		h_list = [hi[:li] for hi, li in zip(x, map(len, x_list))]
+		logits = [ hi[:li] for hi, li in zip(x, map(len, x_list)) ]
 
 		# compute loss if the target is given
 		if targ_list is not None:
-			if any([l == 0 for l in map(len, targ_list)]):
-				raise ValueError("Cannot compute loss given empty targ_list.")
-
 			ignore_sep = torch.tensor(self.ignore_index, device=device)
 
 			# create a tensor sequence with one RVQ-bin of the input prompt, but with `ignore_index`, as the prompt is not neeeded for computing the loss against
@@ -365,36 +398,49 @@ class Base(nn.Module):
 					targ_list[i][-1] = self.stop_token
 
 			# create the new target sequence to compute the loss against
-			y_list = self._samplewise_merge_tensors( text_prom_list, targ_list, sep=ignore_sep )
+			target = torch.cat( self._samplewise_merge_tensors( text_prom_list, targ_list, sep=ignore_sep ) )
+			inputs = torch.cat( logits )
 
 			self.loss = dict(
 				# "nll" was in the original implementation and should actually just be called something else
-				nll=F.cross_entropy(
-					torch.cat(h_list), # input / predicted logits
-					torch.cat(y_list), # target / ground truth
-					ignore_index=self.ignore_index,
-				)
+				nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
 			)
 			self.stats = dict(
-				acc = self.accuracy_metric( torch.cat(h_list), torch.cat(y_list) ),
-				precision = self.precision_metric( torch.cat(h_list), torch.cat(y_list) ),
+				acc = self.accuracy_metric( inputs, target ),
+				precision = self.precision_metric( inputs, target ),
 			)
+			
+			return logits
 
-		# return the entire generated token string
-		return_all = False
-		if return_all:
-			logits = [hi[:] for hi, li in zip(h_list, map(len, resps_list))]
-		# return the entire generated response
-		elif quant_levels is not None:
-			logits = [hi[-li:] for hi, li in zip(h_list, map(len, resps_list))]
-		# return the last chunkwise piece
-		elif self.causal and self.recurrent_chunk_size > 0:
-			logits = [hi[-self.recurrent_chunk_size:] for hi, li in zip(h_list, map(len, resps_list))]
-		# return just the last code
-		else:
-			logits = [ hi[-1:] for hi in h_list ]
+
 		
-		return [ Categorical(logits=hi / sampling_temperature).sample() for hi in logits ]
+		# (NAR) return the entire generated response
+		if quant_levels is not None:
+			logits = [ logit[-l:] for logit, l in zip(logits, map(len, resps_list)) ]
+		# (AR chunkwise) return the last chunkwise piece
+		elif self.causal and self.recurrent_chunk_size > 0:
+			logits = [ logit[-l:] for logit, l in zip(logits, self.recurrent_chunk_size) ]
+		# (AR) return just the last code
+		else:
+			logits = [ logit[-1:] for logit in logits ]
+
+		# perform repetition penalizing	
+		logits = [ reptition_penalize(logit, previous=resps[:, 0], factor=sampling_repetition_penalty) for logit, resps in zip( logits, resps_list ) ]
+
+		# perform length penalizing
+		if quant_levels is None and self.causal:
+			logits = [ length_penalize(logit, length=l + 1, factor=sampling_length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
+
+		# scale our logits by the temp
+		logits = [ logit / sampling_temperature for logit in logits ]
+
+		# perform top_k/top_p filtering of our logits
+		if sampling_top_k > 0:
+			logits = [ top_k_top_p_filtering(logit, top_k=sampling_top_k, top_p=sampling_top_p) for logit in logits ]
+		
+		# and sample
+		# the original implementation used this instead of argmax; it's probably placebo but it performs better than argmax
+		return [ Categorical(logits=logit).sample() for logit in logits ]
 
 def example_usage():
 	from ..config import cfg

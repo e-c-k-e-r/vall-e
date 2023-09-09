@@ -71,6 +71,10 @@ class AR_NAR(Base):
 		resps_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
 		sampling_temperature: float = 0.0,
+		sampling_top_k: int = -100,
+		sampling_top_p: float = 1.0,
+		sampling_repetition_penalty: float = 1.0,
+		sampling_length_penalty: float = 0.0,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
@@ -120,6 +124,10 @@ class AR_NAR(Base):
 					prev_list,
 					quant_levels=quant_levels,
 					sampling_temperature=sampling_temperature,
+					sampling_top_p=sampling_top_p,
+					sampling_top_k=sampling_top_k,
+					sampling_repetition_penalty=sampling_repetition_penalty,
+					sampling_length_penalty=sampling_length_penalty,
 				)
 
 				prev_list = [
@@ -146,6 +154,10 @@ class AR_NAR(Base):
 				proms_list,
 				self._unsqueeze_list(resps_list),
 				sampling_temperature=sampling_temperature,
+				sampling_top_p=sampling_top_p,
+				sampling_top_k=sampling_top_k,
+				sampling_repetition_penalty=sampling_repetition_penalty,
+				sampling_length_penalty=sampling_length_penalty,
 				state=state
 			)
 
@@ -221,6 +233,7 @@ def example_usage():
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 	
+	@torch.inference_mode()
 	def sample( name, steps=600 ):
 		engine.eval()
 		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
@@ -245,7 +258,7 @@ def example_usage():
 
 			tqdm.write(f"{stats}")
 
-	#sample("init", 75)
+	sample("init", 75)
 	train()
 	sample("final")
 

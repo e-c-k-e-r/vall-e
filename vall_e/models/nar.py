@@ -57,6 +57,10 @@ class NAR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor],
 		sampling_temperature: float = 0.2,
+		sampling_top_k: int = -100,
+		sampling_top_p: float = 1.0,
+		sampling_repetition_penalty: float = 1.0,
+		sampling_length_penalty: float = 0.0,
 	):
 		"""
 		Args:
@@ -112,6 +116,10 @@ class NAR(Base):
 					prev_list,
 					quant_levels=quant_levels,
 					sampling_temperature=sampling_temperature,
+					sampling_top_p=sampling_top_p,
+					sampling_top_k=sampling_top_k,
+					sampling_repetition_penalty=sampling_repetition_penalty,
+					sampling_length_penalty=sampling_length_penalty,
 				)
 
 				prev_list = [
