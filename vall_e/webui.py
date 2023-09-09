@@ -122,6 +122,32 @@ def get_random_prompt():
 	]
 	return random.choice(harvard_sentences)
 
+# setup args
+parser = argparse.ArgumentParser(allow_abbrev=False)
+parser.add_argument("--listen", default=None, help="Path for Gradio to listen on")
+parser.add_argument("--share", action="store_true")
+parser.add_argument("--render_markdown", action="store_true", default="VALLE_YAML" in os.environ)
+args, unknown = parser.parse_known_args()
+
+args.listen_host = None
+args.listen_port = None
+args.listen_path = None
+if args.listen:
+	try:
+		match = re.findall(r"^(?:(.+?):(\d+))?(\/.*?)?$", args.listen)[0]
+
+		args.listen_host = match[0] if match[0] != "" else "127.0.0.1"
+		args.listen_port = match[1] if match[1] != "" else None
+		args.listen_path = match[2] if match[2] != "" else "/"
+	except Exception as e:
+		pass
+
+if args.listen_port is not None:
+	args.listen_port = int(args.listen_port)
+	if args.listen_port == 0:
+		args.listen_port = None
+
+# setup gradio
 ui = gr.Blocks()
 with ui:
 	with gr.Tab("Inference"):
@@ -153,29 +179,12 @@ with ui:
 			inputs=[ x for x in layout["inference"]["inputs"].values() if x is not None],
 			outputs=[ x for x in layout["inference"]["outputs"].values() if x is not None]
 		)
-
-parser = argparse.ArgumentParser(allow_abbrev=False)
-parser.add_argument("--listen", default=None, help="Path for Gradio to listen on")
-parser.add_argument("--share", action="store_true")
-args, unknown = parser.parse_known_args()
-
-args.listen_host = None
-args.listen_port = None
-args.listen_path = None
-if args.listen:
-	try:
-		match = re.findall(r"^(?:(.+?):(\d+))?(\/.*?)?$", args.listen)[0]
-
-		args.listen_host = match[0] if match[0] != "" else "127.0.0.1"
-		args.listen_port = match[1] if match[1] != "" else None
-		args.listen_path = match[2] if match[2] != "" else "/"
-	except Exception as e:
-		pass
-
-if args.listen_port is not None:
-	args.listen_port = int(args.listen_port)
-	if args.listen_port == 0:
-		args.listen_port = None
+	if os.path.exists("README.md") and args.render_markdown:
+		md = open("README.md", "r", encoding="utf-8").read()
+		# remove HF's metadata
+		if md.startswith("---\n"):
+			md = "".join(md.split("---")[2:])
+		gr.Markdown(md)
 
 ui.queue(max_size=8)
 ui.launch(share=args.share, server_name=args.listen_host, server_port=args.listen_port)
