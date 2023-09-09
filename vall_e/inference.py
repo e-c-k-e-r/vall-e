@@ -121,7 +121,7 @@ class TTS():
 		phones = [ " " if not p else p for p in content ]
 		return torch.tensor([ 1 ] + [*map(self.symmap.get, phones)] + [ 2 ])
 
-	def encode_audio( self, paths, should_trim=True ):
+	def encode_audio( self, paths, trim_length=0.0 ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
 			return paths
@@ -133,17 +133,17 @@ class TTS():
 		# merge inputs
 		res = torch.cat([qnt.encode_from_file(path)[0][:, :].t().to(torch.int16) for path in paths])
 		
-		if should_trim:
-			res = trim( res, int( 75 * cfg.dataset.prompt_duration ) )
+		if trim_length:
+			res = trim( res, int( 75 * trim_length ) )
 		
 		return res
 
 	@torch.inference_mode()
-	def inference( self, text, references, max_ar_steps=6 * 75, ar_temp=0.95, nar_temp=0.5, top_p=1.0, top_k=0, repetition_penalty=1.0, repetition_penalty_decay=0.0, length_penalty=0.0, out_path=None ):
+	def inference( self, text, references, max_ar_steps=6 * 75, input_prompt_length=0.0, ar_temp=0.95, nar_temp=0.5, top_p=1.0, top_k=0, repetition_penalty=1.0, repetition_penalty_decay=0.0, length_penalty=0.0, out_path=None ):
 		if out_path is None:
 			out_path = f"./data/{cfg.start_time}.wav"
 
-		prom = self.encode_audio( references )
+		prom = self.encode_audio( references, trim_length=input_prompt_length )
 		phns = self.encode_text( text )
 
 		prom = to_device(prom, self.device).to(torch.int16)
