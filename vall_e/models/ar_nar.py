@@ -74,6 +74,7 @@ class AR_NAR(Base):
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
+		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
 	):
 		device = text_list[0].device
@@ -127,6 +128,7 @@ class AR_NAR(Base):
 					sampling_top_p=sampling_top_p,
 					sampling_top_k=sampling_top_k,
 					sampling_repetition_penalty=sampling_repetition_penalty,
+					sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
 					sampling_length_penalty=sampling_length_penalty,
 				)
 
@@ -157,6 +159,7 @@ class AR_NAR(Base):
 				sampling_top_p=sampling_top_p,
 				sampling_top_k=sampling_top_k,
 				sampling_repetition_penalty=sampling_repetition_penalty,
+				sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
 				sampling_length_penalty=sampling_length_penalty,
 				state=state
 			)

@@ -50,19 +50,32 @@ def list_to_tensor(x_list: list[Tensor], pattern="t b c -> b t c"):
 	return x, m
 
 # Simple filter to modify a token's probability if it shows up in the past
-# To-do: have its effect decay based on distance
-def reptition_penalize( logits, previous, factor=1.0 ):
+# `one_time` will only apply the penalty once
+# `decay` is a factor that will exponentially apply to how far away it is
+def reptition_penalize( logits, previous, factor=1.0, decay=0.0, one_time=True ):
 	if factor == 1.0:
 		return logits
 
-	priors = set(previous.tolist())
+	unique = set()
+	priors = reversed(previous.tolist())
+	for distance, token in enumerate(priors):
+		# skip if we're only applying the decay once
+		if one_time and token in unique:
+			continue
 
-	for token in priors:
-		logits[:, token] /= factor
+		distance += 1
+		logits[:, token] /= factor * (distance ** decay)
+		
+		# add to set if we care about it
+		if one_time:
+			unique.add(token)
 
 	return logits
 
 # Simple "filter" that modifies the logit for the stop token, based on the sequence length
+# `length` is the length of the sequence currently
+# `factor` is the power the length is raised to, so values > 0 will yield longer sequences, values < 0 will yield shorter sequences
+# `token` is the stop token.
 def length_penalize( logits, length, factor=0.0, token=-1 ):
 	if factor == 0.0:
 		return logits
@@ -325,6 +338,7 @@ class Base(nn.Module):
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
+		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
 
 		state: dict | None = None,
@@ -423,7 +437,7 @@ class Base(nn.Module):
 			logits = [ logit[-1:] for logit in logits ]
 
 		# perform repetition penalizing	
-		logits = [ reptition_penalize(logit, previous=resps[:, 0], factor=sampling_repetition_penalty) for logit, resps in zip( logits, resps_list ) ]
+		logits = [ reptition_penalize(logit, previous=resps[:, 0], factor=sampling_repetition_penalty, decay=sampling_repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:

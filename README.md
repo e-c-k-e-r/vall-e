@@ -132,6 +132,7 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--top-p`: limits the sampling pool to top sum of values that equal `P`% probability in the probability distribution.
 * `--top-k`: limits the sampling pool to the top `K` values in the probability distribution.
 * `--repetition-penalty`: modifies the probability of tokens if they have appeared before. In the context of audio generation, this is a very iffy parameter to use.
+* `--repetition-penalty-decay`: modifies the above factor applied to scale based on how far away it is in the past sequence.
 * `--length-penalty`: (AR only) modifies the probability of the stop token based on the current sequence length. This is ***very*** finnicky.
 
 ## To-Do

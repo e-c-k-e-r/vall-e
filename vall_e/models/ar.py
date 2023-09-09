@@ -89,6 +89,7 @@ class AR(Base):
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
+		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
 	):
 		if resps_list is not None:
@@ -128,6 +129,7 @@ class AR(Base):
 				sampling_top_p=sampling_top_p,
 				sampling_top_k=sampling_top_k,
 				sampling_repetition_penalty=sampling_repetition_penalty,
+				sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
 				sampling_length_penalty=sampling_length_penalty,
 				state=state
 			)
