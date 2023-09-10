@@ -465,12 +465,15 @@ class Inference:
 	recurrent_chunk_size: int = 0
 	recurrent_forward: bool = False
 
+
 	@cached_property
 	def dtype(self):
 		if self.weight_dtype == "float16":
 			return torch.float16
 		if self.weight_dtype == "bfloat16":
 			return torch.bfloat16
+		if self.weight_dtype == "int8":
+			return torch.int8
 		return torch.float32
 
 @dataclass()
