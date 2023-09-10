@@ -16,6 +16,7 @@ def main():
 	parser.add_argument("--nar-ckpt", type=Path, default=None)
 
 	parser.add_argument("--max-ar-steps", type=int, default=6 * 75)
+	parser.add_argument("--max-nar-levels", type=int, default=7)
 
 	parser.add_argument("--ar-temp", type=float, default=1.0)
 	parser.add_argument("--nar-temp", type=float, default=1.0)
@@ -33,7 +34,7 @@ def main():
 	args = parser.parse_args()
 
 	tts = TTS( config=args.yaml, ar_ckpt=args.ar_ckpt, nar_ckpt=args.nar_ckpt, device=args.device, dtype=args.dtype, amp=args.amp )
-	tts.inference( text=args.text, references=args.references, out_path=args.out_path, input_prompt_length=args.input_prompt_length, max_ar_steps=args.max_ar_steps, ar_temp=args.ar_temp, nar_temp=args.nar_temp, top_p=args.top_p, top_k=args.top_k, repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay, length_penalty=args.length_penalty )
+	tts.inference( text=args.text, references=args.references, out_path=args.out_path, input_prompt_length=args.input_prompt_length, max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels, ar_temp=args.ar_temp, nar_temp=args.nar_temp, top_p=args.top_p, top_k=args.top_k, repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay, length_penalty=args.length_penalty )
 
 if __name__ == "__main__":
 	main()

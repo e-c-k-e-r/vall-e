@@ -70,6 +70,7 @@ class AR_NAR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
+		max_levels: int = 7,
 		sampling_temperature: float = 0.0,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
@@ -87,7 +88,7 @@ class AR_NAR(Base):
 
 			# is training
 			if n_levels == self.n_resp_levels:
-				if random.random() < 0.25:
+				if random.random() < 0.95:
 					quant_levels = None
 
 					targ_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
@@ -114,7 +115,7 @@ class AR_NAR(Base):
 			while True:
 				level = prev_list[0].shape[-1]
 
-				if level >= self.n_resp_levels:
+				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
 
 				quant_levels = torch.full((len(text_list),), level, device=device)

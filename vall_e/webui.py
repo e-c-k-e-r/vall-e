@@ -69,6 +69,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*75))
+	parser.add_argument("--max-nar-levels", type=int, default=kwargs["max-nar-levels"])
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
 	parser.add_argument("--nar-temp", type=float, default=kwargs["nar-temp"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
@@ -87,6 +88,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			references=[args.references.split(";")],
 			out_path=tmp.name,
 			max_ar_steps=args.max_ar_steps,
+			max_nar_levels=args.max_nar_levels,
 			input_prompt_length=args.input_prompt_length,
 			ar_temp=args.ar_temp,
 			nar_temp=args.nar_temp,
@@ -176,6 +178,7 @@ with ui:
 			with gr.Column(scale=7):
 				with gr.Row():
 					layout["inference"]["inputs"]["max-seconds"] = gr.Slider(value=6, minimum=1, maximum=32, step=0.1, label="Maximum Seconds", info="Limits how many steps to perform in the AR pass.")
+					layout["inference"]["inputs"]["max-nar-levels"] = gr.Slider(value=3, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
 					layout["inference"]["inputs"]["input-prompt-length"] = gr.Slider(value=3.0, minimum=0.0, maximum=12.0, step=0.05, label="Input Prompt Trim Length", info="Trims the input prompt down to X seconds. Set 0 to disable.")
 				with gr.Row():
 					layout["inference"]["inputs"]["ar-temp"] = gr.Slider(value=0.95, minimum=0.0, maximum=1.2, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR.")

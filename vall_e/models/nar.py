@@ -56,6 +56,7 @@ class NAR(Base):
 		text_list: list[Tensor],
 		proms_list: list[Tensor],
 		resps_list: list[Tensor],
+		max_levels: int = 7,
 		sampling_temperature: float = 0.2,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
@@ -106,7 +107,7 @@ class NAR(Base):
 			while True:
 				level = prev_list[0].shape[-1] - 1
 
-				if level >= self.n_resp_levels:
+				if level >= max_levels: # min(max_levels, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
 
 				quant_levels = torch.full((len(text_list),), level, device=device)
