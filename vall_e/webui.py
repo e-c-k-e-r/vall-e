@@ -81,6 +81,9 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	tmp = tempfile.NamedTemporaryFile(suffix='.wav')
 
+	if not args.references:
+		raise ValueError("No reference audio provided.")
+
 	tts = init_tts()
 	with timer() as t:
 		wav, sr = tts.inference(

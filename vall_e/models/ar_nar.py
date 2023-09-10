@@ -88,7 +88,7 @@ class AR_NAR(Base):
 
 			# is training
 			if n_levels == self.n_resp_levels:
-				if random.random() < 0.95:
+				if random.random() < cfg.models.ar_nar.p_ar_nar:
 					quant_levels = None
 
 					targ_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels

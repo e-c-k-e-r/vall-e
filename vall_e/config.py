@@ -164,6 +164,7 @@ class Model:
 	training: bool = True
 	interleave: bool = False
 	frozen_params: list[str] = field(default_factory=lambda: [])
+	p_ar_nar: float = 0.5
 
 	@property
 	def full_name(self):
