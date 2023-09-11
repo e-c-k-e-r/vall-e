@@ -111,6 +111,8 @@ class AR_NAR(Base):
 				)
 			# is NAR
 			prev_list = resps_list
+			if max_levels == 0:
+				max_levels = self.n_resp_levels
 
 			while True:
 				level = prev_list[0].shape[-1]

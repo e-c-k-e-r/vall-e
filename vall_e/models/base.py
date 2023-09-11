@@ -151,20 +151,42 @@ class MultiEmbedding(nn.Embedding):
 		else:
 			w = self.weight
 
-		padded_x_list = []
+			padded_x_list = []
 
-		for i, xi in enumerate(x_list):
-			xi = F.one_hot(xi.to(torch.int64), num_classes=self.n_tokens)  # t l' k
-			wi = w.shape[0] - xi.shape[1]
-			xi = F.pad(xi, (0, 0, 0, wi))  # t l k
-			padded_x_list.append(xi.to(w))
+			for i, xi in enumerate(x_list):
+				xi = F.one_hot(xi.to(torch.int64), num_classes=self.n_tokens)  # t l' k
+				wi = w.shape[0] - xi.shape[1]
+				xi = F.pad(xi, (0, 0, 0, wi))  # t l k
+				padded_x_list.append(xi.to(w))
 
-		x = torch.cat(padded_x_list)  # n l k
-		x = einsum("l k d, n l k -> n d", w, x)
+			x = torch.cat(padded_x_list)  # n l k
+			x = einsum("l k d, n l k -> n d", w, x)
 
-		x_list = x.split([*map(len, x_list)])
+			x_list = x.split([*map(len, x_list)])
 
 		return x_list
+
+		"""
+		w_ar, w_nar = self.weight[:1], self.weight[1:]
+		p_ar_list, p_nar_list = [], []
+
+		for i, xi in enumerate(x_list):
+			if quant_levels is None or quant_levels[i] == 0:
+				w padded_x_list, = w_ar, p_ar_list
+			else:
+				w, padded_x_list = w_nar, p_nar_list
+
+			# pad resp/prom tensor to fit weight
+			xi = F.one_hot(xi.to(torch.int64), num_classes=self.n_tokens)  # t l' k
+			xi = F.pad(xi, (0, 0, 0, w.shape[0] - xi.shape[1]))  # t l k
+			padded_x_list.append(xi.to(w))
+
+		# batch list => batch tensor
+		x_ar_list = einsum("l k d, n l k -> n d", w_ar, torch.cat(p_ar_list)) if len(p_ar_list) > 0 else []
+		x_nar_list = einsum("l k d, n l k -> n d", w_nar, torch.cat(p_nar_list)) if len(p_nar_list) > 0 else []
+
+		x_list = x.split([*map(len, x_list)])
+		"""
 
 """
 # Embedding that sums each RVQ-bin level within a given input acoustic prompt

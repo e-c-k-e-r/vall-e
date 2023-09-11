@@ -56,7 +56,7 @@ class NAR(Base):
 		text_list: list[Tensor],
 		proms_list: list[Tensor],
 		resps_list: list[Tensor],
-		max_levels: int = 7,
+		max_levels: int = 0,
 		sampling_temperature: float = 0.2,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
@@ -103,6 +103,8 @@ class NAR(Base):
 			prev_list = []
 		else:
 			prev_list = resps_list
+			if max_levels == 0:
+				max_levels = self.n_resp_levels
 
 			while True:
 				level = prev_list[0].shape[-1] - 1
