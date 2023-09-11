@@ -57,6 +57,12 @@ class AR(Base):
 	def monolithic(self) -> bool:
 		return False
 
+	@property
+	def version(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.version
+		return cfg.models.ar.version
+
 	def _prune(self, l: Tensor):
 		indices = (l == self.stop_token).nonzero()
 		if len(indices) == 0:

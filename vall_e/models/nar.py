@@ -40,6 +40,12 @@ class NAR(Base):
 		return cfg.models.tasks
 
 	@property
+	def version(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.version
+		return cfg.models.nar.version
+
+	@property
 	def recurrent_chunk_size(self) -> int:
 		return 0
 

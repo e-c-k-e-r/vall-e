@@ -54,6 +54,12 @@ class AR_NAR(Base):
 	def monolithic(self) -> bool:
 		return True
 
+	@property
+	def version(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.version
+		return cfg.models.ar_nar.version
+
 	def _prune(self, l: Tensor):
 		indices = (l == self.stop_token).nonzero()
 		if len(indices) == 0:
@@ -208,7 +214,7 @@ def example_usage():
 	]
 	proms_list = [
 		#x8(torch.tensor([1, 2, 3], device=device)),
-		qnt.to(device),
+		qnt[:75*3, :].to(device),
 	]
 	resps_list = [
 		qnt.to(device),
@@ -233,11 +239,15 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
+	#steps = 500
+	#optimizer = ml.Prodigy(model.parameters(), lr=1.0)
 	steps = 500
-	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 	engine = Engine(model=model, optimizer=optimizer)
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+
+	print([ name for name, _ in model.named_parameters()])
 	
 	@torch.inference_mode()
 	def sample( name, steps=600 ):
