@@ -94,9 +94,9 @@ class AR_NAR(Base):
 
 			# is training
 			if n_levels == self.n_resp_levels:
-				quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,))
-				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)]
-				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)]
+				quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)] # ensures we only have 1 RVQ-bin (our target)
+				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)] # yes I can just do min(1, l)
 				quant_levels.to(device=device)
 
 				return super().forward(
