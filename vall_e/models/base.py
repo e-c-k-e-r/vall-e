@@ -392,7 +392,6 @@ class Base(nn.Module):
 		# compute loss if the target is given
 		if targ_list is not None:
 			ignore_sep = torch.tensor(self.ignore_index, device=device)
-
 			# create a tensor sequence with one RVQ-bin of the input prompt, but with `ignore_index`, as the prompt is not neeeded for computing the loss against
 			prom_list = [ torch.full_like(t[..., 0], self.ignore_index) for t in proms_list ]
 			# remake input sequence
@@ -401,22 +400,15 @@ class Base(nn.Module):
 			# process each batch
 			for i in range(len(text_prom_list)):
 				# for the AR, shift the text/input prompt into the future by 1, and ignore the rolled back text token
-				if quant_levels is None:
+				if quant_levels is None or quant_levels[i] == 0:
 					text_prom_list[i] = text_prom_list[i].roll(-1, dims=0)
+					targ_list[i] = targ_list[i].clone().roll(-1, dims=0)
+					
 					text_prom_list[i][-1] = self.ignore_index
+					targ_list[i][-1] = self.stop_token
 				# for the NAR, ignore completely computing the loss against the text prompt
 				else:
 					text_prom_list[i][:] = self.ignore_index
-
-			# adjust the target sequence if needed for the AR
-			if quant_levels is None:
-				# creates a copy because this is aliased against input response sequence
-				targ_list = [*targ_list] 
-				# shift the target response into the future by 1, and mark the rolled back token / last token as a stop token
-				# this prepares the AR to actually generate autoregressive sequences
-				for i in range(len(targ_list)):
-					targ_list[i] = targ_list[i].roll(-1, dims=0)
-					targ_list[i][-1] = self.stop_token
 
 			# create the new target sequence to compute the loss against
 			target = torch.cat( self._samplewise_merge_tensors( text_prom_list, targ_list, sep=ignore_sep ) )

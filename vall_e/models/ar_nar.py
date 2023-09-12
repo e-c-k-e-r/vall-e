@@ -94,19 +94,10 @@ class AR_NAR(Base):
 
 			# is training
 			if n_levels == self.n_resp_levels:
-				if random.random() < cfg.models.ar_nar.p_ar_nar:
-					quant_levels = None
-
-					targ_list = [r[..., 0] for r in resps_list] # guarantees we only have the first levels
-					resps_list = self._unsqueeze_list(targ_list)
-				else:
-					quant_levels = torch.randint(1, self.n_resp_levels, (batch_size,))
-
-					targ_list = [o[...,   l] for o, l in zip(resps_list, quant_levels)]
-					resps_list = [o[..., : l] for o, l in zip(resps_list, quant_levels)]
-
-				if quant_levels is not None:
-					quant_levels.to(device=device)
+				quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,))
+				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)]
+				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)]
+				quant_levels.to(device=device)
 
 				return super().forward(
 					text_list=text_list,
@@ -246,8 +237,6 @@ def example_usage():
 	engine = Engine(model=model, optimizer=optimizer)
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-
-	print([ name for name, _ in model.named_parameters()])
 	
 	@torch.inference_mode()
 	def sample( name, steps=600 ):

@@ -59,24 +59,30 @@ def _get_quant_path(path):
 def _get_phone_path(path):
 	return _replace_file_extension(path, ".phn.txt")
 
+_total_durations = {}
+
+@cfg.diskcache()
+def _calculate_durations( type="training" ):
+	if type in _total_durations:
+		return _total_durations[type]
+	return 0
+
 @cfg.diskcache()
 def _load_paths(dataset, type="training"):
 	return { cfg.get_spkr( data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
-
-"""
-def _load_paths_from_hdf5(dataset, type="training"):
-	return { cfg.get_spkr( data_dir / "dummy" ): _get_hdf5_paths( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
-
-def _load_paths_from_disk(dataset, type="training"):
-	return { cfg.get_spkr( data_dir / "dummy" ): _get_paths_of_extensions( data_dir, ".qnt.pt", validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
-"""
 
 def _load_paths_from_metadata(data_dir, type="training", validate=False):
 	_fn = _get_hdf5_paths if cfg.dataset.use_hdf5 else _get_paths_of_extensions
 
 	def _validate( entry ):
+		if "phones" not in entry or "duration" not in entry:
+			return False
 		phones = entry['phones']
 		duration = entry['duration']
+		if type not in _total_durations:
+			_total_durations[type] = 0
+		_total_durations[type] += entry['duration']
+
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
 	metadata_path = data_dir / "metadata.json"
@@ -107,6 +113,9 @@ def _get_hdf5_paths( data_dir, type="training", validate=False ):
 	def _validate(child):
 		phones = child.attrs['phonemes']
 		duration = child.attrs['duration']
+		if type not in _total_durations:
+			_total_durations[type] = 0
+		_total_durations[type] += entry['duration']
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
 	key = f"/{type}{_get_hdf5_path(data_dir)}"
@@ -172,6 +181,14 @@ class Dataset(_Dataset):
 			self.dataset = cfg.dataset.training
 		
 		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type)
+
+		# cull speakers if they do not have enough utterances
+		if cfg.dataset.min_utterances > 0:
+			keys = list(self.paths_by_spkr_name.keys())
+			for key in keys:
+				if len(self.paths_by_spkr_name[key]) < cfg.dataset.min_utterances:
+					del self.paths_by_spkr_name[key]
+
 		self.paths = list(itertools.chain.from_iterable(self.paths_by_spkr_name.values()))
 
 		self.samplers = { name: Sampler( paths, keep_all=True ) for name, paths in self.paths_by_spkr_name.items() }
@@ -192,13 +209,8 @@ class Dataset(_Dataset):
 		if len(self.paths) == 0 and training:
 			raise ValueError("No valid path is found for training.")
 		
-		# would be a better cost saving if we could fetch the duration during the validation pass but oh well
-		self.duration = 0
-		"""
-		if cfg.dataset.use_hdf5:
-			for path in tqdm(self.paths, desc="Calculating duration"):
-				self.duration += cfg.hdf5[_get_hdf5_path(path)].attrs['duration']
-		"""
+		#self.duration = _total_durations[self.dataset_type] if self.dataset_type in _total_durations else 0
+		self.duration = _calculate_durations(self.dataset_type)
 
 	@cached_property
 	def phones(self):
@@ -663,57 +675,59 @@ def create_dataset_hdf5( skip_existing=True ):
 		# grab IDs for every file
 		ids = { ".".join(file.split(".")[:-2]) for file in files }
 		for id in tqdm(ids, desc=f"Processing {name}"):
-			audio_exists = os.path.exists(f'{root}/{name}/{id}.qnt.pt') if audios else True
-			text_exists = os.path.exists(f'{root}/{name}/{id}.phn.txt') if texts else True
+			try:
+				audio_exists = os.path.exists(f'{root}/{name}/{id}.qnt.pt') if audios else True
+				text_exists = os.path.exists(f'{root}/{name}/{id}.phn.txt') if texts else True
 
-			if not audio_exists or not text_exists:
-				continue
-
-			key = f'{type}/{name}/{id}'
-			if key in hf:
-				if skip_existing:
+				if not audio_exists or not text_exists:
 					continue
-				del hf[key]
 
-			group = hf.create_group(key)
-			group.attrs['id'] = id
-			group.attrs['type'] = type
-			group.attrs['speaker'] = name
+				key = f'{type}/{name}/{id}'
+				if key in hf:
+					if skip_existing:
+						continue
+					del hf[key]
 
-			metadata[id] = {}
+				group = hf.create_group(key)
+				group.attrs['id'] = id
+				group.attrs['type'] = type
+				group.attrs['speaker'] = name
 
-			# audio
-			if audios:
-				qnt = torch.load(f'{root}/{name}/{id}.qnt.pt')[0].t()
+				metadata[id] = {}
 
-				if "audio" in group:
-					del group["audio"]
-				group.create_dataset('audio', data=qnt.numpy(), compression='lzf')
-				group.attrs['duration'] = qnt.shape[0] / 75
-				metadata[id]["duration"] = qnt.shape[0] / 75
-			else:
-				group.attrs['duration'] = 0
-				metadata[id]["duration"] = 0
-			
-			# text
-			if texts:
-				with open(f'{root}/{name}/{id}.phn.txt', "r", encoding="utf-8") as f:
-					content = f.read().split(" ")
-					phones = [f"<s>"] + [ " " if not p else p for p in content ] + [f"</s>"]
-					for s in set(phones):
-						if s not in symmap:
-							symmap[s] = len(symmap.keys())
+				# audio
+				if audios:
+					qnt = torch.load(f'{root}/{name}/{id}.qnt.pt')[0].t()
 
-					phn = [ symmap[s] for s in phones ]
+					if "audio" in group:
+						del group["audio"]
+					group.create_dataset('audio', data=qnt.numpy(), compression='lzf')
+					group.attrs['duration'] = qnt.shape[0] / 75
+					metadata[id]["duration"] = qnt.shape[0] / 75
+				else:
+					group.attrs['duration'] = 0
+					metadata[id]["duration"] = 0
+				
+				# text
+				if texts:
+						content = open(f'{root}/{name}/{id}.phn.txt', "r", encoding="utf-8") .read().split(" ")
+						phones = [f"<s>"] + [ " " if not p else p for p in content ] + [f"</s>"]
+						for s in set(phones):
+							if s not in symmap:
+								symmap[s] = len(symmap.keys())
 
-				if "text" in group:
-					del group["text"]
-				group.create_dataset('text', data=phn, compression='lzf', chunks=True)
-				group.attrs['phonemes'] = len(phn)
-				metadata[id]["phones"] = len(phn)
-			else:
-				group.attrs['phonemes'] = 0
-				metadata[id]["phones"] = 0
+						phn = [ symmap[s] for s in phones ]
+
+						if "text" in group:
+							del group["text"]
+						group.create_dataset('text', data=phn, compression='lzf', chunks=True)
+						group.attrs['phonemes'] = len(phn)
+						metadata[id]["phones"] = len(phn)
+				else:
+					group.attrs['phonemes'] = 0
+					metadata[id]["phones"] = 0
+			except Exception as e:
+				pass
 
 		with open(dir / "metadata.json", "w", encoding="utf-8") as f:
 			f.write( json.dumps( metadata ) )
