@@ -83,6 +83,7 @@ class AR_NAR(Base):
 		sampling_repetition_penalty: float = 1.0,
 		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
+		sampling_beam_width: int = 0,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
@@ -119,28 +120,33 @@ class AR_NAR(Base):
 
 				quant_levels = torch.full((len(text_list),), level, device=device)
 
-				resps_list = super().forward(
-					text_list,
-					proms_list,
-					prev_list,
+				logits = super().forward(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=prev_list,
 					quant_levels=quant_levels,
-					sampling_temperature=sampling_temperature,
-					sampling_top_p=sampling_top_p,
-					sampling_top_k=sampling_top_k,
-					sampling_repetition_penalty=sampling_repetition_penalty,
-					sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
-					sampling_length_penalty=sampling_length_penalty,
 				)
 
-				prev_list = [
-					torch.cat([rs, r.unsqueeze(-1)], dim=-1)
-					for rs, r in zip(prev_list, resps_list)
-				]
+				resps_list = super().sample(
+					logits=logits,
+					resps_list=prev_list,
+					quant_levels=quant_levels,
+
+					temperature=sampling_temperature,
+					top_p=sampling_top_p,
+					top_k=sampling_top_k,
+					repetition_penalty=sampling_repetition_penalty,
+					repetition_penalty_decay=sampling_repetition_penalty_decay,
+					#length_penalty=sampling_length_penalty,
+					#beam_width=sampling_beam_width,
+				)
+
+				prev_list = [ torch.cat([rs, r.unsqueeze(-1)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 			return prev_list
 
 		# is AR
-		resps_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in text_list ]
+		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in text_list ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 
 		state = {} if cfg.inference.recurrent_forward else None
@@ -151,31 +157,53 @@ class AR_NAR(Base):
 		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
 			# get next in sequence
 
-			r = super().forward(
-				text_list,
-				proms_list,
-				self._unsqueeze_list(resps_list),
-				sampling_temperature=sampling_temperature,
-				sampling_top_p=sampling_top_p,
-				sampling_top_k=sampling_top_k,
-				sampling_repetition_penalty=sampling_repetition_penalty,
-				sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
-				sampling_length_penalty=sampling_length_penalty,
+			resps_list = self._unsqueeze_list(sequence_list)
+			logits = super().forward(
+				text_list=text_list,
+				proms_list=proms_list,
+				resps_list=resps_list,
+				
 				state=state
 			)
+
+			r = super().sample(
+				logits=logits,
+				resps_list=resps_list,
+
+				temperature=sampling_temperature,
+				top_p=sampling_top_p,
+				top_k=sampling_top_k,
+				repetition_penalty=sampling_repetition_penalty,
+				repetition_penalty_decay=sampling_repetition_penalty_decay,
+				length_penalty=sampling_length_penalty,
+				beam_width=sampling_beam_width,
+			)
+
+			# first step, expand batch
+			# we do it here because the sampler will already expand our logits list
+			if sampling_beam_width > 0 and batch_size == 1:
+				batch_size *= sampling_beam_width
+				text_list = text_list * sampling_beam_width
+				proms_list = proms_list * sampling_beam_width
+				sequence_list = sequence_list * sampling_beam_width
+				stopped = torch.zeros(batch_size, device=device).bool()
 
 			# append tokens
 			for i, ri in enumerate(r):
 				if self.stop_token in ri:
 					stopped[i] = True
-				resps_list[i] = torch.cat([resps_list[i], ri])
+				sequence_list[i] = torch.cat([sequence_list[i], ri])
 
 			# stop token found
 			stopped |= r == self.stop_token
 			if stopped.all().item():
 				break
 
-		return [self._prune(r) for r in resps_list]
+		# pick the first candidate
+		if sampling_beam_width:
+			sequence_list = sequence_list[:1]
+
+		return [self._prune(r) for r in sequence_list]
 
 
 def example_usage():
@@ -200,11 +228,9 @@ def example_usage():
 	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.models.prom_levels].to(device)
 
 	text_list = [
-		#torch.tensor([1, 2, 3], device=device),
 		tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
 	]
 	proms_list = [
-		#x8(torch.tensor([1, 2, 3], device=device)),
 		qnt[:75*3, :].to(device),
 	]
 	resps_list = [
@@ -232,7 +258,7 @@ def example_usage():
 	model = AR_NAR(**kwargs).to(device)
 	#steps = 500
 	#optimizer = ml.Prodigy(model.parameters(), lr=1.0)
-	steps = 500
+	steps = 1000
 	optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 	engine = Engine(model=model, optimizer=optimizer)
 
@@ -241,7 +267,7 @@ def example_usage():
 	@torch.inference_mode()
 	def sample( name, steps=600 ):
 		engine.eval()
-		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
+		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95, sampling_beam_width=16 )
 		
 		for i, o in enumerate(resps_list):
 			_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)

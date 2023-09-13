@@ -2,6 +2,7 @@ import math
 import torch
 import torch.nn.functional as F
 import traceback
+import numpy as np
 
 from typing import Literal, overload
 from functools import partial
@@ -53,7 +54,7 @@ def list_to_tensor(x_list: list[Tensor], pattern="t b c -> b t c"):
 # `one_time` will only apply the penalty once
 # `decay` is a factor that will exponentially apply to how far away it is
 def reptition_penalize( logits, previous, factor=1.0, decay=0.0, one_time=True ):
-	if factor == 1.0:
+	if factor == 1.0 or previous is None:
 		return logits
 
 	unique = set()
@@ -115,6 +116,7 @@ def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"
 		# scatter sorted tensors to original indexing
 		indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
 		logits[indices_to_remove] = filter_value
+
 	return logits
 
 
@@ -341,13 +343,6 @@ class Base(nn.Module):
 		targ_list: list[Tensor] | None = None,
 
 		quant_levels: Tensor | None = None,
-		sampling_temperature: float = 1.0,
-		sampling_top_k: int = -100,
-		sampling_top_p: float = 1.0,
-		sampling_repetition_penalty: float = 1.0,
-		sampling_repetition_penalty_decay: float = 0.0,
-		sampling_length_penalty: float = 0.0,
-
 		state: dict | None = None,
 	):
 		x_list = self._samplewise_merge_tensors(
@@ -428,8 +423,25 @@ class Base(nn.Module):
 				precision = self.precision_metric( inputs, target ),
 			)
 			
-			return logits
+		return logits
+
+	def sample(
+		self,
+		logits: list[Tensor],
+		resps_list: list[Tensor],
+		quant_levels: Tensor | None = None,
+
+		temperature: float = 1.0,
+		top_k: int = -100,
+		top_p: float = 1.0,
+
+		repetition_penalty: float = 1.0,
+		repetition_penalty_decay: float = 0.0,
 		
+		length_penalty: float = 0.0,
+		
+		beam_width: int = 0,
+	):
 		# (NAR) return the entire generated response
 		if quant_levels is not None:
 			logits = [ logit[-l:] for logit, l in zip(logits, map(len, resps_list)) ]
@@ -441,19 +453,37 @@ class Base(nn.Module):
 			logits = [ logit[-1:] for logit in logits ]
 
 		# perform repetition penalizing	
-		logits = [ reptition_penalize(logit, previous=resps[:, 0], factor=sampling_repetition_penalty, decay=sampling_repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
+		logits = [ reptition_penalize(logit, previous=resps[:, -1], factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:
-			logits = [ length_penalize(logit, length=l + 1, factor=sampling_length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
+			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
 
 		# scale our logits by the temp
-		logits = [ logit / sampling_temperature for logit in logits ]
+		logits = [ logit / temperature for logit in logits ]
 
 		# perform top_k/top_p filtering of our logits
-		if sampling_top_k > 0:
-			logits = [ top_k_top_p_filtering(logit, top_k=sampling_top_k, top_p=sampling_top_p) for logit in logits ]
-		
+		if top_k > 0 or top_p < 1.0:
+			logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
+
+		# do beam search (naive implementation)
+		# picks the top-k across all batches, and re-batches those resultant tokens
+		# this doesn't do any other mumbo with previous logits
+		# to-do: not naively implement beam searching
+		if beam_width > 1:
+			# ( batch, tokens ) => ( batch x tokens )
+			flattened = torch.cat( logits )
+			candidates = list(torch.topk(flattened.flatten(), beam_width).indices.tolist()) # perform top-k across all logits
+			for i, index in enumerate(candidates):
+				t = []
+				N = np.prod(flattened.size())
+				for n in flattened.size():
+					N //= n
+					t.append(index // N)
+					index %= N
+				candidates[i] = tuple(t)
+			return [ torch.tensor(token, device=logits[batch].device, dtype=torch.int16).unsqueeze(dim=-1) for batch, token in candidates ] #, [ logits[batch] for batch, token in candidates ]
+
 		# and sample
 		# the original implementation used this instead of argmax; it's probably placebo but it performs better than argmax
 		return [ Categorical(logits=logit).sample() for logit in logits ]

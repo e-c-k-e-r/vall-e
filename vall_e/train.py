@@ -46,10 +46,6 @@ def train_feeder(engine, batch):
 
 @torch.inference_mode()
 def run_eval(engines, disabled_engines, eval_name, dl):
-	engines_stats = {  
-		'eval': eval_name
-	}
-
 	AR = None
 	NAR = None
 	AR_NAR = None
@@ -156,7 +152,7 @@ def run_eval(engines, disabled_engines, eval_name, dl):
 
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}
-	engines_stats.update(flatten_dict({ name: stats }))
+	engines_stats.update({ f'{name}.{eval_name}': stats })
 
 	iteration = engines.global_step
 	engines_stats['it'] = iteration

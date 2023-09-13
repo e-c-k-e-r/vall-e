@@ -139,8 +139,8 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--top-k`: limits the sampling pool to the top `K` values in the probability distribution.
 * `--repetition-penalty`: modifies the probability of tokens if they have appeared before. In the context of audio generation, this is a very iffy parameter to use.
 * `--repetition-penalty-decay`: modifies the above factor applied to scale based on how far away it is in the past sequence.
-* `--length-penalty`: (AR only) modifies the probability of the stop token based on the current sequence length. This is ***very*** finnicky.
-
+* `--length-penalty`: (AR only) modifies the probability of the stop token based on the current sequence length. This is ***very*** finnicky due to the AR already being well correlated with the length.
+* `--beam-width`: (AR only) specifies the number of branches to search through for beam sampling. This is a very naive implementation that's effectively just greedy sampling across `B` spaces.
 ## To-Do
 
 * reduce load time for creating / preparing dataloaders (hint: remove use of `Path.glob` and `Path.rglob`).

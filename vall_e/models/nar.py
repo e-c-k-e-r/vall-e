@@ -98,11 +98,11 @@ class NAR(Base):
 
 			quant_levels = quant_levels.to(device=device)
 
-			_ = super().forward(
-				text_list,
-				proms_list,
-				prev_list,
-				targ_list,
+			logits = super().forward(
+				text_list=text_list,
+				proms_list=proms_list,
+				resps_list=prev_list,
+				targ_list=targ_list,
 				quant_levels=quant_levels,
 			)
 
@@ -120,23 +120,28 @@ class NAR(Base):
 
 				quant_levels = torch.full((len(text_list),), level, device=device)
 
-				resps_list = super().forward(
-					text_list,
-					proms_list,
-					prev_list,
+				logits = super().forward(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=prev_list,
 					quant_levels=quant_levels,
-					sampling_temperature=sampling_temperature,
-					sampling_top_p=sampling_top_p,
-					sampling_top_k=sampling_top_k,
-					sampling_repetition_penalty=sampling_repetition_penalty,
-					sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
-					sampling_length_penalty=sampling_length_penalty,
 				)
 
-				prev_list = [
-					torch.cat([rs, r.unsqueeze(-1)], dim=-1)
-					for rs, r in zip(prev_list, resps_list)
-				]
+				resps_list = super().sample(
+					logits=logits,
+					resps_list=resps_list,
+					quant_levels=quant_levels,
+					
+					temperature=sampling_temperature,
+					top_p=sampling_top_p,
+					top_k=sampling_top_k,
+					repetition_penalty=sampling_repetition_penalty,
+					repetition_penalty_decay=sampling_repetition_penalty_decay,
+					#length_penalty=sampling_length_penalty,
+					#beam_width=sampling_beam_width,
+				)
+
+				prev_list = [ torch.cat([rs, r.unsqueeze(-1)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 		return prev_list
 

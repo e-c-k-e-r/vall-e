@@ -91,12 +91,14 @@ class AR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
+
 		sampling_temperature: float = 1.0,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
 		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
+		sampling_beam_width: int = 0,
 	):
 		if resps_list is not None:
 			if self.interleave:
@@ -126,24 +128,39 @@ class AR(Base):
 		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
 			# get next in sequence
 
-			r = super().forward(
+			logits = super().forward(
 				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=self._unsqueeze_list(resps_list),
 				quant_levels=None,
-				sampling_temperature=sampling_temperature,
-				sampling_top_p=sampling_top_p,
-				sampling_top_k=sampling_top_k,
-				sampling_repetition_penalty=sampling_repetition_penalty,
-				sampling_repetition_penalty_decay=sampling_repetition_penalty_decay,
-				sampling_length_penalty=sampling_length_penalty,
 				state=state
 			)
+
+			r = super().sample(
+				logits=logits,
+				resps_list=resps_list,
+
+				temperature=sampling_temperature,
+				top_p=sampling_top_p,
+				top_k=sampling_top_k,
+				repetition_penalty=sampling_repetition_penalty,
+				repetition_penalty_decay=sampling_repetition_penalty_decay,
+				length_penalty=sampling_length_penalty,
+				beam_width=sampling_beam_width,
+			)
+
+			# first step, expand batch
+			# we do it here because the sampler will already expand our logits list
+			if sampling_beam_width > 0 and batch_size == 1:
+				text_list = text_list * sampling_beam_width
+				proms_list = proms_list * sampling_beam_width
+				resps_list = resps_list * sampling_beam_width
 
 			# append tokens
 			for i, ri in enumerate(r):
 				if self.stop_token in ri:
 					stopped[i] = True
+
 				resps_list[i] = torch.cat([resps_list[i], ri])
 
 			# stop token found
