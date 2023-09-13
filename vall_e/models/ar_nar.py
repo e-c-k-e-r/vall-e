@@ -5,6 +5,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 import random
+import math
 from einops import rearrange
 from torch import Tensor
 from tqdm import trange
@@ -151,12 +152,14 @@ class AR_NAR(Base):
 
 		state = {} if cfg.inference.recurrent_forward else None
 
+		sampling_beam_width_use_logs = True
+		scores = [ 1.0 ] * sampling_beam_width
+
 		if self.interleave:
 			max_steps *= self.n_prom_levels
 
+		# get next in sequence
 		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
-			# get next in sequence
-
 			resps_list = self._unsqueeze_list(sequence_list)
 			logits = super().forward(
 				text_list=text_list,
@@ -179,14 +182,23 @@ class AR_NAR(Base):
 				beam_width=sampling_beam_width,
 			)
 
-			# first step, expand batch
 			# we do it here because the sampler will already expand our logits list
-			if sampling_beam_width > 0 and batch_size == 1:
-				batch_size *= sampling_beam_width
-				text_list = text_list * sampling_beam_width
-				proms_list = proms_list * sampling_beam_width
-				sequence_list = sequence_list * sampling_beam_width
-				stopped = torch.zeros(batch_size, device=device).bool()
+			if sampling_beam_width > 0:
+				# expand tuple
+				r, s = r
+				# first step, expand batch
+				if batch_size == 1:
+					batch_size *= sampling_beam_width
+					text_list = text_list * sampling_beam_width
+					proms_list = proms_list * sampling_beam_width
+					sequence_list = sequence_list * sampling_beam_width
+					stopped = torch.zeros(batch_size, device=device).bool()
+
+				# update scores
+				if sampling_beam_width_use_logs:
+					scores = [ (math.log(scores[i]) if scores[i] > 0 else 0) + math.log(score) for i, score in enumerate(s) ]
+				else:
+					scores = [ scores[i] * score for i, score in enumerate(s) ]
 
 			# append tokens
 			for i, ri in enumerate(r):
@@ -199,9 +211,15 @@ class AR_NAR(Base):
 			if stopped.all().item():
 				break
 
-		# pick the first candidate
-		if sampling_beam_width:
-			sequence_list = sequence_list[:1]
+		# pick the best scoring candidate
+		# desu this is always going to be candidate 0
+		if sampling_beam_width and len(scores) > 0:
+			best_idx, best_score = (0, 0)
+			for idx, score in enumerate(scores):
+				if best_score > score:
+					best_idx, best_score = idx, score
+
+			sequence_list = [sequence_list[best_idx]]
 
 		return [self._prune(r) for r in sequence_list]
 

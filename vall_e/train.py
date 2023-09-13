@@ -152,10 +152,10 @@ def run_eval(engines, disabled_engines, eval_name, dl):
 
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}
-	engines_stats.update({ f'{name}.{eval_name}': stats })
-
-	iteration = engines.global_step
-	engines_stats['it'] = iteration
+	engines_stats = {
+		f'{name}.{eval_name}': stats,
+		"it": engines.global_step,
+	}
 	#engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
 
 	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")

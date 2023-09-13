@@ -119,6 +119,22 @@ def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"
 
 	return logits
 
+# picks the top K tokens amongst a batch of logits
+# logits: [Tensor] list of logits
+# candidates: [(batch, token)] list, where batch indicates the index of the logits the given token is from
+def top_k_logits_list( logits_list, k ):
+	# ( batch, tokens ) => ( batch x tokens )
+	logits = torch.cat( logits_list )
+	candidates = list(torch.topk(logits.flatten(), k).indices.tolist()) # perform top-k across all logits
+	for i, index in enumerate(candidates):
+		t = []
+		N = np.prod(logits.size())
+		for n in logits.size():
+			N //= n
+			t.append(index // N)
+			index %= N
+		candidates[i] = tuple(t)
+	return candidates
 
 # automagically parses a batch-list and returns it as a list
 class Embedding(nn.Embedding):
@@ -128,7 +144,7 @@ class Embedding(nn.Embedding):
 
 		return super().forward(torch.cat(x_list)).split([*map(len, x_list)])
 
-class MultiEmbedding(nn.Embedding):
+class MultiEmbedding(nn.Module):
 	"""
 	This embedding sums embeddings on different levels.
 	"""
@@ -468,21 +484,13 @@ class Base(nn.Module):
 
 		# do beam search (naive implementation)
 		# picks the top-k across all batches, and re-batches those resultant tokens
-		# this doesn't do any other mumbo with previous logits
+		# returns the logit scores as well to be P-concatted with the previous scores
 		# to-do: not naively implement beam searching
 		if beam_width > 1:
-			# ( batch, tokens ) => ( batch x tokens )
-			flattened = torch.cat( logits )
-			candidates = list(torch.topk(flattened.flatten(), beam_width).indices.tolist()) # perform top-k across all logits
-			for i, index in enumerate(candidates):
-				t = []
-				N = np.prod(flattened.size())
-				for n in flattened.size():
-					N //= n
-					t.append(index // N)
-					index %= N
-				candidates[i] = tuple(t)
-			return [ torch.tensor(token, device=logits[batch].device, dtype=torch.int16).unsqueeze(dim=-1) for batch, token in candidates ] #, [ logits[batch] for batch, token in candidates ]
+			candidates = top_k_logits_list( logits, beam_width )
+			res = [ torch.tensor(token, device=logits[batch].device, dtype=torch.int16).unsqueeze(dim=-1) for batch, token in candidates ]
+			scores = [ logits[batch].flatten()[token] for batch, token in candidates ]
+			return res, scores
 
 		# and sample
 		# the original implementation used this instead of argmax; it's probably placebo but it performs better than argmax
