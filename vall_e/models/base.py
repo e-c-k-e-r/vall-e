@@ -150,7 +150,7 @@ class MultiEmbedding(nn.Module):
 	"""
 
 	def __init__(self, max_n_levels, n_tokens, token_dim, monolithic=False):
-		super().__init__(max_n_levels, token_dim)
+		super().__init__()
 		self.monolithic = monolithic
 		self.max_n_levels = max_n_levels
 		self.n_tokens = n_tokens

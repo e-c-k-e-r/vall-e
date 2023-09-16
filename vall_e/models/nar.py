@@ -69,6 +69,7 @@ class NAR(Base):
 		sampling_repetition_penalty: float = 1.0,
 		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
+		sampling_beam_width: int = 0,
 	):
 		"""
 		Args:
@@ -129,9 +130,9 @@ class NAR(Base):
 
 				resps_list = super().sample(
 					logits=logits,
-					resps_list=resps_list,
+					resps_list=prev_list,
 					quant_levels=quant_levels,
-					
+
 					temperature=sampling_temperature,
 					top_p=sampling_top_p,
 					top_k=sampling_top_k,
