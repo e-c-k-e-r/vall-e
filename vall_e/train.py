@@ -102,11 +102,7 @@ def run_eval(engines, disabled_engines, eval_name, dl):
 			min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )
 			ref_audio = ref_audio[..., 0:min_length]
 			hyp_audio = hyp_audio[..., 0:min_length]
-			try:
-				stats['loss'].append(mel_stft_loss(hyp_audio[None, :, :], ref_audio[None, :, :]).item())
-			except Exception as e:
-				stats['loss'].append(0)
-				print(traceback.format_exc())
+			stats['loss'].append(mel_stft_loss(hyp_audio[None, :, :], ref_audio[None, :, :]).item())
 	
 	processed = 0
 	while processed < cfg.evaluation.size:
