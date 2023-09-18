@@ -85,6 +85,8 @@ class AR_NAR(Base):
 		sampling_repetition_penalty_decay: float = 0.0,
 		sampling_length_penalty: float = 0.0,
 		sampling_beam_width: int = 0,
+		sampling_mirostat_tau: float = 0.0,
+		sampling_mirostat_eta: float = 0.1,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
@@ -140,6 +142,7 @@ class AR_NAR(Base):
 					repetition_penalty_decay=sampling_repetition_penalty_decay,
 					#length_penalty=sampling_length_penalty,
 					#beam_width=sampling_beam_width,
+					#mirostat=mirostat,
 				)
 
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
@@ -150,7 +153,10 @@ class AR_NAR(Base):
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in text_list ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 
-		state = {} if cfg.inference.recurrent_forward else None
+		recurrent_state = {} if cfg.inference.recurrent_forward else None
+		mirostat = [
+			{"n": 1024, "tau": sampling_mirostat_tau, "eta": sampling_mirostat_eta, "max_surprise": sampling_mirostat_eta * 2, "error_surprise": 0, "running_total_surprise": 0}
+		] * batch_size if sampling_mirostat_tau > 0.0 else None
 
 		sampling_beam_width_use_logs = True
 		scores = [ 1.0 ] * sampling_beam_width
@@ -166,7 +172,7 @@ class AR_NAR(Base):
 				proms_list=proms_list,
 				resps_list=resps_list,
 				
-				state=state
+				state=recurrent_state
 			)
 
 			r = super().sample(
@@ -180,10 +186,17 @@ class AR_NAR(Base):
 				repetition_penalty_decay=sampling_repetition_penalty_decay,
 				length_penalty=sampling_length_penalty,
 				beam_width=sampling_beam_width,
+
+				mirostat=mirostat,
 			)
 
+			if mirostat is not None:
+				# r is the state
+				mirostat = r
+				# extract token from state
+				r = [ state["token"] for state in mirostat ]
 			# we do it here because the sampler will already expand our logits list
-			if sampling_beam_width > 0:
+			elif sampling_beam_width > 0:
 				# expand tuple
 				r, s = r
 				# first step, expand batch

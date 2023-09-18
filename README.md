@@ -140,13 +140,19 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--repetition-penalty`: modifies the probability of tokens if they have appeared before. In the context of audio generation, this is a very iffy parameter to use.
 * `--repetition-penalty-decay`: modifies the above factor applied to scale based on how far away it is in the past sequence.
 * `--length-penalty`: (AR only) modifies the probability of the stop token based on the current sequence length. This is ***very*** finnicky due to the AR already being well correlated with the length.
-* `--beam-width`: (AR only) specifies the number of branches to search through for beam sampling. This is a very naive implementation that's effectively just greedy sampling across `B` spaces.
+* `--beam-width`: (AR only) specifies the number of branches to search through for beam sampling.
+  + This is a very naive implementation that's effectively just greedy sampling across `B` spaces.
+* `--mirostat-tau`: (AR only) the "surprise value" when performing mirostat sampling.
+  + This simply uplifts the [original implementation](https://github.com/basusourya/mirostat/blob/master/mirostat.py) to perform it.
+  + **!**NOTE**!**: This is incompatible with beam search sampling (for the meantime at least).
+* `--mirostat-eta`: (Ar only) the "learning rate" during mirostat sampling applied to the maximum surprise.
+
 ## To-Do
 
 * reduce load time for creating / preparing dataloaders (hint: remove use of `Path.glob` and `Path.rglob`).
 * train and release a ***good*** model.
 * extend to multiple languages (VALL-E X) and ~~extend to~~ train SpeechX features.
-
+  + This can easily be done with adding in additional embeddings + tokens, rather than cramming into the input prompt embedding.
 ## Notice
 
 - [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.

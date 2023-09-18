@@ -68,8 +68,9 @@ class NAR(Base):
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
 		sampling_repetition_penalty_decay: float = 0.0,
-		sampling_length_penalty: float = 0.0,
-		sampling_beam_width: int = 0,
+		sampling_length_penalty: float = 0.0, # unused
+		sampling_beam_width: int = 0, # unused
+		sampling_mirostat_tau: float = 0.0, # unused
 	):
 		"""
 		Args:
@@ -140,6 +141,8 @@ class NAR(Base):
 					repetition_penalty_decay=sampling_repetition_penalty_decay,
 					#length_penalty=sampling_length_penalty,
 					#beam_width=sampling_beam_width,
+					#mirostat_tau=sampling_mirostat_tau,
+					#mirostat_state=mirostat_state,
 				)
 
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1)], dim=-1) for rs, r in zip(prev_list, resps_list) ]

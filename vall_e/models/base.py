@@ -136,6 +136,55 @@ def top_k_logits_list( logits_list, k ):
 		candidates[i] = tuple(t)
 	return candidates
 
+
+# Credit to: https://github.com/basusourya/mirostat/
+# performs mirostat-based sampling
+# logits: Tensor of logit probabilities
+# state: the mirostat state
+def mirostat_sample( logits, state = None ):
+	def compute_k(prob, n, tau):
+		num = 0
+		den = 0
+		for i in range(100):
+			b = prob[i]/prob[i+1]
+			t = (i+2)/(i+1)
+			num += math.log(b)*math.log(t)
+			den += math.log(t)**2
+				
+		s = num/den
+		eps = s-1
+		k = ((eps*(2**(tau)))/(1-n**(-eps)))**(1/s)
+		k = round(k)
+		return k
+
+	if "max_surprise" not in state:
+		state["max_surprise"] = state["tau"] * 2
+
+	if "error_surprise" not in state:
+		state["error_surprise"] = 0
+
+	if "running_total_surprise" not in state:
+		state["running_total_surprise"] = 0
+	
+	sorted_logits, sorted_indices = torch.sort( logits[-1, :], descending=True )
+	prob_original = torch.softmax( sorted_logits, dim=-1 ).tolist()
+
+	k = compute_k(prob_original, state["n"], state["max_surprise"]) + 1
+
+	sorted_logits = sorted_logits[0:k]
+	sorted_indices = sorted_indices[0:k]
+	prob_topk = torch.softmax(sorted_logits, dim = 0)
+	prev_i = torch.multinomial(prob_topk, num_samples=1, replacement=True)
+	
+	state["index_surprise"] = math.log2(1/prob_original[prev_i])
+	state["running_total_surprise"] += state["index_surprise"]
+	state["error_surprise"] = state["index_surprise"] - state["tau"]
+	state["max_surprise"] -= state["eta"] * state["error_surprise"]
+	state["token"] = sorted_indices[prev_i]
+
+	return state
+
+
 # automagically parses a batch-list and returns it as a list
 class Embedding(nn.Embedding):
 	def forward(self, x_list: list[Tensor]) -> list[Tensor]:
@@ -455,6 +504,8 @@ class Base(nn.Module):
 		length_penalty: float = 0.0,
 		
 		beam_width: int = 0,
+
+		mirostat: list[dict] | None = None,
 	):
 		# (NAR) return the entire generated response
 		if quant_levels is not None:
@@ -480,6 +531,12 @@ class Base(nn.Module):
 		if top_k > 0 or top_p < 1.0:
 			logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
 
+		# do mirostat sampling
+		# currently incompatible with beam searching with the way the two are implemented, perhaps a night of brain bashing can make the two work
+		if mirostat is not None:
+			# mirostat sampling
+			return [ mirostat_sample(logit, state=state) for logit, state in zip(logits, mirostat) ]
+
 		# do beam search (naive implementation)
 		# picks the top-k across all batches, and re-batches those resultant tokens
 		# returns the logit scores as well to be P-concatted with the previous scores
@@ -491,7 +548,6 @@ class Base(nn.Module):
 			return res, scores
 
 		# and sample
-		# the original implementation used this instead of argmax; it's probably placebo but it performs better than argmax
 		return [ Categorical(logits=logit).sample() for logit in logits ]
 
 def example_usage():

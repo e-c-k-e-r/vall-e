@@ -154,6 +154,8 @@ class TTS():
 		repetition_penalty_decay=0.0,
 		length_penalty=0.0,
 		beam_width=0,
+		mirostat_tau=0,
+		mirostat_eta=0.1,
 		out_path=None
 	):
 		if out_path is None:
@@ -166,9 +168,24 @@ class TTS():
 		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
 
 		with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-			resps_list = self.ar(text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, sampling_temperature=ar_temp, sampling_top_p=top_p, sampling_top_k=top_k, sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay, sampling_length_penalty=length_penalty, sampling_beam_width=beam_width)
+			resps_list = self.ar(
+				text_list=[phns], proms_list=[prom], max_steps=max_ar_steps,
+				sampling_temperature=ar_temp,
+				sampling_top_p=top_p, sampling_top_k=top_k,
+				sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+				sampling_length_penalty=length_penalty,
+				sampling_beam_width=beam_width,
+				sampling_mirostat_tau=mirostat_tau,
+				sampling_mirostat_eta=mirostat_eta,
+			)
 			resps_list = [r.unsqueeze(-1) for r in resps_list]
-			resps_list = self.nar(text_list=[phns], proms_list=[prom], resps_list=resps_list, max_levels=max_nar_levels, sampling_temperature=nar_temp, sampling_top_p=top_p, sampling_top_k=top_k, sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay, sampling_length_penalty=length_penalty, sampling_beam_width=beam_width)
+			resps_list = self.nar(
+				text_list=[phns], proms_list=[prom], resps_list=resps_list,
+				max_levels=max_nar_levels,
+				sampling_temperature=nar_temp,
+				sampling_top_p=top_p, sampling_top_k=top_k,
+				sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+			)
 
 		wav, sr = qnt.decode_to_file(resps_list[0], out_path, device=self.device)
 		
