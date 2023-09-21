@@ -47,6 +47,14 @@ class AR_NAR(Base):
 	def recurrent_chunk_size(self) -> int:
 		return 0
 
+	"""
+	@property
+	def rotary_embedding_base(self) -> float:
+		if hasattr(self, "config") and self.config:
+			return self.config.rotary_embedding_base
+		return cfg.models.ar_nar.rotary_embedding_base
+	"""
+
 	@property
 	def interleave(self) -> bool:
 		return False
@@ -292,6 +300,10 @@ def example_usage():
 	steps = 1000
 	optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 	engine = Engine(model=model, optimizer=optimizer)
+
+	torch.save( {
+		'module': model.state_dict()
+	}, "./data/test.pth" )
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 	

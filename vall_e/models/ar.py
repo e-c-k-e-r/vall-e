@@ -42,10 +42,22 @@ class AR(Base):
 		return cfg.models.tasks
 
 	@property
+	def n_langs(self) -> int:
+		return cfg.models.langs
+
+	@property
 	def recurrent_chunk_size(self) -> int:
 		if cfg.mode == "training":
 			return 0
 		return cfg.inference.recurrent_chunk_size
+
+	"""
+	@property
+	def rotary_embedding_base(self) -> float:
+		if hasattr(self, "config") and self.config:
+			return self.config.rotary_embedding_base
+		return cfg.models.ar.rotary_embedding_base
+	"""
 
 	@property
 	def interleave(self) -> bool:

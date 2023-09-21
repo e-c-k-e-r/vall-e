@@ -64,84 +64,57 @@ def load_engines(invert=False):
 		lr_scheduler = None
 
 		if cfg.trainer.backend == "local" or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):
+			optimizer_class = None
+			params = {
+				"lr": cfg.hyperparameters.learning_rate,
+			}
 			if cfg.hyperparameters.optimizer.lower() == "adamw":
-				params = {
-					"lr": cfg.hyperparameters.learning_rate,
-					"betas": (0.9, 0.96),
-					"eps": 1e-07,
-					"weight_decay": 0.01,
-				}
-				params.update(cfg.hyperparameters.optimizer_params)
-				optimizer = ml.AdamW(
-					[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
-					**params,
-				)
+				params["betas"] = (0.9, 0.96)
+				params["eps"] = 1e-07
+				params["weight_decay"] = 0.01
+
+				optimizer_class = ml.AdamW
 			elif cfg.hyperparameters.optimizer.lower() == "sgd":
-				params = {
-					"lr": cfg.hyperparameters.learning_rate,
-				}
-				params.update(cfg.hyperparameters.optimizer_params)
-				optimizer = ml.SGD(
-					[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
-					**params,
-				)
+				optimizer = ml.SGD
 			elif cfg.hyperparameters.optimizer.lower() == "prodigy":
-				params = {
-					"lr": cfg.hyperparameters.learning_rate,
-				}
-				params.update(cfg.hyperparameters.optimizer_params)
-				optimizer = ml.Prodigy(
-					[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
-					**params,
-				)
+				optimizer_class = ml.Prodigy
+			else:
+				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
+
+			params.update(cfg.hyperparameters.optimizer_params)
+			optimizer = optimizer_class(
+				[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
+				**params,
+			)
+
+		# set up our LR scheduler here
 
 		if not model._cfg.training:
 			optimizer = None
 			lr_scheduler = None
 
+		stats = None
 		if cfg.trainer.load_state_dict or not model._cfg.training:
 			load_path = cfg.ckpt_dir / name / "fp32.pth"
 			state = torch.load(load_path, map_location=torch.device(cfg.device))
-			# exporting the model from the zero_to_fp32.py exports the actual module's dict
-			# exporting with vall_e.export exports the state dict under .module
+
+			# state dict is not just the module, extract the extra trainer details
+			if "stats" in state:
+				additionals = state["stats"]
+
 			if "module" in state:
 				state = state["module"]
-			
-			# should decouple the following from this trainer script
-			# probably with passing a fun that defaults to a lambda x: x deal
-
-			"""
-			# can probably be done a lot more intelligently but oh well
-			# extend the proms_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
-			if model.proms_emb.weight.shape[0] > state['proms_emb.weight'].shape[0] or model.proms_emb.weight.shape[1] > state['proms_emb.weight'].shape[1]:
-				o_prom_levels, o_prom_tokens, d_model = state['proms_emb.weight'].shape
-
-				# copy weights from the dict into the old portion
-				model.proms_emb.weight.data[:o_prom_levels, :o_prom_tokens, :] = state['proms_emb.weight'].data[:o_prom_levels, :o_prom_tokens, :]
-				# copy the full tensors back
-				state['proms_emb.weight'] = model.proms_emb.weight
-
-			# extend the resps_emb if we ever touch the n_prom_levels or n_prom_tokens (from adding tasks)
-			if model.resps_emb.weight.shape[0] > state['resps_emb.weight'].shape[0] or model.resps_emb.weight.shape[1] > state['resps_emb.weight'].shape[1]:
-				o_resp_levels, o_resp_tokens, d_model = state['resps_emb.weight'].shape
-				n_resp_levels, n_resp_tokens, d_model = model.resps_emb.weight.shape
-
-				# copy weights from the dict into the old portion
-				model.resps_emb.weight.data[:o_resp_levels, :o_resp_tokens, :] = state['resps_emb.weight'].data[:o_resp_levels, :o_resp_tokens, :]
-				# copy the full tensors back
-				state['resps_emb.weight'] = model.resps_emb.weight
-			"""
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
-		# use base engine because DeepSpeed memory leaks
+		# use base engine because DeepSpeed memory leaks if it's a non-training model
 		engines[name] = (Engine if model._cfg.training else _Engine)(
-		#engines[name] = Engine(
 			model=model,
 			optimizer=optimizer,
 			lr_scheduler=lr_scheduler,
 
 			_cfg=model._cfg,
+			stats=stats
 		)
 
 	engines = Engines(engines)

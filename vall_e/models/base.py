@@ -235,11 +235,9 @@ class MultiEmbedding(nn.Module):
 
 # Embedding that sums each RVQ-bin level within a given input acoustic prompt
 class AudioEmbedding(nn.Module):
-	def __init__(self, n_levels, n_tokens, token_dim):
+	def __init__(self, l_tokens, token_dim):
 		super().__init__()
-		self.n_levels = n_levels
-		# would it be better to have embeddings[1:] reduced to 1024 tokens to attend to, so it's *not* factoring in the stop token?
-		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(self.n_levels)])
+		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
 	
 	def forward(self, x_list: list[Tensor], quant_levels: Tensor | None = None ) -> list[Tensor]:
 		res_list = []
@@ -284,12 +282,20 @@ class Base(nn.Module):
 		raise NotImplementedError
 	
 	@property
+	def n_langs(self) -> int:
+		raise NotImplementedError
+
+	@property
 	def n_tasks(self) -> int:
 		raise NotImplementedError
 
 	@property
 	def recurrent_chunk_size(self) -> int:
 		raise NotImplementedError
+
+	@property
+	def rotary_embedding_base(self) -> float:
+		return 10000
 	
 	@property
 	def interleave(self) -> bool:
@@ -341,17 +347,24 @@ class Base(nn.Module):
 		self.n_layers = n_layers
 
 		# +1 to include the stop token
-		n_prom_tokens = n_tokens + (self.n_tasks - 1) # - 1 because tts is an inherent task
+		# to-do: undo this dogshit mistake; tasks tokens should be delegated to its own embedding
+		n_prom_tokens = n_tokens
 		n_resp_tokens = n_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
 
 		self.text_emb = Embedding(n_tokens, d_model)
 
 		if self.version == 1: # legacy
+			n_prom_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
 			self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
 			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model, monolithic=self.monolithic)
 		else:
-			self.proms_emb = AudioEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
-			self.resps_emb = AudioEmbedding(self.n_resp_levels, n_resp_tokens, d_model)
+			# [1024] * 8
+			self.proms_emb = AudioEmbedding([n_prom_tokens] * self.n_prom_levels, d_model)
+			# [1025] + [1024] * 8
+			self.resps_emb = AudioEmbedding([n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model)
+
+			# self.langs_emb = Embedding(self.n_langs, d_model)
+			# self.tasks_emb = Embedding(self.n_tasks, d_model)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -365,7 +378,6 @@ class Base(nn.Module):
 				norm_type=self.norm_type,
 				n_levels=self.n_resp_levels,
 			) for _ in range(n_layers) ])
-
 		elif self.arch_type == "retnet":
 			self.retnet = RetNetDecoder(RetNetConfig(
 				vocab_size=n_tokens,
@@ -380,6 +392,8 @@ class Base(nn.Module):
 				recurrent_chunkwise_size=self.recurrent_chunk_size if self.causal else 0,
 				no_output_layer=True,
 				decoder_normalize_before=True,
+
+				rotary_embedding_base=self.rotary_embedding_base, # 10000
 			))
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
@@ -407,12 +421,17 @@ class Base(nn.Module):
 		resps_list: list[Tensor],
 		targ_list: list[Tensor] | None = None,
 
+		#langs_list: list[Tensor] | None = None,
+		#tasks_list: list[Tensor] | None = None,
+
 		quant_levels: Tensor | None = None,
 		state: dict | None = None,
 	):
 		x_list = self._samplewise_merge_tensors(
 			self.text_emb(text_list),
+			#self.langs_emb(langs_list),
 			self.proms_emb(proms_list),
+			#self.tasks_emb(tasks_list),
 			self.resps_emb(resps_list, quant_levels),
 			sep=self.sep,
 		)
@@ -422,7 +441,7 @@ class Base(nn.Module):
 		batch_size = len(text_list)
 		device = x.device
 
-		if state is not None:
+		if state is not None and self.arch_type == "retnet":
 			# prefill
 			if len(state) == 0:
 				prefill_size = x.shape[1]
@@ -443,7 +462,6 @@ class Base(nn.Module):
 			# pass our inputs through the transformer
 			for block in self.blocks:
 				x = block(x, m, l)
-
 		elif self.arch_type == "retnet":
 			# pass our inputs through the RetNet
 			x, _ = self.retnet(x, incremental_state=state, token_embeddings=x, features_only=True)

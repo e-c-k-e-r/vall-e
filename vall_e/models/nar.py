@@ -40,6 +40,10 @@ class NAR(Base):
 		return cfg.models.tasks
 
 	@property
+	def n_langs(self) -> int:
+		return cfg.models.langs
+
+	@property
 	def version(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.version
@@ -48,6 +52,14 @@ class NAR(Base):
 	@property
 	def recurrent_chunk_size(self) -> int:
 		return 0
+
+	"""
+	@property
+	def rotary_embedding_base(self) -> float:
+		if hasattr(self, "config") and self.config:
+			return self.config.rotary_embedding_base
+		return cfg.models.nar.rotary_embedding_base
+	"""
 
 	@property
 	def interleave(self) -> bool:

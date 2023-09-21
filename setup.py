@@ -57,7 +57,7 @@ setup(
         "auraloss[all]",
         "vocos",
         "h5py",
-        "torchscale @ git+https://github.com/microsoft/torchscale",
+        "torchscale @ git+https://git.ecker.tech/mrq/torchscale",
     ],
     url="https://git.ecker.tech/mrq/vall-e",
 )

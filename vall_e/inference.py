@@ -34,7 +34,7 @@ class TTS():
 		if amp is None:
 			amp = cfg.inference.amp
 		if dtype is None:
-			dtype = cfg.inference.dtype
+			dtype = cfg.inference.weight_dtype
 		if device is None:
 			device = cfg.device
 
@@ -50,42 +50,40 @@ class TTS():
 		self.amp = amp
 
 		self.symmap = None
+
+		def parse( name, model, state ):
+			if "userdata" in state and 'symmap' in state['userdata']:
+				self.symmap = state['userdata']['symmap']
+			elif "symmap" in state:
+				self.symmap = state['symmap']
+
+			if "module" in state:
+				state = state['module']
+			
+			model.load_state_dict(state)
+			return model
+
 		if ar_ckpt and nar_ckpt:
 			self.ar_ckpt = ar_ckpt
 			self.nar_ckpt = nar_ckpt
 
 			models = get_models(cfg.models.get())
+
 			for name, model in models.items():
-				if name.startswith("ar+nar"):
-					self.ar = model
+				if name.startswith("ar"):
 					state = torch.load(self.ar_ckpt)
-					if "symmap" in state:
-						self.symmap = state['symmap']
-					if "module" in state:
-						state = state['module']
-					self.ar.load_state_dict(state)
-					self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
-					self.nar = self.ar
-				elif name.startswith("ar"):
-					self.ar = model
-					state = torch.load(self.ar_ckpt)
-					if "symmap" in state:
-						self.symmap = state['symmap']
-					if "module" in state:
-						state = state['module']
-					self.ar.load_state_dict(state)
-					self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+					self.ar = parse( name, model, state )
 				elif name.startswith("nar"):
-					self.nar = model
 					state = torch.load(self.nar_ckpt)
-					if "symmap" in state:
-						self.symmap = state['symmap']
-					if "module" in state:
-						state = state['module']
-					self.nar.load_state_dict(state)
-					self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+					self.nar = parse( name, model, state )
+					
+				if name.startswith("ar+nar"):
+					self.nar = self.ar
 		else:
 			self.load_models()
+
+		self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+		self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
 		if self.symmap is None:
 			self.symmap = get_phone_symmap()
@@ -98,13 +96,13 @@ class TTS():
 	def load_models( self ):
 		engines = load_engines()
 		for name, engine in engines.items():
-			if name[:6] == "ar+nar":
-				self.ar = engine.module.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+			if name.startswith("ar"):
+				self.ar = engine.module
+			elif name.startswith("nar"):
+				self.nar = engine.module
+
+			if name.startswith("ar+nar"):
 				self.nar = self.ar
-			elif name[:2] == "ar":
-				self.ar = engine.module.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
-			elif name[:3] == "nar":
-				self.nar = engine.module.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it

@@ -157,16 +157,16 @@ class Dataset:
 @dataclass()
 class Model:
 	name: str = ""
+	version: int = 1
 	size: str | float | dict = "full"
 	resp_levels: int = 1
 	prom_levels: int = 8
-	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
+	tasks: int = 0 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
+	langs: int = 0 # defined languages
 	arch_type: str = "retnet"
 	training: bool = True
 	interleave: bool = False
 	frozen_params: list[str] = field(default_factory=lambda: [])
-	p_ar_nar: float = 0.5
-	version: int = 1
 
 	@property
 	def full_name(self):
@@ -240,8 +240,8 @@ class Models:
 	_prom_levels: int = 1
 
 	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, training=True, interleave=False),
-		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, training=True, interleave=False),
+		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, langs=1, training=True, interleave=False),
+		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, langs=1, training=True, interleave=False),
 	])
 
 	def get(self, name=None):

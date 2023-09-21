@@ -39,10 +39,24 @@ class Engine(DeepSpeedEngine):
 		kwargs['config'] = cfg.trainer.deepspeed.ds_cfg
 		kwargs['config_class'] = DeepSpeedConfig(kwargs['config'])
 
+		if "stats" in kwargs:
+			# stats COULD be = None
+			stats = kwargs.pop('stats')
+			if stats is None:
+				stats = {
+					"global_steps": 0,
+					"micro_steps": 0,
+					"global_samples": 0,
+					"tokens_processed": 0,
+				}
+
 		super().__init__(None, *args, **kwargs)
 		self._frozen_params = set()
 
-		self.tokens_processed = 0
+		self.global_steps = stats["global_steps"]
+		self.micro_steps = stats["micro_steps"]
+		self.global_samples = stats["global_samples"]
+		self.tokens_processed = stats["tokens_processed"]
 
 	def freeze(self, freeze_all=True):
 		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):

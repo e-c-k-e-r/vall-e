@@ -59,10 +59,10 @@ class Engine():
 		self.optimizer = kwargs['optimizer'] if 'optimizer' in kwargs else None
 		self.lr_scheduler = kwargs['lr_scheduler'] if 'lr_scheduler' in kwargs else None
 
-		self.global_steps = 0
-		self.micro_steps = 0
-		self.global_samples = 0
-		self.tokens_processed = 0
+		self.global_steps = kwargs.pop("global_steps", 0)
+		self.micro_steps = kwargs.pop("micro_steps", 0)
+		self.global_samples = kwargs.pop("global_samples", 0)
+		self.tokens_processed = kwargs.pop("tokens_processed", 0)
 
 		self._frozen_params = set()
 
@@ -117,10 +117,12 @@ class Engine():
 			"optimizer": self.optimizer.state_dict() if self.optimizer is not None else None,
 			"lr_scheduler": self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
 			
-			"global_step": self.global_step,
-			"micro_step": self.micro_step,
-			"global_samples": self.global_samples,
-			"tokens_processed": self.tokens_processed,
+			"stats": {		
+				"global_step": self.global_step,
+				"micro_step": self.micro_step,
+				"global_samples": self.global_samples,
+				"tokens_processed": self.tokens_processed,
+			}
 		}, save_path)
 
 		open(save_dir / "latest", 'w').write( tag )
@@ -137,10 +139,10 @@ class Engine():
 			return
 
 		state = torch.load(load_path, map_location=torch.device(cfg.device))
-		self.global_steps = state['global_step']
-		self.micro_steps = state['micro_step']
-		self.global_samples = state['global_samples']
-		self.tokens_processed = state['tokens_processed']
+		self.global_steps = state['stats']['global_step'] if 'stats' in state else state['global_step']
+		self.micro_steps = state['stats']['micro_step'] if 'stats' in state else state['micro_step']
+		self.global_samples = state['stats']['global_samples'] if 'stats' in state else state['global_samples']
+		self.tokens_processed = state['stats']['tokens_processed'] if 'stats' in state else state['tokens_processed']
 		self.module.load_state_dict(state['module'])
 
 		load_optimizer_states = load_optimizer_states and self.optimizer is not None and 'optimizer' in state
@@ -261,12 +263,14 @@ class Engines(dict[str, Engine]):
 			outpath = cfg.ckpt_dir / name / "fp32.pth"
 			state_dict = {
 				'module': engine.module.state_dict(),
-				"global_step": engine.global_step,
-				"micro_step": engine.micro_step,
-				"global_samples": engine.global_samples,
-				"tokens_processed": engine.tokens_processed,
+				"stats": {
+					"global_step": engine.global_step,
+					"micro_step": engine.micro_step,
+					"global_samples": engine.global_samples,
+					"tokens_processed": engine.tokens_processed,
+				},
+				"userdata": userdata
 			}
-			state_dict.update(userdata)
 			torch.save(state_dict, outpath)
 			print(f"Exported {name} to {outpath}")
 
