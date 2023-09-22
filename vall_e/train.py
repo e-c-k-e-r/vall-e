@@ -45,7 +45,7 @@ def train_feeder(engine, batch):
 	return loss, stats
 
 @torch.inference_mode()
-def run_eval(engines, disabled_engines, eval_name, dl):
+def run_eval(engines, eval_name, dl):
 	AR = None
 	NAR = None
 	AR_NAR = None
@@ -57,16 +57,6 @@ def run_eval(engines, disabled_engines, eval_name, dl):
 		elif name[:2] == "ar":
 			AR = engine
 		elif name[:3] == "nar":
-			NAR = engine
-		else:
-			continue
-		names.append(name)
-
-	# hotload the missing models
-	for name, engine in disabled_engines.items():
-		if AR is None and name[:2] == "ar":
-			AR = engine
-		elif NAR is None and name[:3] == "nar":
 			NAR = engine
 		else:
 			continue
@@ -163,18 +153,13 @@ def main():
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 	
 	def eval_fn(engines):
-		disabled_engines = load_engines(invert=True) if cfg.evaluation.load_disabled_engines else {}
 		try:
-			run_eval(engines, disabled_engines, "subtrain", subtrain_dl)
-			run_eval(engines, disabled_engines, "val", val_dl)
+			run_eval(engines, "subtrain", subtrain_dl)
+			run_eval(engines, "val", val_dl)
 		except Exception as e:
 			print("Error occurred while performing eval:", str(e))
 			print(traceback.format_exc())
 
-		if len(disabled_engines.keys()):
-			for name, engine in disabled_engines.items():
-				engine = engine.to("cpu")
-			del disabled_engines
 		qnt.unload_model()
 		do_gc()
 

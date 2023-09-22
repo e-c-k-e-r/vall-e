@@ -38,28 +38,11 @@ from ..data import get_phone_symmap # should decouple from this trainer script
 _logger = logging.getLogger(__name__)
 _command: str
 
-def load_engines(invert=False):
+def load_engines():
 	models = get_models(cfg.models.get())
 	engines = dict()
 
 	for name, model in models.items():
-		if cfg.mode != "inferencing":
-			# load only the models for training initially
-			# loads disabled models at evaluation time (to load updated weights if training separately)
-			# I'm sure there's a more elegant solution to this
-			if cfg.evaluation.load_disabled_engines:
-				if not invert and not model._cfg.training:
-					continue
-				if invert and model._cfg.training:
-					continue
-			# load only the models for training initially
-			# if load_disabled_engines, then models not marked for training will be loaded but ignored
-			# DeepSpeed has some weird quirks where loading an engine and moving it to CPU will have a memory leak or something
-			# I recommend not using this pathway
-			elif not cfg.trainer.load_disabled_engines:
-				if model._cfg.training:
-					continue
-
 		optimizer = None
 		lr_scheduler = None
 
