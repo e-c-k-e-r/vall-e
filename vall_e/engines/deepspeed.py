@@ -40,8 +40,8 @@ class Engine(DeepSpeedEngine):
 		kwargs['config_class'] = DeepSpeedConfig(kwargs['config'])
 
 		stats = {
-			"global_steps": 0,
-			"micro_steps": 0,
+			"global_step": 0,
+			"micro_step": 0,
 			"global_samples": 0,
 			"tokens_processed": 0,
 		}
@@ -54,8 +54,8 @@ class Engine(DeepSpeedEngine):
 		super().__init__(None, *args, **kwargs)
 		self._frozen_params = set()
 
-		self.global_steps = stats["global_steps"]
-		self.micro_steps = stats["micro_steps"]
+		self.global_steps = stats["global_step"]
+		self.micro_steps = stats["micro_step"]
 		self.global_samples = stats["global_samples"]
 		self.tokens_processed = stats["tokens_processed"]
 

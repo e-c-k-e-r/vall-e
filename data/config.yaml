@@ -1,60 +1,57 @@
 dataset:
-  training: [
-  # "./training/valle/data/LibriTTS/994/",
-  ]
-
-  validation: [
-  #  "./training/valle/data/Validation/1188/",
-  ]
-  noise: [
-  #  "./training/valle/data/Other/noise/",
-  ]
+  training: []
+  validation: []
+  noise: []
   
   speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
   
   use_hdf5: True
+  use_metadata: True
   hdf5_flag: r
   validate: True
 
-  workers: 4
+  workers: 2
   cache: True
 
-  phones_range: [4, 512]
+  phones_range: [4, 256]
   duration_range: [1.0, 16.0]
+  min_utterances: 32
 
   random_utterance: 1.0
-  max_prompts: 3
-  prompt_duration: 3.0
+  max_prompts: 6
+  prompt_duration: 6.0
 
   sample_type: speaker
 
-  tasks_list: ["tts"] # ["tts", "ns", "sr", "tse", "cse", "nse"]
+  tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"]
 
 models:
+  _prom_levels: 8
   _max_levels: 8
-  _models:
-  - name: "ar"
-    size: "full"
-    resp_levels: 1
-    prom_levels: 2
-    tasks: 8
-    arch_type: "retnet"
 
-  - name: "nar"
-    size: "full"
-    resp_levels: 1
-    prom_levels: 2
+  _models:
+  - name: "ar+nar"
+    size: "double"
+    resp_levels: 8
+    prom_levels: 8
     tasks: 8
     arch_type: "retnet"
+    training: True
+    version: 2
 
 
 hyperparameters:
-  batch_size: 16
-  gradient_accumulation_steps: 4
+  batch_size: 8
+  gradient_accumulation_steps: 16
   gradient_clipping: 100
   
+  # prodigyopt is nicer, but requires even more VRAM
+  #optimizer: Prodigy
+  #learning_rate: 1.0 # e-4
+
   optimizer: AdamW
   learning_rate: 1.0e-4
+  torch_optimizer: True
   
   scheduler_type: ""
   #scheduler_type: OneCycle
@@ -77,12 +74,13 @@ hyperparameters:
 
 evaluation:
   batch_size: 16
-  frequency: 500
+  frequency: 250
   size: 16
   
-  steps: 300
+  steps: 450
   ar_temperature: 0.95
   nar_temperature: 0.25
+  load_disabled_engines: True
 
 trainer:
   iterations: 1_000_000
@@ -90,11 +88,13 @@ trainer:
   save_tag: step
   save_on_oom: True
   save_on_quit: True
-  save_frequency: 1000
+  save_frequency: 100
+  export_on_save: True
 
   keep_last_checkpoints: 4
 
   aggressive_optimizations: False
+  load_disabled_engines: False
 
   #load_state_dict: True
   #strict_loading: False
@@ -105,18 +105,21 @@ trainer:
   gc_mode: None # "global_step"
 
   weight_dtype: bfloat16
+  amp: False
 
   backend: deepspeed
   deepspeed:
     zero_optimization_level: 0
     use_compression_training: True
 
+  activation_checkpointing: True
+
 inference:
   use_vocos: True
-  normalize: False # do NOT change this unless you know exactly what you are doing.
+  normalize: False
 
 bitsandbytes:
   enabled: False
-  injects: True
-  linear: True
-  embedding: True
+  injects: False
+  linear: False
+  embedding: False

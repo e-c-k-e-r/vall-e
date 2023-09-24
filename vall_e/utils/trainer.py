@@ -83,7 +83,7 @@ def load_engines():
 
 			# state dict is not just the module, extract the extra trainer details
 			if "stats" in state:
-				additionals = state["stats"]
+				stats = state["stats"]
 
 			if "module" in state:
 				state = state["module"]

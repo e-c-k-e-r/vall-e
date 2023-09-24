@@ -4,7 +4,11 @@
 
 # VALL'E
 
-An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), based on the [EnCodec](https://github.com/facebookresearch/encodec) tokenizer.
+An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
+
+[Main Repo](https://git.ecker.tech/mrq/vall-e) | [GitHub Mirror](https://github.com/e-c-k-e-r/vall-e/) | [HuggingFace Space](https://huggingface.co/spaces/ecker/vall-e)
+
+> **Note** This README is still quite a disorganized mess.
 
 ## Requirements
 
@@ -32,11 +36,7 @@ A HuggingFace space hosting the code and models can be found [here](https://hugg
 
 ### Local
 
-To quickly try it out, you can choose between the following modes:
-
-* AR only: `python -m vall_e.models.ar yaml="./data/config.yaml"`
-* NAR only: `python -m vall_e.models.nar yaml="./data/config.yaml"`
-* AR+NAR: `python -m vall_e.models.base yaml="./data/config.yaml"`
+To quickly try it out, you can run `python -m vall_e.models.ar_nar yaml="./data/config.yaml"`
 
 Each model file has a barebones trainer and inference routine.
 
@@ -77,6 +77,7 @@ A "libre" dataset can be found [here](https://huggingface.co/ecker/vall-e/blob/m
 If you're interested in creating an HDF5 copy of your dataset, simply invoke: `python -m vall_e.data --action='hdf5' yaml='./data/config.yaml'`
 
 5. Train the AR and NAR models using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
+* If distributing your training (for example, multi-GPU), use `deepspeed --module vall_e.train yaml="./data/config.yaml"`
 
 You may quit your training any time by just entering `quit` in your CLI. The latest checkpoint will be automatically saved.
 
@@ -98,15 +99,11 @@ You can specify what X and Y labels you want to plot against by passing `--xs to
 
 ### Notices
 
-#### Modifying `prom_levels`, `resp_levels`, Or `tasks` For A Model
-
-If you're wanting to increase the `prom_levels` for a given model, or increase the `tasks` levels a model accepts, you will need to export your weights and set `train.load_state_dict` to `True` in your configuration YAML.
-
 #### Training Under Windows
 
-As training under `deepspeed` is not supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
+As training under `deepspeed` and Windows is not supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
 
-Keep in mind that creature comforts like distributed training cannot be verified as working at the moment.
+Keep in mind that creature comforts like distributed training or `float16` training cannot be verified as working at the moment.
 
 #### Training on Low-VRAM Cards
 
@@ -116,13 +113,11 @@ VRAM use is also predicated on your dataset; a mix of large and small utterances
 
 Additionally, under Windows, I managed to finetune the AR on my 2060 (6GiB VRAM) with a batch size of 8 (although, with the card as a secondary GPU).
 
-If you need to, you are free to train only one model at a time. Just remove the definition for one model in your `config.yaml`'s `models._model` list.
-
 ## Export
 
-Both trained models *can* be exported, but is only required if loading them on systems without DeepSpeed for inferencing (Windows systems). To export the models, run: `python -m vall_e.export yaml=./data/config.yaml`.
+To export the models, run: `python -m vall_e.export yaml=./data/config.yaml`.
 
-This will export the latest checkpoints, for example, under `./data/ckpt/ar-retnet-2/fp32.pth` and `./data/ckpt/nar-retnet-2/fp32.pth`, to be loaded on any system with PyTorch.
+This will export the latest checkpoints, for example, under `./data/ckpt/ar-retnet-2/fp32.pth` and `./data/ckpt/nar-retnet-2/fp32.pth`, to be loaded on any system with PyTorch, and will include additional metadata, such as the symmap used, and training stats.
 
 ## Synthesis
 
@@ -149,17 +144,17 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 
 ## To-Do
 
-* reduce load time for creating / preparing dataloaders (hint: remove use of `Path.glob` and `Path.rglob`).
 * train and release a ***good*** model.
-* extend to multiple languages (VALL-E X) and ~~extend to~~ train SpeechX features.
-  + This can easily be done with adding in additional embeddings + tokens, rather than cramming into the input prompt embedding.
-## Notice
+* clean up the README, and document, document, document onto the wiki.
+* extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
 
-- [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.
+## Notices and Citations
 
 Unless otherwise credited/noted, this repository is [licensed](LICENSE) under AGPLv3.
 
-## Citations
+- [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.
+
+- This implementation was originally based on [enhuiz/vall-e](https://github.com/enhuiz/vall-e), but has been heavily, heavily modified over time.
 
 ```bibtex
 @article{wang2023neural,
