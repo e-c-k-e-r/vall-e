@@ -56,10 +56,10 @@ def init_tts(restart=False):
 	parser.add_argument("--nar-ckpt", type=Path, default=None)
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--amp", action="store_true")
-	parser.add_argument("--dtype", type=str, default="float16")
+	parser.add_argument("--dtype", type=str, default="auto")
 	args, unknown = parser.parse_known_args()
 
-	tts = TTS( config=args.yaml, ar_ckpt=args.ar_ckpt, nar_ckpt=args.nar_ckpt, device=args.device, dtype=args.dtype, amp=args.amp )
+	tts = TTS( config=args.yaml, ar_ckpt=args.ar_ckpt, nar_ckpt=args.nar_ckpt, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
 	return tts
 
 @gradio_wrapper(inputs=layout["inference"]["inputs"].keys())
