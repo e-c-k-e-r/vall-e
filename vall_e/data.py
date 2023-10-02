@@ -291,8 +291,8 @@ class Dataset(_Dataset):
 
 		# shuffle it up a bit
 		prom_length = 0
-		#trim_length = random.randint(75 * 3, 75 * 9) # [3 seconds, 9 seconds]
-		trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)
+		trim_length = random.randint(75 * 3, 75 * 9) # [3 seconds, 9 seconds]
+		#trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)
 
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)

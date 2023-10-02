@@ -147,6 +147,14 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * train and release a ***good*** model.
 * clean up the README, and document, document, document onto the wiki.
 * extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
+* improve throughput:
+  - properly utilize RetNet's recurrent forward / chunkwise forward passes
+  - utilize an approach similar to [FasterDecoding/Medusa](https://github.com/FasterDecoding/Medusa/) with additional heads for decoding N+1, N+2, N+3 AR tokens
+    + this requires a properly trained AR, however.
+* work around issues with extending context past what's trained (despite RetNet's retention allegedly being able to defeat this):
+  - "sliding" AR input, such as have the context a fixed length.
+    + may require additional training to be aware of this, might not.
+    + may require some phoneme/codec alignment, might not.
 
 ## Notices and Citations
 

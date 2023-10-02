@@ -156,17 +156,18 @@ class Dataset:
 
 @dataclass()
 class Model:
-	name: str = ""
-	version: int = 1
-	size: str | float | dict = "full"
-	resp_levels: int = 1
-	prom_levels: int = 8
+	name: str = "" # vanity name for the model
+	version: int = 1 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding
+	size: str | dict = "full" # preset string or explicitly defined dimensionality
+	resp_levels: int = 1 # RVQ-bin levels this model targets for outputs
+	prom_levels: int = 8 # RVQ-bin levels this model accepts as an input prompt
 	tasks: int = 0 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	langs: int = 0 # defined languages
-	arch_type: str = "retnet"
-	training: bool = True
-	interleave: bool = False
-	frozen_params: list[str] = field(default_factory=lambda: [])
+	arch_type: str = "retnet" # or "transformer""
+	training: bool = True # unneeded now
+	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
+	p_ar_level: float | str = "auto" # determines odds of selecting the AR (level 0) when training, "auto" for default behavior
+	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 
 	@property
 	def full_name(self):
