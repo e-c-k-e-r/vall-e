@@ -47,7 +47,11 @@ def plot(paths, args):
 
 	df = pd.concat(dfs)
 
-	if args.max_y is not None:
+	if args.min_x is not None:
+		for model in args.models:
+			df = df[args.min_x < df[f'{model.name}.{args.xs}']]
+
+	if args.max_x is not None:
 		for model in args.models:
 			df = df[df[f'{model.name}.{args.xs}'] < args.max_x]
 
@@ -63,6 +67,8 @@ def plot(paths, args):
 				if gdf[y].isna().all():
 					continue
 
+				if args.min_y is not None:
+					gdf = gdf[args.min_y < gdf[y]]
 				if args.max_y is not None:
 					gdf = gdf[gdf[y] < args.max_y]
 
@@ -91,6 +97,8 @@ if __name__ == "__main__":
 	parser.add_argument("--ys", nargs="+", default="")
 	parser.add_argument("--model", nargs="+", default="*")
 
+	parser.add_argument("--min-x", type=float, default=-float("inf"))
+	parser.add_argument("--min-y", type=float, default=-float("inf"))
 	parser.add_argument("--max-x", type=float, default=float("inf"))
 	parser.add_argument("--max-y", type=float, default=float("inf"))
 

@@ -121,7 +121,7 @@ class Dataset:
 
 	speaker_name_getter: str = "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
 	
-	hdf5_name: str = "data.h5"
+	hdf5_name: str = "dataset.h5"
 	use_hdf5: bool = False
 	use_metadata: bool = False
 	hdf5_flag: str = "a"
