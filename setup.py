@@ -58,6 +58,7 @@ setup(
         "vocos",
         "h5py",
         "torchscale @ git+https://git.ecker.tech/mrq/torchscale",
+        "prodigyopt @ git+https://github.com/konstmish/prodigy",
     ],
     url="https://git.ecker.tech/mrq/vall-e",
 )
