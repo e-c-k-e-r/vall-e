@@ -382,11 +382,16 @@ class Base(nn.Module):
 			self.retnet = RetNetDecoder(RetNetConfig(
 				vocab_size=n_tokens,
 				decoder_embed_dim=d_model,
+				decoder_value_embed_dim =d_model * 2,
 				decoder_retention_heads=n_heads,
 				decoder_ffn_embed_dim=d_model * 4,
 				decoder_layers=n_layers,
 				dropout=p_dropout,
 				checkpoint_activations=self.activation_checkpointing,
+				activation_fn="gelu",
+				use_layernorm=True,
+				use_biases=True,
+				use_glu=False,
 
 				chunkwise_recurrent=self.causal and self.recurrent_chunk_size > 0,
 				recurrent_chunkwise_size=self.recurrent_chunk_size if self.causal else 0,
