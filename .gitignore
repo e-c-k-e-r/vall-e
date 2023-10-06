@@ -1,12 +1,7 @@
 __pycache__
 /data
-/logs
-/ckpts
-/.cache
-/config
+/training
+/venv
 /*.egg-info
 /vall_e/version.py
-/build
 /.cache
-
-/vall_e/ext/interleaver.py
