@@ -76,6 +76,11 @@ def load_engines():
 			optimizer = None
 			lr_scheduler = None
 
+		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
+		if not cfg.trainer.load_state_dict and cfg.trainer.backend == "deepspeed" and not (cfg.ckpt_dir / name / "latest").exists():
+			print("DeepSpeed checkpoint missing, but weights found.")
+			cfg.trainer.load_state_dict = True
+
 		stats = None
 		if cfg.trainer.load_state_dict or not model._cfg.training:
 			load_path = cfg.ckpt_dir / name / "fp32.pth"
