@@ -44,12 +44,7 @@ Each model file has a barebones trainer and inference routine.
 
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 
-For example:
-
-```
-git lfs clone --exclude "*.h5" https://huggingface.co/ecker/vall-e ./data/ # remove the '--exclude "*.h5"' if you wish to also download the libre dataset.
-python -m vall_e "The birch canoe slid on the smooth planks." "./path/to/an/utterance.wav" --out-path="./output.wav" yaml="./data/config.yaml"
-```
+A script to setup a proper environment and download the weights can be invoked with `./scripts/setup.sh`
 
 ## Train
 
@@ -60,7 +55,9 @@ Training is very dependent on:
 
 ### Pre-Processed Dataset
 
-A "libre" dataset can be found [here](https://huggingface.co/ecker/vall-e/blob/main/data.h5). Simply place it in the same folder as your `config.yaml`, and ensure its `dataset.use_hdf5` is set to `True`.
+A "libre" dataset can be found [here](https://huggingface.co/ecker/vall-e) under `data.tar.gz`.
+
+A script to setup a proper environment and train can be invoked with `./scripts/setup-training.sh`
 
 ### Leverage Your Own Dataset
 
