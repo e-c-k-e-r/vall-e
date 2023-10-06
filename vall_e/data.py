@@ -115,7 +115,7 @@ def _get_hdf5_paths( data_dir, type="training", validate=False ):
 		duration = child.attrs['duration']
 		if type not in _total_durations:
 			_total_durations[type] = 0
-		_total_durations[type] += entry['duration']
+		_total_durations[type] += child.attrs['duration']
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
 	key = f"/{type}{_get_hdf5_path(data_dir)}"
