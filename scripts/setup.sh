@@ -1,6 +1,8 @@
 #!/bin/bash
 
 python3 -m venv venv
+source ./venv/bin/activate
+pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
 pip3 install -e .
 
 mkdir -p ./training/valle/ckpt/ar+nar-retnet-8/

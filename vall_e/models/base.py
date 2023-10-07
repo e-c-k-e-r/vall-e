@@ -389,9 +389,9 @@ class Base(nn.Module):
 				dropout=p_dropout,
 				checkpoint_activations=self.activation_checkpointing,
 				activation_fn="gelu",
-				use_layernorm=True,
-				use_biases=True,
-				use_glu=False,
+				use_layernorm=True, # self.version < 3,
+				use_biases=True, # self.version < 3,
+				use_glu=False, # self.version >= 3,
 
 				chunkwise_recurrent=self.causal and self.recurrent_chunk_size > 0,
 				recurrent_chunkwise_size=self.recurrent_chunk_size if self.causal else 0,
