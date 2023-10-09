@@ -291,8 +291,8 @@ class Dataset(_Dataset):
 
 		# shuffle it up a bit
 		prom_length = 0
-		trim_length = random.randint(75 * 3, 75 * 9) # [3 seconds, 9 seconds]
-		#trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)
+		#trim_length = random.randint(75 * 3, 75 * 9) # [3 seconds, 9 seconds]
+		trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)
 
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
@@ -336,15 +336,19 @@ class Dataset(_Dataset):
 			text = torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype)
 			resps = _load_quants(path)
 		
+		task = "tts"
+		trim_length = int(cfg.dataset.prompt_duration * 75)
+		proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
+
+		# Disabled until I swap over to a better method
+		"""
 		task = random.choice(self.tasks)
 
 		# ensure a speaker has at least four utterances
 		# default to tts if not
 		if len(set(self.paths_by_spkr_name[spkr_name]) - {path}) < 4:
 			task = "tts"
-
 		noise_scale = 0.25
-		# text-to-speech
 		if task == "tts" or task == "tts-c":
 			trim_length = int(cfg.dataset.prompt_duration * 75)
 			# demote if the target is too short
@@ -480,6 +484,7 @@ class Dataset(_Dataset):
 			)
 		else:
 			raise Exception(f'Undefined task: {task}')
+		"""
 
 		"""
 		# emulate SVC

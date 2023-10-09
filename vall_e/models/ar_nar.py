@@ -336,7 +336,7 @@ def example_usage():
 
 			tqdm.write(f"{stats}")
 
-	sample("init", 75)
+	sample("init", 5)
 	train()
 	sample("final")
 
