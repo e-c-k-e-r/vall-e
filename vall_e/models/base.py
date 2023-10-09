@@ -120,7 +120,7 @@ def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"
 	return logits
 
 # credit to https://github.com/LostRuins/koboldcpp/pull/464
-def dynamic_temperature( logits, temperature=1.0, min_temperature = 1.0/256.0, k = 10, sigmoidCenterPoint = 0.5 ):
+def dynamic_temperature( logits, temperature=1.0, min_temperature = 0.00390625, k = 10, sigmoidCenterPoint = 0.5 ):
 	# loop over logits[:], as the NAR will have logits.shape[0] > 1
 	for i in range(logits.shape[0]):
 		maximum = 0.0
@@ -133,6 +133,11 @@ def dynamic_temperature( logits, temperature=1.0, min_temperature = 1.0/256.0, k
 
 		prob_max_token_before_temp = 1.0 / sum_exp
 		dynamic_temperature = temperature - (temperature - min_temperature) / (1 + math.exp(-k * (prob_max_token_before_temp - sigmoidCenterPoint)))
+
+		#print( "sum_exp:", sum_exp )
+		#print( "prob_max_token_before_temp:", prob_max_token_before_temp )
+		#print( "dynamic temperature:", dynamic_temperature )
+
 		logits[i] /= dynamic_temperature
 
 	return logits
@@ -560,6 +565,9 @@ class Base(nn.Module):
 		else:
 			logits = [ logit[-1:] for logit in logits ]
 
+		devices = [ logit.device for logit in logits ]
+		logits = [ logit.cpu() for logit in logits ]
+
 		# perform repetition penalizing	
 		logits = [ reptition_penalize(logit, previous=resps[:, -1], factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
 
@@ -571,8 +579,8 @@ class Base(nn.Module):
 		if top_k > 0 or top_p < 1.0:
 			logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
 
-		# our dynamic temperature threshold is considered to be anything over 1.25.
-		if temperature > 1.25: 
+		# our dynamic temperature threshold is considered to be anything over 1.0.
+		if temperature > 1.0: 
 			logits = [ dynamic_temperature(logit, temperature=temperature) for logit in logits ]
 		else:
 			logits = [ logit / temperature for logit in logits ]
@@ -594,7 +602,7 @@ class Base(nn.Module):
 			return res, scores
 
 		# and sample
-		return [ Categorical(logits=logit).sample() for logit in logits ]
+		return [ Categorical(logits=logit).sample().to(device) for logit, device in zip(logits, devices) ]
 
 def example_usage():
 	from ..config import cfg
