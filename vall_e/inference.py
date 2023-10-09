@@ -12,18 +12,11 @@ from .utils import to_device
 
 from .config import cfg
 from .models import get_models
-from .train import load_engines
+from .engines import load_engines, deepspeed_available
 from .data import get_phone_symmap, _load_quants
 
-use_deepspeed_inference = False
-# to-do: integrate this for windows
-"""
-try:
+if deepspeed_available:
 	import deepspeed
-	use_deepspeed_inference = True
-except Exception as e:
-	pass
-"""
 
 class TTS():
 	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device=None, amp=None, dtype=None ):
@@ -48,9 +41,9 @@ class TTS():
 		if device is None:
 			device = cfg.device
 
-		cfg.mode = "inferencing"
 		cfg.device = device
-		cfg.trainer.load_state_dict = True
+		cfg.mode = "inferencing"
+		cfg.trainer.backend = cfg.inference.backend
 		cfg.trainer.weight_dtype = dtype
 		cfg.inference.weight_dtype = dtype
 
@@ -70,6 +63,10 @@ class TTS():
 				state = state['module']
 			
 			model.load_state_dict(state)
+
+			if deepspeed_available:
+				model = deepspeed.init_inference(model=model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
+
 			return model
 
 		if ar_ckpt and nar_ckpt:
@@ -94,12 +91,8 @@ class TTS():
 		self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 		self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
-		if use_deepspeed_inference:
-			self.ar = deepspeed.init_inference(model=self.ar, mp_size=1, replace_with_kernel_inject=True, dtype=self.dtype if not self.amp else torch.float32).module.eval()
-			self.nar = deepspeed.init_inference(model=self.nar, mp_size=1, replace_with_kernel_inject=True, dtype=self.dtype if not self.amp else torch.float32).module.eval()
-		else:
-			self.ar.eval()
-			self.nar.eval()
+		self.ar.eval()
+		self.nar.eval()
 
 		if self.symmap is None:
 			self.symmap = get_phone_symmap()

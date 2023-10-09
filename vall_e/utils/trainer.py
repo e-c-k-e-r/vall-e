@@ -28,8 +28,7 @@ from .distributed import (
 	local_leader_only,
 )
 
-from ..engines import _Engine, Engine, Engines, TrainFeeder, default_feeder
-from ..models import get_models
+from ..engines import _Engine, Engine, Engines, TrainFeeder, default_feeder, load_engines
 
 from .utils import to_device, do_gc
 from ..utils import wrapper as ml
@@ -38,86 +37,6 @@ from ..data import get_phone_symmap # should decouple from this trainer script
 _logger = logging.getLogger(__name__)
 _command: str
 
-def load_engines():
-	models = get_models(cfg.models.get())
-	engines = dict()
-
-	for name, model in models.items():
-		optimizer = None
-		lr_scheduler = None
-
-		if cfg.trainer.backend == "local" or (cfg.trainer.backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):
-			optimizer_class = None
-			params = {
-				"lr": cfg.hyperparameters.learning_rate,
-			}
-			if cfg.hyperparameters.optimizer.lower() == "adamw":
-				params["betas"] = (0.9, 0.96)
-				params["eps"] = 1e-07
-				params["weight_decay"] = 0.01
-
-				optimizer_class = ml.AdamW
-			elif cfg.hyperparameters.optimizer.lower() == "sgd":
-				optimizer = ml.SGD
-			elif cfg.hyperparameters.optimizer.lower() == "prodigy":
-				optimizer_class = ml.Prodigy
-			else:
-				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
-
-			params.update(cfg.hyperparameters.optimizer_params)
-			optimizer = optimizer_class(
-				[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
-				**params,
-			)
-
-		# set up our LR scheduler here
-
-		if not model._cfg.training:
-			optimizer = None
-			lr_scheduler = None
-
-		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
-		if not cfg.trainer.load_state_dict and cfg.trainer.backend == "deepspeed" and not (cfg.ckpt_dir / name / "latest").exists():
-			print("DeepSpeed checkpoint missing, but weights found.")
-			cfg.trainer.load_state_dict = True
-
-		stats = None
-		if cfg.trainer.load_state_dict or not model._cfg.training:
-			load_path = cfg.ckpt_dir / name / "fp32.pth"
-			state = torch.load(load_path, map_location=torch.device(cfg.device))
-
-			# state dict is not just the module, extract the extra trainer details
-			if "stats" in state:
-				stats = state["stats"]
-
-			if "module" in state:
-				state = state["module"]
-
-			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
-
-		# use base engine because DeepSpeed memory leaks if it's a non-training model
-		engines[name] = (Engine if model._cfg.training else _Engine)(
-			model=model,
-			optimizer=optimizer,
-			lr_scheduler=lr_scheduler,
-
-			_cfg=model._cfg,
-			stats=stats
-		)
-
-	engines = Engines(engines)
-	engines.setup()
-
-	if not cfg.trainer.load_state_dict:
-		engines.load_checkpoint()
-
-	# freeze requested params
-	for name, engine in engines.items():
-		engine.freeze(freeze_all=False)
-
-	do_gc()
-
-	return engines
 
 class EvalFn(Protocol):
 	def __call__(self, *, engines: Engines):

@@ -3,7 +3,7 @@ import argparse
 import torch
 
 from .data import get_phone_symmap
-from .train import load_engines
+from .engines import load_engines
 from .config import cfg
 
 def main():

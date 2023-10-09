@@ -460,6 +460,7 @@ class Trainer:
 
 @dataclass()
 class Inference:
+	backend: str = "local"
 	weight_dtype: str = "float32"
 	amp: bool = False
 
@@ -492,6 +493,7 @@ class BitsAndBytes:
 class Config(_Config):
 	device: str = "cuda"
 	mode: str = "training" # "inferencing"
+	experimental: bool = False # So I can stop commenting out things when committing
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: Models = field(default_factory=lambda: Models)
