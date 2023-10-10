@@ -10,6 +10,8 @@ from einops import rearrange
 from torch import Tensor
 from tqdm import trange
 
+from ..emb.qnt import trim
+
 class AR_NAR(Base):
 	@property
 	def causal(self):
@@ -113,7 +115,11 @@ class AR_NAR(Base):
 
 				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)] # ensures we only have 1 RVQ-bin (our target)
 				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)] # yes I can just do min(1, l)
-				quant_levels.to(device=device)
+				
+				if cfg.experimental:
+					proms_list = [ r if l == 0 else trim(r, 75 * 3) for r, l in zip(proms_list, quant_levels) ] # trim input prompt to 3 seconds
+				
+				#quant_levels.to(device=device)
 
 				return super().forward(
 					text_list=text_list,

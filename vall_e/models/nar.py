@@ -110,7 +110,7 @@ class NAR(Base):
 			prev_list = [o[..., : l + 1] for o, l in zip(resps_list, quant_levels)]
 			targ_list = [o[..., l + 1] for o, l in zip(resps_list, quant_levels)]
 
-			quant_levels = quant_levels.to(device=device)
+			#quant_levels = quant_levels.to(device=device)
 
 			logits = super().forward(
 				text_list=text_list,

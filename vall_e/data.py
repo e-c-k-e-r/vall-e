@@ -293,6 +293,7 @@ class Dataset(_Dataset):
 		prom_length = 0
 		if cfg.experimental:
 			trim_length = random.randint(75 * 3, 75 * 9) # [3 seconds, 9 seconds]
+			#trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * 75))
 		else:
 			trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)
 
