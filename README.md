@@ -123,10 +123,13 @@ To synthesize speech, invoke either (if exported the models): `python -m vall_e 
 Some additional flags you can pass are:
 * `--max-ar-steps`: maximum steps for inferencing through the AR model. Each second is 75 steps.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
-* `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output, but values close to it works file.
+* `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output, but values close to it works fine.
 * `--nar-temp`: sampling temperature to use for the NAR pass. During experimentation, `0.2` provides clean output, but values upward of `0.6` seems fine too.
 
 And some experimental sampling flags you can use too (your mileage will ***definitely*** vary):
+* `--min-ar-temp` / `--min-nar-temp`: triggers the dynamic temperature pathway, adjusting the temperature based on the confidence of the best token. Acceptable values are between `[0.0, (n)ar-temp)`.
+  + This simply uplifts the [original implementation](https://github.com/kalomaze/koboldcpp/blob/dynamic-temp/llama.cpp#L5132) to perform it.
+  + **!**NOTE**!**: This does not seem to resolve any issues with setting too high/low of a temperature. The right values are yet to be found.
 * `--top-p`: limits the sampling pool to top sum of values that equal `P`% probability in the probability distribution.
 * `--top-k`: limits the sampling pool to the top `K` values in the probability distribution.
 * `--repetition-penalty`: modifies the probability of tokens if they have appeared before. In the context of audio generation, this is a very iffy parameter to use.
@@ -137,7 +140,7 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--mirostat-tau`: (AR only) the "surprise value" when performing mirostat sampling.
   + This simply uplifts the [original implementation](https://github.com/basusourya/mirostat/blob/master/mirostat.py) to perform it.
   + **!**NOTE**!**: This is incompatible with beam search sampling (for the meantime at least).
-* `--mirostat-eta`: (Ar only) the "learning rate" during mirostat sampling applied to the maximum surprise.
+* `--mirostat-eta`: (AR only) the "learning rate" during mirostat sampling applied to the maximum surprise.
 
 ## To-Do
 
@@ -155,7 +158,7 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 
 ## Notices and Citations
 
-Unless otherwise credited/noted, this repository is [licensed](LICENSE) under AGPLv3.
+Unless otherwise credited/noted in this README or within the designated Python file, this repository is [licensed](LICENSE) under AGPLv3.
 
 - [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.
 

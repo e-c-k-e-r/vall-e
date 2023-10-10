@@ -119,7 +119,7 @@ def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"
 
 	return logits
 
-# credit to https://github.com/LostRuins/koboldcpp/pull/464
+# credit to https://github.com/LostRuins/koboldcpp/pull/464 // https://github.com/kalomaze/koboldcpp/tree/dynamic-temp
 def dynamic_temperature( logits, temperature=1.0, min_temperature = 0.0, k = 10, sigmoidCenterPoint = 0.5 ):
 	# loop over logits[:], as the NAR will have logits.shape[0] > 1
 	for i in range(logits.shape[0]):
@@ -130,10 +130,6 @@ def dynamic_temperature( logits, temperature=1.0, min_temperature = 0.0, k = 10,
 
 		prob_max_token_before_temp = 1.0 / sum_exp
 		dynamic_temperature = temperature - (temperature - min_temperature) / (1 + math.exp(-k * (prob_max_token_before_temp - sigmoidCenterPoint)))
-
-		#print( i, "sum_exp:", sum_exp )
-		#print( i, "prob_max_token_before_temp:", prob_max_token_before_temp )
-		#print( i, "dynamic temperature:", dynamic_temperature )
 
 		logits[i] /= dynamic_temperature
 
