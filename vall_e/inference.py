@@ -152,6 +152,8 @@ class TTS():
 		input_prompt_length=0.0,
 		ar_temp=0.95,
 		nar_temp=0.5,
+		min_ar_temp=0.95,
+		min_nar_temp=0.5,
 		top_p=1.0,
 		top_k=0,
 		repetition_penalty=1.0,
@@ -175,6 +177,7 @@ class TTS():
 			resps_list = self.ar(
 				text_list=[phns], proms_list=[prom], max_steps=max_ar_steps,
 				sampling_temperature=ar_temp,
+				sampling_min_temperature=min_ar_temp,
 				sampling_top_p=top_p, sampling_top_k=top_k,
 				sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 				sampling_length_penalty=length_penalty,
@@ -187,6 +190,7 @@ class TTS():
 				text_list=[phns], proms_list=[prom], resps_list=resps_list,
 				max_levels=max_nar_levels,
 				sampling_temperature=nar_temp,
+				sampling_min_temperature=min_nar_temp,
 				sampling_top_p=top_p, sampling_top_k=top_k,
 				sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 			)

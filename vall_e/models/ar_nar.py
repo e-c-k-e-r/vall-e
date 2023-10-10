@@ -88,7 +88,8 @@ class AR_NAR(Base):
 		resps_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
 		max_levels: int = 7,
-		sampling_temperature: float = 0.0,
+		sampling_temperature: float = 1.0,
+		sampling_min_temperature: float = -1.0,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
@@ -154,6 +155,7 @@ class AR_NAR(Base):
 					quant_levels=quant_levels,
 
 					temperature=sampling_temperature,
+					min_temperature=sampling_min_temperature,
 					top_p=sampling_top_p,
 					top_k=sampling_top_k,
 					repetition_penalty=sampling_repetition_penalty,
@@ -198,6 +200,7 @@ class AR_NAR(Base):
 				resps_list=resps_list,
 
 				temperature=sampling_temperature,
+				min_temperature=sampling_min_temperature,
 				top_p=sampling_top_p,
 				top_k=sampling_top_k,
 				repetition_penalty=sampling_repetition_penalty,
@@ -320,7 +323,7 @@ def example_usage():
 	@torch.inference_mode()
 	def sample( name, steps=600 ):
 		engine.eval()
-		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95, sampling_beam_width=16 )
+		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
 		
 		for i, o in enumerate(resps_list):
 			_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)

@@ -76,6 +76,7 @@ class NAR(Base):
 		resps_list: list[Tensor],
 		max_levels: int = 0,
 		sampling_temperature: float = 0.2,
+		sampling_min_temperature: float = -1.0,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
@@ -147,6 +148,7 @@ class NAR(Base):
 					quant_levels=quant_levels,
 
 					temperature=sampling_temperature,
+					min_temperature=sampling_min_temperature,
 					top_p=sampling_top_p,
 					top_k=sampling_top_k,
 					repetition_penalty=sampling_repetition_penalty,

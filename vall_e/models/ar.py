@@ -105,6 +105,7 @@ class AR(Base):
 		max_steps: int = 1000,
 
 		sampling_temperature: float = 1.0,
+		sampling_min_temperature: float = -1.0,
 		sampling_top_k: int = -100,
 		sampling_top_p: float = 1.0,
 		sampling_repetition_penalty: float = 1.0,
@@ -162,6 +163,7 @@ class AR(Base):
 				resps_list=resps_list,
 
 				temperature=sampling_temperature,
+				min_temperature=sampling_min_temperature,
 				top_p=sampling_top_p,
 				top_k=sampling_top_k,
 				repetition_penalty=sampling_repetition_penalty,

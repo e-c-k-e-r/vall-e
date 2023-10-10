@@ -20,6 +20,8 @@ def main():
 
 	parser.add_argument("--ar-temp", type=float, default=1.0)
 	parser.add_argument("--nar-temp", type=float, default=1.0)
+	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
+	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
 	parser.add_argument("--input-prompt-length", type=float, default=3.0)
 
 	parser.add_argument("--top-p", type=float, default=1.0)
@@ -45,6 +47,7 @@ def main():
 		input_prompt_length=args.input_prompt_length,
 		max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
 		ar_temp=args.ar_temp, nar_temp=args.nar_temp,
+		min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
 		top_p=args.top_p, top_k=args.top_k,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,

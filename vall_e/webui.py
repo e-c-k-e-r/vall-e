@@ -64,6 +64,10 @@ def init_tts(restart=False):
 
 @gradio_wrapper(inputs=layout["inference"]["inputs"].keys())
 def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
+	if kwargs.pop("dynamic-sampling", False):
+		kwargs['min-ar-temp'] = 0.85 if kwargs['ar-temp'] > 0.85 else 0.0
+		kwargs['min-nar-temp'] = 0.2 if kwargs['nar-temp'] > 0.2 else 0.0
+
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--text", type=str, default=kwargs["text"])
@@ -73,6 +77,8 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--max-nar-levels", type=int, default=kwargs["max-nar-levels"])
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
 	parser.add_argument("--nar-temp", type=float, default=kwargs["nar-temp"])
+	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
+	parser.add_argument("--min-nar-temp", type=float, default=kwargs["min-nar-temp"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
 	parser.add_argument("--repetition-penalty", type=float, default=kwargs["repetition-penalty"])
@@ -99,6 +105,8 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			input_prompt_length=args.input_prompt_length,
 			ar_temp=args.ar_temp,
 			nar_temp=args.nar_temp,
+			min_ar_temp=args.min_ar_temp,
+			min_nar_temp=args.min_nar_temp,
 			top_p=args.top_p,
 			top_k=args.top_k,
 			repetition_penalty=args.repetition_penalty,
@@ -192,6 +200,8 @@ with ui:
 				with gr.Row():
 					layout["inference"]["inputs"]["ar-temp"] = gr.Slider(value=0.95, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR.")
 					layout["inference"]["inputs"]["nar-temp"] = gr.Slider(value=0.25, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR.")
+				with gr.Row():
+					layout["inference"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
 
 				with gr.Row():
 					layout["inference"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")

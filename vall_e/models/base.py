@@ -540,6 +540,7 @@ class Base(nn.Module):
 		quant_levels: Tensor | None = None,
 
 		temperature: float = 1.0,
+		min_temperature: float = -1.0,
 		top_k: int = -100,
 		top_p: float = 1.0,
 
@@ -552,6 +553,8 @@ class Base(nn.Module):
 
 		mirostat: list[dict] | None = None,
 	):
+		if min_temperature < 0:
+			min_temperature = temperature
 		# (NAR) return the entire generated response
 		if quant_levels is not None:
 			logits = [ logit[-l:] for logit, l in zip(logits, map(len, resps_list)) ]
@@ -576,9 +579,10 @@ class Base(nn.Module):
 		if top_k > 0 or top_p < 1.0:
 			logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
 
-		# our dynamic temperature threshold is considered to be anything over 1.0.
-		if temperature > 1.0: 
-			logits = [ dynamic_temperature(logit, temperature=temperature) for logit in logits ]
+		# trigger dynamic temperature sampling if the minimum temperature is not the same as the sampling temperature
+		#     epsilon float comparison because I don't trust Python
+		if abs(temperature - min_temperature) >= 0.001: 
+			logits = [ dynamic_temperature(logit, temperature=temperature, min_temperature=min_temperature) for logit in logits ]
 		else:
 			logits = [ logit / temperature for logit in logits ]
 
