@@ -143,9 +143,14 @@ def _get_paths_of_extensions( path, extensions=".qnt.pt", validate=False ):
 def _load_quants(path) -> Tensor:
 	return torch.load(_get_quant_path(path))[0][:, :].t().to(torch.int16)
 
+# prune consecutive spaces
+def _cleanup_phones( phones, targets=[" "]):
+	return [ p for i, p in enumerate(phones) if p not in targets or ( p in targets and p != phones[i-1] ) ]
+
 @cache
 def _get_phones(path, language="en"):
 	content = open(_get_phone_path(path), "r", encoding="utf-8").read().split(" ")
+	content = _cleanup_phones( content )
 	return ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
 
 def _interleaved_reorder(l, fn):
@@ -333,8 +338,13 @@ class Dataset(_Dataset):
 
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)
-			text = torch.from_numpy(cfg.hdf5[key]["text"][:]).to(self.text_dtype)
-			resps = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
+			text = cfg.hdf5[key]["text"][:]
+			resps = cfg.hdf5[key]["audio"][:, :]
+
+			text = np.array( _cleanup_phones( text, targets=[ self.phone_symmap[" "] ] ) )
+			
+			text = torch.from_numpy(text).to(self.text_dtype)
+			resps = torch.from_numpy(resps).to(torch.int16)
 		else:
 			text = torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype)
 			resps = _load_quants(path)
