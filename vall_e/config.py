@@ -136,6 +136,9 @@ class Dataset:
 	random_utterance: float = 1.0
 	max_prompts: int = 3
 	prompt_duration: float = 3.0
+	
+	max_resps: int = 1
+	p_resp_append: float = 1.0
 
 	sample_type: str = "path" # path | speaker
 	
