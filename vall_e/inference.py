@@ -13,7 +13,7 @@ from .utils import to_device
 from .config import cfg
 from .models import get_models
 from .engines import load_engines, deepspeed_available
-from .data import get_phone_symmap, _load_quants
+from .data import get_phone_symmap, _load_quants, _cleanup_phones
 
 if deepspeed_available:
 	import deepspeed
@@ -116,6 +116,7 @@ class TTS():
 			return text
 
 		content = g2p.encode(text, language=language)
+		content = _cleanup_phones( content )
 		# ick
 		try:
 			phones = ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
