@@ -201,7 +201,7 @@ class AR(Base):
 			for i, ri in enumerate(r):
 				if self.stop_token in ri:
 					stopped[i] = True
-				sequence_list[i] = torch.cat([sequence_list[i], ri])
+				sequence_list[i] = torch.cat([sequence_list[i], ri.to(device)])
 
 			# stop token found
 			stopped |= r == self.stop_token

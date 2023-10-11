@@ -159,7 +159,7 @@ class NAR(Base):
 					#mirostat_state=mirostat_state,
 				)
 
-				prev_list = [ torch.cat([rs, r.unsqueeze(-1)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
+				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 		return prev_list
 

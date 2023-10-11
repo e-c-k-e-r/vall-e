@@ -120,8 +120,6 @@ class AR_NAR(Base):
 				if cfg.experimental:
 					proms_list = [ r if l == 0 else trim(r, 75 * 3) for r, l in zip(proms_list, quant_levels) ] # trim input prompt to 3 seconds
 				
-				#quant_levels.to(device=device)
-
 				return super().forward(
 					text_list=text_list,
 					proms_list=proms_list,
@@ -140,7 +138,7 @@ class AR_NAR(Base):
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
 
-				quant_levels = torch.full((len(text_list),), level, device=device)
+				quant_levels = torch.full((len(text_list),), level)
 
 				logits = super().forward(
 					text_list=text_list,
@@ -165,7 +163,7 @@ class AR_NAR(Base):
 					#mirostat=mirostat,
 				)
 
-				prev_list = [ torch.cat([rs, r.unsqueeze(-1)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
+				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 			return prev_list
 
@@ -238,7 +236,7 @@ class AR_NAR(Base):
 			for i, ri in enumerate(r):
 				if self.stop_token in ri:
 					stopped[i] = True
-				sequence_list[i] = torch.cat([sequence_list[i], ri])
+				sequence_list[i] = torch.cat([sequence_list[i], ri.to(device)])
 
 			# stop token found
 			stopped |= r == self.stop_token
