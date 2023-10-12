@@ -304,7 +304,7 @@ class Base(nn.Module):
 		batch_size = len(text_list)
 
 		if self.langs_emb is None:
-			langs_list = None
+			lang_list = None
 
 		x_list = self._samplewise_merge_tensors(
 			self.text_emb(text_list),

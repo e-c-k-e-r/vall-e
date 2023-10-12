@@ -134,6 +134,7 @@ class AR_NAR(Base):
 					proms_list=proms_list,
 					resps_list=resps_list,
 					targ_list=targ_list,
+					lang_list=lang_list,
 					quant_levels=quant_levels,
 				)
 			# is NAR
@@ -153,6 +154,7 @@ class AR_NAR(Base):
 					text_list=text_list,
 					proms_list=proms_list,
 					resps_list=prev_list,
+					lang_list=lang_list,
 					quant_levels=quant_levels,
 				)
 
@@ -204,7 +206,7 @@ class AR_NAR(Base):
 				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=resps_list,
-				
+				lang_list=lang_list,
 				state=recurrent_state
 			)
 

@@ -102,6 +102,7 @@ class AR(Base):
 		text_list: list[Tensor],
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
+		lang_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
 		max_resp_context: int = -1,
 
@@ -128,6 +129,7 @@ class AR(Base):
 				proms_list=proms_list,
 				resps_list=self._unsqueeze_list(resps_list),
 				targ_list=resps_list,
+				lang_list=lang_list,
 				quant_levels=None,
 			)
 

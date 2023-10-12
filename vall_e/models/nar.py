@@ -74,6 +74,7 @@ class NAR(Base):
 		text_list: list[Tensor],
 		proms_list: list[Tensor],
 		resps_list: list[Tensor],
+		lang_list: list[Tensor] | None = None,
 		max_levels: int = 0,
 		sampling_temperature: float = 0.2,
 		sampling_min_temperature: float = -1.0,
@@ -118,6 +119,7 @@ class NAR(Base):
 				proms_list=proms_list,
 				resps_list=prev_list,
 				targ_list=targ_list,
+				lang_list=lang_list,
 				quant_levels=quant_levels,
 			)
 
@@ -139,6 +141,7 @@ class NAR(Base):
 					text_list=text_list,
 					proms_list=proms_list,
 					resps_list=prev_list,
+					lang_list=lang_list,
 					quant_levels=quant_levels,
 				)
 
