@@ -191,7 +191,10 @@ class Base(nn.Module):
 			cat = torch.cat
 		else:
 			cat = partial(_join, sep=sep)
-		return [*map(cat, zip([x for x in l if x is not None]))]
+
+		l = [ x for x in l if x is not None ]
+
+		return [*map(cat, zip(*l))]
 
 	def __init__(
 		self,
