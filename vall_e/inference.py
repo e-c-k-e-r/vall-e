@@ -149,6 +149,7 @@ class TTS():
 		text,
 		references,
 		max_ar_steps=6 * 75,
+		max_ar_context=-1,
 		max_nar_levels=7,
 		input_prompt_length=0.0,
 		ar_temp=0.95,
@@ -176,7 +177,7 @@ class TTS():
 
 		with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 			resps_list = self.ar(
-				text_list=[phns], proms_list=[prom], max_steps=max_ar_steps,
+				text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, max_resp_context=max_ar_context,
 				sampling_temperature=ar_temp,
 				sampling_min_temperature=min_ar_temp,
 				sampling_top_p=top_p, sampling_top_k=top_k,

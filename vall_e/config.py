@@ -120,6 +120,9 @@ class Dataset:
 	temp: list[Path] = field(default_factory=lambda: [])
 
 	speaker_name_getter: str = "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
+	speaker_group_getter: str = "lambda p: f'{p.parts[-3]}'"
+
+	speaker_languages: dict = field(default_factory=lambda: {}) # dict where keys are the language codes and values are the speaker groups
 	
 	hdf5_name: str = "data.h5"
 	use_hdf5: bool = False
@@ -164,8 +167,8 @@ class Model:
 	size: str | dict = "full" # preset string or explicitly defined dimensionality
 	resp_levels: int = 1 # RVQ-bin levels this model targets for outputs
 	prom_levels: int = 8 # RVQ-bin levels this model accepts as an input prompt
-	tasks: int = 0 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
-	langs: int = 0 # defined languages
+	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
+	langs: int = 1 # defined languages
 	arch_type: str = "retnet" # or "transformer""
 	training: bool = True # unneeded now
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
@@ -517,6 +520,10 @@ class Config(_Config):
 	@cached_property
 	def get_spkr(self):
 		return eval(self.dataset.speaker_name_getter)
+
+	@cached_property
+	def get_spkr_group(self):
+		return eval(self.dataset.speaker_group_getter)
 
 	@cached_property
 	def diskcache(self):

@@ -191,7 +191,7 @@ class Base(nn.Module):
 			cat = torch.cat
 		else:
 			cat = partial(_join, sep=sep)
-		return [*map(cat, zip(*l))]
+		return [*map(cat, zip([x for x in l if x is not None]))]
 
 	def __init__(
 		self,
@@ -229,8 +229,9 @@ class Base(nn.Module):
 			# [1025] + [1024] * 8
 			self.resps_emb = AudioEmbedding([n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model)
 
-			# self.langs_emb = Embedding(self.n_langs, d_model)
-			# self.tasks_emb = Embedding(self.n_tasks, d_model)
+		if self.version >= 3:
+			self.langs_emb = Embedding(self.n_langs, d_model)
+			self.tasks_emb = Embedding(self.n_tasks, d_model)
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -291,25 +292,27 @@ class Base(nn.Module):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor],
 		targ_list: list[Tensor] | None = None,
-
-		#langs_list: list[Tensor] | None = None,
-		#tasks_list: list[Tensor] | None = None,
+		
+		lang_list: list[Tensor] | None = None,
 
 		quant_levels: Tensor | None = None,
 		state: dict | None = None,
 	):
+		batch_size = len(text_list)
+
+		if self.langs_emb is None:
+			langs_list = None
+
 		x_list = self._samplewise_merge_tensors(
 			self.text_emb(text_list),
-			#self.langs_emb(langs_list),
+			self.langs_emb(lang_list) if lang_list is not None else None,
 			self.proms_emb(proms_list),
-			#self.tasks_emb(tasks_list),
 			self.resps_emb(resps_list, quant_levels),
 			sep=self.sep,
 		)
 
 		x, m = list_to_tensor(x_list)
 		
-		batch_size = len(text_list)
 		device = x.device
 
 		if state is not None and self.arch_type == "retnet":
@@ -349,7 +352,12 @@ class Base(nn.Module):
 			# create a tensor sequence with one RVQ-bin of the input prompt, but with `ignore_index`, as the prompt is not neeeded for computing the loss against
 			prom_list = [ torch.full_like(t[..., 0], self.ignore_index) for t in proms_list ]
 			# remake input sequence
-			text_prom_list = self._samplewise_merge_tensors( text_list, prom_list, sep=ignore_sep )
+			text_prom_list = self._samplewise_merge_tensors(
+				text_list,
+				lang_list,
+				prom_list,
+				sep=ignore_sep
+			)
 
 			# process each batch
 			for i in range(len(text_prom_list)):

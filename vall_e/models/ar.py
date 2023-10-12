@@ -39,11 +39,11 @@ class AR(Base):
 
 	@property
 	def n_tasks(self) -> int:
-		return cfg.models.tasks
+		return cfg.models.ar.tasks
 
 	@property
 	def n_langs(self) -> int:
-		return cfg.models.langs
+		return cfg.models.ar.langs
 
 	@property
 	def recurrent_chunk_size(self) -> int:
@@ -103,6 +103,7 @@ class AR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
 		max_steps: int = 1000,
+		max_resp_context: int = -1,
 
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
@@ -149,7 +150,11 @@ class AR(Base):
 
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
-			resps_list = self._unsqueeze_list(sequence_list)
+			if max_resp_context > 0:
+				resps_list = self._unsqueeze_list([ sequence[-max_resp_context:] for sequence in sequence_list ] )
+			else:
+				resps_list = self._unsqueeze_list(sequence_list)
+
 			logits = super().forward(
 				text_list=text_list,
 				proms_list=proms_list,

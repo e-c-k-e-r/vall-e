@@ -43,7 +43,11 @@ class AR_NAR(Base):
 
 	@property
 	def n_tasks(self) -> int:
-		return cfg.models.tasks
+		return cfg.models.ar_nar.tasks
+
+	@property
+	def n_langs(self) -> int:
+		return cfg.models.ar_nar.langs
 
 	@property
 	def recurrent_chunk_size(self) -> int:
@@ -86,8 +90,13 @@ class AR_NAR(Base):
 		text_list: list[Tensor],
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
+		
+		lang_list: list[Tensor] | None = None,
+
 		max_steps: int = 1000,
 		max_levels: int = 7,
+		max_resp_context: int = -1,
+
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
 		sampling_top_k: int = -100,
@@ -184,7 +193,13 @@ class AR_NAR(Base):
 
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
-			resps_list = self._unsqueeze_list(sequence_list)
+			# experimental rolling response to avoid too-long perplexity hits despite RetNet allegedly fixing this.
+			# UNTESTED. In theory it would be better to also adjust the text, but there's no way of correlating text to segment of audio without something like wav2vec2
+			if max_resp_context > 0:
+				resps_list = self._unsqueeze_list([ sequence[-max_resp_context:] for sequence in sequence_list ] )
+			else:
+				resps_list = self._unsqueeze_list(sequence_list)
+
 			logits = super().forward(
 				text_list=text_list,
 				proms_list=proms_list,

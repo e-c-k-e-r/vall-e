@@ -37,11 +37,11 @@ class NAR(Base):
 
 	@property
 	def n_tasks(self) -> int:
-		return cfg.models.tasks
+		return cfg.models.nar.tasks
 
 	@property
 	def n_langs(self) -> int:
-		return cfg.models.langs
+		return cfg.models.nar.langs
 
 	@property
 	def version(self) -> int:
