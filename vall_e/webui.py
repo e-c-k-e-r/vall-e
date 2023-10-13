@@ -67,6 +67,9 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	if kwargs.pop("dynamic-sampling", False):
 		kwargs['min-ar-temp'] = 0.85 if kwargs['ar-temp'] > 0.85 else 0.0
 		kwargs['min-nar-temp'] = 0.2 if kwargs['nar-temp'] > 0.2 else 0.0
+	else:
+		kwargs['min-ar-temp'] = -1
+		kwargs['min-nar-temp'] = -1
 
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	# I'm very sure I can procedurally generate this list
