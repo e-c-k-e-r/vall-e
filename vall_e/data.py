@@ -382,7 +382,7 @@ class Dataset(_Dataset):
 			resps = _load_quants(path)
 
 		spkr_group = self.get_speaker_group(path)
-		lang = self.lang_symmap[ self.get_language(spkr_group) ]
+		lang = torch.tensor([ self.lang_symmap[ self.get_language(spkr_group) ]]).to(torch.uint8)
 
 		# append additional prompts in an attempt to artifically increase lengths / offer new data
 		if cfg.experimental and cfg.dataset.max_resps > 1 and random.random() < cfg.dataset.p_resp_append:

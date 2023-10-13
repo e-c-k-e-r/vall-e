@@ -36,7 +36,7 @@ class TTS():
 
 		if amp is None:
 			amp = cfg.inference.amp
-		if dtype is None:
+		if dtype is None or dtype == "auto":
 			dtype = cfg.inference.weight_dtype
 		if device is None:
 			device = cfg.device
@@ -64,7 +64,7 @@ class TTS():
 			
 			model.load_state_dict(state)
 
-			if deepspeed_available:
+			if cfg.inference.backend == "local" and deepspeed_available and cfg.trainer.deepspeed.inferencing:
 				model = deepspeed.init_inference(model=model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
 
 			return model
@@ -88,8 +88,9 @@ class TTS():
 		else:
 			self.load_models()
 
-		self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
-		self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+		if self.dtype != torch.int8:
+			self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+			self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
 		self.ar.eval()
 		self.nar.eval()

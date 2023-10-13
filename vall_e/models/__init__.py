@@ -23,7 +23,7 @@ def get_model(cfg):
 	)
 	model._cfg = cfg
 
-	print(f"{name} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+	print(f"{name} ({next(model.parameters()).dtype}): {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
 
 	return model
 

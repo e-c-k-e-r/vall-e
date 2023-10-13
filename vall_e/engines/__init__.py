@@ -90,7 +90,7 @@ def load_engines():
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
 		# deepspeed inferencing
-		if backend == "local" and inferencing and deepspeed_available: #and sys.platform.startswith("win"):
+		if backend == "local" and inferencing and deepspeed_available and cfg.trainer.deepspeed.inferencing: #and sys.platform.startswith("win"):
 			engine_class = _Engine
 			model = deepspeed.init_inference(model=model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
 

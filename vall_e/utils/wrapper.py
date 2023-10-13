@@ -9,12 +9,13 @@ Linear = torch.nn.Linear
 
 if cfg.bitsandbytes.enabled:
 	import bitsandbytes as bnb
-	
+
 	if cfg.bitsandbytes.linear:
 		Linear = bnb.nn.Linear8bitLt
 
 	if cfg.bitsandbytes.embedding:
-		Embedding = bnb.nn.StableEmbedding
+		Embedding = bnb.nn.modules.Embedding
+		"""
 		Embedding.forward = lambda self, input: ( self.norm(F.embedding(
 			input,
 			self.weight,
@@ -24,6 +25,7 @@ if cfg.bitsandbytes.enabled:
 			self.scale_grad_by_freq,
 			self.sparse,
 		)).to(self.weight.dtype) )
+		"""
 
 
 if cfg.bitsandbytes.enabled:
@@ -62,11 +64,6 @@ def autocast_forward( func ):
 	def wrapper( self, input, *args, **kwargs ):
 		with autocasts( input, [torch.int16, torch.int8, torch.uint8], torch.int32 ) as k:
 			return func( self, k, *args, **kwargs )
-		"""
-		if input.dtype == torch.int16 or input.dtype == torch.int8 or input.dtype == torch.uint8:
-			return func( self, input.to(torch.int32), *args, **kwargs )
-		return func( self, input, *args, **kwargs )
-		"""
 	return wrapper
 Embedding.forward = autocast_forward(Embedding.forward)
 

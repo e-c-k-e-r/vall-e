@@ -421,7 +421,7 @@ class Base(nn.Module):
 			logits = [ logit[-1:] for logit in logits ]
 
 		devices = [ logit.device for logit in logits ]
-		logits = [ logit.cpu() for logit in logits ]
+		logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 
 		# perform repetition penalizing	
 		logits = [ reptition_penalize(logit, previous=resps[:, -1], factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]

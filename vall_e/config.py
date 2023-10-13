@@ -322,6 +322,7 @@ class DeepSpeed:
 	zero_optimization_level: int = 0
 	use_compression_training: bool = False
 	compression_bits: int = 8
+	inferencing: bool = False
 
 	@cached_property
 	def ds_cfg(self):
@@ -363,7 +364,7 @@ class DeepSpeed:
 						"quantize_verbose": True,
 						"quantization_type": "symmetric",
 						"rounding": "nearest",
-						"quantize_weight_in_forward": True,
+						"quantize_weight_in_forward": cfg.trainer.weight_dtype.lower() != "float16", #  MoQ (quantize in optimization step) weight quantization is only supported for FP16
 						"fp16_mixed_quantize":{
 							"enabled": False,
 							"quantize_change_ratio": 1
@@ -377,6 +378,35 @@ class DeepSpeed:
 								"quantization_period": 0
 							},
 							"modules": [
+							#	"^.+?$"
+								"blocks", # for transformer-based models
+								"retnet", # for RetNets-based models
+							]
+						}
+					}
+				},
+				"activation_quantization": {
+					"shared_parameters":{
+						"enabled": True,
+						"quantizer_kernel": True,
+						"schedule_offset": 0,
+						"quantize_groups": 64,
+						"quantize_verbose": True,
+						"quantization_type": "symmetric",
+						"rounding": "nearest",
+						"quantize_weight_in_forward": cfg.trainer.weight_dtype.lower() != "float16", #  MoQ (quantize in optimization step) weight quantization is only supported for FP16
+						"fp16_mixed_quantize":{
+							"enabled": False,
+							"quantize_change_ratio": 1
+						}
+					},
+					"different_groups": {
+						"aq1": {
+							"params": {
+								"bits": self.compression_bits,
+							},
+							"modules": [
+							#	"^.+?$"
 								"blocks", # for transformer-based models
 								"retnet", # for RetNets-based models
 							]
