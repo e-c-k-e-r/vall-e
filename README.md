@@ -121,12 +121,14 @@ This will export the latest checkpoints, for example, under `./data/ckpt/ar-retn
 To synthesize speech, invoke either (if exported the models): `python -m vall_e <text> <ref_path> <out_path> --ar-ckpt ./models/ar.pt --nar-ckpt ./models/nar.pt` or `python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>`
 
 Some additional flags you can pass are:
+* `--language`: specifies the language for phonemizing the text, and helps guide inferencing when the model is trained against that language.
 * `--max-ar-steps`: maximum steps for inferencing through the AR model. Each second is 75 steps.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
 * `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output, but values close to it works fine.
 * `--nar-temp`: sampling temperature to use for the NAR pass. During experimentation, `0.2` provides clean output, but values upward of `0.6` seems fine too.
 
 And some experimental sampling flags you can use too (your mileage will ***definitely*** vary):
+* `--max-ar-context`: Number of `resp` tokens to keep in the context when inferencing. This is akin to "rolling context" in an effort to try and curb any context limitations, but currently does not seem fruitful.
 * `--min-ar-temp` / `--min-nar-temp`: triggers the dynamic temperature pathway, adjusting the temperature based on the confidence of the best token. Acceptable values are between `[0.0, (n)ar-temp)`.
   + This simply uplifts the [original implementation](https://github.com/kalomaze/koboldcpp/blob/dynamic-temp/llama.cpp#L5132) to perform it.
   + **!**NOTE**!**: This does not seem to resolve any issues with setting too high/low of a temperature. The right values are yet to be found.
@@ -146,8 +148,8 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 
 * train and release a ***good*** model.
 * clean up the README, and document, document, document onto the wiki.
-* extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
-* improve throughput:
+* extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
+* improve throughput (despite peaking at 120it/s):
   - properly utilize RetNet's recurrent forward / chunkwise forward passes
   - utilize an approach similar to [FasterDecoding/Medusa](https://github.com/FasterDecoding/Medusa/) with additional heads for decoding N+1, N+2, N+3 AR tokens
     + this requires a properly trained AR, however.

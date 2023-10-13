@@ -9,6 +9,7 @@ def main():
 	parser = argparse.ArgumentParser("VALL-E TTS")
 	parser.add_argument("text")
 	parser.add_argument("references", type=path_list)
+	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--yaml", type=Path, default=None)
@@ -44,6 +45,7 @@ def main():
 	tts.inference(
 		text=args.text,
 		references=args.references,
+		language=args.language,
 		out_path=args.out_path,
 		input_prompt_length=args.input_prompt_length,
 		max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,

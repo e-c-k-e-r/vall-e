@@ -13,7 +13,7 @@ from .utils import to_device
 from .config import cfg
 from .models import get_models
 from .engines import load_engines, deepspeed_available
-from .data import get_phone_symmap, _load_quants, _cleanup_phones
+from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones
 
 if deepspeed_available:
 	import deepspeed
@@ -127,6 +127,13 @@ class TTS():
 		phones = [ " " if not p else p for p in content ]
 		return torch.tensor([ 1 ] + [*map(self.symmap.get, phones)] + [ 2 ])
 
+	def encode_lang( self, language ):
+		symmap = get_lang_symmap()
+		id = 0
+		if language in symmap:
+			id = symmap[language]
+		return torch.tensor([ id ])
+
 	def encode_audio( self, paths, trim_length=0.0 ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
@@ -149,6 +156,7 @@ class TTS():
 		self,
 		text,
 		references,
+		language="en",
 		max_ar_steps=6 * 75,
 		max_ar_context=-1,
 		max_nar_levels=7,
@@ -171,14 +179,16 @@ class TTS():
 			out_path = f"./data/{cfg.start_time}.wav"
 
 		prom = self.encode_audio( references, trim_length=input_prompt_length )
-		phns = self.encode_text( text )
+		phns = self.encode_text( text, language=language )
+		lang = self.encode_lang( language )
 
 		prom = to_device(prom, self.device).to(torch.int16)
 		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
+		lang = to_device(lang, self.device).to(torch.uint8)
 
 		with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 			resps_list = self.ar(
-				text_list=[phns], proms_list=[prom], max_steps=max_ar_steps, max_resp_context=max_ar_context,
+				text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
 				sampling_temperature=ar_temp,
 				sampling_min_temperature=min_ar_temp,
 				sampling_top_p=top_p, sampling_top_k=top_k,
@@ -190,7 +200,7 @@ class TTS():
 			)
 			resps_list = [r.unsqueeze(-1) for r in resps_list]
 			resps_list = self.nar(
-				text_list=[phns], proms_list=[prom], resps_list=resps_list,
+				text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
 				max_levels=max_nar_levels,
 				sampling_temperature=nar_temp,
 				sampling_min_temperature=min_nar_temp,
