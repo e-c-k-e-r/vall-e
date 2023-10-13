@@ -118,17 +118,25 @@ class AR_NAR(Base):
 
 			# is training
 			if n_levels == self.n_resp_levels:
+				# might be better to have this decided on the dataloader level
 				if cfg.models.ar_nar.p_ar_level == "auto" or cfg.models.ar_nar.p_ar_level is None:
 					quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 				else:
 					quant_levels = torch.Tensor([ [ 0 if random.random() < cfg.models.ar_nar.p_ar_level else random.randint(1, self.n_resp_levels) ] for _ in range(batch_size) ])
 
 				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)] # ensures we only have 1 RVQ-bin (our target)
-				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)] # yes I can just do min(1, l)
+				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)] # r[..., 0] is technically correct, but only r[:, 0] gets passed through the embedding
 				
 				if cfg.experimental:
 					proms_list = [ r if l == 0 else trim(r, 75 * 3) for r, l in zip(proms_list, quant_levels) ] # trim input prompt to 3 seconds
-				
+					# append stop tokens for AR
+					for i in range(batch_size):
+						if quant_levels[i] > 0:
+							continue
+
+						resps_list[i] = torch.cat([resps_list[i], torch.Tensor([[self.stop_token] * n_levels]).to(device=device, dtype=torch.int16) ])
+						targ_list[i] = torch.cat([targ_list[i], torch.Tensor([self.stop_token]).to(device=device, dtype=torch.int16) ])
+
 				return super().forward(
 					text_list=text_list,
 					proms_list=proms_list,
@@ -294,6 +302,8 @@ def example_usage():
 
 	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.models.prom_levels].to(device)
 
+	cfg.hyperparameters.gradient_accumulation_steps = 1
+
 	text_list = [
 		tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
 	]
@@ -323,10 +333,9 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	#steps = 500
-	#optimizer = ml.Prodigy(model.parameters(), lr=1.0)
-	steps = 1000
-	optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
+	steps = 250
+	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 	engine = Engine(model=model, optimizer=optimizer)
 
 	torch.save( {

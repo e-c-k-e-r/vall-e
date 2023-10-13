@@ -351,30 +351,24 @@ class Base(nn.Module):
 
 		# compute loss if the target is given
 		if targ_list is not None:
-			ignore_sep = torch.tensor(self.ignore_index, device=device)
-			# create a tensor sequence with one RVQ-bin of the input prompt, but with `ignore_index`, as the prompt is not neeeded for computing the loss against
-			prom_list = [ torch.full_like(t[..., 0], self.ignore_index) for t in proms_list ]
-			# remake input sequence
-			text_prom_list = self._samplewise_merge_tensors(
+			
+			target_list = self._samplewise_merge_tensors(
 				text_list,
 				lang_list,
-				prom_list,
-				sep=ignore_sep
+				[ torch.full_like(t[..., 0], self.ignore_index) for t in proms_list ], # create a tensor sequence with one RVQ-bin of the input prompt, but with `ignore_index`, as the prompt is not neeeded for computing the loss against
+				targ_list,
+				sep=torch.tensor(self.ignore_index, device=device)
 			)
 
-			# process each batch
-			for i in range(len(text_prom_list)):
-				# for the AR and NAR, shift the text/input prompt into the future by 1, and ignore the rolled back token
-				text_prom_list[i] = text_prom_list[i].roll(-1, dims=0)
-				text_prom_list[i][-1] = self.ignore_index
+			# modify only for the AR so it can properly behave like a transformer
+			for i in range(len(target_list)):
+				if quant_levels is not None and quant_levels[i] > 0:
+					continue
 
-				# for the AR, shift the target response into the future by 1, and ignore the rolled back text token
-				if quant_levels is None or quant_levels[i] == 0:
-					targ_list[i] = targ_list[i].clone().roll(-1, dims=0) # clone ensures it's not an aliased copy/view of resps
-					targ_list[i][-1] = self.stop_token
+				logits[i] = logits[i][..., :-1, :] # shift the target so that token n...
+				target_list[i] = target_list[i][..., 1:] # predicts token n + 1
 
-			# create the new target sequence to compute the loss against
-			target = torch.cat( self._samplewise_merge_tensors( text_prom_list, targ_list, sep=ignore_sep ) )
+			target = torch.cat( target_list )
 			inputs = torch.cat( logits )
 
 			self.loss = dict(
