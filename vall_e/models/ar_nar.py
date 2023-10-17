@@ -146,13 +146,13 @@ class AR_NAR(Base):
 					quant_levels=quant_levels,
 				)
 			# is NAR
-			prev_list = resps_list
 			if max_levels == 0:
 				max_levels = self.n_resp_levels
+			
+			prev_list = resps_list
 
-			while True:
+			for n in trange( max_levels, desc="NAR" ):
 				level = prev_list[0].shape[-1]
-
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
 
@@ -195,14 +195,13 @@ class AR_NAR(Base):
 			{"n": 1024, "tau": sampling_mirostat_tau, "eta": sampling_mirostat_eta, "max_surprise": sampling_mirostat_eta * 2, "error_surprise": 0, "running_total_surprise": 0}
 		] * batch_size if sampling_mirostat_tau > 0.0 else None
 
-		sampling_beam_width_use_logs = True
 		scores = [ 1.0 ] * sampling_beam_width
 
 		if self.interleave:
 			max_steps *= self.n_prom_levels
 
 		# get next in sequence
-		for n in trange(max_steps // max(1, self.recurrent_chunk_size)):
+		for n in trange(max_steps // max(1, self.recurrent_chunk_size), desc="AR"):
 			# experimental rolling response to avoid too-long perplexity hits despite RetNet allegedly fixing this.
 			# UNTESTED. In theory it would be better to also adjust the text, but there's no way of correlating text to segment of audio without something like wav2vec2
 			if max_resp_context > 0:
@@ -245,17 +244,13 @@ class AR_NAR(Base):
 				r, s = r
 				# first step, expand batch
 				if batch_size == 1:
-					batch_size *= sampling_beam_width
+					batch_size = sampling_beam_width
 					text_list = text_list * sampling_beam_width
 					proms_list = proms_list * sampling_beam_width
 					sequence_list = sequence_list * sampling_beam_width
 					stopped = torch.zeros(batch_size, device=device).bool()
 
-				# update scores
-				if sampling_beam_width_use_logs:
-					scores = [ (math.log(scores[i]) if scores[i] > 0 else 0) + math.log(score) for i, score in enumerate(s) ]
-				else:
-					scores = [ scores[i] * score for i, score in enumerate(s) ]
+				scores = [ scores[i] + score for i, score in enumerate(s) ]
 
 			# append tokens
 			for i, ri in enumerate(r):
@@ -270,13 +265,8 @@ class AR_NAR(Base):
 
 		# pick the best scoring candidate
 		# desu this is always going to be candidate 0
-		if sampling_beam_width and len(scores) > 0:
-			best_idx, best_score = (0, 0)
-			for idx, score in enumerate(scores):
-				if best_score > score:
-					best_idx, best_score = idx, score
-
-			sequence_list = [sequence_list[best_idx]]
+		if sampling_beam_width:
+			sequence_list = [ sequence_list[0] ]
 
 		return [self._prune(r) for r in sequence_list]
 

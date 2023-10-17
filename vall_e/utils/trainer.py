@@ -101,7 +101,7 @@ def _non_blocking_input():
 
 def _make_infinite_epochs(dl):
 	while True:
-		_logger.info("New epoch starts.")
+		#_logger.info("New epoch starts.")
 		yield from tqdm(dl, "Epoch progress", dynamic_ncols=True)
 
 
@@ -158,10 +158,9 @@ def train(
 
 		#batch = to_device(batch, torch.cuda.current_device())
 		stats = engines.step(batch=batch, feeder=train_feeder)
-
-		stats['it'] = stats['global_step']
 		stats['epoch'] = engines.global_samples / len(train_dl.dataset.paths)
 
+		"""
 		stats['batch'] = {
 			'size': len(batch['text']),
 			'id': batch['spkr_id'],
@@ -170,8 +169,8 @@ def train(
 			'prom_len': [ prom.shape[0] for prom in batch['proms'] ],
 			'resp_len': [ resp.shape[0] for resp in batch['resps'] ],
 		}
+		"""
 
-		del stats['global_step']
 
 		elapsed_time = stats.get("elapsed_time", 0)
 		_logger.info(f"Training Metrics: {json.dumps(stats)}.")

@@ -92,11 +92,12 @@ def _load_paths_from_metadata(data_dir, type="training", validate=False):
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
 	metadata_path = data_dir / "metadata.json"
-	if not cfg.dataset.use_metadata or not metadata_path.exists():
-		return _fn( data_dir, type if cfg.dataset.use_hdf5 else ".qnt.pt", validate )
+	metadata = {}
+	if cfg.dataset.use_metadata and metadata_path.exists():
+		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
 
-	speaker = cfg.get_spkr( data_dir / "dummy" )
-	metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+	if len(metadata) == 0:
+		return _fn( data_dir, type if cfg.dataset.use_hdf5 else ".qnt.pt", validate )
 
 	def key( dir, id ):
 		if not cfg.dataset.use_hdf5:
@@ -193,6 +194,7 @@ class Dataset(_Dataset):
 		if len(self.dataset) == 0:
 			self.dataset = cfg.dataset.training
 		
+		# dict of paths keyed by speaker names
 		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type)
 
 		# cull speakers if they do not have enough utterances
@@ -205,6 +207,23 @@ class Dataset(_Dataset):
 		self.paths = list(itertools.chain.from_iterable(self.paths_by_spkr_name.values()))
 
 		self.samplers = { name: Sampler( paths, keep_all=True ) for name, paths in self.paths_by_spkr_name.items() }
+		
+		# dict of speakers keyed by speaker group
+		self.spkrs_by_spkr_group = {}
+		for data_dir in self.dataset:
+			spkr = cfg.get_spkr( data_dir / "dummy" )
+			spkr_group = cfg.get_spkr_group( data_dir / "dummy" )
+
+			if len(self.paths_by_spkr_name[spkr]) < cfg.dataset.min_utterances:
+				continue
+
+			if spkr_group not in self.spkrs_by_spkr_group:
+				self.spkrs_by_spkr_group[spkr_group] = []
+
+			self.spkrs_by_spkr_group[spkr_group].append( spkr )
+
+		self.spkr_groups = list(self.spkrs_by_spkr_group.keys())
+		self.spkr_samplers = { name: Sampler( [*set(speakers)], keep_all=True ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
 		if cfg.dataset.sample_type == "path":
 			self.paths = [*_interleaved_reorder(self.paths, self.get_speaker)]
@@ -214,14 +233,15 @@ class Dataset(_Dataset):
 
 		self.phone_symmap = phone_symmap or self._get_phone_symmap()
 		self.spkr_symmap = self._get_spkr_symmap()
+		self.spkr_group_symmap = self._get_spkr_group_symmap()
 		self.lang_symmap = self._get_lang_symmap()
 		self.task_symmap = self._get_task_symmap()
 
 		# assert len(self.phone_symmap) < 256, "Unique token count should be [0,255] to fit within uint8"
 		self.text_dtype = torch.uint8 if len(self.phone_symmap) < 256 else torch.int16
 
-		if len(self.paths) == 0 and training:
-			raise ValueError("No valid path is found for training.")
+		if len(self.paths) == 0:
+			raise ValueError(f"No valid path is found for {self.dataset_type}")
 		
 		#self.duration = _total_durations[self.dataset_type] if self.dataset_type in _total_durations else 0
 		self.duration = _calculate_durations(self.dataset_type)
@@ -280,6 +300,9 @@ class Dataset(_Dataset):
 
 	def _get_spkr_symmap(self):
 		return {s: i for i, s in enumerate(self.spkrs)}
+
+	def _get_spkr_group_symmap(self):
+		return {s: i for i, s in enumerate(self.spkr_groups)}
 
 	def _get_lang_symmap(self):
 		return get_lang_symmap()
@@ -358,14 +381,31 @@ class Dataset(_Dataset):
 		return prom
 
 	def __getitem__(self, index):
-		if cfg.dataset.sample_type == "speaker":
+		if cfg.dataset.sample_type == "group":
+			spkr_group = self.spkr_groups[index]
+			spkr_group_id = self.spkr_group_symmap[spkr_group]
+			spkr_name = self.spkr_samplers[spkr_group].sample()
+			if spkr_name in self.spkr_symmap:
+				spkr_id = self.spkr_symmap[spkr_name]
+			else:
+				spkr_id = -1
+			try:
+				path = self.samplers[spkr_name].sample()
+			except Exception as e:
+				print( "ERROR", spkr_group, spkr_name )
+				raise e
+		elif cfg.dataset.sample_type == "speaker":
 			spkr_name = self.spkrs[index]
 			spkr_id = self.spkr_symmap[spkr_name]
 			path = self.samplers[spkr_name].sample()
+			spkr_group = self.get_speaker_group(path)
+			spkr_group_id = self.spkr_group_symmap[spkr_group]
 		else:
 			path = self.paths[index]
 			spkr_name = self.get_speaker(path)
 			spkr_id = self.spkr_symmap[spkr_name]
+			spkr_group = self.get_speaker_group(path)
+			spkr_group_id = self.spkr_group_symmap[spkr_group]
 
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)
@@ -381,7 +421,6 @@ class Dataset(_Dataset):
 			text = torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype)
 			resps = _load_quants(path)
 
-		spkr_group = self.get_speaker_group(path)
 		lang = torch.tensor([ self.lang_symmap[ self.get_language(spkr_group) ]]).to(torch.uint8)
 
 		# append additional prompts in an attempt to artifically increase lengths / offer new data
@@ -611,6 +650,8 @@ class Dataset(_Dataset):
 		self.training = value
 
 	def __len__(self):
+		if cfg.dataset.sample_type == "group":
+			return min(len(self.spkr_groups), self._head or len(self.spkr_groups))
 		if cfg.dataset.sample_type == "speaker":
 			return min(len(self.spkrs), self._head or len(self.spkrs))
 		return min(len(self.paths), self._head or len(self.paths))
@@ -679,6 +720,7 @@ def create_train_val_dataloader():
 
 	_logger.info(str(train_dataset.phone_symmap))
 	_logger.info(str(train_dataset.spkr_symmap))
+	_logger.info(str(train_dataset.spkr_group_symmap))
 
 	_logger.info(f"#samples (train): {len(train_dataset)}.")
 	_logger.info(f"#samples (val): {len(val_dataset)}.")
@@ -707,6 +749,10 @@ def create_dataset_metadata():
 
 	metadata = {}
 	for path in tqdm(paths, desc="Parsing paths"):
+		if isinstance(path, str):
+			print("str:", path)
+			path = Path(path)
+
 		speaker = cfg.get_spkr(path)
 		if speaker not in metadata:
 			metadata[speaker] = {}

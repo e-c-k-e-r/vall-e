@@ -171,7 +171,7 @@ def encode_from_file(path, device="cuda"):
 		return encode_from_files( path, device )
 	else:
 		path = str(path)
-		wav, sr = torchaudio.load(path, format=path[-3:])
+		wav, sr = torchaudio.load(path)
 
 	if wav.shape[0] == 2:
 		wav = wav[:1]

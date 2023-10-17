@@ -469,8 +469,9 @@ class Engines(dict[str, Engine]):
 
 		self._update()
 
-		stats["elapsed_time"] = total_elapsed_time
-		stats["global_step"] = self.global_step
-		#stats["micro_step"] = self.micro_step
+		if len(self.keys()) > 1:
+			stats["elapsed_time"] = total_elapsed_time
+		
+		stats["it"] = self.global_step
 
 		return stats
