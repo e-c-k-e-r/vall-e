@@ -134,7 +134,7 @@ class Dataset:
 
 	phones_range: list[int] = field(default_factory=lambda: [4, 256])
 	duration_range: list[float] = field(default_factory=lambda: [1.0, 12.0])
-	min_utterances: int = 0
+	min_utterances: int = 2
 
 	random_utterance: float = 1.0
 	max_prompts: int = 3

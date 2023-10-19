@@ -214,15 +214,13 @@ class Dataset(_Dataset):
 			spkr = cfg.get_spkr( data_dir / "dummy" )
 			spkr_group = cfg.get_spkr_group( data_dir / "dummy" )
 
-			if len(self.paths_by_spkr_name[spkr]) < cfg.dataset.min_utterances:
-				continue
-
 			if spkr_group not in self.spkrs_by_spkr_group:
 				self.spkrs_by_spkr_group[spkr_group] = []
 
 			self.spkrs_by_spkr_group[spkr_group].append( spkr )
 
 		self.spkr_groups = list(self.spkrs_by_spkr_group.keys())
+
 		self.spkr_samplers = { name: Sampler( [*set(speakers)], keep_all=True ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
 		if cfg.dataset.sample_type == "path":
@@ -385,15 +383,8 @@ class Dataset(_Dataset):
 			spkr_group = self.spkr_groups[index]
 			spkr_group_id = self.spkr_group_symmap[spkr_group]
 			spkr_name = self.spkr_samplers[spkr_group].sample()
-			if spkr_name in self.spkr_symmap:
-				spkr_id = self.spkr_symmap[spkr_name]
-			else:
-				spkr_id = -1
-			try:
-				path = self.samplers[spkr_name].sample()
-			except Exception as e:
-				print( "ERROR", spkr_group, spkr_name )
-				raise e
+			spkr_id = self.spkr_symmap[spkr_name]
+			path = self.samplers[spkr_name].sample()
 		elif cfg.dataset.sample_type == "speaker":
 			spkr_name = self.spkrs[index]
 			spkr_id = self.spkr_symmap[spkr_name]
@@ -432,7 +423,7 @@ class Dataset(_Dataset):
 					sampled_path = random.choice(choices)
 					choices = [*(set(choices) - {sampled_path})]
 					if cfg.dataset.use_hdf5:
-						key = _get_hdf5_path(path)
+						key = _get_hdf5_path(sampled_path)
 						txt = cfg.hdf5[key]["text"][:]
 						qnt = cfg.hdf5[key]["audio"][:, :]
 
