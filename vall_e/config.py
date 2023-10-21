@@ -482,6 +482,8 @@ class Trainer:
 	weight_dtype: str = "float16"
 	amp: bool = False
 
+	load_webui: bool = False
+
 	backend: str = "local"
 	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)
 

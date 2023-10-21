@@ -173,7 +173,8 @@ def train(
 
 
 		elapsed_time = stats.get("elapsed_time", 0)
-		_logger.info(f"Training Metrics: {json.dumps(stats)}.")
+		metrics = json.dumps(stats)
+		_logger.info(f"Training Metrics: {metrics}.")
 
 		command = _non_blocking_input()
 

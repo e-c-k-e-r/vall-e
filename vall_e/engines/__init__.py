@@ -21,6 +21,9 @@ try:
 except Exception as e:
 	pass
 
+from functools import cache
+
+@cache
 def load_engines():
 	models = get_models(cfg.models.get())
 	engines = dict()
@@ -71,13 +74,13 @@ def load_engines():
 			lr_scheduler = None
 
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
-		if not loads_state_dict and backend == "deepspeed" and not (cfg.ckpt_dir / name / "latest").exists():
+		load_path = cfg.ckpt_dir / name / "fp32.pth"
+		if not loads_state_dict and backend == "deepspeed" and not (cfg.ckpt_dir / name / "latest").exists() and load_path.exists():
 			print("DeepSpeed checkpoint missing, but weights found.")
 			loads_state_dict = True
 
 		stats = None
 		if loads_state_dict:
-			load_path = cfg.ckpt_dir / name / "fp32.pth"
 			state = torch.load(load_path, map_location=torch.device(cfg.device))
 
 			# state dict is not just the module, extract the extra trainer details

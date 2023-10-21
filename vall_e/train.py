@@ -147,7 +147,7 @@ def run_eval(engines, eval_name, dl):
 	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
 
 
-def main():
+def train():
 	setup_logging(cfg.log_dir)
 
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
@@ -165,6 +165,12 @@ def main():
 
 	qnt.unload_model()
 
+	"""
+	if cfg.trainer.load_webui:
+		from .webui import start
+		start(lock=False)
+	"""
+
 	trainer.train(
 		train_dl=train_dl,
 		train_feeder=train_feeder,
@@ -172,4 +178,4 @@ def main():
 	)
 
 if __name__ == "__main__":
-	main()
+	train()

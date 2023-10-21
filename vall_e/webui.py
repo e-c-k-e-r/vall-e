@@ -12,16 +12,18 @@ from time import perf_counter
 from pathlib import Path
 
 from .inference import TTS
+from .train import train
 
 tts = None
 
 layout = {}
 layout["inference"] = {}
-layout["inference"]["inputs"] = {
-	"progress": None
-}
-layout["inference"]["outputs"] = {}
-layout["inference"]["buttons"] = {}
+layout["training"] = {}
+
+for k in layout.keys():
+	layout[k]["inputs"] = { "progress": None }
+	layout[k]["outputs"] = {}
+	layout[k]["buttons"] = {}
 
 # there's got to be a better way to go about this
 def gradio_wrapper(inputs):
@@ -122,6 +124,14 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	
 	wav = wav.squeeze(0).cpu().numpy()
 	return (sr, wav)
+
+"""
+@gradio_wrapper(inputs=layout["training"]["inputs"].keys())
+def do_training( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
+	while True:
+		metrics = next(it)
+		yield metrics
+"""
 
 def get_random_prompt():
 	harvard_sentences=[
@@ -225,6 +235,22 @@ with ui:
 			inputs=[ x for x in layout["inference"]["inputs"].values() if x is not None],
 			outputs=[ x for x in layout["inference"]["outputs"].values() if x is not None]
 		)
+		
+	"""
+	with gr.Tab("Training"):
+		with gr.Row():
+			with gr.Column(scale=1):
+				layout["training"]["outputs"]["console"] = gr.Textbox(lines=8, label="Console Log")
+		with gr.Row():
+			with gr.Column(scale=1):
+				layout["training"]["buttons"]["train"] = gr.Button(value="Train")
+
+		layout["training"]["buttons"]["train"].click(
+			fn=do_training,
+			outputs=[ x for x in layout["training"]["outputs"].values() if x is not None],
+		)
+	"""
+
 	if os.path.exists("README.md") and args.render_markdown:
 		md = open("README.md", "r", encoding="utf-8").read()
 		# remove HF's metadata
@@ -232,5 +258,9 @@ with ui:
 			md = "".join(md.split("---")[2:])
 		gr.Markdown(md)
 
-ui.queue(max_size=8)
-ui.launch(share=args.share, server_name=args.listen_host, server_port=args.listen_port)
+def start( lock=True ):
+	ui.queue(max_size=8)
+	ui.launch(share=args.share, server_name=args.listen_host, server_port=args.listen_port, prevent_thread_lock=not lock)
+
+if __name__ == "__main__":
+	start()
