@@ -221,6 +221,8 @@ class Base(nn.Module):
 		n_resp_tokens = n_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
 
 		self.text_emb = Embedding(n_tokens, d_model)
+		self.langs_emb = None
+		self.tasks_emb = None
 
 		if self.version == 1: # legacy
 			n_prom_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
@@ -232,9 +234,10 @@ class Base(nn.Module):
 			# [1025] + [1024] * 8
 			self.resps_emb = AudioEmbedding([n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model)
 
+		
 		if self.version >= 3:
-			self.langs_emb = Embedding(self.n_langs, d_model)
-			self.tasks_emb = Embedding(self.n_tasks, d_model)
+			self.langs_emb = Embedding(self.n_langs, d_model) if self.n_langs > 0 else None
+			self.tasks_emb = Embedding(self.n_tasks, d_model) if self.n_tasks > 0 else None
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
