@@ -224,7 +224,7 @@ class Dataset(_Dataset):
 			self.spkrs_by_spkr_group[spkr_group].append( spkr )
 
 		self.spkr_groups = list(self.spkrs_by_spkr_group.keys())
-
+		
 		self.spkr_samplers = { name: Sampler( [*set(speakers)], keep_all=True ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
 		if self.sampler_type == "path":
