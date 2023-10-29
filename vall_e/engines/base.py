@@ -321,6 +321,9 @@ class Engines(dict[str, Engine]):
 			)
 			if cfg.trainer.restart_step_count:
 				engine.global_steps = 0
+				engine.mocro_step = 0
+				engine.global_samples = 0
+				engine.tokens_processed = 0
 
 		# update the LR because for some god awful reason it gets overwritten when loading from a checkpoint but only when it's not using a scheduler
 		if cfg.hyperparameters.scheduler_type == "":
