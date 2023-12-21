@@ -77,6 +77,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--text", type=str, default=kwargs["text"])
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
+	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*75))
 	parser.add_argument("--max-ar-context", type=int, default=int(kwargs["max-seconds-context"]*75))
@@ -104,6 +105,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	with timer() as t:
 		wav, sr = tts.inference(
 			text=args.text,
+			language=args.language,
 			references=[args.references.split(";")],
 			out_path=tmp.name,
 			max_ar_steps=args.max_ar_steps,

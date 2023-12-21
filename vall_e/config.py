@@ -169,6 +169,7 @@ class Model:
 	prom_levels: int = 8 # RVQ-bin levels this model accepts as an input prompt
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	langs: int = 1 # defined languages
+	experts: int = 1
 	arch_type: str = "retnet" # or "transformer""
 	training: bool = True # unneeded now
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
@@ -183,12 +184,16 @@ class Model:
 			name.append(self.size)
 
 		if self.arch_type != "transformer":
-			name.append(self.arch_type.replace("/", "-"))
+			if self.experts:
+				name.append(f'{self.experts}x'+self.arch_type.replace("/", "-"))
+			else:
+				name.append(self.arch_type.replace("/", "-"))
 
 		if self.interleave:
 			name.append("interleaved")
+		else:
+			name.append(f'{cfg.models.prom_levels}')
 
-		name.append(f'{cfg.models.prom_levels}')
 
 		return "-".join(name)
 
@@ -247,8 +252,8 @@ class Models:
 	_prom_levels: int = 1
 
 	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, langs=1, training=True, interleave=False),
-		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, langs=1, training=True, interleave=False),
+		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, langs=1, experts=1, training=True, interleave=False),
+		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, langs=1, experts=1, training=True, interleave=False),
 	])
 
 	def get(self, name=None):

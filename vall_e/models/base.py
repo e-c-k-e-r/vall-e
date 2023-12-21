@@ -204,6 +204,8 @@ class Base(nn.Module):
 		n_layers: int = 12,
 		p_dropout: float = 0.1,
 
+		n_experts: int=1,
+
 		config = None, 
 	):
 		super().__init__()
@@ -214,6 +216,7 @@ class Base(nn.Module):
 		self.d_model = d_model
 		self.n_heads = n_heads
 		self.n_layers = n_layers
+		self.n_experts = n_experts
 
 		# +1 to include the stop token
 		# to-do: undo this dogshit mistake; tasks tokens should be delegated to its own embedding
@@ -272,6 +275,11 @@ class Base(nn.Module):
 				decoder_normalize_before=True,
 
 				rotary_embedding_base=self.rotary_embedding_base, # 10000
+
+				# MoE
+				use_xmoe=n_experts>1,
+				moe_freq=2,
+				moe_expert_count=n_experts,
 			))
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)

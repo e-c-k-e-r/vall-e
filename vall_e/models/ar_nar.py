@@ -119,10 +119,23 @@ class AR_NAR(Base):
 			# is training
 			if n_levels == self.n_resp_levels:
 				# might be better to have this decided on the dataloader level
-				if cfg.models.ar_nar.p_ar_level == "auto" or cfg.models.ar_nar.p_ar_level is None:
-					quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+
+				if cfg.experimental:
+					# makes higher levels less likely
+					def generate( lo=0, hi=8 ):
+						index = lo
+						p = random.random()
+						for i in range(lo, hi):
+							if p < 1.0 / (2 ** i):
+								index = i
+						return int(index)
+
+					quant_levels = torch.Tensor([ generate(0, self.n_resp_levels) for _ in range(batch_size) ]).to(dtype=torch.int16)
 				else:
-					quant_levels = torch.Tensor([ [ 0 if random.random() < cfg.models.ar_nar.p_ar_level else random.randint(1, self.n_resp_levels) ] for _ in range(batch_size) ])
+					if cfg.models.ar_nar.p_ar_level == "auto" or cfg.models.ar_nar.p_ar_level is None:
+						quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+					else:
+						quant_levels = torch.Tensor([ 0 if random.random() < cfg.models.ar_nar.p_ar_level else random.randint(1, self.n_resp_levels) for _ in range(batch_size) ])
 
 				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)] # ensures we only have 1 RVQ-bin (our target)
 				resps_list = [r if l == 0 else r[..., :l] for r, l in zip(resps_list, quant_levels)] # r[..., 0] is technically correct, but only r[:, 0] gets passed through the embedding
@@ -311,11 +324,21 @@ def example_usage():
 	proms_list = proms_list[:1]
 	resps_list = resps_list[:1]
 
+	"""
 	kwargs = {
 		'n_tokens': 1024,
-		'd_model': 1024, # 1536
-		'n_heads': 16, # 24
+		'd_model': 1024, # 256, # 1024, # 1536
+		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
+		'n_experts': 8,
+	}
+	"""
+	kwargs = {
+		'n_tokens': 1024,
+		'd_model': 256,
+		'n_heads': 4,
+		'n_layers': 12,
+		'n_experts': 1,
 	}
 	
 	"""

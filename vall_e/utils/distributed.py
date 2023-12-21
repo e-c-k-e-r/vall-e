@@ -16,6 +16,7 @@ def get_free_port():
 
 _distributed_initialized = False
 def init_distributed( fn, *args, **kwargs ):
+	print("Initializing distributed...")
 	fn(*args, **kwargs)
 	_distributed_initialized = True
 

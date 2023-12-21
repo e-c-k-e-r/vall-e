@@ -224,7 +224,7 @@ class Dataset(_Dataset):
 			self.spkrs_by_spkr_group[spkr_group].append( spkr )
 
 		self.spkr_groups = list(self.spkrs_by_spkr_group.keys())
-		
+
 		self.spkr_samplers = { name: Sampler( [*set(speakers)], keep_all=True ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
 		if self.sampler_type == "path":
@@ -351,7 +351,7 @@ class Dataset(_Dataset):
 		# shuffle it up a bit
 		prom_length = 0
 		if cfg.experimental:
-			trim_length = random.randint(75 * 3, 75 * 9) # [3 seconds, 9 seconds]
+			trim_length = random.randint(75 * 3, 75 * 6) # [3 seconds, 6 seconds]
 			#trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * 75))
 		else:
 			trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)

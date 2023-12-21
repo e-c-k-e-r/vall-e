@@ -45,7 +45,7 @@ from .base import TrainFeeder
 
 _logger = logging.getLogger(__name__)
 
-if not distributed_initialized() and cfg.trainer.backend == "local" and world_size() > 1:
+if not distributed_initialized() and cfg.trainer.backend == "local": # and world_size() > 1:
 	init_distributed(torch.distributed.init_process_group)
 
 # A very naive engine implementation using barebones PyTorch
