@@ -18,6 +18,7 @@ def get_model(cfg):
 		d_model=cfg.dim,
 		n_heads=cfg.heads,
 		n_layers=cfg.layers,
+		n_experts=cfg.experts,
 		
 		config = cfg,
 	)
