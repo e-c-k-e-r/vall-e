@@ -48,6 +48,7 @@ setup(
         "omegaconf==2.0.6",
         "tqdm>=4.64.1",
         "humanize>=4.4.0",
+        "transformer>4.36.0",
 
         "pandas>=1.5.0",
         "torch>=1.13.0",

@@ -52,6 +52,7 @@ Training is very dependent on:
 * the quality of your dataset.
 * how much data you have.
 * the bandwidth you quantized your audio to.
+* the underlying model architecture used
 
 ### Pre-Processed Dataset
 
