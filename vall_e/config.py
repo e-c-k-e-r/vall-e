@@ -184,7 +184,7 @@ class Model:
 			name.append(self.size)
 
 		if self.arch_type != "transformer":
-			if self.experts:
+			if self.experts > 1:
 				name.append(f'{self.experts}x'+self.arch_type.replace("/", "-"))
 			else:
 				name.append(self.arch_type.replace("/", "-"))

@@ -308,7 +308,7 @@ class Base(nn.Module):
 					num_experts_per_tok=min(2, n_experts),
 				))
 		elif self.arch_type == "retnet":
-			self.model = RetNetDecoder(RetNetConfig(
+			kwargs = dict(
 				vocab_size=n_resp_tokens,
 				decoder_embed_dim=d_model,
 				decoder_value_embed_dim =d_model * 2,
@@ -328,13 +328,17 @@ class Base(nn.Module):
 				decoder_normalize_before=True,
 
 				rotary_embedding_base=self.rotary_embedding_base, # 10000
+			)
 
-				# MoE
-				use_xmoe=n_experts>1,
-				moe_freq=1,
-				moe_expert_count=n_experts,
-				moe_gating_use_fp32=False,
-			))
+			if n_experts > 1:
+				kwargs.update(dict(
+					use_xmoe=True,
+					moe_freq=1,
+					moe_expert_count=n_experts,
+					moe_gating_use_fp32=False,
+				))
+
+			self.model = RetNetDecoder(RetNetConfig(**kwargs))
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
@@ -422,7 +426,7 @@ class Base(nn.Module):
 		elif self.arch_type == "retnet":
 			# pass our inputs through the RetNet
 			x, _ = self.model(x, incremental_state=state, token_embeddings=x, features_only=True)
-			if _ is not None and "l_aux" in _:
+			if _ is not None and "l_aux" in _ and self.n_experts > 1:
 				aux_loss = torch.sum(torch.stack([ t for t in _["l_aux"] if t is not None])) * 0.001
 		# output projection layer with masking
 		x = self.classifier(x) * m

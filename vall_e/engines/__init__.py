@@ -13,6 +13,7 @@ from .base import Engines, TrainFeeder, default_feeder, Engine as _Engine
 from ..models import get_models
 from ..utils import wrapper as ml
 import torch
+import re
 
 deepspeed_available = False
 try:
@@ -89,6 +90,22 @@ def load_engines():
 
 			if "module" in state:
 				state = state["module"]
+
+			# maintain compat if I change variable names
+			insert = {}
+			erase = []
+
+			for k in state.keys():
+				key = re.sub(r'^retnet\.', "model.", k)
+				if k != key:
+					insert[key] = state[k]
+					erase.append(k)
+	
+			for k in insert.keys():
+				state[k] = insert[k]
+
+			for k in erase:
+				del state[k]
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 

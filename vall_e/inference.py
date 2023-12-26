@@ -175,40 +175,47 @@ class TTS():
 		mirostat_eta=0.1,
 		out_path=None
 	):
-		if out_path is None:
-			out_path = f"./data/{cfg.start_time}.wav"
+		lines = text.split("\n")
 
-		prom = self.encode_audio( references, trim_length=input_prompt_length )
-		phns = self.encode_text( text, language=language )
-		lang = self.encode_lang( language )
+		wavs = []
+		sr = None
 
-		prom = to_device(prom, self.device).to(torch.int16)
-		phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
-		lang = to_device(lang, self.device).to(torch.uint8)
+		for line in lines:
+			if out_path is None:
+				out_path = f"./data/{cfg.start_time}.wav"
 
-		with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-			resps_list = self.ar(
-				text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
-				sampling_temperature=ar_temp,
-				sampling_min_temperature=min_ar_temp,
-				sampling_top_p=top_p, sampling_top_k=top_k,
-				sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-				sampling_length_penalty=length_penalty,
-				sampling_beam_width=beam_width,
-				sampling_mirostat_tau=mirostat_tau,
-				sampling_mirostat_eta=mirostat_eta,
-			)
-			resps_list = [r.unsqueeze(-1) for r in resps_list]
-			resps_list = self.nar(
-				text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
-				max_levels=max_nar_levels,
-				sampling_temperature=nar_temp,
-				sampling_min_temperature=min_nar_temp,
-				sampling_top_p=top_p, sampling_top_k=top_k,
-				sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-			)
+			prom = self.encode_audio( references, trim_length=input_prompt_length )
+			phns = self.encode_text( line, language=language )
+			lang = self.encode_lang( language )
 
-		wav, sr = qnt.decode_to_file(resps_list[0], out_path, device=self.device)
+			prom = to_device(prom, self.device).to(torch.int16)
+			phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
+			lang = to_device(lang, self.device).to(torch.uint8)
+
+			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
+				resps_list = self.ar(
+					text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
+					sampling_temperature=ar_temp,
+					sampling_min_temperature=min_ar_temp,
+					sampling_top_p=top_p, sampling_top_k=top_k,
+					sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+					sampling_length_penalty=length_penalty,
+					sampling_beam_width=beam_width,
+					sampling_mirostat_tau=mirostat_tau,
+					sampling_mirostat_eta=mirostat_eta,
+				)
+				resps_list = [r.unsqueeze(-1) for r in resps_list]
+				resps_list = self.nar(
+					text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
+					max_levels=max_nar_levels,
+					sampling_temperature=nar_temp,
+					sampling_min_temperature=min_nar_temp,
+					sampling_top_p=top_p, sampling_top_k=top_k,
+					sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+				)
+
+			wav, sr = qnt.decode_to_file(resps_list[0], out_path, device=self.device)
+			wavs.append(wav)
 		
-		return (wav, sr)
+		return (torch.concat(wavs, dim=-1), sr)
 		
