@@ -94,7 +94,7 @@ class AR_NAR(Base):
 		lang_list: list[Tensor] | None = None,
 
 		max_steps: int = 1000,
-		max_levels: int = 7,
+		max_levels: int = 0,
 		max_resp_context: int = -1,
 
 		sampling_temperature: float = 1.0,
@@ -166,7 +166,7 @@ class AR_NAR(Base):
 				)
 			# is NAR
 			if max_levels == 0:
-				max_levels = self.n_resp_levels
+				max_levels = self.n_resp_levels - 1
 			
 			prev_list = resps_list
 
