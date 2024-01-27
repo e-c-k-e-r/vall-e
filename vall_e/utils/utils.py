@@ -19,6 +19,13 @@ from typing import Callable, TypeVar, overload
 
 T = TypeVar("T")
 
+def truncate_json( str ):
+
+	def fun( match ):
+		return "{:.4f}".format(float(match.group()))
+
+	return re.sub(r"\d+\.\d{8,}", fun, str)
+
 def do_gc():
 	gc.collect()
 	torch.cuda.empty_cache()

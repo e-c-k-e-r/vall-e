@@ -30,7 +30,7 @@ from .distributed import (
 
 from ..engines import _Engine, Engine, Engines, TrainFeeder, default_feeder, load_engines
 
-from .utils import to_device, do_gc
+from .utils import to_device, do_gc, truncate_json
 from ..utils import wrapper as ml
 from ..data import get_phone_symmap # should decouple from this trainer script
 
@@ -174,7 +174,8 @@ def train(
 
 		elapsed_time = stats.get("elapsed_time", 0)
 		metrics = json.dumps(stats)
-		_logger.info(f"Training Metrics: {metrics}.")
+
+		_logger.info(f"Training Metrics: {truncate_json(metrics)}.")
 
 		command = _non_blocking_input()
 
