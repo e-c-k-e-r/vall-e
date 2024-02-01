@@ -25,8 +25,8 @@ except Exception as e:
 from functools import cache
 
 @cache
-def load_engines():
-	models = get_models(cfg.models.get())
+def load_engines(training=True):
+	models = get_models(cfg.models.get(), training=training)
 	engines = dict()
 
 	for name, model in models.items():
@@ -59,6 +59,9 @@ def load_engines():
 				optimizer = ml.SGD
 			elif cfg.hyperparameters.optimizer.lower() == "prodigy":
 				optimizer_class = ml.Prodigy
+
+				params['d_coef'] = params['lr']
+				params['lr'] = 1.0
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 

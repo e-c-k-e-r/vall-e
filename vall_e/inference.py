@@ -73,7 +73,7 @@ class TTS():
 			self.ar_ckpt = ar_ckpt
 			self.nar_ckpt = nar_ckpt
 
-			models = get_models(cfg.models.get())
+			models = get_models(cfg.models.get(), training=False)
 
 			for name, model in models.items():
 				if name.startswith("ar"):
@@ -101,7 +101,7 @@ class TTS():
 		self.loading = False 
 
 	def load_models( self ):
-		engines = load_engines()
+		engines = load_engines(training=False)
 		for name, engine in engines.items():
 			if name.startswith("ar"):
 				self.ar = engine.module

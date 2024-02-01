@@ -99,7 +99,7 @@ class Engine(DeepSpeedEngine):
 		try:
 			if hasattr(self.optimizer, 'param_groups'):
 				for param_group in self.optimizer.param_groups:
-					param_group['lr'] = lr
+					param_group["d_coeff" if "d_coeff" in param_group else "lr"] = lr
 			else:
 				self.optimizer.set_lr(lr)
 		except Exception as e:

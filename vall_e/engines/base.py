@@ -193,13 +193,17 @@ class Engine():
 	def get_lr(self):
 		lrs = []
 		for param_group in self.optimizer.param_groups:
-			if 'lr' in param_group:
+			if 'd_coeff' in param_group:
+				lrs.append(param_group['d_coeff'])
+			elif 'lr' in param_group:
 				lrs.append(param_group['lr'])
 		return lrs
 
 	def set_lr(self, lr):
 		for param_group in self.optimizer.param_groups:
-			if 'lr' in param_group:
+			if 'd_coeff' in param_group:
+				param_group['d_coeff'] = lr
+			elif 'lr' in param_group:
 				param_group['lr'] = lr
 
 	def get_global_grad_norm(self):

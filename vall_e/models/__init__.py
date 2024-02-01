@@ -2,7 +2,7 @@ from .ar import AR
 from .nar import NAR
 from .ar_nar import AR_NAR
 
-def get_model(cfg):
+def get_model(cfg, training=True):
 	if cfg.name == "ar":
 		Model = AR
 	elif cfg.name == "nar":
@@ -20,6 +20,7 @@ def get_model(cfg):
 		n_layers=cfg.layers,
 		n_experts=cfg.experts,
 		
+		training=training,
 		config = cfg,
 	)
 	model._cfg = cfg
@@ -28,5 +29,5 @@ def get_model(cfg):
 
 	return model
 
-def get_models(models):
-	return { model.full_name: get_model(model) for model in models }
+def get_models(models, training=True):
+	return { model.full_name: get_model(model, training=training) for model in models }

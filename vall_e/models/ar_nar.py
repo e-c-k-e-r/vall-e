@@ -120,7 +120,7 @@ class AR_NAR(Base):
 			if n_levels == self.n_resp_levels:
 				# might be better to have this decided on the dataloader level
 
-				if cfg.experimental:
+				if cfg.experimental and False:
 					# makes higher levels less likely
 					def generate( lo=0, hi=8 ):
 						index = lo
@@ -228,13 +228,22 @@ class AR_NAR(Base):
 			else:
 				resps_list = self._unsqueeze_list(sequence_list)
 
-			logits = super().forward(
-				text_list=text_list,
-				proms_list=proms_list,
-				resps_list=resps_list,
-				lang_list=lang_list,
-				state=recurrent_state
-			)
+			if recurrent_state is not None:
+				logits, recurrent_state = super().forward(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					lang_list=lang_list,
+					state=recurrent_state
+				)
+			else:
+				logits = super().forward(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					lang_list=lang_list,
+					state=recurrent_state
+				)
 
 			r = super().sample(
 				logits=logits,
