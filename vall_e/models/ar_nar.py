@@ -362,8 +362,8 @@ def example_usage():
 
 	model = AR_NAR(**kwargs).to(device)
 	steps = 500
-	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
-	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
+	#optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 	engine = Engine(model=model, optimizer=optimizer)
 
 	torch.save( {

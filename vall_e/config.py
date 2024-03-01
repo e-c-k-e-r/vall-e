@@ -531,6 +531,8 @@ class BitsAndBytes:
 
 	linear: bool = True
 	embedding: bool = True
+	
+	bitnet: bool = False
 
 @dataclass()
 class Config(_Config):

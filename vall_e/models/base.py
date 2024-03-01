@@ -41,6 +41,19 @@ except Exception as e:
 	pass
 
 try:
+	from bitnet import BitNetTransformer
+
+	def NoEmbedding_BitNetTransformer_Forward(self, x):
+		x = self.transformer(x)
+		return self.to_logits[0](x)
+
+	BitNetTransformer.forward = NoEmbedding_BitNetTransformer_Forward 
+
+except Exception as e:
+	print("Error importing `bitnet` arch:", e)
+	pass
+
+try:
 	from transformers import MixtralModel, MixtralConfig
 	from transformers.models.mixtral.modeling_mixtral import load_balancing_loss_func, MixtralSparseMoeBlock
 
@@ -325,7 +338,7 @@ class Base(nn.Module):
 				norm_type=self.norm_type,
 				n_levels=self.n_resp_levels,
 			) for _ in range(n_layers) ])
-		elif self.arch_type == "mistral":
+		elif self.arch_type == "mistral" or self.arch_type == "mixtral":
 			if n_experts <= 1:
 				self.model = MistralModel(MistralConfig(
 					vocab_size=n_resp_tokens,
@@ -425,6 +438,16 @@ class Base(nn.Module):
 				))
 
 			self.model = RetNetDecoder(RetNetConfig(**kwargs))
+		elif self.arch_type == "bitnet":
+			self.model = BitNetTransformer(
+				num_tokens=n_resp_tokens,
+				dim=d_model,
+				depth=n_layers,
+				heads=n_heads,
+				ff_mult=4,
+			)
+		else:
+			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
@@ -486,7 +509,7 @@ class Base(nn.Module):
 			# grab last token(s)
 			x = x[:, -1, :].unsqueeze(1)
 		# HF transformer derived model
-		elif self.arch_type == "llama" or self.arch_type == "mistral":
+		elif self.arch_type == "llama" or self.arch_type == "mistral" or self.arch_type == "mixtral":
 			kwargs = dict(
 				#attention_mask=m,
 				inputs_embeds=x,
@@ -521,6 +544,8 @@ class Base(nn.Module):
 			x, _ = self.model(x, incremental_state=state, token_embeddings=x, features_only=True)
 			if _ is not None and "l_aux" in _ and self.n_experts > 1:
 				aux_loss = torch.sum(torch.stack([ t for t in _["l_aux"] if t is not None])) * 0.001
+		elif self.arch_type == "bitnet":
+			x = self.model(x)
 		# output projection layer with masking
 		x = self.classifier(x) * m
 

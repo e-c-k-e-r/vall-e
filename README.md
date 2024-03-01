@@ -6,9 +6,9 @@
 
 An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
 
-[Main Repo](https://git.ecker.tech/mrq/vall-e) | [GitHub Mirror](https://github.com/e-c-k-e-r/vall-e/) | [HuggingFace Space](https://huggingface.co/spaces/ecker/vall-e)
+[Main Repo](https://git.ecker.tech/mrq/vall-e) | [GitHub Mirror](https://github.com/e-c-k-e-r/vall-e/)
 
-> **Note** This README is still quite a disorganized mess.
+> **Note** Development on this is very sporadic. Gomen.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
   - For phonemizing text, this repo requires `espeak`/`espeak-ng` installed.
   - Linux users can consult their package managers on installing `espeak`/`espeak-ng`.
   - Windows users are required to install [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/releases/tag/1.51#Assets).
-    + additionally, you may be require dto set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
+    + additionally, you may be required to set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
 
 ## Install
 
@@ -29,12 +29,6 @@ Simply run `pip install git+https://git.ecker.tech/mrq/vall-e`.
 I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
 ## Try Me
-
-### Online
-
-A HuggingFace space hosting the code and models can be found [here](https://huggingface.co/spaces/ecker/vall-e).
-
-### Local
 
 To quickly try it out, you can run `python -m vall_e.models.ar_nar yaml="./data/config.yaml"`
 
@@ -52,7 +46,7 @@ Training is very dependent on:
 * the quality of your dataset.
 * how much data you have.
 * the bandwidth you quantized your audio to.
-* the underlying model architecture used
+* the underlying model architecture used.
 
 ### Pre-Processed Dataset
 
@@ -105,11 +99,23 @@ Keep in mind that creature comforts like distributed training or `float16` train
 
 #### Training on Low-VRAM Cards
 
-During experimentation, I've found I can comfortably train on a 4070Ti (12GiB VRAM) with `trainer.deepspeed.compression_training` enabled with both the AR and NAR at a batch size of 16.
+During experimentation, I've found I can comfortably train on a 4070Ti (12GiB VRAM) with `trainer.deepspeed.compression_training` enabled with both the AR and NAR at a batch size of 16, albeit I feel this is mostly snakeoil. Better VRAM savings can be had with use of BitsAndBytes and their respective flags (specifically its AdamW implementation).
 
 VRAM use is also predicated on your dataset; a mix of large and small utterances will cause VRAM usage to spike and can trigger OOM conditions during the backwards pass if you are not careful.
 
 Additionally, under Windows, I managed to finetune the AR on my 2060 (6GiB VRAM) with a batch size of 8 (although, with the card as a secondary GPU).
+
+#### Backend Architectures
+
+As the core of VALL-E makes use of a language model, various LLM architectures can be supported and slotted in. Currently supported:
+
+* `transformer`: a basic attention-based transformer implementation, with attention heads + feed forwards.
+* `retnet`: using [TorchScale's RetNet](https://github.com/microsoft/torchscale/blob/main/torchscale/architecture/retnet.py) implementation, a retention-based approach can be used instead.
+  - Its implementation for MoE can also be utilized.
+* `llama`: using HF transformer's LLaMa implementation for its attention-based transformer, boasting RoPE and other improvements.
+* `mixtral`: using HF transformer's Mixtral implementation for its attention-based transformer, also utilizing its MoE implementation.
+* `bitnet`: using [this](https://github.com/kyegomez/BitNet/) implementation of BitNet's transformer.
+  - Setting `bitsandbytes.bitnet=True` will make use of BitNet's linear implementation.
 
 ## Export
 

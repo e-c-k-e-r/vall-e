@@ -7,11 +7,19 @@ from ..config import cfg
 Embedding = torch.nn.Embedding
 Linear = torch.nn.Linear
 
+# https://github.com/kyegomez/BitNet
+if cfg.bitsandbytes.bitnet:
+	from bitnet import BitLinear
+
 if cfg.bitsandbytes.enabled:
 	import bitsandbytes as bnb
 
 	if cfg.bitsandbytes.linear:
-		Linear = bnb.nn.Linear8bitLt
+
+		if cfg.bitsandbytes.bitnet:
+			Linear = BitLinear
+		else:
+			Linear = bnb.nn.Linear8bitLt
 
 	if cfg.bitsandbytes.embedding:
 		Embedding = bnb.nn.modules.Embedding
