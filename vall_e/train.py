@@ -146,7 +146,10 @@ def run_eval(engines, eval_name, dl):
 	}
 	#engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
 
-	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
+	if cfg.trainer.no_logger:
+		tqdm.write(f"Validation Metrics: {json.dumps(engines_stats)}.")
+	else:
+		_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
 
 
 def train():

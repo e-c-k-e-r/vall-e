@@ -189,6 +189,9 @@ class Model:
 			else:
 				name.append(self.arch_type.replace("/", "-"))
 
+		if cfg.bitsandbytes.bitnet:
+			name.append("bitnet")
+
 		if self.interleave:
 			name.append("interleaved")
 		else:
@@ -488,6 +491,7 @@ class Trainer:
 	amp: bool = False
 
 	load_webui: bool = False
+	no_logger: bool = False
 
 	backend: str = "local"
 	deepspeed: DeepSpeed = field(default_factory=lambda: DeepSpeed)

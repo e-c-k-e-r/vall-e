@@ -175,7 +175,10 @@ def train(
 		elapsed_time = stats.get("elapsed_time", 0)
 		metrics = json.dumps(stats)
 
-		_logger.info(f"Training Metrics: {truncate_json(metrics)}.")
+		if cfg.trainer.no_logger:
+			tqdm.write(f"Training Metrics: {truncate_json(metrics)}.")
+		else:
+			_logger.info(f"Training Metrics: {truncate_json(metrics)}.")
 
 		command = _non_blocking_input()
 
