@@ -336,7 +336,7 @@ def example_usage():
 	proms_list = proms_list[:1]
 	resps_list = resps_list[:1]
 
-	"""
+	# rentet-full is the only configuration with BitNet's BitLinear that converges despite the grad_norm saying otherwise
 	kwargs = {
 		'n_tokens': 1024,
 		'd_model': 1024, # 256, # 1024, # 1536
@@ -352,6 +352,7 @@ def example_usage():
 		'n_layers': 12,
 		'n_experts': 8,
 	}
+	"""
 	
 	"""
 	try:

@@ -199,7 +199,8 @@ class Engine():
 				self._get_grad_norm()
 	
 	def _get_grad_norm(self):
-		self._global_grad_norm = torch.cat([ param.grad.detach().flatten() for param in self.module.parameters() if param.grad is not None ]).norm().item()
+		t = [ param.grad.detach().flatten() for param in self.module.parameters() if param.grad is not None ]
+		self._global_grad_norm = torch.cat(t).norm().item() if len(t) else 0
 
 	def get_lr(self):
 		lrs = []
