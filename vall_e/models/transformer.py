@@ -80,8 +80,8 @@ class Attention(nn.Module):
 		self.n_heads = n_heads
 		self.scale = dim_head**-0.5
 
-		self.to_qkv = nn.Linear(d_model, d_model * 3, bias=False)
-		self.to_out = nn.Linear(d_model, d_model)
+		self.to_qkv = ml.Linear(d_model, d_model * 3, bias=False)
+		self.to_out = ml.Linear(d_model, d_model)
 
 	def forward(self, x, m):
 		"""
@@ -169,10 +169,10 @@ class Block(nn.Sequential):
 		n_ff = d_model * 4 # 1024 * 4 = 4096 feed-forwards
 		self.ffn = PrenormResidual(
 			nn.Sequential(
-				nn.Linear(d_model, n_ff),
+				ml.Linear(d_model, n_ff),
 				nn.GELU(),
 				nn.Dropout(p_dropout),
-				nn.Linear(n_ff, d_model),
+				ml.Linear(n_ff, d_model),
 			),
 			d_model=d_model,
 			p_dropout=p_dropout,

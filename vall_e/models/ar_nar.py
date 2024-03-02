@@ -341,7 +341,7 @@ def example_usage():
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
-		'n_experts': 8,
+		'n_experts': 1,
 	}
 	"""
 	kwargs = {
@@ -362,9 +362,12 @@ def example_usage():
 
 	model = AR_NAR(**kwargs).to(device)
 	steps = 500
-	#optimizer = ml.Prodigy(model.parameters(), lr=1.0)
-	optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
+	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 	engine = Engine(model=model, optimizer=optimizer)
+
+	if cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace:
+		model.model = ml.replace_linear( model.model )
 
 	torch.save( {
 		'module': model.state_dict()

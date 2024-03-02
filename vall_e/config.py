@@ -303,7 +303,7 @@ class Models:
 class Hyperparameters:
 	batch_size: int = 8
 	gradient_accumulation_steps: int = 32
-	gradient_clipping: int = 100
+	gradient_clipping: int | float = 100
 
 	optimizer: str = "Adamw"
 	torch_optimizer: bool = False
@@ -532,6 +532,7 @@ class Inference:
 class BitsAndBytes:
 	enabled: bool = False
 	injects: bool = False
+	replace: bool = False
 
 	linear: bool = True
 	embedding: bool = True

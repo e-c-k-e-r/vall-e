@@ -83,6 +83,32 @@ if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 	torch.optim.AdamW = AdamW
 	torch.optim.SGD = SGD
 
+# disgusting kludge, but it works
+def replace_linear( model ):
+	device =  next(model.parameters()).device
+	linears = [k.split('.') for k, m in model.named_modules() if type(m).__name__ == 'Linear']
+	for *parent, k in linears:
+		name = '.'.join(parent)
+
+		# copy parameters
+		m = getattr(
+			model.get_submodule(name),
+			k
+		)
+
+		in_features = m.in_features
+		out_features = m.out_features
+		bias = False if cfg.bitsandbytes.bitnet else m.bias # errors out with BitNet
+
+		# overwright
+		setattr(
+			model.get_submodule(name),
+			k,
+			Linear( in_features=in_features, out_features=out_features, bias=bias ).to(device)
+		)
+
+	return model
+
 # https://github.com/konstmish/prodigy
 try:
 	from prodigyopt import Prodigy
