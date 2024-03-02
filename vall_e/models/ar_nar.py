@@ -336,6 +336,7 @@ def example_usage():
 	proms_list = proms_list[:1]
 	resps_list = resps_list[:1]
 
+	"""
 	kwargs = {
 		'n_tokens': 1024,
 		'd_model': 1024, # 256, # 1024, # 1536
@@ -351,7 +352,6 @@ def example_usage():
 		'n_layers': 12,
 		'n_experts': 8,
 	}
-	"""
 	
 	"""
 	try:
@@ -397,6 +397,7 @@ def example_usage():
 		for i in t:
 			stats = {"step": i}
 			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)
+			stats |= {"grad_norm": engine.get_global_grad_norm()}
 
 			tqdm.write(f"{stats}")
 

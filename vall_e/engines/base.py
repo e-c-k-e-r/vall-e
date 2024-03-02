@@ -102,6 +102,10 @@ class Engine():
 	@property
 	def gradient_accumulation_steps(self):
 		return cfg.hyperparameters.gradient_accumulation_steps
+	
+	@property
+	def gradient_clipping(self):
+		return cfg.hyperparameters.gradient_clipping
 
 	def gather_attribute(self, *args, **kwargs):
 		return gather_attribute(self.module, *args, **kwargs)
@@ -186,9 +190,16 @@ class Engine():
 			self.global_samples += self.batch_size
 
 			if (self.micro_steps + 1) % max(1, self.gradient_accumulation_steps) == 0:
+				torch.nn.utils.clip_grad_norm_(self.module.parameters(), self.gradient_clipping)
+
 				self.global_steps += 1 
 				self.optimizer.step()
 				self.optimizer.zero_grad()
+
+				self._get_grad_norm()
+	
+	def _get_grad_norm(self):
+		self._global_grad_norm = torch.cat([ param.grad.detach().flatten() for param in self.module.parameters() if param.grad is not None ]).norm().item()
 
 	def get_lr(self):
 		lrs = []
@@ -207,7 +218,7 @@ class Engine():
 				param_group['lr'] = lr
 
 	def get_global_grad_norm(self):
-		return 0.0
+		return self._global_grad_norm
 
 	def traverse(self, *args, **kwargs):
 		with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
