@@ -253,6 +253,7 @@ class Model:
 class Models:
 	_max_levels: int = 0
 	_prom_levels: int = 1
+	_embeddings: str | None = None
 
 	_models: list[Model] = field(default_factory=lambda: [
 		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, langs=1, experts=1, training=True, interleave=False),

@@ -115,6 +115,8 @@ def load_engines(training=True):
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
+
+
 		# deepspeed inferencing
 		if backend == "local" and inferencing and deepspeed_available and cfg.trainer.deepspeed.inferencing: #and sys.platform.startswith("win"):
 			engine_class = _Engine
@@ -140,6 +142,33 @@ def load_engines(training=True):
 	for name, engine in engines.items():
 		engine.freeze(freeze_all=False)
 
+		# copy embeddings if requested
+		if cfg.models._embeddings is not None:
+			embeddings_path = cfg.relpath / cfg.models._embeddings
+			
+			if embeddings_path.exists():
+				embeddings = torch.load(embeddings_path, map_location=torch.device(cfg.device))
+				if "module" in embeddings:
+					embeddings = embeddings["module"]
+
+				frozen_params = set()
+
+				for k in list(embeddings.keys()):
+					if re.findall(r'_emb\.', k):
+						frozen_params.add(k)
+					else:
+						del embeddings[k]
+
+				engine.module.load_state_dict(embeddings, strict=False)
+
+				# there's definitely a much better way but I can't be assed at the moment
+				for name, param in engine.module.named_parameters():
+					if name not in frozen_params:
+						continue
+					param.requires_grad_(False)
+					engine._frozen_params.add(param)
+			
+		
 	#do_gc()
 
 	return engines

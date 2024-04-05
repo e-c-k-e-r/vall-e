@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import traceback
 import numpy as np
+import re
 
 from typing import Literal, overload
 from functools import partial
@@ -41,13 +42,34 @@ except Exception as e:
 	pass
 
 try:
-	from bitnet import BitNetTransformer
+	from bitnet.bit_transformer import Transformer as BitNetTransformerBlock, RMSNorm as BitNetRMSNorm
 
+	class BitNetTransformer(nn.Module):
+		def __init__(
+			self,
+			dim: int,
+			depth: int,
+			num_tokens: int,
+			heads=8,
+			ff_mult=4,
+		):
+			super().__init__()
+
+			self.transformer = BitNetTransformerBlock( dim=dim, depth=depth, heads=heads, ff_mult=ff_mult )
+			self.norm = BitNetRMSNorm(dim)
+
+		def forward(self, x):
+			x = self.transformer(x)
+			return self.norm( x )
+
+	"""
+	from bitnet import BitNetTransformer
 	def NoEmbedding_BitNetTransformer_Forward(self, x):
 		x = self.transformer(x)
 		return self.to_logits[0](x)
 
 	BitNetTransformer.forward = NoEmbedding_BitNetTransformer_Forward 
+	"""
 
 except Exception as e:
 	print("Error importing `bitnet` arch:", e)
