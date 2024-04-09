@@ -75,6 +75,19 @@ def autocast_forward( func ):
 	return wrapper
 Embedding.forward = autocast_forward(Embedding.forward)
 
+if cfg.fp8.enabled:
+	import transformer_engine.pytorch as te
+
+	Linear = te.Linear
+
+	@contextmanager
+	def autocast():
+		yield te.fp8_autocast(enabled=True)
+else:
+	@contextmanager
+	def autocast():
+		yield torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp)
+
 if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 	torch.nn.Linear = Linear
 	torch.nn.Embedding = Embedding
@@ -82,6 +95,7 @@ if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 	torch.optim.Adam = Adam
 	torch.optim.AdamW = AdamW
 	torch.optim.SGD = SGD
+
 
 # disgusting kludge, but it works (just realized BitNet has its own replacement routine)
 def replace_linear( model ):

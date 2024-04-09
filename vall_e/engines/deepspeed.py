@@ -25,6 +25,7 @@ from deepspeed import DeepSpeedEngine, DeepSpeedConfig, comm as dist, init_distr
 from deepspeed.accelerator import get_accelerator
 
 from ..utils.distributed import init_distributed, distributed_initialized
+from ..utils import wrapper as ml
 
 if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
 	init_distributed(init_deepspeed_dist)
@@ -106,10 +107,11 @@ class Engine(DeepSpeedEngine):
 			print(str(e))
 
 	def traverse(self, *args, **kwargs):
-		with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+		with ml.autocast():
 			self.forward(*args, **kwargs)
-			losses = self.gather_attribute("loss")
-			loss = torch.stack([*losses.values()]).sum()
+
+		losses = self.gather_attribute("loss")
+		loss = torch.stack([*losses.values()]).sum()
 
 		stats = {}
 		stats |= {k: v.item() for k, v in losses.items()}

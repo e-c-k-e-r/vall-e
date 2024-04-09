@@ -29,6 +29,14 @@ except Exception as e:
 	print("Error importing `retnet` arch:", e)
 	pass
 
+from .retnet_hf import RetNetDecoder as RetNetDecoder_HF, RetNetConfig as RetNetConfig_HF
+"""
+try:
+except Exception as e:
+	print("Error importing `retnet-hf` arch:", e)
+	pass
+"""
+
 try:
 	from transformers import LlamaModel, LlamaConfig
 except Exception as e:
@@ -44,6 +52,7 @@ except Exception as e:
 try:
 	from bitnet.bit_transformer import Transformer as BitNetTransformerBlock, RMSNorm as BitNetRMSNorm
 
+	# override because bitnet's BitNetTransformer includes an embedding input / classifier output layers inside of it, which isn't favorable
 	class BitNetTransformer(nn.Module):
 		def __init__(
 			self,
@@ -159,7 +168,6 @@ class Embedding(nn.Embedding):
 	def forward(self, x_list: list[Tensor]) -> list[Tensor]:
 		if len(x_list) == 0:
 			return []
-
 		return super().forward(torch.cat(x_list)).split([*map(len, x_list)])
 
 class MultiEmbedding(nn.Module):
@@ -308,7 +316,9 @@ class Base(nn.Module):
 		n_layers: int = 12,
 		p_dropout: float = 0.1,
 
-		n_experts: int=1,
+		n_experts: int = 1,
+
+		l_padding: int = 0,
 
 		training = True, 
 		config = None, 
@@ -323,6 +333,8 @@ class Base(nn.Module):
 		self.n_heads = n_heads
 		self.n_layers = n_layers
 		self.n_experts = n_experts
+		
+		self.l_padding = l_padding
 
 		# +1 to include the stop token
 		# to-do: undo this dogshit mistake; tasks tokens should be delegated to its own embedding
@@ -460,6 +472,27 @@ class Base(nn.Module):
 				))
 
 			self.model = RetNetDecoder(RetNetConfig(**kwargs))
+		elif self.arch_type == "retnet-hf":
+			kwargs = dict(
+				vocab_size=n_resp_tokens,
+				decoder_embed_dim=d_model,
+				decoder_value_embed_dim =d_model * 2,
+				decoder_retention_heads=n_heads,
+				decoder_ffn_embed_dim=d_model * 4,
+				decoder_layers=n_layers,
+				dropout=p_dropout if training else 0.0,
+				checkpoint_activations=self.activation_checkpointing,
+				activation_fn="gelu",
+				use_glu=False, # self.version >= 3,
+
+				recurrent_chunk_size=self.recurrent_chunk_size if self.causal else 0,
+				decoder_normalize_before=True,
+
+				deepnorm=False,
+				subln=True,
+			)
+
+			self.model = RetNetDecoder_HF(RetNetConfig_HF(**kwargs))
 		elif self.arch_type == "bitnet":
 			self.model = BitNetTransformer(
 				num_tokens=n_resp_tokens,
@@ -514,19 +547,50 @@ class Base(nn.Module):
 			sep=self.sep,
 		)
 
+
 		x, m = list_to_tensor(x_list)
 		aux_loss = None
 		
 		device = x.device
+		
+		# pad our input and mask, but retain the original length by doing it after
+		if self.l_padding and x.shape[1] % self.l_padding != 0:
+			# pad input
+			shape = list(x.shape)
+			shape[1] = self.l_padding - shape[1] % self.l_padding
+
+			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
+			x = torch.cat([x, padding], dim=1)
+
+			# pad mask
+			shape[2] = 1
+			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
+			m = torch.cat([m, padding], dim=1)
 
 		if state is not None and self.arch_type == "retnet":
 			# prefill
 			if len(state) == 0:
 				prefill_size = x.shape[1]
+
 				# run the initial prompt to fill the KV cache
-				for n in range(prefill_size):
-					xi = x[:, n, :].unsqueeze(1)
-					self.model(xi, incremental_state=state, token_embeddings=xi, features_only=True)
+				if self.arch_type == "retnet":
+					for n in range(prefill_size):
+						xi = x[:, n, :].unsqueeze(1)
+						self.model(xi, incremental_state=state, token_embeddings=xi, features_only=True)
+				elif self.arch_type == "retnet-hf":
+					for n in range(prefill_size):
+						xi = x[:, n, :].unsqueeze(1)
+
+						kwargs = dict(
+							#attention_mask=m,
+							inputs_embeds=x,
+							past_key_values=state[-1],
+							use_cache=state is not None,
+						#	return_dict=True,
+						)
+
+						out = self.model(**kwargs)
+						state.append(out.past_key_values)
 
 			# grab last token(s)
 			x = x[:, -1, :].unsqueeze(1)
@@ -566,6 +630,21 @@ class Base(nn.Module):
 			x, _ = self.model(x, incremental_state=state, token_embeddings=x, features_only=True)
 			if _ is not None and "l_aux" in _ and self.n_experts > 1:
 				aux_loss = torch.sum(torch.stack([ t for t in _["l_aux"] if t is not None])) * 0.001
+		elif self.arch_type == "retnet-hf":
+			kwargs = dict(
+				#attention_mask=m,
+				inputs_embeds=x,
+				past_key_values=state,
+				use_cache=False, #state is not None,
+			#	return_dict=True,
+			)
+
+			t = self.model(**kwargs)
+
+			x = t[0]
+			
+			if state is not None:
+				state = t[1]
 		elif self.arch_type == "bitnet":
 			x = self.model(x)
 		# output projection layer with masking

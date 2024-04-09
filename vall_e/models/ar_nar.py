@@ -300,7 +300,7 @@ class AR_NAR(Base):
 
 
 def example_usage():
-	cfg.trainer.backend = "local"
+	#cfg.trainer.backend = "local"
 	from functools import partial
 
 	from einops import repeat
@@ -317,7 +317,7 @@ def example_usage():
 	def tokenize(content, lang_marker="en"):
 		split = content.split(" ")
 		phones = [f"<s>"] + [ " " if not p else p for p in split ] + [f"</s>"]
-		return torch.tensor([*map(symmap.get, phones)]).to()
+		return torch.tensor([*map(symmap.get, phones)])
 
 	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.models.prom_levels].to(device)
 
@@ -344,6 +344,8 @@ def example_usage():
 		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
 		'n_experts': 1,
+
+		'l_padding': 8,
 	}
 	"""
 	kwargs = {
@@ -366,6 +368,7 @@ def example_usage():
 	steps = 500
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
 	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
+
 	engine = Engine(model=model, optimizer=optimizer)
 
 	# copy embeddings if requested
@@ -392,15 +395,15 @@ def example_usage():
 				param.requires_grad_(False)
 				engine._frozen_params.add(param)
 
-	if cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace:
-		model.model = ml.replace_linear( model.model )
+#	if cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace:
+	model.model = ml.replace_linear( model.model )
 
 	torch.save( {
 		'module': model.state_dict()
 	}, "./data/test.pth" )
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-	
+
 	@torch.inference_mode()
 	def sample( name, steps=600 ):
 		engine.eval()

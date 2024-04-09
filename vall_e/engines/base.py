@@ -42,6 +42,7 @@ from typing import Any, Protocol
 from functools import cached_property
 
 from .base import TrainFeeder
+from ..utils import wrapper as ml
 
 _logger = logging.getLogger(__name__)
 
@@ -222,10 +223,11 @@ class Engine():
 		return self._global_grad_norm
 
 	def traverse(self, *args, **kwargs):
-		with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+		with ml.autocast():
 			self.forward(*args, **kwargs)
-			losses = self.gather_attribute("loss")
-			loss = torch.stack([*losses.values()]).sum()
+		
+		losses = self.gather_attribute("loss")
+		loss = torch.stack([*losses.values()]).sum()
 
 		stats = {}
 		stats |= {k: v.item() for k, v in losses.items()}

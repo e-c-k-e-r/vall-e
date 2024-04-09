@@ -177,6 +177,11 @@ class Model:
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 
 	@property
+	# required for fp8 as the lengths needs to be divisible by 8
+	def input_alignment(self):
+		return 8 if cfg.fp8.enabled else 0
+
+	@property
 	def full_name(self):
 		name = [ self.name ]
 		
@@ -503,6 +508,10 @@ class Trainer:
 			return torch.float16
 		if self.weight_dtype == "bfloat16":
 			return torch.bfloat16
+		if self.weight_dtype == "float8_e5m2":
+			return torch.float8_e5m2
+		if self.weight_dtype == "float8_e4m3fn":
+			return torch.float8_e4m3fn
 		return torch.float32
 
 
@@ -527,6 +536,10 @@ class Inference:
 			return torch.bfloat16
 		if self.weight_dtype == "int8":
 			return torch.int8
+		if self.weight_dtype == "float8_e5m2":
+			return torch.float8_e5m2
+		if self.weight_dtype == "float8_e4m3fn":
+			return torch.float8_e4m3fn
 		return torch.float32
 
 @dataclass()
@@ -541,6 +554,11 @@ class BitsAndBytes:
 	bitnet: bool = False
 
 @dataclass()
+class FP8:
+	enabled: bool = False
+	backend: str = "te"
+
+@dataclass()
 class Config(_Config):
 	device: str = "cuda"
 	mode: str = "training" # "inferencing"
@@ -553,6 +571,8 @@ class Config(_Config):
 	trainer: Trainer = field(default_factory=lambda: Trainer)
 	inference: Inference = field(default_factory=lambda: Inference)
 	bitsandbytes: BitsAndBytes = field(default_factory=lambda: BitsAndBytes)
+	
+	fp8: FP8 = field(default_factory=lambda: FP8)
 
 	@property
 	def sample_rate(self):
@@ -620,6 +640,7 @@ try:
 
 
 except Exception as e:
+	print(e)
 	pass
 
 

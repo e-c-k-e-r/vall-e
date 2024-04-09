@@ -20,7 +20,9 @@ def get_model(cfg, training=True):
 		n_layers=cfg.layers,
 		n_experts=cfg.experts,
 		
-		training=training,
+		l_padding = cfg.input_alignment,
+		
+		training = training,
 		config = cfg,
 	)
 	model._cfg = cfg
