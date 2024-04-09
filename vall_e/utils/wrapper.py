@@ -70,7 +70,7 @@ def autocasts(input, from_dtype, to_dtype):
 # handles temporarily upcasting 'index tensors' so torch will stop bitching
 def autocast_forward( func ):
 	def wrapper( self, input, *args, **kwargs ):
-		with autocasts( input, [torch.int16, torch.int8, torch.uint8], torch.int32 ) as k:
+		with autocasts( input, [torch.int16, torch.int8, torch.uint8, torch.float16, torch.bfloat16], torch.int32 ) as k:
 			return func( self, k, *args, **kwargs )
 	return wrapper
 Embedding.forward = autocast_forward(Embedding.forward)

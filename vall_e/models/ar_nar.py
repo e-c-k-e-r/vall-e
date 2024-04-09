@@ -372,6 +372,7 @@ def example_usage():
 	engine = Engine(model=model, optimizer=optimizer)
 
 	# copy embeddings if requested
+	"""
 	if cfg.models._embeddings is not None:
 		embeddings_path = cfg.relpath / cfg.models._embeddings
 		
@@ -394,9 +395,10 @@ def example_usage():
 					continue
 				param.requires_grad_(False)
 				engine._frozen_params.add(param)
+	"""
 
-#	if cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace:
-	model.model = ml.replace_linear( model.model )
+	if (cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace) or (cfg.fp8.enabled):
+		model.model = ml.replace_linear( model.model )
 
 	torch.save( {
 		'module': model.state_dict()
