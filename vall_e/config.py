@@ -247,6 +247,8 @@ class Model:
 
 		if self.size == "double":
 			return 24
+		if self.size == "extended":
+			return 16
 		return 12
 
 	@property

@@ -65,6 +65,8 @@ def load_engines(training=True):
 
 				params['d_coef'] = params['lr']
 				params['lr'] = 1.0
+			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
+				optimizer_class = ml.Adagrad
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 

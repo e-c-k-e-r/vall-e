@@ -42,10 +42,12 @@ if cfg.bitsandbytes.enabled:
 	Adam = bnb.optim.Adam8bit
 	AdamW = bnb.optim.AdamW8bit
 	SGD = bnb.optim.SGD8bit
+	Adagrad = bnb.optim.Adagrad8bit
 else:
 	Adam = torch.optim.Adam
 	AdamW = torch.optim.AdamW
 	SGD = torch.optim.SGD
+	Adagrad = torch.optim.Adagrad
 
 # handles generically converting to a specific tensor type and converting back (implemented solely for bfloat16)
 @contextmanager

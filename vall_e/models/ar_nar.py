@@ -342,10 +342,10 @@ def example_usage():
 		'n_tokens': 1024,
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
-		'n_layers': 12, # 32
+		'n_layers': 16, # 32
 		'n_experts': 1,
 
-		'l_padding': 8,
+		'l_padding': 8 if cfg.fp8.enabled else 0,
 	}
 	"""
 	kwargs = {
@@ -367,6 +367,7 @@ def example_usage():
 	model = AR_NAR(**kwargs).to(device)
 	steps = 500
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
+	#optimizer = ml.Adagrad(model.parameters(), lr=1.0e-2)
 	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
 
 	engine = Engine(model=model, optimizer=optimizer)
