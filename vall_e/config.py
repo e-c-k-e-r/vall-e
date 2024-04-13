@@ -185,7 +185,10 @@ class Model:
 	def full_name(self):
 		name = [ self.name ]
 		
-		if self.size != "full" and isinstance(self.size, str):
+		if isinstance(self.size, dict):
+			if hasattr(self.size, "label") and self.size['label']:
+				name.append(f"{self.size['label']}")
+		elif isinstance(self.size, str) and self.size != "full":
 			name.append(self.size)
 
 		if self.arch_type != "transformer":
@@ -247,8 +250,6 @@ class Model:
 
 		if self.size == "double":
 			return 24
-		if self.size == "extended":
-			return 16
 		return 12
 
 	@property
