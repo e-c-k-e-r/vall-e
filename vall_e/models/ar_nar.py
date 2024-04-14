@@ -209,7 +209,7 @@ class AR_NAR(Base):
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in text_list ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 
-		recurrent_state = {} if cfg.inference.recurrent_forward else None
+		recurrent_state = [] if cfg.inference.recurrent_forward else None
 		mirostat = [
 			{"n": 1024, "tau": sampling_mirostat_tau, "eta": sampling_mirostat_eta, "max_surprise": sampling_mirostat_eta * 2, "error_surprise": 0, "running_total_surprise": 0}
 		] * batch_size if sampling_mirostat_tau > 0.0 else None
