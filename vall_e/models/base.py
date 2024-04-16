@@ -395,7 +395,7 @@ class Base(nn.Module):
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
-					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
+					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -414,7 +414,7 @@ class Base(nn.Module):
 					is_decoder=True,
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
-					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
+					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
 				))
 		elif self.arch_type == "llama":
 			if n_experts <= 1:
@@ -431,7 +431,7 @@ class Base(nn.Module):
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
-					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
+					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -450,7 +450,7 @@ class Base(nn.Module):
 					is_decoder=True,
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
-					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
+					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
 				))
 
 		elif self.arch_type == "retnet":

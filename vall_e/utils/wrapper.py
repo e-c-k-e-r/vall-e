@@ -101,6 +101,8 @@ if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 
 # disgusting kludge, but it works (just realized BitNet has its own replacement routine)
 def replace_linear( model ):
+	bnb = cfg.bitsandbytes.enabled and cfg.bitsandbytes.linear and not cfg.bitsandbytes.bitnet
+
 	device =  next(model.parameters()).device
 	linears = [k.split('.') for k, m in model.named_modules() if isinstance(m, torch.nn.Linear)]
 	for *parent, k in linears:
@@ -113,13 +115,15 @@ def replace_linear( model ):
 		out_features = m.out_features
 		bias = m.bias is not None
 
+		kwargs = dict(in_features=in_features, out_features=out_features, bias=bias) if not bnb else dict(input_features=in_features, output_features=out_features, bias=bias)
+
 		# overwrite
 		setattr(
 			model.get_submodule(name), k,
-			Linear( in_features=in_features, out_features=out_features, bias=bias )
+			Linear( **kwargs ).to(device=device, dtype=cfg.trainer.dtype)
 		)
 
-	return model.to(device) # because our now Linear is created on the CPU......
+	return model
 
 # https://github.com/konstmish/prodigy
 try:
