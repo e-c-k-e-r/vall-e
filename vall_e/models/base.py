@@ -262,9 +262,13 @@ class Base(nn.Module):
 	@property
 	def n_langs(self) -> int:
 		raise NotImplementedError
-
+	
 	@property
 	def n_tasks(self) -> int:
+		raise NotImplementedError
+
+	@property
+	def n_tones(self) -> int:
 		raise NotImplementedError
 
 	@property
@@ -343,6 +347,7 @@ class Base(nn.Module):
 
 		self.text_emb = Embedding(n_tokens, d_model)
 		self.langs_emb = None
+		self.tones_emb = None
 		self.tasks_emb = None
 
 		if self.version == 1: # legacy
@@ -359,6 +364,9 @@ class Base(nn.Module):
 		if self.version >= 3:
 			self.langs_emb = Embedding(self.n_langs, d_model) if self.n_langs > 0 else None
 			self.tasks_emb = Embedding(self.n_tasks, d_model) if self.n_tasks > 0 else None
+		
+		if self.version >= 4:
+			self.tones_emb = Embedding(self.n_tones, d_model) if self.n_tones > 0 else None
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -522,53 +530,15 @@ class Base(nn.Module):
 			ignore_index=self.ignore_index,
 		)
 
-	def forward(
+	def _forward(
 		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
-		resps_list: list[Tensor],
-		targ_list: list[Tensor] | None = None,
-		
-		lang_list: list[Tensor] | None = None,
-
-		quant_levels: Tensor | None = None,
-		state: dict | list | None = None,
+		inputs,
+		mask = None,
+		state = None,
 	):
-		batch_size = len(text_list)
-
-		if self.langs_emb is None:
-			lang_list = None
-
-		x_list = self._samplewise_merge_tensors(
-			self.text_emb(text_list),
-			self.langs_emb(lang_list) if lang_list is not None else None,
-			self.proms_emb(proms_list),
-			self.resps_emb(resps_list, quant_levels),
-			sep=self.sep,
-		)
-
-
-		x, m = list_to_tensor(x_list)
+		x = inputs
+		m = mask.squeeze(-1).int()
 		aux_loss = None
-		
-		device = x.device
-		
-		# pad our input and mask, but retain the original length by doing it after
-		if self.l_padding and x.shape[1] % self.l_padding != 0:
-			# pad input
-			shape = list(x.shape)
-			shape[1] = self.l_padding - shape[1] % self.l_padding
-
-			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
-			x = torch.cat([x, padding], dim=1)
-
-			# pad mask
-			shape[2] = 1
-			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
-			m = torch.cat([m, padding], dim=1)
-
-		# for simplicity
-		mask  = m.squeeze(-1).int()
 
 		"""
 		# Broken
@@ -587,7 +557,7 @@ class Base(nn.Module):
 						xi = x[:, n, :].unsqueeze(1)
 
 						kwargs = dict(
-							attention_mask=mask,
+							attention_mask=m,
 							inputs_embeds=xi,
 							past_key_values=state,
 							use_cache=True,
@@ -603,9 +573,9 @@ class Base(nn.Module):
 		"""
 		
 		# HF transformer derived model
-		if self.arch_type == "llama" or self.arch_type == "mistral" or self.arch_type == "mixtral":
+		if self.arch_type in ["llama", "mistral", "mixtral"]:
 			kwargs = dict(
-				attention_mask=mask,
+				attention_mask=m,
 				inputs_embeds=x,
 				past_key_values=state,
 				use_cache=True,
@@ -632,7 +602,7 @@ class Base(nn.Module):
 			x = self.sin_emb.add_pe(x)
 			# pass our inputs through the transformer
 			for block in self.blocks:
-				x = block(x, mask, l)
+				x = block(x, m, l)
 		elif self.arch_type == "retnet":
 			# pass our inputs through the RetNet
 			x, _ = self.model(x, incremental_state=state, token_embeddings=x, features_only=True)
@@ -642,7 +612,7 @@ class Base(nn.Module):
 			first = state is None or len(state) == 0
 
 			kwargs = dict(
-				attention_mask=mask,
+				attention_mask=m,
 				inputs_embeds=x if first else x[:, -1, :].unsqueeze(1),
 				past_key_values=None if first else state,
 				use_cache=True,
@@ -659,8 +629,76 @@ class Base(nn.Module):
 			x = self.model(x)
 
 		# output projection layer with masking
+		x = self.classifier(x) * mask
 
-		x = self.classifier(x) * m
+		return x, state, aux_loss
+
+	def forward(
+		self,
+		text_list: list[Tensor],
+		proms_list: list[Tensor],
+		resps_list: list[Tensor],
+		targ_list: list[Tensor] | None = None,
+		
+		lang_list: list[Tensor] | None = None,
+		tone_list: list[Tensor] | None = None,
+
+		quant_levels: Tensor | None = None,
+		state: dict | list | None = None,
+	):
+		device = text_list[0].device
+		batch_size = len(text_list)
+
+		# silently ignore languages if model does not have it
+		if self.langs_emb is None:
+			lang_list = None
+		# inject default language 
+		elif lang_list is None:
+			lang_list = [ torch.Tensor([ 0 ]).to(dtype=torch.uint8, device=device) for _ in range(batch_size) ]
+		
+		# silently ignore tones if model does not have it
+		if self.tones_emb is None:
+			tone_list = None
+		# inject default tone 
+		elif tone_list is None:
+			tone_list = [ torch.Tensor([ 0 ]).to(dtype=torch.uint8, device=device) for _ in range(batch_size) ]
+
+		"""
+		# Typical sequence format
+		# To-do: integrate tasks again
+		<s><text></s><sep><lang><sep><prom><sep><tone><sep><resp><stop>
+		"""
+		x_list = self._samplewise_merge_tensors(
+			self.text_emb(text_list),
+			self.langs_emb(lang_list) if lang_list is not None else None,
+			self.proms_emb(proms_list),
+			self.tones_emb(tone_list) if tone_list is not None else None,
+			self.resps_emb(resps_list, quant_levels),
+			sep=self.sep,
+		)
+
+		x, m = list_to_tensor(x_list)
+		
+		# pad our input and mask, but retain the original length by doing it after
+		if self.l_padding and x.shape[1] % self.l_padding != 0:
+			# pad input
+			shape = list(x.shape)
+			shape[1] = self.l_padding - shape[1] % self.l_padding
+
+			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
+			x = torch.cat([x, padding], dim=1)
+
+			# pad mask
+			shape[2] = 1
+			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
+			m = torch.cat([m, padding], dim=1)
+
+
+		x, state, aux_loss = self._forward(
+			inputs=x,
+			mask=m,
+			state=state,
+		)
 
 		# Remove padding
 		logits = [ hi[:li] for hi, li in zip(x, map(len, x_list)) ]
@@ -790,7 +828,7 @@ def example_usage():
 	from .nar import NAR
 
 	device = "cuda"
-	x8 = partial(repeat, pattern="t -> t l", l=cfg.models.prom_levels) 
+	x8 = partial(repeat, pattern="t -> t l", l=cfg.model.prom_levels) 
 	symmap = {'<s>': 1, '</s>': 2, ' ': 3, '.': 4, ',': 5, '!': 6, '?': 7, 'p': 7, 'iː': 8, 'ɚ': 9, 'ˌ': 10, 'dˌ': 11, 'mˌ': 12, 'd': 13, 'ɹ': 14, 'tˈ': 15, 'pˌ': 16, 'uː': 17, 'l': 18, 'æ': 19, 'ɛ': 20, 'ɪ': 21, 'j': 22, 'ʊ': 23, 't': 24, 'n': 25, 'v': 26, 'a': 27, 'o': 28, 'ŋ': 29, 'w': 30, 'ʌ': 31, 'hˈ': 32, 'ɡˈ': 33, 'ə': 34, 'θˈ': 35, 'dˈ': 36, 'wˌ': 37, 'h': 38, 'z': 39, 'k': 40, 'ð': 41, 'ɡˌ': 42, 'ˈ': 43, 'fˈ': 44, 'i': 45, 's': 46, 'ʃ': 47, 'wˈ': 48, 'ðˈ': 49, 'ɹˈ': 50, 'lˈ': 51, 'ɡ': 52, 'oː': 53, 'mˈ': 54, 'e': 55, 'ɑː': 56, 'nˈ': 57, 'm': 58, 'θˌ': 59, 'sˈ': 60, 'f': 61, 'ɔː': 62, 'hˌ': 63, 'b': 64, 'jˈ': 65, 'ɐ': 66, 'ʒˈ': 67, 'θ': 68, 'bˈ': 69, 'ɾ': 70, 'ɜː': 71, 'ʌˈ': 72, 'ʃˌ': 73, 'bˌ': 74, 'kˈ': 75, 'ɔ': 76, 'zˈ': 77, 'ᵻ': 78, 'kˌ': 79, 'vˈ': 80, 'fˌ': 81, 'ʒ': 82, 'ʃˈ': 83, 'ɹˌ': 84, 'tˌ': 85, 'pˈ': 86, 'ðˌ': 87, 'sˌ': 88, 'nˌ': 89, 'lˌ': 90, '̩': 91, 'ʔ': 92, 'vˌ': 93, 'ɪˈ': 94, '"': 95, 'ɪˌ': 96, 'ʒˌ': 97, 'uːˌ': 98, 'ʊˈ': 99, 'jˌ': 100, 'uːˈ': 101, 'iːˈ': 102, 'zˌ': 103, '.ˈ': 104, '…': 105, 'ŋˌ': 106, 'ɐˌ': 107, '—ˈ': 108, 'iˌ': 109, 'iːˌ': 110, 'ɛː': 111, ')': 112, ')ˈ': 113, '(': 114, 'u': 115, '-': 116, 'ɖˈ': 117, 'iˈ': 118, 'ʰˈ': 119, 'ɟˈ': 120, '̃': 121, 'eː': 122, 'ɾˈ': 123, 'r': 124, 'ʰ': 125, '-ˌ': 126, 'ɫ': 127, 'q': 128, '—': 129, 'ʊˌ': 130, 'aː': 131, 'cˈ': 132, '…ˈ': 133, 'c': 134, 'ɳ': 135, 'ɐˈ': 136, 'x': 137, 'ʔˌ': 138, '.ˌ': 139, 'ɑ': 140, '?ˈ': 141, '̩ˈ': 142, '"ˈ': 143, ',ˈ': 144, 'ŋˈ': 145, 'əˌ': 146, '!ˈ': 147, '"ˌ': 148, '?ˌ': 149, ',ˌ': 150, '—ˌ': 151, '̩ˌ': 152, 'əˈ': 153, '!ˌ': 154, 'ɬ': 155, 'ʲ': 156, '¡': 157, 'ɯ': 158, 'qˌ': 159, 'ʑ': 160, 'ʑˈ': 161, '¿': 162, 'ɑːˈ': 163, 'iːː': 164, 'ɛˈ': 165, '¡ˈ': 166, 'æˈ': 167, 'ç': 168, 'ɾˌ': 169, 'ᵻˈ': 170, 'xˈ': 171, 'ɔːˈ': 172, ';': 173, 'ɬˌ': 174, ':': 175, 'ʔˈ': 176, 'ɑːˌ': 177, 'ɬˈ': 178}
 	def tokenize(content, lang_marker="en"):
 		split = content.split(" ")
@@ -812,7 +850,7 @@ def example_usage():
 
 	train = True
 
-	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.models.prom_levels].to(device)
+	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.model.prom_levels].to(device)
 	text_list = [
 		tokenize("ˈ a ɪ   w ɪ l   nˌ ɑː t  ˈ æ s k   ɐ   sˈ ɛ k ə n d   tˈ a ɪ m").to(device),
 		#tokenize("ˌ ɔ n   ɡˌ o ʊ ɪ ŋ   hˈ o ʊ m   ð ə   tˈ uː   f ɹˈ ɛ n d z   fˈ a ʊ n d   ɐ   lˈ ɛ ɾ ɚ   f ɹ ʌ m  ˈ æ θ o ʊ z ,   hˌ uː   d ɪ zˈ a ɪ ɚ d   ðˌ ɛ m   t ə   mˈ iː t   hˌ ɪ m   æ t   ð ə   ɡ ɹˈ æ n d   t ʃˈ ɑː ɹ l ɪ mˌ æ ɡ n i   ɔ n ð ə   fˈ ɑː l o ʊ ɪ ŋ   dˈ e ɪ .").to(device),

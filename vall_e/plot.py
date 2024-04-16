@@ -109,7 +109,7 @@ if __name__ == "__main__":
 	path = cfg.relpath / "logs"
 	paths = path.rglob(f"./*/{args.filename}")
 
-	args.models = [ model for model in cfg.models.get() if model.training and (args.model == "*" or model.name in args.model) ]
+	args.models = [ model for model in cfg.model.get() if model.training and (args.model == "*" or model.name in args.model) ]
 
 	if args.ys == "":
 		args.ys = ["loss"]

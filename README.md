@@ -6,15 +6,9 @@
 
 An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
 
-[Main Repo](https://git.ecker.tech/mrq/vall-e) | [GitHub Mirror](https://github.com/e-c-k-e-r/vall-e/)
-
 > **Note** Development on this is very sporadic. Gomen.
 
 ## Requirements
-
-* [`DeepSpeed`](https://github.com/microsoft/DeepSpeed#requirements):
-  - DeepSpeed training is Linux only. Installation under Windows should ignore trying to install DeepSpeed.
-  - If your config YAML has the training backend set to `deepspeed`, you will need to have a GPU that DeepSpeed has developed and tested against, as well as a CUDA or ROCm compiler pre-installed to install this package.
 
 * [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/):
   - For phonemizing text, this repo requires `espeak`/`espeak-ng` installed.
@@ -24,7 +18,7 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 ## Install
 
-Simply run `pip install git+https://git.ecker.tech/mrq/vall-e`.
+Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install git+https://github.com/e-c-k-e-r/vall-e`.
 
 I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
@@ -68,7 +62,7 @@ A script to setup a proper environment and train can be invoked with `./scripts/
 
 If you're interested in creating an HDF5 copy of your dataset, simply invoke: `python -m vall_e.data --action='hdf5' yaml='./data/config.yaml'`
 
-5. Train the AR and NAR models using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
+5. Train the model using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
 * If distributing your training (for example, multi-GPU), use `deepspeed --module vall_e.train yaml="./data/config.yaml"`
 
 You may quit your training any time by just entering `quit` in your CLI. The latest checkpoint will be automatically saved.
@@ -93,17 +87,22 @@ You can specify what X and Y labels you want to plot against by passing `--xs to
 
 #### Training Under Windows
 
-As training under `deepspeed` and Windows is not supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
+As training under `deepspeed` and Windows is not (easily) supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
 
-Keep in mind that creature comforts like distributed training or `float16` training cannot be verified as working at the moment.
+Keep in mind that creature comforts like distributed training or `float16` training cannot be verified as working at the moment with the local trainer.
 
 #### Training on Low-VRAM Cards
 
-During experimentation, I've found I can comfortably train on a 4070Ti (12GiB VRAM) with `trainer.deepspeed.compression_training` enabled with both the AR and NAR at a batch size of 16, albeit I feel this is mostly snakeoil. Better VRAM savings can be had with use of BitsAndBytes and their respective flags (specifically its AdamW implementation).
-
-VRAM use is also predicated on your dataset; a mix of large and small utterances will cause VRAM usage to spike and can trigger OOM conditions during the backwards pass if you are not careful.
+During experimentation, I've found I can comfortably train on a 4070Ti (12GiB VRAM). Howver, VRAM use is predicated on your dataset; a mix of large and small utterances will cause VRAM usage to spike and can trigger OOM conditions during the backwards pass if you are not careful.
 
 Additionally, under Windows, I managed to finetune the AR on my 2060 (6GiB VRAM) with a batch size of 8 (although, with the card as a secondary GPU).
+
+#### Training Caveats
+
+Unfortunately, efforts to train a *good* foundational model seems entirely predicated on a good dataset. My dataset might be too fouled with:
+* too short utterances: trying to extrapolate longer contexts seems to utterly fall apart from just the `text` being too long.
+* too tightly trimmed utterances: there being little to no space at the start and end might harm associating `<s>` and `</s>` tokens with empty utterances.
+* a poorly mapped phoneme mapping: I naively crafted my own phoneme mapping, where a HuggingFace tokenizer might supply a better token mapping.
 
 #### Backend Architectures
 
@@ -112,6 +111,8 @@ As the core of VALL-E makes use of a language model, various LLM architectures c
 * `transformer`: a basic attention-based transformer implementation, with attention heads + feed forwards.
 * `retnet`: using [TorchScale's RetNet](https://github.com/microsoft/torchscale/blob/main/torchscale/architecture/retnet.py) implementation, a retention-based approach can be used instead.
   - Its implementation for MoE can also be utilized.
+* `retnet-hf`: using [syncdoth/RetNet/](https://github.com/syncdoth/RetNet/) with a HuggingFace-compatible RetNet model
+  - inferencing cost is about 0.5x, and MoE is not implemented.
 * `llama`: using HF transformer's LLaMa implementation for its attention-based transformer, boasting RoPE and other improvements.
 * `mixtral`: using HF transformer's Mixtral implementation for its attention-based transformer, also utilizing its MoE implementation.
 * `bitnet`: using [this](https://github.com/kyegomez/BitNet/) implementation of BitNet's transformer.
@@ -121,11 +122,11 @@ As the core of VALL-E makes use of a language model, various LLM architectures c
 
 To export the models, run: `python -m vall_e.export yaml=./data/config.yaml`.
 
-This will export the latest checkpoints, for example, under `./data/ckpt/ar-retnet-2/fp32.pth` and `./data/ckpt/nar-retnet-2/fp32.pth`, to be loaded on any system with PyTorch, and will include additional metadata, such as the symmap used, and training stats.
+This will export the latest checkpoints, for example, under `./data/ckpt/ar+nar-retnet-8/fp32.pth`, to be loaded on any system with PyTorch, and will include additional metadata, such as the symmap used, and training stats.
 
 ## Synthesis
 
-To synthesize speech, invoke either (if exported the models): `python -m vall_e <text> <ref_path> <out_path> --ar-ckpt ./models/ar.pt --nar-ckpt ./models/nar.pt` or `python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>`
+To synthesize speech, invoke either (if exported the models): `python -m vall_e <text> <ref_path> <out_path> --model-ckpt ./data/ckpt/ar+nar-retnet-8/fp32.pth` or `python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>`
 
 Some additional flags you can pass are:
 * `--language`: specifies the language for phonemizing the text, and helps guide inferencing when the model is trained against that language.
@@ -154,7 +155,6 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 ## To-Do
 
 * train and release a ***good*** model.
-  - the current model seems to require a ***long*** time of training at a very small LR rate to try and cover a wide variety of speakers of varying acoustics.
 * clean up the README, and document, document, document onto the wiki.
 * extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - training additional tasks needs the SpeechX implementation to be reworked.
@@ -164,7 +164,7 @@ And some experimental sampling flags you can use too (your mileage will ***defin
     + this requires a properly trained AR, however.
 * work around issues with extending context past what's trained (despite RetNet's retention allegedly being able to defeat this):
   - "sliding" AR input, such as have the context a fixed length.
-    + the model may need to be trained for this with a fancy positional embedding injected. Naively sliding the context window while making use of the RetNet implementation's positional embedding doesn't seem fruitful.
+    + the model may need to be trained for this with a fancy positional embedding injected OR already trained with a sliding context window in mind. Naively sliding the context window while making use of the RetNet implementation's positional embedding doesn't seem fruitful.
 
 ## Notices and Citations
 

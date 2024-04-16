@@ -19,7 +19,7 @@ if deepspeed_available:
 	import deepspeed
 
 class TTS():
-	def __init__( self, config=None, ar_ckpt=None, nar_ckpt=None, device=None, amp=None, dtype=None ):
+	def __init__( self, config=None, model_ckpt=None, device=None, amp=None, dtype=None ):
 		self.loading = True 
 		
 		self.input_sample_rate = 24000
@@ -53,7 +53,10 @@ class TTS():
 
 		self.symmap = None
 
-		def parse( name, model, state ):
+		if model_ckpt:
+			state = torch.load(model_ckpt)
+			self.model = get_models(cfg.model.get(), training=False)[0]
+			
 			if "userdata" in state and 'symmap' in state['userdata']:
 				self.symmap = state['userdata']['symmap']
 			elif "symmap" in state:
@@ -62,54 +65,25 @@ class TTS():
 			if "module" in state:
 				state = state['module']
 			
-			model.load_state_dict(state)
+			self.model.load_state_dict(state)
 
 			if cfg.inference.backend == "local" and deepspeed_available and cfg.trainer.deepspeed.inferencing:
-				model = deepspeed.init_inference(model=model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
-
-			return model
-
-		if ar_ckpt and nar_ckpt:
-			self.ar_ckpt = ar_ckpt
-			self.nar_ckpt = nar_ckpt
-
-			models = get_models(cfg.models.get(), training=False)
-
-			for name, model in models.items():
-				if name.startswith("ar"):
-					state = torch.load(self.ar_ckpt)
-					self.ar = parse( name, model, state )
-				elif name.startswith("nar"):
-					state = torch.load(self.nar_ckpt)
-					self.nar = parse( name, model, state )
-					
-				if name.startswith("ar+nar"):
-					self.nar = self.ar
+				self.model = deepspeed.init_inference(model=self.model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
 		else:
-			self.load_models()
+			engines = load_engines(training=False)
+			for name, engine in engines.items():
+				self.model = engine.module
+				break
 
 		if self.dtype != torch.int8:
-			self.ar = self.ar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
-			self.nar = self.nar.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
+			self.model = self.model.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
-		self.ar.eval()
-		self.nar.eval()
+		self.model.eval()
 
 		if self.symmap is None:
 			self.symmap = get_phone_symmap()
 
 		self.loading = False 
-
-	def load_models( self ):
-		engines = load_engines(training=False)
-		for name, engine in engines.items():
-			if name.startswith("ar"):
-				self.ar = engine.module
-			elif name.startswith("nar"):
-				self.nar = engine.module
-
-			if name.startswith("ar+nar"):
-				self.nar = self.ar
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it
@@ -193,7 +167,7 @@ class TTS():
 			lang = to_device(lang, self.device).to(torch.uint8)
 
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-				resps_list = self.ar(
+				resps_list = self.model(
 					text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
 					sampling_temperature=ar_temp,
 					sampling_min_temperature=min_ar_temp,
@@ -205,7 +179,7 @@ class TTS():
 					sampling_mirostat_eta=mirostat_eta,
 				)
 				resps_list = [r.unsqueeze(-1) for r in resps_list]
-				resps_list = self.nar(
+				resps_list = self.model(
 					text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
 					max_levels=max_nar_levels,
 					sampling_temperature=nar_temp,

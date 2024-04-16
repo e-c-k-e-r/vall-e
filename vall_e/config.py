@@ -162,6 +162,9 @@ class Dataset:
 
 @dataclass()
 class Model:
+	_max_levels: int = 0
+	_embeddings: str | None = None
+
 	name: str = "" # vanity name for the model
 	version: int = 1 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding
 	size: str | dict = "full" # preset string or explicitly defined dimensionality
@@ -169,12 +172,20 @@ class Model:
 	prom_levels: int = 8 # RVQ-bin levels this model accepts as an input prompt
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
 	langs: int = 1 # defined languages
+	tones: int = 1 # defined tones
 	experts: int = 1
 	arch_type: str = "retnet" # or "transformer""
 	training: bool = True # unneeded now
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
 	p_ar_level: float | str = "auto" # determines odds of selecting the AR (level 0) when training, "auto" for default behavior
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
+
+	def get(self, name=None):
+		return [ self ] if not name or self.name == name else []
+
+	@property
+	def max_levels(self):
+		return self._max_levels if self._max_levels > 0 else self.prom_levels
 
 	@property
 	# required for fp8 as the lengths needs to be divisible by 8
@@ -203,7 +214,7 @@ class Model:
 		if self.interleave:
 			name.append("interleaved")
 		else:
-			name.append(f'{cfg.models.prom_levels}')
+			name.append(f'{cfg.model.prom_levels}')
 
 
 		return "-".join(name)
@@ -255,58 +266,6 @@ class Model:
 	@property
 	def activation_checkpointing(self):
 		return cfg.trainer.activation_checkpointing
-	
-
-@dataclass()
-class Models:
-	_max_levels: int = 0
-	_prom_levels: int = 1
-	_embeddings: str | None = None
-
-	_models: list[Model] = field(default_factory=lambda: [
-		Model(name="ar", resp_levels=1, prom_levels=8, tasks=8, langs=1, experts=1, training=True, interleave=False),
-		Model(name="nar", resp_levels=7, prom_levels=8, tasks=8, langs=1, experts=1, training=True, interleave=False),
-	])
-
-	def get(self, name=None):
-		if not name:
-			return [ Model(**model) for model in self._models ]
-
-		for model in self._models:
-			if model.name == name:
-				return model
-
-		raise ValueError
-
-	@property
-	def ar(self):
-		return self.get("ar")
-
-	@property
-	def ar_nar(self):
-		return self.get("ar+nar")
-
-	@property
-	def nar(self):
-		return self.get("nar")
-
-	@property
-	def prom_levels(self):
-		prom_levels = self._prom_levels
-		for model in self._models:
-			prom_levels = max(prom_levels, model.prom_levels)
-		return prom_levels
-
-	@property
-	def tasks(self):
-		tasks = 1
-		for model in self._models:
-			tasks = max(tasks, model.tasks)
-		return tasks
-
-	@property
-	def max_levels(self):
-		return self._max_levels if self._max_levels > 0 else self.prom_levels
 	
 @dataclass()
 class Hyperparameters:
@@ -568,7 +527,7 @@ class Config(_Config):
 	experimental: bool = False # So I can stop commenting out things when committing
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
-	models: Models = field(default_factory=lambda: Models)
+	model: Model = field(default_factory=lambda: Model)
 	hyperparameters: Hyperparameters = field(default_factory=lambda: Hyperparameters)
 	evaluation: Evaluation = field(default_factory=lambda: Evaluation)
 	trainer: Trainer = field(default_factory=lambda: Trainer)
@@ -617,7 +576,7 @@ class Config(_Config):
 
 	def format( self ):
 		self.dataset = Dataset(**self.dataset)
-		self.models = Models(**self.models)
+		self.model = Model(**self.model)
 		self.hyperparameters = Hyperparameters(**self.hyperparameters)
 		self.evaluation = Evaluation(**self.evaluation)
 		self.trainer = Trainer(**self.trainer)

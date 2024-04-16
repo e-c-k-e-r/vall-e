@@ -26,7 +26,7 @@ from functools import cache
 
 @cache
 def load_engines(training=True):
-	models = get_models(cfg.models.get(), training=training)
+	models = get_models(cfg.model.get(), training=training)
 	engines = dict()
 
 	for name, model in models.items():
@@ -145,8 +145,8 @@ def load_engines(training=True):
 		engine.freeze(freeze_all=False)
 
 		# copy embeddings if requested
-		if cfg.models._embeddings is not None:
-			embeddings_path = cfg.relpath / cfg.models._embeddings
+		if cfg.model._embeddings is not None:
+			embeddings_path = cfg.relpath / cfg.model._embeddings
 			
 			if embeddings_path.exists():
 				embeddings = torch.load(embeddings_path, map_location=torch.device(cfg.device))

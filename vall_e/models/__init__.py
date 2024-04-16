@@ -1,19 +1,9 @@
-from .ar import AR
-from .nar import NAR
 from .ar_nar import AR_NAR
 
 def get_model(cfg, training=True):
-	if cfg.name == "ar":
-		Model = AR
-	elif cfg.name == "nar":
-		Model = NAR
-	elif cfg.name == "ar+nar":
-		Model = AR_NAR
-	else:
-		raise f"invalid model name: {cfg.name}"
 	name = cfg.name
 
-	model = Model(
+	model = AR_NAR(
 		n_tokens=cfg.tokens,
 		d_model=cfg.dim,
 		n_heads=cfg.heads,

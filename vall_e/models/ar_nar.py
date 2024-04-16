@@ -25,29 +25,33 @@ class AR_NAR(Base):
 	def arch_type(self) -> str:
 		if hasattr(self, "config") and self.config:
 			return self.config.arch_type
-		return cfg.models.ar_nar.arch_type
+		return cfg.model.arch_type
 
 	@property
 	def n_prom_levels(self) -> int:
-		return cfg.models.prom_levels
+		return cfg.model.prom_levels
 
 	@property
 	def n_resp_levels(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.resp_levels
-		return cfg.models.ar_nar.resp_levels
+		return cfg.model.resp_levels
 
 	@property
 	def n_max_levels(self) -> int:
-		return cfg.models.max_levels
+		return cfg.model.max_levels
 
 	@property
 	def n_tasks(self) -> int:
-		return cfg.models.ar_nar.tasks
-
+		return cfg.model.tasks
+	
 	@property
 	def n_langs(self) -> int:
-		return cfg.models.ar_nar.langs
+		return cfg.model.langs
+
+	@property
+	def n_tones(self) -> int:
+		return cfg.model.tones
 
 	@property
 	def recurrent_chunk_size(self) -> int:
@@ -58,7 +62,7 @@ class AR_NAR(Base):
 	def rotary_embedding_base(self) -> float:
 		if hasattr(self, "config") and self.config:
 			return self.config.rotary_embedding_base
-		return cfg.models.ar_nar.rotary_embedding_base
+		return cfg.model.rotary_embedding_base
 	"""
 
 	@property
@@ -73,7 +77,7 @@ class AR_NAR(Base):
 	def version(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.version
-		return cfg.models.ar_nar.version
+		return cfg.model.version
 
 	def _prune(self, l: Tensor):
 		indices = (l == self.stop_token).nonzero()
@@ -92,6 +96,7 @@ class AR_NAR(Base):
 		resps_list: list[Tensor] | None = None,
 		
 		lang_list: list[Tensor] | None = None,
+		tone_list: list[Tensor] | None = None,
 
 		max_steps: int = 1000,
 		max_levels: int = 0,
@@ -134,10 +139,10 @@ class AR_NAR(Base):
 				else:
 					quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 					"""
-					if cfg.models.ar_nar.p_ar_level == "auto" or cfg.models.ar_nar.p_ar_level is None:
+					if cfg.model.p_ar_level == "auto" or cfg.model.p_ar_level is None:
 						quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 					else:
-						quant_levels = torch.Tensor([ 0 if random.random() < cfg.models.ar_nar.p_ar_level else random.randint(1, self.n_resp_levels) for _ in range(batch_size) ])
+						quant_levels = torch.Tensor([ 0 if random.random() < cfg.model.p_ar_level else random.randint(1, self.n_resp_levels) for _ in range(batch_size) ])
 					"""
 
 				targ_list = [r[..., l] for r, l in zip(resps_list, quant_levels)] # ensures we only have 1 RVQ-bin (our target)
@@ -162,6 +167,7 @@ class AR_NAR(Base):
 					resps_list=resps_list,
 					targ_list=targ_list,
 					lang_list=lang_list,
+					tone_list=tone_list,
 					quant_levels=quant_levels,
 				)
 			# is NAR
@@ -182,6 +188,7 @@ class AR_NAR(Base):
 					proms_list=proms_list,
 					resps_list=prev_list,
 					lang_list=lang_list,
+					tone_list=tone_list,
 					quant_levels=quant_levels,
 				)
 
@@ -234,6 +241,7 @@ class AR_NAR(Base):
 					proms_list=proms_list,
 					resps_list=resps_list,
 					lang_list=lang_list,
+					tone_list=tone_list,
 					state=recurrent_state
 				)
 			else:
@@ -242,6 +250,7 @@ class AR_NAR(Base):
 					proms_list=proms_list,
 					resps_list=resps_list,
 					lang_list=lang_list,
+					tone_list=tone_list,
 					state=recurrent_state
 				)
 
@@ -312,14 +321,14 @@ def example_usage():
 	import re
 
 	device = "cuda"
-	x8 = partial(repeat, pattern="t -> t l", l=cfg.models.prom_levels) 
+	x8 = partial(repeat, pattern="t -> t l", l=cfg.model.prom_levels) 
 	symmap = {'<s>': 1, '</s>': 2, ' ': 3, '.': 4, ',': 5, '!': 6, '?': 7, 'p': 7, 'iː': 8, 'ɚ': 9, 'ˌ': 10, 'dˌ': 11, 'mˌ': 12, 'd': 13, 'ɹ': 14, 'tˈ': 15, 'pˌ': 16, 'uː': 17, 'l': 18, 'æ': 19, 'ɛ': 20, 'ɪ': 21, 'j': 22, 'ʊ': 23, 't': 24, 'n': 25, 'v': 26, 'a': 27, 'o': 28, 'ŋ': 29, 'w': 30, 'ʌ': 31, 'hˈ': 32, 'ɡˈ': 33, 'ə': 34, 'θˈ': 35, 'dˈ': 36, 'wˌ': 37, 'h': 38, 'z': 39, 'k': 40, 'ð': 41, 'ɡˌ': 42, 'ˈ': 43, 'fˈ': 44, 'i': 45, 's': 46, 'ʃ': 47, 'wˈ': 48, 'ðˈ': 49, 'ɹˈ': 50, 'lˈ': 51, 'ɡ': 52, 'oː': 53, 'mˈ': 54, 'e': 55, 'ɑː': 56, 'nˈ': 57, 'm': 58, 'θˌ': 59, 'sˈ': 60, 'f': 61, 'ɔː': 62, 'hˌ': 63, 'b': 64, 'jˈ': 65, 'ɐ': 66, 'ʒˈ': 67, 'θ': 68, 'bˈ': 69, 'ɾ': 70, 'ɜː': 71, 'ʌˈ': 72, 'ʃˌ': 73, 'bˌ': 74, 'kˈ': 75, 'ɔ': 76, 'zˈ': 77, 'ᵻ': 78, 'kˌ': 79, 'vˈ': 80, 'fˌ': 81, 'ʒ': 82, 'ʃˈ': 83, 'ɹˌ': 84, 'tˌ': 85, 'pˈ': 86, 'ðˌ': 87, 'sˌ': 88, 'nˌ': 89, 'lˌ': 90, '̩': 91, 'ʔ': 92, 'vˌ': 93, 'ɪˈ': 94, '"': 95, 'ɪˌ': 96, 'ʒˌ': 97, 'uːˌ': 98, 'ʊˈ': 99, 'jˌ': 100, 'uːˈ': 101, 'iːˈ': 102, 'zˌ': 103, '.ˈ': 104, '…': 105, 'ŋˌ': 106, 'ɐˌ': 107, '—ˈ': 108, 'iˌ': 109, 'iːˌ': 110, 'ɛː': 111, ')': 112, ')ˈ': 113, '(': 114, 'u': 115, '-': 116, 'ɖˈ': 117, 'iˈ': 118, 'ʰˈ': 119, 'ɟˈ': 120, '̃': 121, 'eː': 122, 'ɾˈ': 123, 'r': 124, 'ʰ': 125, '-ˌ': 126, 'ɫ': 127, 'q': 128, '—': 129, 'ʊˌ': 130, 'aː': 131, 'cˈ': 132, '…ˈ': 133, 'c': 134, 'ɳ': 135, 'ɐˈ': 136, 'x': 137, 'ʔˌ': 138, '.ˌ': 139, 'ɑ': 140, '?ˈ': 141, '̩ˈ': 142, '"ˈ': 143, ',ˈ': 144, 'ŋˈ': 145, 'əˌ': 146, '!ˈ': 147, '"ˌ': 148, '?ˌ': 149, ',ˌ': 150, '—ˌ': 151, '̩ˌ': 152, 'əˈ': 153, '!ˌ': 154, 'ɬ': 155, 'ʲ': 156, '¡': 157, 'ɯ': 158, 'qˌ': 159, 'ʑ': 160, 'ʑˈ': 161, '¿': 162, 'ɑːˈ': 163, 'iːː': 164, 'ɛˈ': 165, '¡ˈ': 166, 'æˈ': 167, 'ç': 168, 'ɾˌ': 169, 'ᵻˈ': 170, 'xˈ': 171, 'ɔːˈ': 172, ';': 173, 'ɬˌ': 174, ':': 175, 'ʔˈ': 176, 'ɑːˌ': 177, 'ɬˈ': 178}
 	def tokenize(content, lang_marker="en"):
 		split = content.split(" ")
 		phones = [f"<s>"] + [ " " if not p else p for p in split ] + [f"</s>"]
 		return torch.tensor([*map(symmap.get, phones)])
 
-	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.models.prom_levels].to(device)
+	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.model.prom_levels].to(device)
 
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 
@@ -359,7 +368,7 @@ def example_usage():
 	
 	"""
 	try:
-		kwargs['config'] = cfg.models.ar_nar
+		kwargs['config'] = cfg.model
 	except Exception as e:
 		pass
 	"""
@@ -374,8 +383,8 @@ def example_usage():
 
 	# copy embeddings if requested
 	"""
-	if cfg.models._embeddings is not None:
-		embeddings_path = cfg.relpath / cfg.models._embeddings
+	if cfg.model._embeddings is not None:
+		embeddings_path = cfg.relpath / cfg.model._embeddings
 		
 		if embeddings_path.exists():
 			embeddings = torch.load(embeddings_path, map_location=torch.device(cfg.device))

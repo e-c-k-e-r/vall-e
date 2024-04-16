@@ -21,7 +21,7 @@ except Exception as e:
 	cfg.inference.use_vocos = False
 
 @cache
-def _load_encodec_model(device="cuda", levels=cfg.models.max_levels):
+def _load_encodec_model(device="cuda", levels=cfg.model.max_levels):
 	# Instantiate a pretrained EnCodec model
 	assert cfg.sample_rate == 24_000
 
@@ -44,7 +44,7 @@ def _load_encodec_model(device="cuda", levels=cfg.models.max_levels):
 	return model
 
 @cache
-def _load_vocos_model(device="cuda", levels=cfg.models.max_levels):
+def _load_vocos_model(device="cuda", levels=cfg.model.max_levels):
 	assert cfg.sample_rate == 24_000
 
 	model = Vocos.from_pretrained("charactr/vocos-encodec-24khz")
@@ -66,7 +66,7 @@ def _load_vocos_model(device="cuda", levels=cfg.models.max_levels):
 	return model
 
 @cache
-def _load_model(device="cuda", vocos=cfg.inference.use_vocos, levels=cfg.models.max_levels):
+def _load_model(device="cuda", vocos=cfg.inference.use_vocos, levels=cfg.model.max_levels):
 	if vocos:
 		model = _load_vocos_model(device, levels=levels)
 	else:
@@ -80,7 +80,7 @@ def unload_model():
 
 
 @torch.inference_mode()
-def decode(codes: Tensor, device="cuda", levels=cfg.models.max_levels):
+def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels):
 	"""
 	Args:
 		codes: (b q t)
@@ -117,7 +117,7 @@ def decode(codes: Tensor, device="cuda", levels=cfg.models.max_levels):
 	return wav, model.sample_rate
 
 # huh
-def decode_to_wave(resps: Tensor, device="cuda", levels=cfg.models.max_levels):
+def decode_to_wave(resps: Tensor, device="cuda", levels=cfg.model.max_levels):
 	return decode(resps, device=device, levels=levels)
 
 def decode_to_file(resps: Tensor, path: Path, device="cuda"):
@@ -131,7 +131,7 @@ def _replace_file_extension(path, suffix):
 
 
 @torch.inference_mode()
-def encode(wav: Tensor, sr: int = 24_000, device="cuda", levels=cfg.models.max_levels):
+def encode(wav: Tensor, sr: int = 24_000, device="cuda", levels=cfg.model.max_levels):
 	"""
 	Args:
 		wav: (t)
@@ -224,7 +224,7 @@ def repeat_extend_audio( qnt, target ):
 
 # merges two quantized audios together
 # I don't know if this works
-def merge_audio( *args, device="cpu", scale=[], levels=cfg.models.max_levels ):
+def merge_audio( *args, device="cpu", scale=[], levels=cfg.model.max_levels ):
 	qnts = [*args]
 	decoded = [ decode(qnt, device=device, levels=levels)[0] for qnt in qnts ]
 
