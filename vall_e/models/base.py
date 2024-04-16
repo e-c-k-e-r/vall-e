@@ -24,7 +24,8 @@ except Exception as e:
 	pass
 
 try:
-	from .retnet import RetNetDecoder, RetNetConfig
+	#from .retnet import RetNetDecoder, RetNetConfig
+	from .retnet_ts import RetNetDecoder, RetNetConfig
 except Exception as e:
 	print("Error importing `retnet` arch:", e)
 	pass
@@ -394,6 +395,7 @@ class Base(nn.Module):
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
+					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -412,6 +414,7 @@ class Base(nn.Module):
 					is_decoder=True,
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
+					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
 				))
 		elif self.arch_type == "llama":
 			if n_experts <= 1:
@@ -428,6 +431,7 @@ class Base(nn.Module):
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
+					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -446,6 +450,7 @@ class Base(nn.Module):
 					is_decoder=True,
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
+					attn_implementation=self.config.attention if self.config is not None else "flash_attention_2", # None
 				))
 
 		elif self.arch_type == "retnet":

@@ -203,7 +203,7 @@ with ui:
 				layout["inference"]["inputs"]["text"] = gr.Textbox(lines=5, value=get_random_prompt, label="Input Prompt")
 		with gr.Row():
 			with gr.Column(scale=1):
-				layout["inference"]["inputs"]["reference"] = gr.Audio(label="Audio Input", source="upload", type="filepath", info="Reference audio for TTS")
+				layout["inference"]["inputs"]["reference"] = gr.Audio(label="Audio Input", sources=["upload"], type="filepath") #, info="Reference audio for TTS")
 				# layout["inference"]["stop"] = gr.Button(value="Stop")
 				layout["inference"]["outputs"]["output"] = gr.Audio(label="Output")
 				layout["inference"]["buttons"]["inference"] = gr.Button(value="Inference")

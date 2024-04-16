@@ -179,6 +179,7 @@ class Model:
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
 	p_ar_level: float | str = "auto" # determines odds of selecting the AR (level 0) when training, "auto" for default behavior
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
+	attention: str = "eager" # or flash_attention_2
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
@@ -528,6 +529,7 @@ class Config(_Config):
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	model: Model = field(default_factory=lambda: Model)
+	models: dict | list | None = None # deprecated
 	hyperparameters: Hyperparameters = field(default_factory=lambda: Hyperparameters)
 	evaluation: Evaluation = field(default_factory=lambda: Evaluation)
 	trainer: Trainer = field(default_factory=lambda: Trainer)
@@ -576,7 +578,10 @@ class Config(_Config):
 
 	def format( self ):
 		self.dataset = Dataset(**self.dataset)
-		self.model = Model(**self.model)
+		if self.models is not None:
+			self.model = Model(**next(iter(self.models)))
+		else:
+			self.model = Model(**self.model)
 		self.hyperparameters = Hyperparameters(**self.hyperparameters)
 		self.evaluation = Evaluation(**self.evaluation)
 		self.trainer = Trainer(**self.trainer)

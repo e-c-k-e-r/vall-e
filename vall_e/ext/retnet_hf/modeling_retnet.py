@@ -9,7 +9,14 @@ import torch.utils.checkpoint
 from timm.models.layers import drop_path
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-from transformers import top_k_top_p_filtering
+try:
+    from transformers import top_k_top_p_filtering
+except Exception as e:
+    pass
+try:
+    from transformers.generation.utils import top_k_top_p_filtering
+except Exception as e:
+    pass
 from transformers.modeling_outputs import ModelOutput, SequenceClassifierOutputWithPast
 from transformers.modeling_utils import PreTrainedModel
 from transformers.utils import logging
