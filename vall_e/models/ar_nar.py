@@ -161,13 +161,17 @@ class AR_NAR(Base):
 					resps_list[i] = torch.cat([resps_list[i], torch.Tensor([[self.stop_token] * n_levels]).to(device=device, dtype=torch.int16) ])
 					targ_list[i] = torch.cat([targ_list[i], torch.Tensor([self.stop_token]).to(device=device, dtype=torch.int16) ])
 
-				return super().forward(
+				inputs = self.inputs(
 					text_list=text_list,
 					proms_list=proms_list,
 					resps_list=resps_list,
 					targ_list=targ_list,
 					lang_list=lang_list,
-					tone_list=tone_list,
+					tone_list=tone_list
+				)
+
+				return super().forward(
+					inputs=inputs,
 					quant_levels=quant_levels,
 				)
 			# is NAR
@@ -183,12 +187,16 @@ class AR_NAR(Base):
 
 				quant_levels = torch.full((len(text_list),), level)
 
-				logits = super().forward(
+				inputs = self.inputs(
 					text_list=text_list,
 					proms_list=proms_list,
 					resps_list=prev_list,
 					lang_list=lang_list,
 					tone_list=tone_list,
+				)
+
+				logits = super().forward(
+					inputs=inputs,
 					quant_levels=quant_levels,
 				)
 
@@ -235,23 +243,23 @@ class AR_NAR(Base):
 			else:
 				resps_list = self._unsqueeze_list(sequence_list)
 
+			inputs = self.inputs(
+				text_list=text_list,
+				proms_list=proms_list,
+				resps_list=resps_list,
+				lang_list=lang_list,
+				tone_list=tone_list,
+			)
+
 			if recurrent_state is not None:
 				logits, recurrent_state = super().forward(
-					text_list=text_list,
-					proms_list=proms_list,
-					resps_list=resps_list,
-					lang_list=lang_list,
-					tone_list=tone_list,
-					state=recurrent_state
+					inputs=inputs,
+					state=recurrent_state,
 				)
 			else:
 				logits = super().forward(
-					text_list=text_list,
-					proms_list=proms_list,
-					resps_list=resps_list,
-					lang_list=lang_list,
-					tone_list=tone_list,
-					state=recurrent_state
+					inputs=inputs,
+					state=recurrent_state,
 				)
 
 			r = super().sample(

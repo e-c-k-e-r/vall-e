@@ -9,8 +9,7 @@ import time
 
 import torch
 
-from dataclasses import asdict, dataclass
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 from functools import cached_property
 from pathlib import Path
