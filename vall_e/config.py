@@ -484,7 +484,12 @@ class Inference:
 	amp: bool = False
 
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
+	audio_backend: str = "vocos"
+
+	# legacy / backwards compat
 	use_vocos: bool = True
+	use_encodec: bool = True
+	use_dac: bool = True
 
 	recurrent_chunk_size: int = 0
 	recurrent_forward: bool = False
@@ -576,22 +581,30 @@ class Config(_Config):
 			self.dataset.use_hdf5 = False
 
 	def format( self ):
+	#if not isinstance(self.dataset, type):
 		self.dataset = Dataset(**self.dataset)
+		self.dataset.training = [ Path(dir) for dir in self.dataset.training ]
+		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
+		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
+
+	#if not isinstance(self.model, type):
 		if self.models is not None:
 			self.model = Model(**next(iter(self.models)))
 		else:
 			self.model = Model(**self.model)
-		self.hyperparameters = Hyperparameters(**self.hyperparameters)
-		self.evaluation = Evaluation(**self.evaluation)
-		self.trainer = Trainer(**self.trainer)
-		self.inference = Inference(**self.inference)
-		self.bitsandbytes = BitsAndBytes(**self.bitsandbytes)
 
-		self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
-	
-		self.dataset.training = [ Path(dir) for dir in self.dataset.training ]
-		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
-		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
+	#if not isinstance(self.hyperparameters, type):
+		self.hyperparameters = Hyperparameters(**self.hyperparameters)
+	#if not isinstance(self.evaluation, type):
+		self.evaluation = Evaluation(**self.evaluation)
+	#if not isinstance(self.trainer, type):
+		self.trainer = Trainer(**self.trainer)
+		if not isinstance(self.trainer.deepspeed, type):
+			self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
+	#if not isinstance(self.inference, type):
+		self.inference = Inference(**self.inference)
+	#if not isinstance(self.bitsandbytes, type):
+		self.bitsandbytes = BitsAndBytes(**self.bitsandbytes)
 
 
 cfg = Config.from_cli()

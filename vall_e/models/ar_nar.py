@@ -336,7 +336,9 @@ def example_usage():
 		phones = [f"<s>"] + [ " " if not p else p for p in split ] + [f"</s>"]
 		return torch.tensor([*map(symmap.get, phones)])
 
-	qnt = torch.load("data/qnt.pt")[0].t()[:, :cfg.model.prom_levels].to(device)
+	qnt = torch.load(f'data/qnt{".dac" if cfg.inference.audio_backend == "dac" else ""}.pt')[0].t()[:, :cfg.model.prom_levels].to(device)
+
+	print(qnt.shape)
 
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 
@@ -426,11 +428,15 @@ def example_usage():
 
 	@torch.inference_mode()
 	def sample( name, steps=600 ):
+		if cfg.inference.audio_backend == "dac" and name == "init":
+			return
+
 		engine.eval()
 		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
 		
-		for i, o in enumerate(resps_list):
-			_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)
+		if cfg.inference.audio_backend != "dac":
+			for i, o in enumerate(resps_list):
+				_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)
 
 		resps_list = [r.unsqueeze(-1) for r in resps_list]
 		resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
