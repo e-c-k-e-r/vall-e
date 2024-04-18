@@ -836,27 +836,32 @@ def create_dataset_hdf5( skip_existing=True ):
 					if "audio" in group:
 						del group["audio"]
 					group.create_dataset('audio', data=qnt.numpy(), compression='lzf')
-					group.attrs['duration'] = qnt.shape[0] / 75
-					metadata[id]["duration"] = qnt.shape[0] / 75
+					group.attrs['duration'] = qnt.shape[0] # / 75
+					metadata[id]["duration"] = qnt.shape[0] # / 75
 				else:
 					group.attrs['duration'] = 0
 					metadata[id]["duration"] = 0
 				
 				# text
 				if texts:
-						content = open(f'{root}/{name}/{id}.phn.txt', "r", encoding="utf-8") .read().split(" ")
-						phones = [f"<s>"] + [ " " if not p else p for p in content ] + [f"</s>"]
-						for s in set(phones):
-							if s not in symmap:
-								symmap[s] = len(symmap.keys())
+					"""
+					content = open(f'{root}/{name}/{id}.phn.txt', "r", encoding="utf-8") .read().split(" ")
+					phones = [f"<s>"] + [ " " if not p else p for p in content ] + [f"</s>"]
+					for s in set(phones):
+						if s not in symmap:
+							symmap[s] = len(symmap.keys())
 
-						phn = [ symmap[s] for s in phones ]
+					phn = [ symmap[s] for s in phones ]
 
-						if "text" in group:
-							del group["text"]
-						group.create_dataset('text', data=phn, compression='lzf', chunks=True)
-						group.attrs['phonemes'] = len(phn)
-						metadata[id]["phones"] = len(phn)
+					if "text" in group:
+						del group["text"]
+
+					group.create_dataset('text', data=phn, compression='lzf', chunks=True)
+					group.create_dataset('transcription', data=txt, compression='lzf', chunks=True)
+					"""
+
+					group.attrs['phonemes'] = len(phn)
+					metadata[id]["phones"] = len(phn)
 				else:
 					group.attrs['phonemes'] = 0
 					metadata[id]["phones"] = 0

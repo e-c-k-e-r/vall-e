@@ -384,7 +384,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 500
+	steps = 750
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
 	#optimizer = ml.Adagrad(model.parameters(), lr=1.0e-2)
 	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
@@ -427,7 +427,7 @@ def example_usage():
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.inference_mode()
-	def sample( name, steps=600 ):
+	def sample( name, steps=1000 ):
 		if cfg.inference.audio_backend == "dac" and name == "init":
 			return
 

@@ -484,7 +484,7 @@ class Inference:
 	amp: bool = False
 
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
-	audio_backend: str = "vocos"
+	audio_backend: str = "dac"
 
 	# legacy / backwards compat
 	use_vocos: bool = True

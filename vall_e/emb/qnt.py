@@ -262,10 +262,10 @@ def _replace_file_extension(path, suffix):
 
 
 @torch.inference_mode()
-def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.model.max_levels, return_metadata=False):
+def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.model.max_levels, return_metadata=True):
 	if cfg.inference.audio_backend == "dac":
 		model = _load_dac_model(device, levels=levels)
-		signal = AudioSignal(wav, sample_rate=model.sample_rate)
+		signal = AudioSignal(wav, sample_rate=sr)
 		artifact = model.compress(signal, 5.0, verbose=False, n_quantizers=levels if isinstance(levels, int) else None)
 		return artifact.codes if not return_metadata else artifact
 

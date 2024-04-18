@@ -49,6 +49,8 @@ def encode(text: str, language="en-us", backend="auto") -> list[str]:
 		tokens = phonemize( text, language=language, strip=True, preserve_punctuation=True, with_stress=True )
 	
 	tokens = list(tokens[0])
+	return tokens
+	"""
 	tokenized = " ".join( tokens )
 
 	merges = [ "\u02C8", "\u02CC", "\u02D0" ]
@@ -56,6 +58,7 @@ def encode(text: str, language="en-us", backend="auto") -> list[str]:
 		tokenized = tokenized.replace( f' {merge}', merge )
 
 	return tokenized.split(" ")
+	"""
 
 
 @torch.no_grad()
