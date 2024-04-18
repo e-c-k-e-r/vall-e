@@ -146,6 +146,8 @@ def _load_vocos_model(device="cuda", levels=cfg.model.max_levels):
 def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 	kwargs = dict(model_type="44khz",model_bitrate="8kbps",tag="latest")
 
+	# just use the 44K model, the 24K model has 32 codebooks...
+	"""
 	# yes there's a better way, something like f'{cfg.sample.rate//1000}hz'
 	if cfg.sample_rate == 44_000:
 		kwargs["model_type"] = "44kz"
@@ -155,6 +157,7 @@ def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 		kwargs["model_type"] = "16khz"
 	else:
 		raise Exception(f'unsupported sample rate: {cfg.sample_rate}')
+	"""
 
 	model = __load_dac_model(**kwargs)
 	model = model.to(device)
