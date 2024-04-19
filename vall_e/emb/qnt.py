@@ -7,7 +7,7 @@ import torchaudio
 
 from functools import cache
 from pathlib import Path
-
+from typing import Union
 
 from einops import rearrange
 from torch import Tensor
@@ -65,23 +65,22 @@ try:
 		recons = AudioSignal(recons, self.sample_rate)
 
 		# to-do, original implementation
-		"""
-		"""
-		resample_fn = recons.resample
-		loudness_fn = recons.loudness
-		
-		# If audio is > 10 minutes long, use the ffmpeg versions
-		if recons.signal_duration >= 10 * 60 * 60:
-			resample_fn = recons.ffmpeg_resample
-			loudness_fn = recons.ffmpeg_loudness
+		if not hasattr(obj, "dummy") or not obj.dummy:
+			resample_fn = recons.resample
+			loudness_fn = recons.loudness
+			
+			# If audio is > 10 minutes long, use the ffmpeg versions
+			if recons.signal_duration >= 10 * 60 * 60:
+				resample_fn = recons.ffmpeg_resample
+				loudness_fn = recons.ffmpeg_loudness
 
-		recons.normalize(obj.input_db)
-		resample_fn(obj.sample_rate)
-		recons = recons[..., : obj.original_length]
-		loudness_fn()
-		recons.audio_data = recons.audio_data.reshape(
-			-1, obj.channels, obj.original_length
-		)
+			recons.normalize(obj.input_db)
+			resample_fn(obj.sample_rate)
+			recons = recons[..., : obj.original_length]
+			loudness_fn()
+			recons.audio_data = recons.audio_data.reshape(
+				-1, obj.channels, obj.original_length
+			)
 		self.padding = original_padding
 		return recons
 
@@ -89,7 +88,7 @@ try:
 
 except Exception as e:
 	cfg.inference.use_dac = False
-
+	print(str(e))
 @cache
 def _load_encodec_model(device="cuda", levels=cfg.model.max_levels):
 	assert cfg.sample_rate == 24_000
@@ -164,7 +163,11 @@ def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 	model = model.eval()
 
 	# extra metadata
-	model.sample_rate = cfg.sample_rate
+
+	# since DAC moreso models against waveforms, we can actually use a smaller sample rate
+	# updating it here will affect the sample rate the waveform is resampled to on encoding
+	if cfg.variable_sample_rate:
+		model.sample_rate = cfg.sample_rate
 	model.backend = "dac"
 
 	return model
@@ -205,9 +208,10 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 
 	# DAC uses a different pathway
 	if model.backend == "dac":
+		dummy = False
 		if metadata is None:
 			metadata = dict(
-				chunk_length=416,
+				chunk_length=120,
 				original_length=0,
 				input_db=-12,
 				channels=1,
@@ -215,6 +219,7 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 				padding=False,
 				dac_version='1.0.0',
 			)
+			dummy = True
 		# generate object with copied metadata
 		artifact = DACFile(
 			codes = codes,
@@ -227,8 +232,10 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 			padding = metadata["padding"] if isinstance(metadata, dict) else metadata.padding,
 			dac_version = metadata["dac_version"] if isinstance(metadata, dict) else metadata.dac_version,
 		)
+		artifact.dummy = dummy
 
-		return model.decompress(artifact, verbose=False).audio_data[0], artifact.sample_rate
+		# to-do: inject the sample rate encoded at, because we can actually decouple		
+		return CodecMixin_decompress(model, artifact, verbose=False).audio_data[0], artifact.sample_rate
 
 
 	kwargs = {}

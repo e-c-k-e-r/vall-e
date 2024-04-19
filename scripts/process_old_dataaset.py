@@ -8,7 +8,7 @@ from pathlib import Path
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
-input_audio = "voices_4"
+input_audio = "voices"
 input_metadata = "metadata"
 output_dataset = "training"
 
@@ -34,7 +34,11 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 			print("Does not exist:", metadata_path)
 			continue
 
-		metadata = json.loads(open(metadata_path, "r", encoding="utf-8").read())
+		try:
+			metadata = json.loads(open(metadata_path, "r", encoding="utf-8").read())
+		except Exception as e:
+			print("Failed to load metadata:", metadata_path, e)
+			continue
 
 		txts = []
 		wavs = []
@@ -51,42 +55,73 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 			waveform, sample_rate = None, None
 			language = metadata[filename]["language"] if "language" in metadata[filename] else "english"
 
-			for segment in metadata[filename]["segments"]:
-				id = pad(segment['id'], 4)
+			if len(metadata[filename]["segments"]) == 0:
+				id = pad(0, 4)
 				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
+				text = metadata[filename]["text"]
+
+				if len(text) == 0:
+					continue
 
 				if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, ".dac").exists():
 					continue
 
-				if waveform is None:
-					waveform, sample_rate = torchaudio.load(inpath)
-
-				start = int(segment['start'] * sample_rate)
-				end = int(segment['end'] * sample_rate)
-
-				if start < 0:
-					start = 0
-				if end >= waveform.shape[-1]:
-					end = waveform.shape[-1] - 1
-
 				if not _replace_file_extension(outpath, ".json").exists():
 					txts.append((
 						outpath,
-						segment["text"],
+						text,
 						language,
 					))
 				
 				if not _replace_file_extension(outpath, ".dac").exists():
+					if waveform is None:
+						waveform, sample_rate = torchaudio.load(inpath)
+
 					wavs.append((
 						outpath,
-						waveform[:, start:end],
+						waveform,
 						sample_rate
 					))
+			else:
+				for segment in metadata[filename]["segments"]:
+					id = pad(segment['id'], 4)
+					outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
+
+					if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, ".dac").exists():
+						continue
+
+					if not _replace_file_extension(outpath, ".json").exists():
+						txts.append((
+							outpath,
+							segment["text"],
+							language,
+						))
+					
+					if not _replace_file_extension(outpath, ".dac").exists():
+						if waveform is None:
+							waveform, sample_rate = torchaudio.load(inpath)
+
+						start = int(segment['start'] * sample_rate)
+						end = int(segment['end'] * sample_rate)
+
+						if start < 0:
+							start = 0
+						if end >= waveform.shape[-1]:
+							end = waveform.shape[-1] - 1
+
+						if end - start < 0:
+							continue
+
+						wavs.append((
+							outpath,
+							waveform[:, start:end],
+							sample_rate
+						))
 		for job in tqdm(txts, desc=f"Phonemizing: {speaker_id}"):
 			outpath, text, language = job
 			phones = valle_phonemize(text)
 			data = {
-				"text": text,
+				"text": text.strip(),
 				"phonemes": phones,
 				"language": language,
 			}
@@ -98,5 +133,5 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 				qnt = valle_quantize(waveform, sr=sample_rate, device=device)
 				qnt.save(_replace_file_extension(outpath, ".dac"))
 			except Exception as e:
-				print(f"Failed to quantize: {speaker_id}")
+				print(f"Failed to quantize: {outpath}:", e)
 				continue

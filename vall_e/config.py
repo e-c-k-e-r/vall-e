@@ -542,9 +542,8 @@ class Config(_Config):
 	
 	fp8: FP8 = field(default_factory=lambda: FP8)
 
-	@property
-	def sample_rate(self):
-		return 24_000
+	sample_rate: int = 24_000
+	variable_sample_rate: bool = False
 
 	@property
 	def distributed(self):
