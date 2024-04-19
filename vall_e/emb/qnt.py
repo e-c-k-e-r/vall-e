@@ -66,22 +66,22 @@ try:
 
 		# to-do, original implementation
 		"""
-		resample_fn = recons.resample
-        loudness_fn = recons.loudness
-        
-        # If audio is > 10 minutes long, use the ffmpeg versions
-        if recons.signal_duration >= 10 * 60 * 60:
-            resample_fn = recons.ffmpeg_resample
-            loudness_fn = recons.ffmpeg_loudness
-
-        recons.normalize(obj.input_db)
-        resample_fn(obj.sample_rate)
-        recons = recons[..., : obj.original_length]
-        loudness_fn()
-        recons.audio_data = recons.audio_data.reshape(
-            -1, obj.channels, obj.original_length
-        )
 		"""
+		resample_fn = recons.resample
+		loudness_fn = recons.loudness
+		
+		# If audio is > 10 minutes long, use the ffmpeg versions
+		if recons.signal_duration >= 10 * 60 * 60:
+			resample_fn = recons.ffmpeg_resample
+			loudness_fn = recons.ffmpeg_loudness
+
+		recons.normalize(obj.input_db)
+		resample_fn(obj.sample_rate)
+		recons = recons[..., : obj.original_length]
+		loudness_fn()
+		recons.audio_data = recons.audio_data.reshape(
+			-1, obj.channels, obj.original_length
+		)
 		self.padding = original_padding
 		return recons
 
@@ -228,7 +228,7 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 			dac_version = metadata["dac_version"] if isinstance(metadata, dict) else metadata.dac_version,
 		)
 
-		return model.decompress(artifact, verbose=False).audio_data[0], model.sample_rate
+		return model.decompress(artifact, verbose=False).audio_data[0], artifact.sample_rate
 
 
 	kwargs = {}
