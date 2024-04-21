@@ -177,10 +177,8 @@ def _get_phones(path, language="en"):
 		content = metadata["phonemes"]
 	else:
 		content = open(_get_phone_path(path), "r", encoding="utf-8").read().split(" ")
-		content = _cleanup_phones( content )
 
 	return "".join(content)
-	#return ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
 
 def _interleaved_reorder(l, fn):
 	groups = defaultdict(list)
@@ -431,8 +429,6 @@ class Dataset(_Dataset):
 
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]
-
-			text = np.array( _cleanup_phones( text, targets=[ self.phone_symmap[" "] ] ) )
 			
 			text = torch.from_numpy(text).to(self.text_dtype)
 			resps = torch.from_numpy(resps).to(torch.int16)
@@ -455,12 +451,13 @@ class Dataset(_Dataset):
 						txt = cfg.hdf5[key]["text"][:]
 						qnt = cfg.hdf5[key]["audio"][:, :]
 
-						txt = np.array( _cleanup_phones( txt, targets=[ self.phone_symmap[" "] ] ) )
+						txt = np.array( txt )
 						
 						txt = torch.from_numpy(txt).to(self.text_dtype)
 						qnt = torch.from_numpy(qnt).to(torch.int16)
 					else:
-						txt = torch.tensor([*map(self.phone_symmap.get, _get_phones(sampled_path))]).to(self.text_dtype)
+						#txt = torch.tensor([*map(self.phone_symmap.get, _get_phones(sampled_path))]).to(self.text_dtype)
+						txt = torch.tensor(tokenize(_get_phones(sampled_path))).to(self.text_dtype)
 						qnt = _load_quants(sampled_path)
 
 					# <s>[original text] [new text]</s>
