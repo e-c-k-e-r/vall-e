@@ -24,17 +24,17 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset as _Dataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm.auto import tqdm
-
 # torch.multiprocessing.set_sharing_strategy("file_system")
 
 _logger = logging.getLogger(__name__)
 
 # to-do: clean up this symmap mess
 def get_phone_symmap():
-	if cfg.dataset.use_hdf5 and 'symmap' in cfg.hdf5:
-		return json.loads( cfg.hdf5['symmap'].asstr()[()] )
+	return cfg.tokenizer.get_vocab()
 
-	return {'<s>': 1, '</s>': 2, ' ': 3, '.': 4, ',': 5, '!': 6, '?': 7, 'p': 7, 'iː': 8, 'ɚ': 9, 'ˌ': 10, 'dˌ': 11, 'mˌ': 12, 'd': 13, 'ɹ': 14, 'tˈ': 15, 'pˌ': 16, 'uː': 17, 'l': 18, 'æ': 19, 'ɛ': 20, 'ɪ': 21, 'j': 22, 'ʊ': 23, 't': 24, 'n': 25, 'v': 26, 'a': 27, 'o': 28, 'ŋ': 29, 'w': 30, 'ʌ': 31, 'hˈ': 32, 'ɡˈ': 33, 'ə': 34, 'θˈ': 35, 'dˈ': 36, 'wˌ': 37, 'h': 38, 'z': 39, 'k': 40, 'ð': 41, 'ɡˌ': 42, 'ˈ': 43, 'fˈ': 44, 'i': 45, 's': 46, 'ʃ': 47, 'wˈ': 48, 'ðˈ': 49, 'ɹˈ': 50, 'lˈ': 51, 'ɡ': 52, 'oː': 53, 'mˈ': 54, 'e': 55, 'ɑː': 56, 'nˈ': 57, 'm': 58, 'θˌ': 59, 'sˈ': 60, 'f': 61, 'ɔː': 62, 'hˌ': 63, 'b': 64, 'jˈ': 65, 'ɐ': 66, 'ʒˈ': 67, 'θ': 68, 'bˈ': 69, 'ɾ': 70, 'ɜː': 71, 'ʌˈ': 72, 'ʃˌ': 73, 'bˌ': 74, 'kˈ': 75, 'ɔ': 76, 'zˈ': 77, 'ᵻ': 78, 'kˌ': 79, 'vˈ': 80, 'fˌ': 81, 'ʒ': 82, 'ʃˈ': 83, 'ɹˌ': 84, 'tˌ': 85, 'pˈ': 86, 'ðˌ': 87, 'sˌ': 88, 'nˌ': 89, 'lˌ': 90, '̩': 91, 'ʔ': 92, 'vˌ': 93, 'ɪˈ': 94, '"': 95, 'ɪˌ': 96, 'ʒˌ': 97, 'uːˌ': 98, 'ʊˈ': 99, 'jˌ': 100, 'uːˈ': 101, 'iːˈ': 102, 'zˌ': 103, '.ˈ': 104, '…': 105, 'ŋˌ': 106, 'ɐˌ': 107, '—ˈ': 108, 'iˌ': 109, 'iːˌ': 110, 'ɛː': 111, ')': 112, ')ˈ': 113, '(': 114, 'u': 115, '-': 116, 'ɖˈ': 117, 'iˈ': 118, 'ʰˈ': 119, 'ɟˈ': 120, '̃': 121, 'eː': 122, 'ɾˈ': 123, 'r': 124, 'ʰ': 125, '-ˌ': 126, 'ɫ': 127, 'q': 128, '—': 129, 'ʊˌ': 130, 'aː': 131, 'cˈ': 132, '…ˈ': 133, 'c': 134, 'ɳ': 135, 'ɐˈ': 136, 'x': 137, 'ʔˌ': 138, '.ˌ': 139, 'ɑ': 140, '?ˈ': 141, '̩ˈ': 142, '"ˈ': 143, ',ˈ': 144, 'ŋˈ': 145, 'əˌ': 146, '!ˈ': 147, '"ˌ': 148, '?ˌ': 149, ',ˌ': 150, '—ˌ': 151, '̩ˌ': 152, 'əˈ': 153, '!ˌ': 154, 'ɬ': 155, 'ʲ': 156, '¡': 157, 'ɯ': 158, 'qˌ': 159, 'ʑ': 160, 'ʑˈ': 161, '¿': 162, 'ɑːˈ': 163, 'iːː': 164, 'ɛˈ': 165, '¡ˈ': 166, 'æˈ': 167, 'ç': 168, 'ɾˌ': 169, 'ᵻˈ': 170, 'xˈ': 171, 'ɔːˈ': 172, ';': 173, 'ɬˌ': 174, ':': 175, 'ʔˈ': 176, 'ɑːˌ': 177, 'ɬˈ': 178, '”': 179, '“': 180, '“ˈ': 181, '“ˌ': 182, ';ˈ': 183, ';ˌ': 184, ':ˈ': 185, '1': 186, 'rˈ': 187, 'qˈ': 188, 'ᵻˌ': 189, 'ä': 190, '̞ˌ': 191, '̞': 192, 'ũˌ': 193, 'ʑˌ': 194, 'ᵝ': 195, 'ɽ': 196, 'ʲˌ': 197, 'ᵝˌ': 198, 'ũ': 199, 'ũˈ': 200, 'äˌ': 201, 'ɕ': 202, 'ɕˌ': 203, 'ɽˌ': 204, 'çˌ': 205, '…ˌ': 206, '̞ˈ': 207, 'äˈ': 208, 'ɽˈ': 209, 'ɸˌ': 210, 'ɴ': 211, 'ɸˈ': 212, 'ɕˈ': 213, 'ɸ': 214, 'ᵝˈ': 215, 'ʲˈ': 216, 'ĩ': 217, 'çˈ': 218, 'ĩˌ': 219, 'oˌ': 220, 'eˈ': 221, 'ʍ': 222, 'eˌ': 223, 'uˌ': 224, 'ʍˌ': 225, 'uˈ': 226, 'oˈ': 227, 'aˈ': 228}
+def tokenize( phones ):
+	return tokenizer.encode( "".join(phones) )
+	#return [*map(get_phone_symmap.get, _get_phones(path))]
 
 def get_lang_symmap():
 	return {
@@ -178,7 +178,9 @@ def _get_phones(path, language="en"):
 	else:
 		content = open(_get_phone_path(path), "r", encoding="utf-8").read().split(" ")
 		content = _cleanup_phones( content )
-	return ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
+
+	return "".join(content)
+	#return ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
 
 def _interleaved_reorder(l, fn):
 	groups = defaultdict(list)
@@ -435,7 +437,7 @@ class Dataset(_Dataset):
 			text = torch.from_numpy(text).to(self.text_dtype)
 			resps = torch.from_numpy(resps).to(torch.int16)
 		else:
-			text = torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype)
+			text = torch.tensor(tokenize( _get_phones( path ) )).to(self.text_dtype)
 			resps = _load_quants(path)
 
 		lang = torch.tensor([ self.lang_symmap[ self.get_language(spkr_group) ]]).to(torch.uint8)
@@ -847,18 +849,21 @@ def create_dataset_hdf5( skip_existing=True ):
 				# audio
 				if audios:
 					qnt = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
-					codes = torch.from_numpy(qnt["codes"].astype(int))[0].t()
+					codes = torch.from_numpy(qnt["codes"].astype(int))[0].t().to(dtype=torch.int16)
 
 					if _get_quant_extension() == ".dac":
 						if "audio" in group:
 							del group["audio"]
 						duration = qnt["metadata"]["original_length"] / qnt["metadata"]["sample_rate"]
-						metadata[id]["metadata"] = qnt["metadata"]
+						metadata[id]["metadata"] = {
+							"original_length": qnt["metadata"]["original_length"],
+							"sample_rate": qnt["metadata"]["sample_rate"],
+						}
 					else:
 						qnt = torch.load(f'{root}/{name}/{id}{_get_quant_extension()}')[0].t()
 						duration = qnt.shape[0] / 75
 					
-					group.create_dataset('audio', data=qnt.numpy(), compression='lzf')
+					group.create_dataset('audio', data=qnt.numpy().astype(np.int16), compression='lzf')
 
 					group.attrs['duration'] = duration
 					metadata[id]["duration"] = duration
@@ -869,17 +874,22 @@ def create_dataset_hdf5( skip_existing=True ):
 				# text
 				if texts:
 					if _get_quant_extension() == ".json":
-						j_son = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
-						content = j_son["phonemes"]
+						json_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
+						content = json_metadata["phonemes"]
 					else:
 						content = open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read().split(" ")
 
+					"""
 					phones = [f"<s>"] + [ " " if not p else p for p in content ] + [f"</s>"]
 					for s in set(phones):
 						if s not in symmap:
 							symmap[s] = len(symmap.keys())
 
 					phn = [ symmap[s] for s in phones ]
+					"""
+
+					phn = cfg.tokenizer.encode("".join(content))
+					phn = np.array(phn).astype(np.uint8) 
 
 					if "text" in group:
 						del group["text"]

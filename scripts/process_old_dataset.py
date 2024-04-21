@@ -8,9 +8,14 @@ from pathlib import Path
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
-input_audio = "voices"
+input_audio = "voice"
 input_metadata = "metadata"
-output_dataset = "training"
+output_dataset = "training-24K"
+
+missing = {
+	"transcription": [],
+	"audio": []
+}
 
 device = "cuda"
 
@@ -31,13 +36,15 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 		
 		metadata_path = Path(f'./{input_metadata}/{dataset_name}/{speaker_id}/whisper.json')
 		if not metadata_path.exists():
-			print("Does not exist:", metadata_path)
+			#print("Does not exist:", metadata_path)
+			missing["transcription"].append(str(metadata_path))
 			continue
 
 		try:
 			metadata = json.loads(open(metadata_path, "r", encoding="utf-8").read())
 		except Exception as e:
-			print("Failed to load metadata:", metadata_path, e)
+			#print("Failed to load metadata:", metadata_path, e)
+			missing["transcription"].append(str(metadata_path))
 			continue
 
 		txts = []
@@ -46,7 +53,8 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 		for filename in metadata.keys():
 			inpath = Path(f'./{input_audio}/{dataset_name}/{speaker_id}/{filename}')
 			if not inpath.exists():
-				print("Does not exist:", inpath)
+				#print("Does not exist:", inpath)
+				missing["audio"].append(str(inpath))
 				continue
 			
 			extension = os.path.splitext(filename)[-1][1:]
@@ -117,21 +125,26 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 							waveform[:, start:end],
 							sample_rate
 						))
-		for job in tqdm(txts, desc=f"Phonemizing: {speaker_id}"):
-			outpath, text, language = job
-			phones = valle_phonemize(text)
-			data = {
-				"text": text.strip(),
-				"phonemes": phones,
-				"language": language,
-			}
-			open(_replace_file_extension(outpath, ".json"), 'w', encoding='utf-8').write(json.dumps(data))
 
-		for job in tqdm(wavs, desc=f"Quantizing: {speaker_id}"):
-			try:
-				outpath, waveform, sample_rate = job
-				qnt = valle_quantize(waveform, sr=sample_rate, device=device)
-				qnt.save(_replace_file_extension(outpath, ".dac"))
-			except Exception as e:
-				print(f"Failed to quantize: {outpath}:", e)
-				continue
+		if len(txts) > 0:
+			for job in tqdm(txts, desc=f"Phonemizing: {speaker_id}"):
+				outpath, text, language = job
+				phones = valle_phonemize(text)
+				data = {
+					"text": text.strip(),
+					"phonemes": phones,
+					"language": language,
+				}
+				open(_replace_file_extension(outpath, ".json"), 'w', encoding='utf-8').write(json.dumps(data))
+
+		if len(wavs) > 0:
+			for job in tqdm(wavs, desc=f"Quantizing: {speaker_id}"):
+				try:
+					outpath, waveform, sample_rate = job
+					qnt = valle_quantize(waveform, sr=sample_rate, device=device)
+					qnt.save(_replace_file_extension(outpath, ".dac"))
+				except Exception as e:
+					print(f"Failed to quantize: {outpath}:", e)
+					continue
+
+open("./missing.json", 'w', encoding='utf-8').write(json.dumps(missing))

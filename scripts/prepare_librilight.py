@@ -1,8 +1,8 @@
 import os
 import json
 
-input_dataset = "small+medium"
-output_dataset = "LibriLight-6K"
+input_dataset = "duplicate"
+output_dataset = "LibriLight-4K"
 
 for speaker_id in os.listdir(f'./{input_dataset}/'):
 	if not os.path.isdir(f'./{input_dataset}/{speaker_id}/'):

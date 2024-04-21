@@ -18,6 +18,9 @@ from omegaconf import OmegaConf
 
 from .utils.distributed import world_size
 
+# Yuck
+from transformers import PreTrainedTokenizerFast
+
 @dataclass()
 class _Config:
 	cfg_path: str | None = None
@@ -540,10 +543,12 @@ class Config(_Config):
 	inference: Inference = field(default_factory=lambda: Inference)
 	bitsandbytes: BitsAndBytes = field(default_factory=lambda: BitsAndBytes)
 	
+	tokenizer: str = "./tokenizer.json"
+	
 	fp8: FP8 = field(default_factory=lambda: FP8)
 
 	sample_rate: int = 24_000
-	variable_sample_rate: bool = False
+	variable_sample_rate: bool = True
 
 	@property
 	def distributed(self):
@@ -611,16 +616,19 @@ cfg = Config.from_cli()
 # OmegaConf might not coerce the dicts into the @dataclass decorated classes, so we (try to) coerce them ourselves
 try:
 	cfg.format()
-
-	# cached_property stopped working...
 	if cfg.dataset.use_hdf5:
 		cfg.load_hdf5()
-
-
 except Exception as e:
-	print(e)
+	print("Error while parsing config YAML:", e)
 	pass
 
+try:
+	from transformers import PreTrainedTokenizerFast
+	cfg.tokenizer = (cfg.relpath if cfg.cfg_path is not None else Path("./data/")) / cfg.tokenizer
+	cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(cfg.tokenizer))
+except Exception as e:
+	print("Error while parsing tokenizer:", e)
+	pass
 
 if __name__ == "__main__":
 	print(cfg)

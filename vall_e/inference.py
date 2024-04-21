@@ -91,15 +91,8 @@ class TTS():
 			return text
 
 		content = g2p.encode(text, language=language)
-		content = _cleanup_phones( content )
-		# ick
-		try:
-			phones = ["<s>"] + [ " " if not p else p for p in content ] + ["</s>"]
-			return torch.tensor([*map(self.symmap.get, phones)])
-		except Exception as e:
-			pass
-		phones = [ " " if not p else p for p in content ]
-		return torch.tensor([ 1 ] + [*map(self.symmap.get, phones)] + [ 2 ])
+
+		return torch.tensor(cfg.tokenizer.encode( "".join( content ) ))
 
 	def encode_lang( self, language ):
 		symmap = get_lang_symmap()

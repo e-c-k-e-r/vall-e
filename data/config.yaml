@@ -1,51 +1,23 @@
-dataset:
-  training: []
-  validation: []
-  noise: []
-  
-  speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
-  
-  use_hdf5: True
-  use_metadata: True
-  hdf5_flag: r
-  validate: True
-
-  workers: 2
-  cache: True
-
-  phones_range: [4, 512]
-  duration_range: [1.0, 32.0]
-
-  random_utterance: 1.0
-  max_prompts: 3
-  prompt_duration: 6.0
-
-  sample_type: speaker
-
-  tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"]
-
 models:
-  _prom_levels: 8
-  _max_levels: 8
-
-  _models:
-  - name: "ar+nar"
-    size: "full"
-    resp_levels: 8
-    prom_levels: 8
-    tasks: 8
-    arch_type: "retnet"
-    training: True
-    version: 3
+- name: "ar+nar"
+  size: "full"
+  resp_levels: 8
+  prom_levels: 8
+  tasks: 8
+  langs: 2
+  tones: 1
+  arch_type: "retnet"
+  training: True
+  version: 3
 
 hyperparameters:
-  batch_size: 8
-  gradient_accumulation_steps: 32
-  gradient_clipping: 100
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  gradient_clipping: 10
   
-  optimizer: Prodigy
+  optimizer: Adagrad
   torch_optimizer: True
-  learning_rate: 0.0625
+  learning_rate: 1.0e-2
   
   scheduler_type: ""
   #scheduler_type: OneCycle
@@ -67,22 +39,24 @@ hyperparameters:
   #  decay_mom_rate: 0.0
 
 evaluation:
-  batch_size: 16
-  frequency: 250
-  size: 16
+  batch_size: 8
+  frequency: 10000
+  size: 8
   
-  steps: 450
+  steps: 500
   ar_temperature: 0.95
   nar_temperature: 0.25
   load_disabled_engines: True
 
 trainer:
+  no_logger: True
+
   iterations: 1_000_000
   
   save_tag: step
   save_on_oom: True
   save_on_quit: True
-  save_frequency: 100
+  save_frequency: 250
   export_on_save: True
 
   keep_last_checkpoints: 4
@@ -91,33 +65,82 @@ trainer:
   load_disabled_engines: False
 
   #load_state_dict: True
-  #strict_loading: False
+  strict_loading: False
   #load_tag: "9500"
   #load_states: False
   #restart_step_count: True
   
   gc_mode: None # "global_step"
 
-  weight_dtype: bfloat16
+  weight_dtype: float32
   amp: False
 
   backend: deepspeed
   deepspeed:
+    inferencing: True
     zero_optimization_level: 0
-    use_compression_training: True
+    use_compression_training: False
 
   activation_checkpointing: True
 
+  load_webui: True
+
 inference:
-  use_vocos: True
+  backend: deepspeed
+  audio_backend: "dac"
   normalize: False
 
-  weight_dtype: bfloat16
+  weight_dtype: float32
   amp: False
 
 bitsandbytes:
   enabled: False
-  injects: True
-  linear: True
-  embedding: True
+
+  injects: False
+  replace: False
+
+  linear: False
+  embedding: False
   
+  bitnet: False
+
+fp8:
+  enabled: False
+  backend: "te"
+  
+experimental: True
+
+dataset:
+  speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
+  speaker_group_getter: "lambda p: f'{p.parts[-3]}'"
+  speaker_languages:
+    ja: []
+
+  use_hdf5: True
+  use_metadata: True
+  hdf5_flag: r
+  validate: True
+
+  workers: 8
+  cache: True
+
+  #phones_range: [4, 512]
+  #duration_range: [1.0, 32.0]
+  
+  phones_range: [0, 512]
+  duration_range: [0.0, 64.0]
+
+  random_utterance: 1.0
+  max_prompts: 3
+  prompt_duration: 6.0
+  
+  max_resps: 1
+  p_resp_append: 0.25
+
+  sample_type: speaker
+
+  tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"]
+
+  training: []
+  validation: []
+  noise: []
