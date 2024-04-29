@@ -8,26 +8,27 @@ from pathlib import Path
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
-input_audio = "voice"
+# things that could be args
+input_audio = "voices"
 input_metadata = "metadata"
 output_dataset = "training-24K"
+device = "cuda"
 
+slice = "auto"
 missing = {
 	"transcription": [],
 	"audio": []
 }
 
-device = "cuda"
-
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
 
-for dataset_name in os.listdir(f'./{input_audio}/'):
+for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 	if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
 		print("Is not dir:", f'./{input_audio}/{dataset_name}/')
 		continue
 
-	for speaker_id in tqdm(os.listdir(f'./{input_audio}/{dataset_name}/'), desc="Processing speaker"):
+	for speaker_id in tqdm(sorted(os.listdir(f'./{input_audio}/{dataset_name}/')), desc=f"Processing speaker in {dataset_name}"):
 		if not os.path.isdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
 			print("Is not dir:", f'./{input_audio}/{dataset_name}/{speaker_id}')
 			continue
@@ -36,24 +37,23 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 		
 		metadata_path = Path(f'./{input_metadata}/{dataset_name}/{speaker_id}/whisper.json')
 		if not metadata_path.exists():
-			#print("Does not exist:", metadata_path)
 			missing["transcription"].append(str(metadata_path))
 			continue
 
 		try:
 			metadata = json.loads(open(metadata_path, "r", encoding="utf-8").read())
 		except Exception as e:
-			#print("Failed to load metadata:", metadata_path, e)
 			missing["transcription"].append(str(metadata_path))
 			continue
 
 		txts = []
 		wavs = []
 
-		for filename in metadata.keys():
+		use_slices = slice == True or (slice == "auto" and len(metadata.keys()) == 1) or dataset_name in ["LibriVox", "Audiobooks"]
+
+		for filename in sorted(metadata.keys()):
 			inpath = Path(f'./{input_audio}/{dataset_name}/{speaker_id}/{filename}')
 			if not inpath.exists():
-				#print("Does not exist:", inpath)
 				missing["audio"].append(str(inpath))
 				continue
 			
@@ -63,9 +63,8 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 			waveform, sample_rate = None, None
 			language = metadata[filename]["language"] if "language" in metadata[filename] else "english"
 
-			if len(metadata[filename]["segments"]) == 0:
-				id = pad(0, 4)
-				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
+			if len(metadata[filename]["segments"]) == 0 or not use_slices:
+				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}.{extension}')
 				text = metadata[filename]["text"]
 
 				if len(text) == 0:
@@ -91,8 +90,10 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 						sample_rate
 					))
 			else:
+				i = 0
 				for segment in metadata[filename]["segments"]:
-					id = pad(segment['id'], 4)
+					id = pad(i, 4)
+					i = i + 1
 					outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
 
 					if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, ".dac").exists():

@@ -85,46 +85,45 @@ def _calculate_durations( type="training" ):
 
 @cfg.diskcache()
 def _load_paths(dataset, type="training"):
-	return { cfg.get_spkr( data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
+	return { cfg.get_spkr( cfg.data_dir / data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
 
-def _load_paths_from_metadata(data_dir, type="training", validate=False):
+def _load_paths_from_metadata(dataset_name, type="training", validate=False):
+	data_dir = dataset_name if cfg.dataset.use_hdf5 else cfg.data_dir / dataset_name
+
 	_fn = _get_hdf5_paths if cfg.dataset.use_hdf5 else _get_paths_of_extensions
 
 	def _validate( entry ):
-		if "phones" not in entry or "duration" not in entry:
-			return False
-		phones = entry['phones']
-		duration = entry['duration']
+		phones = entry['phones'] if "phones" in entry else 0
+		duration = entry['duration'] if "duration" in entry else 0
 		if type not in _total_durations:
 			_total_durations[type] = 0
-		_total_durations[type] += entry['duration']
+		_total_durations[type] += duration
 
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
-	metadata_path = data_dir / "metadata.json"
+	metadata_path = cfg.metadata_dir / f'{dataset_name}.json'
 	metadata = {}
+
 	if cfg.dataset.use_metadata and metadata_path.exists():
 		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
 
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_quant_extension(), validate )
 
+
 	def key( dir, id ):
 		if not cfg.dataset.use_hdf5:
 			return data_dir / id
 
-		return f"/{type}{_get_hdf5_path(data_dir)}/{id}" 
+		return f"/{type}/{_get_hdf5_path(data_dir)}/{id}" 
 
 	return [ key(dir, id) for id in metadata.keys() if not validate or _validate(metadata[id]) ]
 
 
 def _get_hdf5_path(path):
-	path = str(path)
-	if path[:2] != "./":
-		path = f'./{path}'
-
-	res = path.replace(cfg.cfg_path, "")
-	return res
+	# to-do: better validation
+	#print(path)
+	return str(path)
 
 def _get_hdf5_paths( data_dir, type="training", validate=False ):
 	data_dir = str(data_dir)
@@ -137,7 +136,7 @@ def _get_hdf5_paths( data_dir, type="training", validate=False ):
 		_total_durations[type] += child.attrs['duration']
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
-	key = f"/{type}{_get_hdf5_path(data_dir)}"
+	key = f"/{type}/{_get_hdf5_path(data_dir)}"
 	return [ Path(f"{key}/{child.attrs['id']}") for child in cfg.hdf5[key].values() if not validate or _validate(child) ] if key in cfg.hdf5 else []
 
 def _get_paths_of_extensions( path, extensions=_get_quant_extension(), validate=False ):
@@ -426,6 +425,9 @@ class Dataset(_Dataset):
 
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)
+
+			if key not in cfg.hdf5:
+				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
 
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]
@@ -752,6 +754,10 @@ def create_train_val_dataloader():
 
 # parse dataset into better to sample metadata
 def create_dataset_metadata():
+	# need to fix
+	if True:
+		return
+
 	cfg.dataset.validate = False
 	cfg.dataset.use_hdf5 = False
 
@@ -805,14 +811,19 @@ def create_dataset_hdf5( skip_existing=True ):
 
 	symmap = get_phone_symmap()
 	
-	root = cfg.cfg_path
+	root = str(cfg.data_dir)
+	metadata_root = str(cfg.metadata_dir)
 	hf = cfg.hdf5
 
+	cfg.metadata_dir.mkdir(parents=True, exist_ok=True)
 
 	def add( dir, type="training", audios=True, texts=True ):
-		name = "./" + str(dir)
-		name = name .replace(root, "")
-		metadata = {}
+		name = str(dir)
+		name = name.replace(root, "")
+
+		metadata_path = Path(f"{metadata_root}/{name}.json")
+
+		metadata = {} if not metadata_path.exists() else json.loads(open(str(metadata_path), "r", encoding="utf-8").read())
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return
@@ -831,36 +842,38 @@ def create_dataset_hdf5( skip_existing=True ):
 					continue
 
 				key = f'{type}/{name}/{id}'
-				if key in hf:
-					if skip_existing:
-						continue
-					del hf[key]
 
-				group = hf.create_group(key)
+				if skip_existing and key in hf:
+					continue
+
+				group = hf.create_group(key) if key not in hf else hf[key]
+
 				group.attrs['id'] = id
 				group.attrs['type'] = type
 				group.attrs['speaker'] = name
 
-				metadata[id] = {}
+				if id not in metadata:
+					metadata[id] = {}
 
 				# audio
 				if audios:
-					qnt = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
-					codes = torch.from_numpy(qnt["codes"].astype(int))[0].t().to(dtype=torch.int16)
-
 					if _get_quant_extension() == ".dac":
-						if "audio" in group:
-							del group["audio"]
-						duration = qnt["metadata"]["original_length"] / qnt["metadata"]["sample_rate"]
+						dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
+						qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
+
+						duration = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
 						metadata[id]["metadata"] = {
-							"original_length": qnt["metadata"]["original_length"],
-							"sample_rate": qnt["metadata"]["sample_rate"],
+							"original_length": dac["metadata"]["original_length"],
+							"sample_rate": dac["metadata"]["sample_rate"],
 						}
 					else:
 						qnt = torch.load(f'{root}/{name}/{id}{_get_quant_extension()}')[0].t()
 						duration = qnt.shape[0] / 75
 					
-					group.create_dataset('audio', data=qnt.numpy().astype(np.int16), compression='lzf')
+					qnt = qnt.numpy().astype(np.int16)
+
+					if "audio" not in group:
+						group.create_dataset('audio', data=qnt, compression='lzf')
 
 					group.attrs['duration'] = duration
 					metadata[id]["duration"] = duration
@@ -870,52 +883,46 @@ def create_dataset_hdf5( skip_existing=True ):
 				
 				# text
 				if texts:
-					if _get_quant_extension() == ".json":
+					if _get_phone_extension() == ".json":
 						json_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
 						content = json_metadata["phonemes"]
+						txt = json_metadata["text"]
 					else:
 						content = open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read().split(" ")
-
-					"""
-					phones = [f"<s>"] + [ " " if not p else p for p in content ] + [f"</s>"]
-					for s in set(phones):
-						if s not in symmap:
-							symmap[s] = len(symmap.keys())
-
-					phn = [ symmap[s] for s in phones ]
-					"""
+						txt = ""
 
 					phn = cfg.tokenizer.encode("".join(content))
 					phn = np.array(phn).astype(np.uint8) 
 
-					if "text" in group:
-						del group["text"]
-
-					group.create_dataset('text', data=phn, compression='lzf', chunks=True)
-					group.create_dataset('transcription', data=txt, compression='lzf', chunks=True)
+					if "text" not in group:
+						group.create_dataset('text', data=phn, compression='lzf')
 
 					group.attrs['phonemes'] = len(phn)
+					group.attrs['transcription'] = txt
+
 					metadata[id]["phones"] = len(phn)
+					metadata[id]["transcription"] = txt
 				else:
 					group.attrs['phonemes'] = 0
 					metadata[id]["phones"] = 0
 			except Exception as e:
-				pass
+				raise e
+				#pass
 
-		with open(dir / "metadata.json", "w", encoding="utf-8") as f:
+		with open(str(metadata_path), "w", encoding="utf-8") as f:
 			f.write( json.dumps( metadata ) )
 
 
 	# training
-	for data_dir in tqdm(cfg.dataset.training, desc="Processing Training"):
+	for data_dir in tqdm(sorted(cfg.dataset.training), desc="Processing Training"):
 		add( data_dir, type="training" )
 
 	# validation
-	for data_dir in tqdm(cfg.dataset.validation, desc='Processing Validation'):
+	for data_dir in tqdm(sorted(cfg.dataset.validation), desc='Processing Validation'):
 		add( data_dir, type="validation" )
 
 	# noise
-	for data_dir in tqdm(cfg.dataset.noise, desc='Processing Noise'):
+	for data_dir in tqdm(sorted(cfg.dataset.noise), desc='Processing Noise'):
 		add( data_dir, type="noise", texts=False )
 
 	# write symmap

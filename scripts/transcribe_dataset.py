@@ -7,30 +7,35 @@ import whisperx
 from tqdm.auto import tqdm
 from pathlib import Path
 
-device = "cuda" 
+# should be args
 batch_size = 16
+device = "cuda" 
 dtype = "float16"
-model_size = "large-v2"
+model_name = "large-v3"
 
-input_audio = "voice"
+input_audio = "voices"
 output_dataset = "metadata"
+
 skip_existing = True
+diarize = False
 
-model = whisperx.load_model(model_size, device, compute_type=dtype)
-
+# 
+model = whisperx.load_model(model_name, device, compute_type=dtype)
 align_model, align_model_metadata, align_model_language = (None, None, None)
+if diarize:
+	diarize_model = whisperx.DiarizationPipeline(device=device)
+else:
+	diarize_model = None
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
 
 for dataset_name in os.listdir(f'./{input_audio}/'):
 	if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
-		print("Is not dir:", f'./{input_audio}/{dataset_name}/')
 		continue
 
 	for speaker_id in tqdm(os.listdir(f'./{input_audio}/{dataset_name}/'), desc="Processing speaker"):
 		if not os.path.isdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
-			print("Is not dir:", f'./{input_audio}/{dataset_name}/{speaker_id}')
 			continue
 
 		outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/whisper.json')
@@ -46,17 +51,28 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 			if skip_existing and filename in metadata:
 				continue
 
+			if ".json" in filename:
+				continue
+
 			inpath = f'./{input_audio}/{dataset_name}/{speaker_id}/{filename}'
+
+			if os.path.isdir(inpath):
+				continue
 			
 			metadata[filename] = {
 				"segments": [],
 				"language": "",
-				"text": [],
+				"text": "",
+				"start": 0,
+				"end": 0,
 			}
 
 			audio = whisperx.load_audio(inpath)
 			result = model.transcribe(audio, batch_size=batch_size)
 			language = result["language"]
+
+			if language[:2] not in ["ja"]:
+				language = "en"
 
 			if align_model_language != language:
 				tqdm.write(f'Loading language: {language}')
@@ -68,12 +84,20 @@ for dataset_name in os.listdir(f'./{input_audio}/'):
 			metadata[filename]["segments"] = result["segments"]
 			metadata[filename]["language"] = language
 
+			if diarize_model is not None:
+				diarize_segments = diarize_model(audio)
+				result = whisperx.assign_word_speakers(diarize_segments, result)
+
 			text = []
+			start = 0
+			end = 0
 			for segment in result["segments"]:
-				id = len(text)
 				text.append( segment["text"] )
-				metadata[filename]["segments"][id]["id"] = id
+				start = min( start, segment["start"] )
+				end = max( end, segment["end"] )
 
 			metadata[filename]["text"] = " ".join(text).strip()
+			metadata[filename]["start"] = start
+			metadata[filename]["end"] = end
 
 			open(outpath, 'w', encoding='utf-8').write(json.dumps(metadata))

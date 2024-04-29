@@ -34,6 +34,14 @@ class _Config:
 		return self.relpath / ".cache"
 
 	@property
+	def data_dir(self):
+		return self.relpath / "data"
+	
+	@property
+	def metadata_dir(self):
+		return self.relpath / "metadata"
+
+	@property
 	def ckpt_dir(self):
 		return self.relpath / "ckpt"
 

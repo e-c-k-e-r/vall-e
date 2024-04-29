@@ -340,7 +340,7 @@ def example_usage():
 	def _load_quants(path) -> Tensor:
 		if cfg.inference.audio_backend == "dac":
 			qnt = np.load(f'{path}.dac', allow_pickle=True)[()]
-			return torch.from_numpy(qnt["codes"].astype(int))[0][:, :].t().to(torch.int16)
+			return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.prom_levels, :].t().to(torch.int16)
 		return torch.load(f'{path}.pt')[0][:, :cfg.model.prom_levels].t().to(torch.int16)
 
 	qnt = _load_quants("./data/qnt")
@@ -350,7 +350,7 @@ def example_usage():
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
 	]
 	proms_list = [
-		qnt[:75*3, :].to(device),
+		qnt.to(device),
 	]
 	resps_list = [
 		qnt.to(device),
@@ -407,7 +407,7 @@ def example_usage():
 
 			frozen_params = set()
 			for k in list(embeddings.keys()):
-				if re.findall(r'_emb\.', k):
+				if re.findall(r'_emb.', k):
 					frozen_params.add(k)
 				else:
 					del embeddings[k]
