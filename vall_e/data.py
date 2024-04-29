@@ -753,7 +753,7 @@ def create_train_val_dataloader():
 	return train_dl, subtrain_dl, val_dl
 
 # parse dataset into better to sample metadata
-def create_dataset_metadata( skip_existing=False ):
+def create_dataset_metadata( skip_existing=True ):
 	symmap = get_phone_symmap()
 	
 	root = str(cfg.data_dir)
@@ -828,7 +828,8 @@ def create_dataset_metadata( skip_existing=False ):
 					metadata[id]["phones"] = len(phn)
 					metadata[id]["transcription"] = txt
 			except Exception as e:
-				raise e
+				#raise e
+				print(id, e)
 				#pass
 
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
@@ -885,8 +886,10 @@ def create_dataset_hdf5( skip_existing=True ):
 
 				key = f'{type}/{name}/{id}'
 
+				"""
 				if skip_existing and key in hf:
 					continue
+				"""
 
 				group = hf.create_group(key) if key not in hf else hf[key]
 
@@ -948,7 +951,8 @@ def create_dataset_hdf5( skip_existing=True ):
 					group.attrs['phonemes'] = 0
 					metadata[id]["phones"] = 0
 			except Exception as e:
-				raise e
+				#raise e
+				print(id, e)
 				#pass
 
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
