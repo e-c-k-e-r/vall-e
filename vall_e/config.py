@@ -190,6 +190,7 @@ class Model:
 	p_ar_level: float | str = "auto" # determines odds of selecting the AR (level 0) when training, "auto" for default behavior
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 	attention: str = "eager" # or flash_attention_2
+	audio_embedding_sums: bool = True
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
