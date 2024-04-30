@@ -365,13 +365,13 @@ class Base(nn.Module):
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
 				levels=self.n_prom_levels if self.version > 3 else None,
-				sums=self.config.audio_embedding_sums
+				sums=self.config.audio_embedding_sums if self.config is not None else True,
 			)
 			# [1025] + [1024] * 8
 			self.resps_emb = AudioEmbedding(
 				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
-				sums=self.config.audio_embedding_sums
+				sums=self.config.audio_embedding_sums if self.config is not None else True
 			)
 
 		

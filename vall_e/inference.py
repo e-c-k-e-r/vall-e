@@ -13,7 +13,7 @@ from .utils import to_device
 from .config import cfg
 from .models import get_models
 from .engines import load_engines, deepspeed_available
-from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones
+from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize
 
 if deepspeed_available:
 	import deepspeed
@@ -91,8 +91,9 @@ class TTS():
 			return text
 
 		content = g2p.encode(text, language=language)
+		tokens = tokenize( content )
 
-		return torch.tensor(cfg.tokenizer.encode( "".join( content ) ))
+		return torch.tensor( tokens )
 
 	def encode_lang( self, language ):
 		symmap = get_lang_symmap()

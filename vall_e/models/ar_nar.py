@@ -350,7 +350,7 @@ def example_usage():
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
 	]
 	proms_list = [
-		qnt.to(device),
+		qnt[:75, :].to(device),
 	]
 	resps_list = [
 		qnt.to(device),
@@ -369,6 +369,8 @@ def example_usage():
 		'n_experts': 1,
 
 		'l_padding': 8 if cfg.fp8.enabled else 0,
+
+		'config': cfg.model
 	}
 	"""
 	kwargs = {
@@ -388,7 +390,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 750
+	steps = 500
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
 	#optimizer = ml.Adagrad(model.parameters(), lr=1.0e-2)
 	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)

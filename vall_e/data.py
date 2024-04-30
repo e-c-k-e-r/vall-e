@@ -33,8 +33,7 @@ def get_phone_symmap():
 	return cfg.tokenizer.get_vocab()
 
 def tokenize( phones ):
-	return tokenizer.encode( "".join(phones) )
-	#return [*map(get_phone_symmap.get, _get_phones(path))]
+	return cfg.tokenizer.encode( "".join(phones) )
 
 def get_lang_symmap():
 	return {
