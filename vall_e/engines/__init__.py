@@ -44,7 +44,7 @@ def load_engines(training=True):
 		if inferencing:
 			model._cfg.training = False
 
-		if (cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace) or (cfg.fp8.enabled):
+		if (cfg.optimizations.bitsandbytes and cfg.optimizations.replace) or (cfg.optimizations.fp8):
 			model.model = ml.replace_linear( model.model )
 
 		if backend == "local" or (backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):

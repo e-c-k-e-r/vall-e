@@ -8,20 +8,20 @@ Embedding = torch.nn.Embedding
 Linear = torch.nn.Linear
 
 # https://github.com/kyegomez/BitNet
-if cfg.bitsandbytes.bitnet:
+if cfg.optimizations.bitnet:
 	from bitnet import BitLinear
 
-if cfg.bitsandbytes.enabled:
+if cfg.optimizations.bitsandbytes:
 	import bitsandbytes as bnb
 
-	if cfg.bitsandbytes.linear:
+	if cfg.optimizations.linear:
 
-		if cfg.bitsandbytes.bitnet:
+		if cfg.optimizations.bitnet:
 			Linear = BitLinear
 		else:
 			Linear = bnb.nn.Linear8bitLt
 
-	if cfg.bitsandbytes.embedding:
+	if cfg.optimizations.embedding:
 		Embedding = bnb.nn.modules.Embedding
 		"""
 		Embedding.forward = lambda self, input: ( self.norm(F.embedding(
@@ -36,7 +36,7 @@ if cfg.bitsandbytes.enabled:
 		"""
 
 
-if cfg.bitsandbytes.enabled:
+if cfg.optimizations.bitsandbytes:
 	import bitsandbytes as bnb
 
 	Adam = bnb.optim.Adam8bit
@@ -77,7 +77,7 @@ def autocast_forward( func ):
 	return wrapper
 Embedding.forward = autocast_forward(Embedding.forward)
 
-if cfg.fp8.enabled:
+if cfg.optimizations.fp8:
 	import transformer_engine.pytorch as te
 
 	Linear = te.Linear
@@ -90,7 +90,7 @@ else:
 	def autocast():
 		yield torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp)
 
-if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
+if cfg.optimizations.injects and cfg.optimizations.bitsandbytes:
 	torch.nn.Linear = Linear
 	torch.nn.Embedding = Embedding
 
@@ -98,15 +98,16 @@ if cfg.bitsandbytes.injects and cfg.bitsandbytes.enabled:
 	torch.optim.AdamW = AdamW
 	torch.optim.SGD = SGD
 
-
 # disgusting kludge, but it works (just realized BitNet has its own replacement routine)
 def replace_linear( model ):
-	bnb = cfg.bitsandbytes.enabled and cfg.bitsandbytes.linear and not cfg.bitsandbytes.bitnet
+	bnb = cfg.optimizations.bitsandbytes and cfg.optimizations.linear and not cfg.optimizations.bitnet
+	klass = Linear 
 
 	device =  next(model.parameters()).device
 	linears = [k.split('.') for k, m in model.named_modules() if isinstance(m, torch.nn.Linear)]
 	for *parent, k in linears:
 		name = '.'.join(parent)
+
 
 		# copy parameters
 		m = getattr( model.get_submodule(name), k )
@@ -120,7 +121,7 @@ def replace_linear( model ):
 		# overwrite
 		setattr(
 			model.get_submodule(name), k,
-			Linear( **kwargs ).to(device=device, dtype=cfg.trainer.dtype)
+			klass( **kwargs ).to(device=device, dtype=cfg.trainer.dtype)
 		)
 
 	return model

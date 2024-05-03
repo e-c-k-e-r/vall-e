@@ -368,7 +368,7 @@ def example_usage():
 		'n_layers': 12, # 32
 		'n_experts': 1,
 
-		'l_padding': 8 if cfg.fp8.enabled else 0,
+		'l_padding': 8 if cfg.optimizations.fp8 else 0,
 
 		'config': cfg.model
 	}
@@ -397,33 +397,7 @@ def example_usage():
 
 	engine = Engine(model=model, optimizer=optimizer)
 
-	# copy embeddings if requested
-	"""
-	if cfg.model._embeddings is not None:
-		embeddings_path = cfg.relpath / cfg.model._embeddings
-		
-		if embeddings_path.exists():
-			embeddings = torch.load(embeddings_path, map_location=torch.device(cfg.device))
-			if "module" in embeddings:
-				embeddings = embeddings["module"]
-
-			frozen_params = set()
-			for k in list(embeddings.keys()):
-				if re.findall(r'_emb.', k):
-					frozen_params.add(k)
-				else:
-					del embeddings[k]
-
-			engine.module.load_state_dict(embeddings, strict=False)
-
-			for name, param in engine.module.named_parameters():
-				if name not in frozen_params:
-					continue
-				param.requires_grad_(False)
-				engine._frozen_params.add(param)
-	"""
-
-	if (cfg.bitsandbytes.enabled and cfg.bitsandbytes.replace) or (cfg.fp8.enabled):
+	if (cfg.optimizations.bitsandbytes and cfg.optimizations.replace) or (cfg.optimizations.fp8):
 		model.model = ml.replace_linear( model.model )
 
 	torch.save( {

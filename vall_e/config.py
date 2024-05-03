@@ -202,7 +202,7 @@ class Model:
 	@property
 	# required for fp8 as the lengths needs to be divisible by 8
 	def input_alignment(self):
-		return 8 if cfg.fp8.enabled else 0
+		return 8 if cfg.optimizations.fp8 else 0
 
 	@property
 	def full_name(self):
@@ -220,7 +220,7 @@ class Model:
 			else:
 				name.append(self.arch_type.replace("/", "-"))
 
-		if cfg.bitsandbytes.bitnet:
+		if cfg.optimizations.bitnet:
 			name.append("bitnet")
 
 		if self.interleave:
@@ -521,9 +521,10 @@ class Inference:
 			return torch.float8_e4m3fn
 		return torch.float32
 
+# should be renamed to optimizations
 @dataclass()
-class BitsAndBytes:
-	enabled: bool = False
+class Optimizations:
+	bitsandbytes: bool = False
 	injects: bool = False
 	replace: bool = False
 
@@ -531,11 +532,7 @@ class BitsAndBytes:
 	embedding: bool = True
 	
 	bitnet: bool = False
-
-@dataclass()
-class FP8:
-	enabled: bool = False
-	backend: str = "te"
+	fp8: bool = False
 
 @dataclass()
 class Config(_Config):
@@ -550,11 +547,10 @@ class Config(_Config):
 	evaluation: Evaluation = field(default_factory=lambda: Evaluation)
 	trainer: Trainer = field(default_factory=lambda: Trainer)
 	inference: Inference = field(default_factory=lambda: Inference)
-	bitsandbytes: BitsAndBytes = field(default_factory=lambda: BitsAndBytes)
+	bitsandbytes: dict | list | None = None # deprecated
+	optimizations: Optimizations = field(default_factory=lambda: Optimizations)
 	
 	tokenizer: str = "./tokenizer.json"
-	
-	fp8: FP8 = field(default_factory=lambda: FP8)
 
 	sample_rate: int = 24_000
 	variable_sample_rate: bool = True
@@ -594,30 +590,31 @@ class Config(_Config):
 			self.dataset.use_hdf5 = False
 
 	def format( self ):
-	#if not isinstance(self.dataset, type):
 		self.dataset = Dataset(**self.dataset)
 		self.dataset.training = [ Path(dir) for dir in self.dataset.training ]
 		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
 		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
 
-	#if not isinstance(self.model, type):
 		if self.models is not None:
 			self.model = Model(**next(iter(self.models)))
 		else:
 			self.model = Model(**self.model)
 
-	#if not isinstance(self.hyperparameters, type):
 		self.hyperparameters = Hyperparameters(**self.hyperparameters)
-	#if not isinstance(self.evaluation, type):
+
 		self.evaluation = Evaluation(**self.evaluation)
-	#if not isinstance(self.trainer, type):
+
 		self.trainer = Trainer(**self.trainer)
+
 		if not isinstance(self.trainer.deepspeed, type):
 			self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
-	#if not isinstance(self.inference, type):
+
 		self.inference = Inference(**self.inference)
-	#if not isinstance(self.bitsandbytes, type):
-		self.bitsandbytes = BitsAndBytes(**self.bitsandbytes)
+
+		if self.bitsandbytes is not None:
+			self.optimizations = Optimizations(**self.bitsandbytes)
+		else:
+			self.optimizations = Optimizations(**self.optimizations)
 
 # Preserves the old behavior
 class NaiveTokenizer:
