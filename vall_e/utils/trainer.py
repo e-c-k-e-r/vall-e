@@ -173,7 +173,10 @@ def train(
 
 
 		elapsed_time = stats.get("elapsed_time", 0)
-		metrics = json.dumps(stats)
+		try:
+			metrics = json.dumps(stats)
+		except Exception as e:
+			metrics = str(stats)
 
 		if cfg.trainer.no_logger:
 			tqdm.write(f"Training Metrics: {truncate_json(metrics)}.")

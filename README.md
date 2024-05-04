@@ -64,6 +64,7 @@ If you're interested in creating an HDF5 copy of your dataset, simply invoke: `p
 
 5. Train the model using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
 * If distributing your training (for example, multi-GPU), use `deepspeed --module vall_e.train yaml="./data/config.yaml"`
+  + if you're not using the `deepspeed` backend, set `trainer.ddp = True` in the config YAML, then launch with `torchrun --nnodes=1 --nproc-per-node=4 -m vall_e.train yaml="./data/config.yaml"`
 
 You may quit your training any time by just entering `quit` in your CLI. The latest checkpoint will be automatically saved.
 
