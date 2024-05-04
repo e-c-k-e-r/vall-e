@@ -1,6 +1,6 @@
 from ..config import cfg
 
-from ..utils.distributed import fix_unset_envs
+from ..utils.distributed import fix_unset_envs, ddp_model
 fix_unset_envs()
 
 if cfg.trainer.backend == "deepspeed":
@@ -38,6 +38,7 @@ def load_engines(training=True):
 		dtype = cfg.inference.dtype if inferencing else cfg.trainer.dtype
 		amp = cfg.inference.amp if inferencing else cfg.trainer.amp
 		loads_state_dict = cfg.trainer.load_state_dict or inferencing
+		ddp = cfg.trainer.ddp
 
 		engine_class = _Engine if backend == "local" or inferencing else Engine
 
@@ -117,10 +118,14 @@ def load_engines(training=True):
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
+		_cfg = model._cfg
 
+		# wrap if DDP is requested
+		if ddp:
+			model = ddp_model(model)
 
 		# deepspeed inferencing
-		if backend == "local" and inferencing and deepspeed_available and cfg.trainer.deepspeed.inferencing: #and sys.platform.startswith("win"):
+		elif backend == "local" and inferencing and deepspeed_available and cfg.trainer.deepspeed.inferencing: #and sys.platform.startswith("win"):
 			engine_class = _Engine
 			model = deepspeed.init_inference(model=model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
 
@@ -130,9 +135,10 @@ def load_engines(training=True):
 			optimizer=optimizer,
 			lr_scheduler=lr_scheduler,
 
-			_cfg=model._cfg,
+			_cfg=_cfg,
 			stats=stats
 		)
+		
 
 	engines = Engines(engines)
 	engines.setup()

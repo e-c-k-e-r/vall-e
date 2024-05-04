@@ -469,6 +469,7 @@ class Trainer:
 
 	weight_dtype: str = "float16"
 	amp: bool = False
+	ddp: bool = False
 
 	load_webui: bool = False
 	no_logger: bool = False

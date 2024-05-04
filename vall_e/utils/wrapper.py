@@ -1,7 +1,9 @@
 from contextlib import contextmanager
 
+import math
 import torch
 import torch.nn.functional as F
+
 from ..config import cfg
 
 Embedding = torch.nn.Embedding
@@ -99,18 +101,22 @@ if cfg.optimizations.injects and cfg.optimizations.bitsandbytes:
 	torch.optim.SGD = SGD
 
 # disgusting kludge, but it works (just realized BitNet has its own replacement routine)
-def replace_linear( model ):
+def replace_linear( model, verbose=False ):
 	bnb = cfg.optimizations.bitsandbytes and cfg.optimizations.linear and not cfg.optimizations.bitnet
-	klass = Linear 
 
 	device =  next(model.parameters()).device
 	linears = [k.split('.') for k, m in model.named_modules() if isinstance(m, torch.nn.Linear)]
+	klass = Linear 
+
 	for *parent, k in linears:
 		name = '.'.join(parent)
 
 
 		# copy parameters
 		m = getattr( model.get_submodule(name), k )
+
+		if isinstance(m, klass):
+			continue
 
 		in_features = m.in_features
 		out_features = m.out_features
@@ -123,6 +129,9 @@ def replace_linear( model ):
 			model.get_submodule(name), k,
 			klass( **kwargs ).to(device=device, dtype=cfg.trainer.dtype)
 		)
+		
+		if verbose:
+			print(f"Replacing {name}.{k} to", klass)
 
 	return model
 

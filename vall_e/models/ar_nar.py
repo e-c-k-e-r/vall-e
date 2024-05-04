@@ -372,15 +372,6 @@ def example_usage():
 
 		'config': cfg.model
 	}
-	"""
-	kwargs = {
-		'n_tokens': 1024,
-		'd_model': 256,
-		'n_heads': 4,
-		'n_layers': 12,
-		'n_experts': 8,
-	}
-	"""
 	
 	"""
 	try:
@@ -390,7 +381,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 500
+	steps = 100
 	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
 	#optimizer = ml.Adagrad(model.parameters(), lr=1.0e-2)
 	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)

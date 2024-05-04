@@ -8,6 +8,10 @@ import socket
 from functools import cache, wraps
 from typing import Callable
 
+import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 def get_free_port():
 	sock = socket.socket()
 	sock.bind(("", 0))
@@ -17,6 +21,7 @@ def get_free_port():
 _distributed_initialized = False
 def init_distributed( fn, *args, **kwargs ):
 	#print("Initializing distributed...")
+	torch.cuda.set_device(local_rank())
 	fn(*args, **kwargs)
 	_distributed_initialized = True
 
@@ -44,7 +49,6 @@ def fix_unset_envs():
 
 def local_rank():
 	return int(os.getenv("LOCAL_RANK", 0))
-
 
 def global_rank():
 	return int(os.getenv("RANK", 0))
@@ -91,3 +95,6 @@ def global_leader_only(fn: Callable | None = None, *, default=None) -> Callable:
 		return wrapper
 
 	return wrapper(fn)
+
+def ddp_model(model):
+	return DDP(model.to(device='cuda'), [local_rank()])

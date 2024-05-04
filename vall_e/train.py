@@ -183,4 +183,5 @@ def train():
 	)
 
 if __name__ == "__main__":
+	# to-do: for DDP, spawn multiprocess instead of requiring `torchrun --nnodes=1 --nproc-per-node=4 -m vall_e.train yaml="./data/config.yaml"`
 	train()
