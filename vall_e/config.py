@@ -156,6 +156,14 @@ class Dataset:
 	sample_type: str = "path" # path | speaker
 	
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
+	
+	_frames_per_second: int = 0 # in encodec, each frame is 75 codes, in dac, each frame is 41
+
+	@cached_property
+	def frames_per_second(self):
+		if self._frames_per_second > 0:
+			return self._frames_per_second
+		return 41 if cfg.inference.audio_backend == "dac" else 75
 
 	@property
 	def min_phones(self):

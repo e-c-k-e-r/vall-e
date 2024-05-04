@@ -150,7 +150,7 @@ class AR_NAR(Base):
 				
 				"""
 				if cfg.experimental:
-					proms_list = [ r if l == 0 else trim(r, 75 * 3) for r, l in zip(proms_list, quant_levels) ] # trim input prompt to 3 seconds
+					proms_list = [ r if l == 0 else trim(r, cfg.dataset.frames_per_second * 3) for r, l in zip(proms_list, quant_levels) ] # trim input prompt to 3 seconds
 				"""
 				
 				# append stop tokens for AR
@@ -350,7 +350,7 @@ def example_usage():
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
 	]
 	proms_list = [
-		qnt[:75, :].to(device),
+		qnt[:cfg.dataset.frames_per_second, :].to(device),
 	]
 	resps_list = [
 		qnt.to(device),

@@ -115,7 +115,7 @@ class TTS():
 		res = torch.cat([qnt.encode_from_file(path)[0][:, :].t().to(torch.int16) for path in paths])
 		
 		if trim_length:
-			res = trim( res, int( 75 * trim_length ) )
+			res = trim( res, int( cfg.dataset.frames_per_second * trim_length ) )
 		
 		return res
 
@@ -125,7 +125,7 @@ class TTS():
 		text,
 		references,
 		language="en",
-		max_ar_steps=6 * 75,
+		max_ar_steps=6 * cfg.dataset.frames_per_second,
 		max_ar_context=-1,
 		max_nar_levels=7,
 		input_prompt_length=0.0,

@@ -63,10 +63,10 @@ def _replace_file_extension(path, suffix):
 	return (path.parent / path.name.split(".")[0]).with_suffix(suffix)
 
 def _get_quant_extension():
-	return ".dac"
+	return ".dac" if cfg.inference.audio_backend == "dac" else ".qnt.pt"
 
 def _get_phone_extension():
-	return ".json"
+	return ".json" if cfg.inference.audio_backend == "dac" else ".phn.txt"
 
 def _get_quant_path(path):
 	return _replace_file_extension(path, _get_quant_extension())
@@ -371,10 +371,10 @@ class Dataset(_Dataset):
 		# shuffle it up a bit
 		prom_length = 0
 		if cfg.experimental:
-			trim_length = random.randint(75 * 3, 75 * 6) # [3 seconds, 6 seconds]
-			#trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * 75))
+			trim_length = random.randint(cfg.dataset.frames_per_second * 3, cfg.dataset.frames_per_second * 6) # [3 seconds, 6 seconds]
+			#trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * cfg.dataset.frames_per_second))
 		else:
-			trim_length =  int(cfg.dataset.prompt_duration * 75) + random.randint(-75, 75)
+			trim_length =  int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second) + random.randint(-cfg.dataset.frames_per_second, cfg.dataset.frames_per_second)
 
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
@@ -470,7 +470,7 @@ class Dataset(_Dataset):
 					resps = torch.concat([ resps, qnt ])
 		
 		task = "tts"
-		trim_length = int(cfg.dataset.prompt_duration * 75)
+		trim_length = int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second)
 		proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
 
 
@@ -484,7 +484,7 @@ class Dataset(_Dataset):
 			task = "tts"
 		noise_scale = 0.25
 		if task == "tts" or task == "tts-c":
-			trim_length = int(cfg.dataset.prompt_duration * 75)
+			trim_length = int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second)
 			# demote if the target is too short
 			if task == "tts-c" and trim_length * 2 >= resps.shape[0]:
 				task = "tts"
@@ -805,7 +805,7 @@ def create_dataset_metadata( skip_existing=True ):
 						}
 					else:
 						qnt = torch.load(f'{root}/{name}/{id}{_get_quant_extension()}')[0].t()
-						duration = qnt.shape[0] / 75
+						duration = qnt.shape[0] / cfg.dataset.frames_per_second
 
 					metadata[id]["duration"] = duration
 				else:
@@ -912,7 +912,7 @@ def create_dataset_hdf5( skip_existing=True ):
 						}
 					else:
 						qnt = torch.load(f'{root}/{name}/{id}{_get_quant_extension()}')[0].t()
-						duration = qnt.shape[0] / 75
+						duration = qnt.shape[0] / cfg.dataset.frames_per_second
 					
 					qnt = qnt.numpy().astype(np.int16)
 
