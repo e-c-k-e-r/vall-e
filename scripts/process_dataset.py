@@ -8,10 +8,10 @@ from pathlib import Path
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
-# things that could be args
+# to-do: use argparser
 input_audio = "voices"
-input_metadata = "metadata"
-output_dataset = "training-24K"
+input_metadata = "training/metadata"
+output_dataset = "training/data"
 device = "cuda"
 
 slice = "auto"
@@ -19,6 +19,7 @@ missing = {
 	"transcription": [],
 	"audio": []
 }
+dataset = []
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
@@ -62,6 +63,8 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 
 			waveform, sample_rate = None, None
 			language = metadata[filename]["language"] if "language" in metadata[filename] else "english"
+
+			dataset.append(f'{dataset_name}/{speaker_id}')
 
 			if len(metadata[filename]["segments"]) == 0 or not use_slices:
 				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}.{extension}')
@@ -148,4 +151,5 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 					print(f"Failed to quantize: {outpath}:", e)
 					continue
 
-open("./missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
+open("./training/missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
+open("./training/dataset_list.json", 'w', encoding='utf-8').write(json.dumps(dataset))

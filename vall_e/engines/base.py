@@ -447,6 +447,7 @@ class Engines(dict[str, Engine]):
 			if not cfg.trainer.check_for_oom:
 				engine.backward(loss)
 			else:
+				# to-do: properly handle when one GPU throws an OOM because it just halts
 				try:
 					engine.backward(loss)
 				except RuntimeError as e:
@@ -460,9 +461,11 @@ class Engines(dict[str, Engine]):
 
 				if world_size() > 1:
 					all_reduce(n_ooms)
+
 				if n_ooms.item() > 0:
 					self.save_checkpoint()
-					raise RuntimeError("Out of memory during backwards pass!")
+				
+				raise RuntimeError("Out of memory during backwards pass!")
 
 			engine.step()
 			

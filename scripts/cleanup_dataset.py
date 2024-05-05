@@ -6,8 +6,8 @@ import torchaudio
 from tqdm.auto import tqdm
 from pathlib import Path
 
-input_dataset = "metadata"
-output_dataset = "metadata-cleaned"
+input_dataset = "training/metadata"
+output_dataset = "training/metadata-cleaned"
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)

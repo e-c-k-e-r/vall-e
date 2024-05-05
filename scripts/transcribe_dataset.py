@@ -7,14 +7,14 @@ import whisperx
 from tqdm.auto import tqdm
 from pathlib import Path
 
-# should be args
+# to-do: use argparser
 batch_size = 16
 device = "cuda" 
 dtype = "float16"
 model_name = "large-v3"
 
 input_audio = "voices"
-output_dataset = "metadata"
+output_dataset = "training/metadata"
 
 skip_existing = True
 diarize = False

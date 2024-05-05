@@ -50,37 +50,55 @@ A script to setup a proper environment and train can be invoked with `./scripts/
 
 ### Leverage Your Own Dataset
 
-> **Note** It is highly recommended to utilize [mrq/ai-voice-cloning](https://git.ecker.tech/mrq/ai-voice-cloning) with `--tts-backend="vall-e"` to handle transcription and dataset preparations.
+> **Note** Preparing a dataset is a bit messy.
 
-1. Put your data into a folder, e.g. `./data/custom`. Audio files should be named with the suffix `.wav` and text files with `.txt`.
+0. Set up a `venv` with `https://github.com/m-bain/whisperX/`.
+  + At the moment only WhisperX is utilized. Using other variants like `faster-whisper` is an exercise left to the user at the moment.
+  + It's recommended to use a dedicated virtualenv specifically for transcribing, as WhisperX will break a few dependencies.
+  + The following command should work:
+  ```
+  python3 -m venv venv-whisper
+  source ./venv-whisper/bin/activate
+  pip3 install torch torchvision torchaudio
+  pip3 install git+https://github.com/m-bain/whisperX/
+  ```
 
-2. Quantize the data: `python -m vall_e.emb.qnt ./data/custom`
+1. Populate your source voices under `./voices/{group name}/{speaker name}/`.
 
-3. Generate phonemes based on the text: `python -m vall_e.emb.g2p ./data/custom`
+2. Run `python3 ./scripts/transcribe_dataset.py`. This will generate a transcription with timestamps for your dataset.
+  + If you're interested in using a different model, edit the script's `model_name` and `batch_size` variables.
 
-4. Customize your configuration and define the dataset by modifying `./data/config.yaml`. Refer to `./vall_e/config.py` for details. If you want to choose between different model presets, check `./vall_e/models/__init__.py`.
+3. Run `python3 ./scripts/process_dataset.py`. This will phonemize the transcriptions and quantize the audio.
 
-If you're interested in creating an HDF5 copy of your dataset, simply invoke: `python -m vall_e.data --action='hdf5' yaml='./data/config.yaml'`
-
-5. Train the model using the following scripts: `python -m vall_e.train yaml=./data/config.yaml`
-* If distributing your training (for example, multi-GPU), use `deepspeed --module vall_e.train yaml="./data/config.yaml"`
-  + if you're not using the `deepspeed` backend, set `trainer.ddp = True` in the config YAML, then launch with `torchrun --nnodes=1 --nproc-per-node=4 -m vall_e.train yaml="./data/config.yaml"`
-
-You may quit your training any time by just entering `quit` in your CLI. The latest checkpoint will be automatically saved.
+4. Copy `./data/config.yaml` to `./training/config.yaml`. Customize the training configuration and populate your `dataset.training` list with the values stored under `./training/dataset_list.json`.
+  + Refer to `./vall_e/config.py` for additional configuration details.
 
 ### Dataset Formats
 
 Two dataset formats are supported:
 * the standard way:
-  - data is stored under `${speaker}/${id}.phn.txt` and `${speaker}/${id}.qnt.pt`
+  - for Encodec/Vocos audio backends, data is stored under `./training/data/{group}/{speaker}/{id}.phn.txt` and `./training/data/{group}/{speaker}/{id}.qnt.pt`
+  - for Descript-Audio-Codec audio backend, data is stored under `./training/data/{group}/{speaker}/{id}.json` and `./training/data/{group}/{speaker}/{id}.dac`
 * using an HDF5 dataset:
-  - you can convert from the standard way with the following command: `python3 -m vall_e.data yaml="./path/to/your/config.yaml"`
+  - you can convert from the standard way with the following command: `python3 -m vall_e.data yaml="./training/config.yaml"`
   - this will shove everything into a single HDF5 file and store some metadata alongside (for now, the symbol map generated, and text/audio lengths)
   - be sure to also define `use_hdf5` in your config YAML.
 
+### Initializing Training
+
+For single GPUs, simply running `python3 -m vall_e.train yaml="./training/config.yaml`.
+
+For multiple GPUs, or exotic distributed training:
+* with `deepspeed` backends, simply running `deepspeed --module vall_e.train yaml="./training/config.yaml"` should handle the gory details.
+* with `local` backends, simply run `torchrun --nnodes=1 --nproc-per-node={NUMOFGPUS} -m vall_e.train yaml="./training/config.yaml"`
+
+You can enter `save` to save the state at any time, or `quit` to save and quit training.
+
+The `lr` will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
+
 ### Plotting Metrics
 
-Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot yaml="./training/valle/config.yaml"`
+Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot yaml="./training/config.yaml"`
 
 You can specify what X and Y labels you want to plot against by passing `--xs tokens_processed --ys loss stats.acc`
 
@@ -91,12 +109,6 @@ You can specify what X and Y labels you want to plot against by passing `--xs to
 As training under `deepspeed` and Windows is not (easily) supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
 
 Keep in mind that creature comforts like distributed training or `float16` training cannot be verified as working at the moment with the local trainer.
-
-#### Training on Low-VRAM Cards
-
-During experimentation, I've found I can comfortably train on a 4070Ti (12GiB VRAM). Howver, VRAM use is predicated on your dataset; a mix of large and small utterances will cause VRAM usage to spike and can trigger OOM conditions during the backwards pass if you are not careful.
-
-Additionally, under Windows, I managed to finetune the AR on my 2060 (6GiB VRAM) with a batch size of 8 (although, with the card as a secondary GPU).
 
 #### Training Caveats
 
@@ -119,15 +131,17 @@ As the core of VALL-E makes use of a language model, various LLM architectures c
 * `bitnet`: using [this](https://github.com/kyegomez/BitNet/) implementation of BitNet's transformer.
   - Setting `bitsandbytes.bitnet=True` will make use of BitNet's linear implementation.
 
+If you're training a true foundational model, consider which backend you want to use the most. `llama` backends can benefit from all the additional tech with it, while exotic ones like `retnet` or `bitnet` can't at the moment, but may leverage experimental gains.
+
 ## Export
 
-To export the models, run: `python -m vall_e.export yaml=./data/config.yaml`.
+To export the models, run: `python -m vall_e.export yaml=./training/config.yaml`.
 
-This will export the latest checkpoints, for example, under `./data/ckpt/ar+nar-retnet-8/fp32.pth`, to be loaded on any system with PyTorch, and will include additional metadata, such as the symmap used, and training stats.
+This will export the latest checkpoints, for example, under `./training/ckpt/ar+nar-retnet-8/fp32.pth`, to be loaded on any system with PyTorch, and will include additional metadata, such as the symmap used, and training stats.
 
 ## Synthesis
 
-To synthesize speech, invoke either (if exported the models): `python -m vall_e <text> <ref_path> <out_path> --model-ckpt ./data/ckpt/ar+nar-retnet-8/fp32.pth` or `python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>`
+To synthesize speech, invoke either (if exported the models): `python -m vall_e <text> <ref_path> <out_path> --model-ckpt ./training/ckpt/ar+nar-retnet-8/fp32.pth` or `python -m vall_e <text> <ref_path> <out_path> yaml=<yaml_path>`
 
 Some additional flags you can pass are:
 * `--language`: specifies the language for phonemizing the text, and helps guide inferencing when the model is trained against that language.

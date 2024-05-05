@@ -12,9 +12,9 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.processors import TemplateProcessing
 
-input_metadata = "training-24K"
+input_metadata = "training/data"
 
-output_file = Path("./dataset.json")
+output_file = Path("./training/tokenizer_training_data.json")
 tokenizer_data = []
 
 def pad(num, zeroes):
@@ -54,4 +54,4 @@ tokenizer.post_processor = TemplateProcessing(
 )
 
 tokenizer.train_from_iterator(tokenizer_data, trainer=trainer)
-tokenizer.save("./tokenizer.json")
+tokenizer.save("./training/tokenizer.json")
