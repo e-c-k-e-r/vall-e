@@ -512,9 +512,9 @@ class Inference:
 	use_encodec: bool = True
 	use_dac: bool = True
 
+	# shit that doesn't work
 	recurrent_chunk_size: int = 0
 	recurrent_forward: bool = False
-
 
 	@cached_property
 	def dtype(self):
@@ -562,7 +562,7 @@ class Config(_Config):
 	tokenizer: str = "./tokenizer.json"
 
 	sample_rate: int = 24_000
-	variable_sample_rate: bool = True
+	variable_sample_rate: bool = True # for DAC, this will override the model automatically resampling to 44KHz.
 
 	@property
 	def distributed(self):

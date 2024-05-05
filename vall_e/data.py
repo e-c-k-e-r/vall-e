@@ -370,9 +370,8 @@ class Dataset(_Dataset):
 
 		# shuffle it up a bit
 		prom_length = 0
-		if cfg.experimental:
-			trim_length = random.randint(cfg.dataset.frames_per_second * 3, cfg.dataset.frames_per_second * 6) # [3 seconds, 6 seconds]
-			#trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * cfg.dataset.frames_per_second))
+		if cfg.experimental and False:
+			trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * cfg.dataset.frames_per_second))
 		else:
 			trim_length =  int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second) + random.randint(-cfg.dataset.frames_per_second, cfg.dataset.frames_per_second)
 

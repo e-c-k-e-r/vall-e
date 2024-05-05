@@ -44,7 +44,7 @@ setup(
         "encodec>=0.1.1",
         "phonemizer>=2.1.0",
         "matplotlib>=3.6.0",
-        "numpy==1.23.0",
+        "numpy",
         "omegaconf==2.0.6",
         "tqdm>=4.64.1",
         "humanize>=4.4.0",
@@ -60,6 +60,8 @@ setup(
         "h5py",
         "torchscale @ git+https://git.ecker.tech/mrq/torchscale",
         "prodigyopt @ git+https://github.com/konstmish/prodigy",
+
+        "descript-audio-codec",
     ],
     url="https://git.ecker.tech/mrq/vall-e",
 )

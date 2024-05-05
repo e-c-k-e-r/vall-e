@@ -125,7 +125,7 @@ class AR_NAR(Base):
 			if n_levels == self.n_resp_levels:
 				# might be better to have this decided on the dataloader level
 
-				if cfg.experimental and False:
+				if cfg.experimental:
 					# makes higher levels less likely
 					def generate( lo=0, hi=8 ):
 						index = lo
