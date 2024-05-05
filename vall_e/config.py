@@ -157,13 +157,24 @@ class Dataset:
 	
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 	
-	_frames_per_second: int = 0 # in encodec, each frame is 75 codes, in dac, each frame is 41
+	_frames_per_second: int = 0 # allows setting your own hint
 
 	@cached_property
 	def frames_per_second(self):
 		if self._frames_per_second > 0:
 			return self._frames_per_second
-		return 41 if cfg.inference.audio_backend == "dac" else 75
+
+		if cfg.inference.audio_backend == "dac":
+			# using the 44KHz model with 24KHz sources has a frame rate of 41Hz
+			if cfg.variable_sample_rate and cfg.sample_rate == 24_000:
+				return 41
+			if cfg.sample_rate == 44_000:
+				return 86
+			if cfg.sample_rate == 16_000:
+				return 50
+		
+		# 24Khz Encodec / Vocos and incidentally DAC are all at 75Hz
+		return 75
 
 	@property
 	def min_phones(self):
@@ -562,7 +573,7 @@ class Config(_Config):
 	tokenizer: str = "./tokenizer.json"
 
 	sample_rate: int = 24_000
-	variable_sample_rate: bool = True # for DAC, this will override the model automatically resampling to 44KHz.
+	variable_sample_rate: bool = False # NOT recommended, as running directly 24Khz audio in the 44Khz DAC model will have detrimental quality loss
 
 	@property
 	def distributed(self):
