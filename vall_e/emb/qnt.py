@@ -272,11 +272,17 @@ def _replace_file_extension(path, suffix):
 @torch.inference_mode()
 def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.model.max_levels, return_metadata=True):
 	if cfg.inference.audio_backend == "dac":
-		model = _load_dac_model(device, levels=levels)
+		model = _load_dac_model(device, levels=levels )
 		signal = AudioSignal(wav, sample_rate=sr)
-		artifact = model.compress(signal, 5.0, verbose=False, n_quantizers=levels if isinstance(levels, int) else None)
+		
+		if not isinstance(levels, int):
+			levels = 8 if model.model_type == "24khz" else None
+
+		with torch.autocast("cuda", dtype=torch.bfloat16, enabled=False): # or True for about 2x speed, not enabling by default for systems that do not have bfloat16 
+			artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
 
 		# trim to 8 codebooks if 24Khz
+		# probably redundant with levels, should rewrite logic eventuall
 		if model.model_type == "24khz":
 			artifact.codes = artifact.codes[:, :8, :]
 

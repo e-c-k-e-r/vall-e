@@ -64,7 +64,8 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 			waveform, sample_rate = None, None
 			language = metadata[filename]["language"] if "language" in metadata[filename] else "english"
 
-			dataset.append(f'{dataset_name}/{speaker_id}')
+			if f'{dataset_name}/{speaker_id}' not in dataset:
+				dataset.append(f'{dataset_name}/{speaker_id}')
 
 			if len(metadata[filename]["segments"]) == 0 or not use_slices:
 				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}.{extension}')
