@@ -338,7 +338,7 @@ class DeepSpeed:
 	use_compression_training: bool = False
 	compression_bits: int = 8
 	inferencing: bool = False
-	amp: bool = True
+	amp: bool = False
 
 	@cached_property
 	def ds_cfg(self):
