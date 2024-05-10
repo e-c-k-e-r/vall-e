@@ -16,6 +16,8 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.checkpoint import checkpoint
 from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, MulticlassPrecision
 
+from ..utils import wrapper as ml
+
 from ..samplers import reptition_penalize, length_penalize, top_k_top_p_filtering, dynamic_temperature, top_k_logits_list, mirostat_sample
 
 try:
@@ -191,47 +193,8 @@ try:
 			attn_output = self.o_proj(attn_output)
 
 			return attn_output, attn_weights, past_key_value
-
-	LLAMA_ATTENTIONS["xformers"] = LLamaXformersAttention
-
 except Exception as e:
 	print("Error creating `LLamaXformersAttention`:", e)
-
-def replace_attention( model, impl, verbose=False ):
-	device = next(model.parameters()).device
-	dtype = next(model.parameters()).dtype
-	attentions = [k.split('.') for k, m in model.named_modules() if isinstance(m, LlamaAttention)]
-
-	if impl not in LLAMA_ATTENTIONS:
-		print(f"Attention '{imp} is not in LLAMA_ATTENTIONS'")
-		return model
-
-	klass = LLAMA_ATTENTIONS[impl]
-
-	for *parent, k in attentions:
-		name = '.'.join(parent)
-
-		# copy parameters
-		m = getattr( model.get_submodule(name), k )
-
-		if isinstance(m, klass):
-			continue
-
-		config = m.config
-		layer_idx = m.layer_idx
-
-		kwargs = dict(config=config, layer_idx=layer_idx)
-
-		# overwrite
-		setattr(
-			model.get_submodule(name), k,
-			klass( **kwargs ).to(device=device, dtype=dtype)
-		)
-		
-		if verbose:
-			print(f"Replacing {name}.{k} to", klass)
-
-	return model
 
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
@@ -485,6 +448,14 @@ class Base(nn.Module):
 
 		self.sep = nn.Parameter(torch.randn(d_model))
 
+		# ick, there has to be a better way
+		attention = self.config.attention if self.config is not None else None
+		use_xformers = False
+
+		if attention == "xformers":
+			use_xformers = True
+			attention = None
+
 		if self.arch_type == "transformer":
 			self.sin_emb = SinusoidalEmbedding(d_model)
 			self.blocks = nn.ModuleList([TransformerBlock(
@@ -495,7 +466,7 @@ class Base(nn.Module):
 				norm_type=self.norm_type,
 				n_levels=self.n_resp_levels,
 			) for _ in range(n_layers) ])
-		elif self.arch_type == "mistral" or self.arch_type == "mixtral":
+		elif self.arch_type in ["mistral", "mixtral"]:
 			if n_experts <= 1:
 				self.model = MistralModel(MistralConfig(
 					vocab_size=n_resp_tokens,
@@ -509,7 +480,7 @@ class Base(nn.Module):
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
-					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
+					attn_implementation=attention,
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -528,18 +499,10 @@ class Base(nn.Module):
 					is_decoder=True,
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
-					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
+					attn_implementation=attention,
 				))
 		elif self.arch_type == "llama":
 			if n_experts <= 1:
-				# ick, there has to be a better way
-				attention = self.config.attention if self.config is not None else None # "flash_attention_2",
-				use_xformers = False
-
-				if attention == "xformers":
-					use_xformers = True
-					attention = None
-
 				self.model = LlamaModel(LlamaConfig(
 					vocab_size=n_resp_tokens,
 					hidden_size=d_model,
@@ -555,9 +518,6 @@ class Base(nn.Module):
 					is_decoder=True,
 					attn_implementation=attention,
 				))
-
-				if use_xformers:
-					self.model = replace_attention( self.model, "xformers" if use_xformers else attention )
 			else:
 				self.model = MixtralModel(MixtralConfig(
 					vocab_size =n_resp_tokens,
@@ -575,9 +535,8 @@ class Base(nn.Module):
 					is_decoder=True,
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
-					attn_implementation=self.config.attention if self.config is not None else None, # "flash_attention_2",
+					attn_implementation=attention,
 				))
-
 		elif self.arch_type == "retnet":
 			kwargs = dict(
 				vocab_size=n_resp_tokens,
@@ -589,9 +548,9 @@ class Base(nn.Module):
 				dropout=p_dropout if training else 0.0,
 				checkpoint_activations=self.activation_checkpointing,
 				activation_fn="gelu",
-				use_layernorm=True, # self.version < 3,
-				use_biases=True, # self.version < 3,
-				use_glu=False, # self.version >= 3,
+				use_layernorm=self.version < 3,
+				use_biases=self.version < 3,
+				use_glu=self.version >= 3,
 
 				chunkwise_recurrent=self.causal and self.recurrent_chunk_size > 0,
 				recurrent_chunkwise_size=self.recurrent_chunk_size if self.causal else 0,
@@ -641,6 +600,9 @@ class Base(nn.Module):
 			)
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
+
+		if use_xformers:
+			self.model = ml.replace_attention( self.model, klass=LLamaXformersAttention, target=LlamaAttention )
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 

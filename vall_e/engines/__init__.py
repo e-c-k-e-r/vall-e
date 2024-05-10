@@ -45,11 +45,16 @@ def load_engines(training=True):
 		if inferencing:
 			model._cfg.training = False
 
-		if (cfg.optimizations.bitsandbytes and cfg.optimizations.replace) or (cfg.optimizations.fp8):
+		if cfg.optimizations.replace and cfg.optimizations.linear:
 			model.model = ml.replace_linear( model.model )
+		
+		if cfg.optimizations.replace and cfg.optimizations.embedding:
+			model.model = ml.replace_embedding( model.model )
 
 		if backend == "local" or (backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):
 			optimizer_class = None
+			scheduler_class = None
+
 			params = {
 				"lr": cfg.hyperparameters.learning_rate,
 			}
@@ -57,6 +62,10 @@ def load_engines(training=True):
 				params["betas"] = (0.9, 0.96)
 				params["eps"] = 1e-07
 				params["weight_decay"] = 0.01
+
+				# for dadaptation since it has Adam only
+				if ml.AdamW == ml.Adam:
+					params["decouple"] = True
 
 				optimizer_class = ml.AdamW
 			elif cfg.hyperparameters.optimizer.lower() == "sgd":
@@ -72,10 +81,26 @@ def load_engines(training=True):
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 
 			params.update(cfg.hyperparameters.optimizer_params)
+
 			optimizer = optimizer_class(
 				[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
 				**params,
 			)
+
+			if cfg.hyperparameters.scheduler.lower() == "schedulefree":
+				if cfg.hyperparameters.optimizer.lower() == "adamw":
+					scheduler_class = ml.schedulefree.AdamWScheduleFree
+				elif cfg.hyperparameters.optimizer.lower() == "sgd":
+					scheduler_class = ml.schedulefree.SGDScheduleFree
+				else:
+					raise ValueError(f'ScheduleFree not implemented with requested optimizer: {cfg.hyperparameters.optimizer}')
+
+				optimizer = scheduler_class(
+					[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
+					lr = params['lr']
+				)
+
+
 
 		# set up our LR scheduler here
 

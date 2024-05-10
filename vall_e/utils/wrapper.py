@@ -9,6 +9,11 @@ from ..config import cfg
 Embedding = torch.nn.Embedding
 Linear = torch.nn.Linear
 
+Adam = torch.optim.Adam
+AdamW = torch.optim.AdamW
+SGD = torch.optim.SGD
+Adagrad = torch.optim.Adagrad
+
 # https://github.com/kyegomez/BitNet
 if cfg.optimizations.bitnet:
 	from bitnet import BitLinear
@@ -37,19 +42,20 @@ if cfg.optimizations.bitsandbytes:
 		)).to(self.weight.dtype) )
 		"""
 
+	if cfg.optimizations.optimizers:
+		Adam = bnb.optim.Adam8bit
+		AdamW = bnb.optim.AdamW8bit
+		SGD = bnb.optim.SGD8bit
+		Adagrad = bnb.optim.Adagrad8bit
 
-if cfg.optimizations.bitsandbytes:
-	import bitsandbytes as bnb
+elif cfg.optimizations.dadaptation:
+	import dadaptation
 
-	Adam = bnb.optim.Adam8bit
-	AdamW = bnb.optim.AdamW8bit
-	SGD = bnb.optim.SGD8bit
-	Adagrad = bnb.optim.Adagrad8bit
-else:
-	Adam = torch.optim.Adam
-	AdamW = torch.optim.AdamW
-	SGD = torch.optim.SGD
-	Adagrad = torch.optim.Adagrad
+	if cfg.optimizations.optimizers:
+		Adam = dadaptation.DAdaptAdam
+		AdamW = dadaptation.DAdaptAdam
+		SGD = dadaptation.DAdaptSGD
+		AdaGrad = dadaptation.DAdaptAdaGrad
 
 # handles generically converting to a specific tensor type and converting back (implemented solely for bfloat16)
 @contextmanager
@@ -92,42 +98,112 @@ else:
 	def autocast():
 		yield torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp)
 
-if cfg.optimizations.injects and cfg.optimizations.bitsandbytes:
-	torch.nn.Linear = Linear
-	torch.nn.Embedding = Embedding
+if cfg.optimizations.injects:
+	if cfg.optimizations.linear:
+		torch.nn.Linear = Linear
+	
+	if cfg.optimizations.embedding:
+		torch.nn.Embedding = Embedding
 
-	torch.optim.Adam = Adam
-	torch.optim.AdamW = AdamW
-	torch.optim.SGD = SGD
+	if cfg.optimizations.optimizers:
+		torch.optim.Adam = Adam
+		torch.optim.AdamW = AdamW
+		torch.optim.SGD = SGD
 
 # disgusting kludge, but it works (just realized BitNet has its own replacement routine)
-def replace_linear( model, verbose=False ):
+# generalizing this would be super sugoi but the there's no catch all for arguments
+def replace_linear( model, klass=Linear, target=torch.nn.Linear, verbose=False ):
 	bnb = cfg.optimizations.bitsandbytes and cfg.optimizations.linear and not cfg.optimizations.bitnet
 
 	device =  next(model.parameters()).device
-	linears = [k.split('.') for k, m in model.named_modules() if isinstance(m, torch.nn.Linear)]
-	klass = Linear 
+	dtype = next(model.parameters()).dtype
+	modules = [k.split('.') for k, m in model.named_modules() if isinstance(m, target)]
 
-	for *parent, k in linears:
+	for *parent, k in modules:
 		name = '.'.join(parent)
 
-
-		# copy parameters
 		m = getattr( model.get_submodule(name), k )
 
 		if isinstance(m, klass):
 			continue
 
-		in_features = m.in_features
-		out_features = m.out_features
-		bias = m.bias is not None
-
-		kwargs = dict(in_features=in_features, out_features=out_features, bias=bias) if not bnb else dict(input_features=in_features, output_features=out_features, bias=bias)
+		kwargs = dict(
+			in_features = m.in_features,
+			out_features = m.out_features,
+			bias = m.bias is not None,
+		) if not bnb else dict(
+			input_features=m.in_features,
+			output_features=m.out_features,
+			bias=m.bias is not None,
+		)
 
 		# overwrite
 		setattr(
 			model.get_submodule(name), k,
-			klass( **kwargs ).to(device=device, dtype=cfg.trainer.dtype)
+			klass( **kwargs ).to(device=device, dtype=dtype)
+		)
+		
+		if verbose:
+			print(f"Replacing {name}.{k} to", klass)
+
+	return model
+
+def replace_embedding( model, klass=Embedding, target=torch.nn.Embedding, verbose=False ):
+	device =  next(model.parameters()).device
+	dtype = next(model.parameters()).dtype
+	modules = [k.split('.') for k, m in model.named_modules() if isinstance(m, target)]
+
+	for *parent, k in modules:
+		name = '.'.join(parent)
+
+		m = getattr( model.get_submodule(name), k )
+
+		if isinstance(m, klass):
+			continue
+
+		kwargs = dict(
+			num_embeddings=m.num_embeddings,
+			embedding_dim=m.embedding_dim,
+			padding_idx=m.padding_idx,
+			max_norm=m.max_norm,
+			norm_type=m.norm_type,
+			scale_grad_by_freq=m.scale_grad_by_freq,
+			sparse=m.sparse,
+		)
+
+		# overwrite
+		setattr(
+			model.get_submodule(name), k,
+			klass( **kwargs ).to(device=device, dtype=dtype)
+		)
+		
+		if verbose:
+			print(f"Replacing {name}.{k} to", klass)
+
+	return model
+
+# cannot feasibly do default arguments here sad
+def replace_attention( model, klass, target, verbose=False ):
+	device = next(model.parameters()).device
+	dtype = next(model.parameters()).dtype
+	modules = [k.split('.') for k, m in model.named_modules() if isinstance(m, target)]
+
+	for *parent, k in modules:
+		name = '.'.join(parent)
+
+		m = getattr( model.get_submodule(name), k )
+
+		if isinstance(m, klass):
+			continue
+
+		kwargs = dict(
+			config = m.config,
+			layer_idx = m.layer_idx,
+		)
+		# overwrite
+		setattr(
+			model.get_submodule(name), k,
+			klass( **kwargs ).to(device=device, dtype=dtype)
 		)
 		
 		if verbose:
@@ -139,4 +215,12 @@ def replace_linear( model, verbose=False ):
 try:
 	from prodigyopt import Prodigy
 except Exception as e:
+	print('Error while importing Prodigyopt:', str(e))
+	pass
+
+# https://github.com/facebookresearch/schedule_free/
+try:
+	import schedulefree
+except Exception as e:
+	print('Error while importing Schedule_Free:', str(e))
 	pass

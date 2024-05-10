@@ -365,7 +365,7 @@ def example_usage():
 		'n_tokens': 1024,
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
-		'n_layers': 12, # 32
+		'n_layers': 4, # 32
 		'n_experts': 1,
 
 		'l_padding': 8 if cfg.optimizations.fp8 else 0,
@@ -381,15 +381,65 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 100
-	optimizer = ml.Prodigy(model.parameters(), lr=1.0)
-	#optimizer = ml.Adagrad(model.parameters(), lr=1.0e-2)
-	#optimizer = ml.AdamW(model.parameters(), lr=1.0e-4)
+	steps = 1000
 
+	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
+	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
+	learning_rate = cfg.hyperparameters.learning_rate if cfg.cfg_path is not None else None
+
+	if cfg.optimizations.dadaptation:
+		# do not combine the two
+		if scheduler == "schedulefree":
+			scheduler = ""
+
+		learning_rate = 1.0
+	
+	if optimizer == "prodigy":
+		if learning_rate is None:
+			learning_rate = 1.0
+
+		optimizer = ml.Prodigy
+	elif optimizer == "adagrad":
+		if learning_rate is None:
+			learning_rate = 1.0e-2
+
+		optimizer = ml.Adagrad
+	elif optimizer == "adamw":
+		if learning_rate is None:
+			learning_rate = 1.0e-4
+
+		optimizer = ml.AdamW
+	elif optimizer == "sdg":
+		if learning_rate is None:
+			learning_rate = 1.0e-4
+
+		optimizer = ml.SGD
+	else:
+		raise ValueError(f"Unrecognized optimizer: {optimizer}")
+
+	print("Optimizer:", optimizer, "\tLearning rate:", learning_rate)
+
+	optimizer = optimizer(model.parameters(), lr=learning_rate)
+
+	if scheduler == "schedulefree":
+		if isinstance(optimizer, ml.AdamW):
+			scheduler = ml.schedulefree.AdamWScheduleFree
+		elif isinstance(optimizer, ml.SGD):
+			scheduler = ml.schedulefree.SGDScheduleFree
+		else:
+			scheduler = None
+
+		if scheduler is not None:
+			print("Scheduler:", scheduler)
+			optimizer = scheduler( model.parameters(), lr = learning_rate )
+
+	if cfg.optimizations.replace and cfg.optimizations.linear:
+		model = ml.replace_linear( model )
+		
+	if cfg.optimizations.replace and cfg.optimizations.embedding:
+		model = ml.replace_embedding( model )
+	
 	engine = Engine(model=model, optimizer=optimizer)
-
-	if (cfg.optimizations.bitsandbytes and cfg.optimizations.replace) or (cfg.optimizations.fp8):
-		model.model = ml.replace_linear( model.model )
 
 	torch.save( {
 		'module': model.state_dict()

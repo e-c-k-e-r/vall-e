@@ -143,7 +143,7 @@ def _load_vocos_model(device="cuda", levels=cfg.model.max_levels):
 
 @cache
 def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
-	kwargs = dict(model_type="24khz",model_bitrate="8kbps",tag="latest")
+	kwargs = dict(model_type="44khz",model_bitrate="8kbps",tag="latest")
 	"""
 	if not cfg.variable_sample_rate:
 		# yes there's a better way, something like f'{cfg.sample.rate//1000}hz'

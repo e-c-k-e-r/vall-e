@@ -379,6 +379,11 @@ class Dataset(_Dataset):
 			path = random.choice(choices)
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
+
+				if "audio" not in cfg.hdf5[key]:
+					_logger.warning("MISSING AUDIO:", key)
+					continue
+
 				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 			else:
 				qnt = _load_quants(path)
@@ -763,15 +768,15 @@ def create_dataset_metadata( skip_existing=True ):
 		name = str(dir)
 		name = name.replace(root, "")
 
-		# yucky
 		speaker_name = name
-		if "LbriTTS-R" in speaker_name:
-			speaker_name = speaker_name.replace("LbriTTS-R", "LibriVox")
 
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		metadata_path.parents[0].mkdir(parents=True, exist_ok=True)
 
-		metadata = {} if not metadata_path.exists() else json.loads(open(str(metadata_path), "r", encoding="utf-8").read())
+		try:
+			metadata = {} if not metadata_path.exists() else json.loads(open(str(metadata_path), "r", encoding="utf-8").read())
+		except Exception as e:
+			metadata = {}
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return
@@ -872,8 +877,8 @@ def create_dataset_hdf5( skip_existing=True ):
 		
 		# yucky
 		speaker_name = name
-		if "LbriTTS-R" in speaker_name:
-			speaker_name = speaker_name.replace("LbriTTS-R", "LibriVox")
+		if "LibriTTS-R" in speaker_name:
+			speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
 
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		metadata_path.parents[0].mkdir(parents=True, exist_ok=True)
@@ -899,10 +904,8 @@ def create_dataset_hdf5( skip_existing=True ):
 
 				key = f'{type}/{speaker_name}/{id}'
 
-				"""
 				if skip_existing and key in hf:
 					continue
-				"""
 
 				group = hf.create_group(key) if key not in hf else hf[key]
 

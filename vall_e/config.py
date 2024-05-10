@@ -306,11 +306,14 @@ class Hyperparameters:
 
 	optimizer: str = "Adamw"
 	torch_optimizer: bool = False
+
 	optimizer_params: dict = field(default_factory=lambda: {})
 	learning_rate: float = 3.25e-4
 
-	scheduler_type: str = ""
+	scheduler: str = ""
+	scheduler_type: str = "" # deprecated
 	scheduler_params: dict = field(default_factory=lambda: {})
+	torch_scheduler: bool = False
 	
 @dataclass()
 class Evaluation:
@@ -337,7 +340,7 @@ class DeepSpeed:
 		for k in cfg.hyperparameters.scheduler_params:
 			scheduler_params[k] = cfg.hyperparameters.scheduler_params[k]
 
-		if cfg.hyperparameters.scheduler_type == "WarmupDecayLR" and 'total_num_steps' not in scheduler_params:
+		if cfg.hyperparameters.scheduler == "WarmupDecayLR" and 'total_num_steps' not in scheduler_params:
 			scheduler_params['total_num_steps'] = cfg.trainer.iterations
 
 		ds_cfg = {
@@ -350,9 +353,9 @@ class DeepSpeed:
 				}
 			} if not cfg.hyperparameters.torch_optimizer else None,
 			"scheduler": {
-				"type": cfg.hyperparameters.scheduler_type,
+				"type": cfg.hyperparameters.scheduler,
 				"params": scheduler_params,
-			} if cfg.hyperparameters.scheduler_type != "" else None,
+			} if not cfg.hyperparameters.torch_scheduler else None,
 			"gradient_clipping": cfg.hyperparameters.gradient_clipping,
 			"fp16": {
 				"enabled": True,
@@ -544,15 +547,17 @@ class Inference:
 # should be renamed to optimizations
 @dataclass()
 class Optimizations:
-	bitsandbytes: bool = False
-	injects: bool = False
-	replace: bool = False
+	injects: bool = False # overwrites default torch classes (not recommended)
+	replace: bool = False # replaces modules in place with the optimized version (recommended)
 
-	linear: bool = True
-	embedding: bool = True
+	linear: bool = True # inject/replace linear for BnB
+	embedding: bool = True # inject/replace embedding for BnB
+	optimizers: bool = True # inject/replace optimizers (BnB, DAdaptation)
 	
-	bitnet: bool = False
-	fp8: bool = False
+	bitsandbytes: bool = False # use bitsandbytes
+	dadaptation: bool = True # use dadaptation optimizer
+	bitnet: bool = False # use bitnet
+	fp8: bool = False # use fp8
 
 @dataclass()
 class Config(_Config):
@@ -635,6 +640,17 @@ class Config(_Config):
 			self.optimizations = Optimizations(**self.bitsandbytes)
 		else:
 			self.optimizations = Optimizations(**self.optimizations)
+
+		if self.hyperparameters.scheduler_type and not self.hyperparameters.scheduler:
+			self.hyperparameters.scheduler = self.hyperparameters.scheduler_type
+			self.hyperparameters.scheduler_type = ""
+
+		# do not combine the two
+		if self.hyperparameters.scheduler == "schedulefree" and self.optimizations.dadaptation:
+			self.hyperparameters.scheduler = ""
+
+		if self.hyperparameters.scheduler == "":
+			self.hyperparameters.torch_scheduler = True
 
 # Preserves the old behavior
 class NaiveTokenizer:
