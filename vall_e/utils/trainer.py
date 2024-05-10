@@ -102,7 +102,7 @@ def _non_blocking_input():
 def _make_infinite_epochs(dl):
 	while True:
 		#_logger.info("New epoch starts.")
-		yield from tqdm(dl, "Epoch progress", dynamic_ncols=True)
+		yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader())
 
 
 @local_leader_only(default=None)
