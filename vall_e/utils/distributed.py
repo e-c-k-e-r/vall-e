@@ -97,4 +97,4 @@ def global_leader_only(fn: Callable | None = None, *, default=None) -> Callable:
 	return wrapper(fn)
 
 def ddp_model(model):
-	return DDP(model.to(device='cuda'), [local_rank()])
+	return DDP(model.to(device='cuda'), [local_rank()], find_unused_parameters=True)

@@ -505,7 +505,9 @@ class Base(nn.Module):
 				))
 
 			if self.activation_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable()
+				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
+					use_reentrant=False
+				))
 
 			if training:
 				self.model.training = True
@@ -549,7 +551,9 @@ class Base(nn.Module):
 				))
 
 			if self.activation_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable()
+				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
+					use_reentrant=False
+				))
 
 			if training:
 				self.model.training = True
