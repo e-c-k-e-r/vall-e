@@ -144,11 +144,13 @@ class Dataset:
 
 	phones_range: list[int] = field(default_factory=lambda: [4, 256])
 	duration_range: list[float] = field(default_factory=lambda: [1.0, 12.0])
+	prompt_duration_range: list[float] = field(default_factory=lambda: [3.0, 6.0])
 	min_utterances: int = 2
 
 	random_utterance: float = 1.0
 	max_prompts: int = 3
-	prompt_duration: float = 3.0
+	
+	prompt_duration: float = 0.0 # legacy
 	
 	max_resps: int = 1
 	p_resp_append: float = 1.0
@@ -675,6 +677,9 @@ class Config(_Config):
 
 		if self.hyperparameters.scheduler == "":
 			self.hyperparameters.torch_scheduler = True
+
+		if self.dataset.prompt_duration != 0:
+			self.dataset.prompt_duration_range = [self.dataset.prompt_duration, self.dataset.prompt_duration]
 
 # Preserves the old behavior
 class NaiveTokenizer:

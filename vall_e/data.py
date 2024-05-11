@@ -368,12 +368,8 @@ class Dataset(_Dataset):
 			)
 			"""
 
-		# shuffle it up a bit
 		prom_length = 0
-		if cfg.experimental and False:
-			trim_length =  max(2, int(np.random.normal(loc=5, scale=1.25) * cfg.dataset.frames_per_second))
-		else:
-			trim_length =  int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second) + random.randint(-cfg.dataset.frames_per_second, cfg.dataset.frames_per_second)
+		trim_length = random.randint(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second
 
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
@@ -388,7 +384,7 @@ class Dataset(_Dataset):
 			else:
 				qnt = _load_quants(path)
 
-			if cfg.dataset.prompt_duration > 0 and trim_length < qnt.shape[0]:
+			if 0 < trim_length and trim_length < qnt.shape[0]:
 				qnt = trim( qnt, trim_length )
 
 			prom_list.append(qnt)
@@ -401,7 +397,7 @@ class Dataset(_Dataset):
 		# as you technically can't just append encodec sequences together like this without issues
 		prom = torch.cat(prom_list)
 
-		if cfg.dataset.prompt_duration > 0 and trim_length < prom.shape[0]:
+		if 0 < trim_length and trim_length < prom.shape[0]:
 			prom = trim( prom, trim_length )
 
 		return prom
@@ -474,7 +470,7 @@ class Dataset(_Dataset):
 					resps = torch.concat([ resps, qnt ])
 		
 		task = "tts"
-		trim_length = int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second)
+		trim_length = random.randint(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second
 		proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
 
 
