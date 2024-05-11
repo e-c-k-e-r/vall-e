@@ -211,6 +211,7 @@ try:
 				else:
 					attn_output = memory_efficient_attention(query_states, key_states, value_states, attn_bias=LowerTriangularMask())
 			else:
+				#torch.nn.attention.sdpa_kernel
 				with torch.backends.cuda.sdp_kernel(enable_flash=self.mode == "flash", enable_math=self.mode == "math", enable_mem_efficient=self.mode == "mem_efficient"):
 					attn_output = torch.nn.functional.scaled_dot_product_attention(query_states, key_states, value_states, attn_mask=attention_mask)
 
