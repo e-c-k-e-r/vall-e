@@ -10,6 +10,8 @@ def get_model(cfg, training=True):
 		n_layers=cfg.layers,
 		n_experts=cfg.experts,
 		
+		p_dropout=cfg.dropout,
+		
 		l_padding = cfg.input_alignment,
 		
 		training = training,

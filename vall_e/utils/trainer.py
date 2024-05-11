@@ -151,6 +151,9 @@ def train(
 	last_save_step = engines.global_step
 	last_eval_step = 0
 
+	if cfg.distributed:
+		train_dl.sampler.set_epoch(int(engines.global_samples / len(train_dl.dataset.paths)))
+
 	# Training loop
 	for batch in _make_infinite_epochs(train_dl):
 		if engines.global_step >= cfg.trainer.iterations:

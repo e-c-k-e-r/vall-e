@@ -212,6 +212,7 @@ class Model:
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 	attention: str = "eager" # or flash_attention_2
 	audio_embedding_sums: bool = True
+	dropout: float = 0.1 # adjustable dropout value
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
@@ -686,6 +687,9 @@ class Config(_Config):
 
 		if self.dataset.prompt_duration != 0:
 			self.dataset.prompt_duration_range = [self.dataset.prompt_duration, self.dataset.prompt_duration]
+
+		if self.trainer.backend == "local" and self.distributed:
+			self.trainer.ddp = True
 
 # Preserves the old behavior
 class NaiveTokenizer:
