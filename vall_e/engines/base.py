@@ -201,7 +201,7 @@ class Engine():
 	
 	def _get_grad_norm(self):
 		t = [ param.grad.detach().flatten() for param in self.module.parameters() if param.grad is not None ]
-		self._global_grad_norm = torch.cat(t).norm().item() if len(t) else 0
+		self._global_grad_norm = torch.cat(t).norm().item() if len(t) else None
 
 	def get_lr(self):
 		lrs = []
@@ -478,14 +478,13 @@ class Engines(dict[str, Engine]):
 				flatten_dict(
 					{
 						name.split("-")[0]: dict(
-							loss=loss.item(),
+							**engine_stats,
 							lr=engine.get_lr()[0],
-							grad_norm=engine.get_global_grad_norm(), # This norm is delayed but global and avoids extra computation
+							grad_norm=engine.get_global_grad_norm(),
 							elapsed_time=elapsed_time,
 							engine_step=engine.global_step,
 							samples_processed=engine.global_samples,
 							tokens_processed=engine.tokens_processed,
-							**engine_stats,
 						)
 					}
 				),

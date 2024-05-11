@@ -98,6 +98,7 @@ You can enter `save` to save the state at any time, or `quit` to save and quit t
 
 The `lr` will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
 
+
 ### Plotting Metrics
 
 Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot yaml="./training/config.yaml"`
@@ -105,6 +106,8 @@ Included is a helper script to parse the training metrics. Simply invoke it with
 You can specify what X and Y labels you want to plot against by passing `--xs tokens_processed --ys loss stats.acc`
 
 ### Notices
+
+If you're training under `float16`, it is recommended to use the `local` backend with `amp` enabled. There's something really funky with `deepspeed` as a backend that's causing issues with training.
 
 #### Training Under Windows
 
@@ -124,17 +127,17 @@ Unfortunately, efforts to train a *good* foundational model seems entirely predi
 
 As the core of VALL-E makes use of a language model, various LLM architectures can be supported and slotted in. Currently supported:
 
-* `transformer`: a basic attention-based transformer implementation, with attention heads + feed forwards.
-* `retnet`: using [TorchScale's RetNet](https://github.com/microsoft/torchscale/blob/main/torchscale/architecture/retnet.py) implementation, a retention-based approach can be used instead.
-  - Its implementation for MoE can also be utilized.
-* `retnet-hf`: using [syncdoth/RetNet/](https://github.com/syncdoth/RetNet/) with a HuggingFace-compatible RetNet model
-  - inferencing cost is about 0.5x, and MoE is not implemented.
 * `llama`: using HF transformer's LLaMa implementation for its attention-based transformer, boasting RoPE and other improvements.
 * `mixtral`: using HF transformer's Mixtral implementation for its attention-based transformer, also utilizing its MoE implementation.
 * `bitnet`: using [this](https://github.com/kyegomez/BitNet/) implementation of BitNet's transformer.
   - Setting `cfg.optimizers.bitnet=True` will make use of BitNet's linear implementation.
+* `transformer`: a basic attention-based transformer implementation, with attention heads + feed forwards.
+* `retnet`: using [TorchScale's RetNet](https://github.com/microsoft/torchscale/blob/main/torchscale/architecture/retnet.py) implementation, a retention-based approach can be used instead.
+  - Its implementation for MoE can also be utilized.
+* `retnet-hf`: using [syncdoth/RetNet/](https://github.com/syncdoth/RetNet) with a HuggingFace-compatible RetNet model
+  - inferencing cost is about 0.5x, and MoE is not implemented.
 
-If you're training a true foundational model, consider which backend you want to use the most. `llama` backends can benefit from all the additional tech with it, while exotic ones like `retnet` or `bitnet` can't at the moment, but may leverage experimental gains.
+It's recommended to use `llama` with `xformers`-based attention, as the savings are huge in comparison to even `retnet`-backed models.
 
 ## Export
 
