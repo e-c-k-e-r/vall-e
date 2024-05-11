@@ -210,7 +210,7 @@ class Model:
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
 	p_ar_level: float | str = "auto" # determines odds of selecting the AR (level 0) when training, "auto" for default behavior
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
-	attention: str = "eager" # or flash_attention_2
+	attention: str = "auto"
 	audio_embedding_sums: bool = True
 	dropout: float = 0.1 # adjustable dropout value
 

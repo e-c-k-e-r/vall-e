@@ -183,7 +183,7 @@ def replace_embedding( model, klass=Embedding, target=torch.nn.Embedding, verbos
 	return model
 
 # cannot feasibly do default arguments here sad
-def replace_attention( model, klass, target, verbose=False ):
+def replace_attention( model, klass, target, mode="math", verbose=False ):
 	device = next(model.parameters()).device
 	dtype = next(model.parameters()).dtype
 	modules = [k.split('.') for k, m in model.named_modules() if isinstance(m, target)]
@@ -199,6 +199,7 @@ def replace_attention( model, klass, target, verbose=False ):
 		kwargs = dict(
 			config = m.config,
 			layer_idx = m.layer_idx,
+			mode = mode,
 		)
 		# overwrite
 		setattr(

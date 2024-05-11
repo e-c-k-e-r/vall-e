@@ -365,8 +365,10 @@ def example_usage():
 		'n_tokens': 1024,
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
-		'n_layers': 12, # 32
+		'n_layers': 8, # 32
 		'n_experts': 1,
+
+		'p_dropout': 0.0,
 
 		'l_padding': 8 if cfg.optimizations.fp8 else 0,
 
