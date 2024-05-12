@@ -654,6 +654,27 @@ class Config(_Config):
 			self.dataset.use_hdf5 = False
 
 	def format( self ):
+		if isinstance(self.dataset, type):
+			self.dataset = dict()
+
+		if isinstance(self.model, type):
+			self.model = dict()
+		
+		if isinstance(self.hyperparameters, type):
+			self.hyperparameters = dict()
+		
+		if isinstance(self.evaluation, type):
+			self.evaluation = dict()
+		
+		if isinstance(self.trainer, type):
+			self.trainer = dict()
+		
+		if isinstance(self.inference, type):
+			self.inference = dict()
+		
+		if isinstance(self.optimizations, type):
+			self.optimizations = dict()
+
 		self.dataset = Dataset(**self.dataset)
 		self.dataset.training = [ Path(dir) for dir in self.dataset.training ]
 		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
