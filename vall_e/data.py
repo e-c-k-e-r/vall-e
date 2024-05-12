@@ -145,7 +145,7 @@ def _get_hdf5_paths( data_dir, type="training", validate=False ):
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
 	key = f"/{type}/{_get_hdf5_path(data_dir)}"
-	return [ Path(f"{key}/{child.attrs['id']}") for child in cfg.hdf5[key].values() if not validate or _validate(child) ] if key in cfg.hdf5 else []
+	return [ Path(f"{key}/{child}") for child in cfg.hdf5[key].keys() if not validate or _validate(child) ] if key in cfg.hdf5 else []
 
 def _get_paths_of_extensions( path, extensions=_get_quant_extension(), validate=False ):
 	if isinstance(path, str):
@@ -1003,6 +1003,145 @@ def create_dataset_hdf5( skip_existing=True ):
 	hf.create_dataset('symmap', data=json.dumps(symmap))
 	hf.close()
 
+def extract_dataset_hdf5( skip_existing=True ):
+	cfg.dataset.use_hdf5 = True
+	cfg.load_hdf5(write=False)
+	hf = cfg.hdf5
+
+	symmap = get_phone_symmap()
+
+	reverse_symmap = {"1":"<s>","2":"</s>","3":" ","4":".","5":",","6":"!","7":"p","8":"iː","9":"ɚ","10":"ˌ","11":"dˌ","12":"mˌ","13":"d","14":"ɹ","15":"tˈ","16":"pˌ","17":"uː","18":"l","19":"æ","20":"ɛ","21":"ɪ","22":"j","23":"ʊ","24":"t","25":"n","26":"v","27":"a","28":"o","29":"ŋ","30":"w","31":"ʌ","32":"hˈ","33":"ɡˈ","34":"ə","35":"θˈ","36":"dˈ","37":"wˌ","38":"h","39":"z","40":"k","41":"ð","42":"ɡˌ","43":"ˈ","44":"fˈ","45":"i","46":"s","47":"ʃ","48":"wˈ","49":"ðˈ","50":"ɹˈ","51":"lˈ","52":"ɡ","53":"oː","54":"mˈ","55":"e","56":"ɑː","57":"nˈ","58":"m","59":"θˌ","60":"sˈ","61":"f","62":"ɔː","63":"hˌ","64":"b","65":"jˈ","66":"ɐ","67":"ʒˈ","68":"θ","69":"bˈ","70":"ɾ","71":"ɜː","72":"ʌˈ","73":"ʃˌ","74":"bˌ","75":"kˈ","76":"ɔ","77":"zˈ","78":"ᵻ","79":"kˌ","80":"vˈ","81":"fˌ","82":"ʒ","83":"ʃˈ","84":"ɹˌ","85":"tˌ","86":"pˈ","87":"ðˌ","88":"sˌ","89":"nˌ","90":"lˌ","91":"̩","92":"ʔ","93":"vˌ","94":"ɪˈ","95":"\"","96":"ɪˌ","97":"ʒˌ","98":"uːˌ","99":"ʊˈ","100":"jˌ","101":"uːˈ","102":"iːˈ","103":"zˌ","104":".ˈ","105":"…","106":"ŋˌ","107":"ɐˌ","108":"—ˈ","109":"iˌ","110":"iːˌ","111":"ɛː","112":")","113":")ˈ","114":"(","115":"u","116":"-","117":"ɖˈ","118":"iˈ","119":"ʰˈ","120":"ɟˈ","121":"̃","122":"eː","123":"ɾˈ","124":"r","125":"ʰ","126":"-ˌ","127":"ɫ","128":"q","129":"—","130":"ʊˌ","131":"aː","132":"cˈ","133":"…ˈ","134":"c","135":"ɳ","136":"ɐˈ","137":"x","138":"ʔˌ","139":".ˌ","140":"ɑ","141":"?ˈ","142":"̩ˈ","143":"\"ˈ","144":",ˈ","145":"ŋˈ","146":"əˌ","147":"!ˈ","148":"\"ˌ","149":"?ˌ","150":",ˌ","151":"—ˌ","152":"̩ˌ","153":"əˈ","154":"!ˌ","155":"ɬ","156":"ʲ","157":"¡","158":"ɯ","159":"qˌ","160":"ʑ","161":"ʑˈ","162":"¿","163":"ɑːˈ","164":"iːː","165":"ɛˈ","166":"¡ˈ","167":"æˈ","168":"ç","169":"ɾˌ","170":"ᵻˈ","171":"xˈ","172":"ɔːˈ","173":";","174":"ɬˌ","175":":","176":"ʔˈ","177":"ɑːˌ","178":"ɬˈ","179":"”","180":"“","181":"“ˈ","182":"“ˌ","183":";ˈ","184":";ˌ","185":":ˈ","186":"1","187":"rˈ","188":"qˈ","189":"ᵻˌ","190":"ä","191":"̞ˌ","192":"̞","193":"ũˌ","194":"ʑˌ","195":"ᵝ","196":"ɽ","197":"ʲˌ","198":"ᵝˌ","199":"ũ","200":"ũˈ","201":"äˌ","202":"ɕ","203":"ɕˌ","204":"ɽˌ","205":"çˌ","206":"…ˌ","207":"̞ˈ","208":"äˈ","209":"ɽˈ","210":"ɸˌ","211":"ɴ","212":"ɸˈ","213":"ɕˈ","214":"ɸ","215":"ᵝˈ","216":"ʲˈ","217":"ĩ","218":"çˈ","219":"ĩˌ","220":"oˌ","221":"eˈ","222":"ʍ","223":"eˌ","224":"uˌ","225":"ʍˌ","226":"uˈ","227":"oˈ","228":"aˈ"}
+	
+	root = str(cfg.data_dir)
+
+	def add( dir, type="training", audios=True, texts=True ):
+		name = str(dir)
+		name = name.replace(root, "data/")
+
+		Path(f'{cfg.relpath}/{name}/').mkdir(parents=True, exist_ok=True)
+
+		if f'{type}/{name}' not in hf:
+			return
+
+		ids = [ key for key in hf[f'{type}/{name}'].keys() ]
+
+		for id in tqdm(ids, desc=f"Processing {name}"):
+			try:
+				key = f'{type}/{name}/{id}'
+
+				if key not in hf:
+					tqdm.write(f'Missing key: {key}')
+					continue
+
+				group = hf[key]
+				audio_exists = "audio" in group
+				text_exists = "text" in group
+
+				if not audio_exists or not text_exists:
+					tqdm.write(f'Missing audio/text: {key}')
+					continue
+
+				audio_path = Path(f'{cfg.relpath}/{name}/{id}.enc')
+				text_path = Path(f'{cfg.relpath}/{name}/{id}.json')
+
+				# audio
+				if audios and audio_exists and not audio_path.exists():
+					qnt = group["audio"][:, :]
+					torch.save( qnt, f'{cfg.relpath}/{name}/{id}.enc' )
+
+				# text
+				if texts and text_exists and not text_path.exists():
+					tokens = group["text"][:][1:-1]
+					phones = [ reverse_symmap[f'{token}'] for token in tokens ]
+					phones = list("".join(phones).replace("  ", " "))
+
+					j = {
+						"text": "",
+						"phonemes": phones,
+						"language": "en"
+					}
+
+					with open(text_path, "w", encoding="utf-8") as f:
+						f.write( json.dumps( j ) )
+
+			except Exception as e:
+				raise e
+
+	# training
+	for data_dir in tqdm(cfg.dataset.training, desc="Processing Training"):
+		add( data_dir, type="training" )
+
+	# validation
+	for data_dir in tqdm(cfg.dataset.validation, desc='Processing Validation'):
+		add( data_dir, type="validation" )
+
+	# noise
+	for data_dir in tqdm(cfg.dataset.noise, desc='Processing Noise'):
+		add( data_dir, type="noise", texts=False )
+
+	hf.close()
+
+def retokenize_dataset_hdf5( skip_existing=True ):
+	cfg.dataset.use_hdf5 = True
+	cfg.load_hdf5(write=True)
+	hf = cfg.hdf5
+
+	symmap = get_phone_symmap()
+	reverse_symmap = {"1":"<s>","2":"</s>","3":" ","4":".","5":",","6":"!","7":"p","8":"iː","9":"ɚ","10":"ˌ","11":"dˌ","12":"mˌ","13":"d","14":"ɹ","15":"tˈ","16":"pˌ","17":"uː","18":"l","19":"æ","20":"ɛ","21":"ɪ","22":"j","23":"ʊ","24":"t","25":"n","26":"v","27":"a","28":"o","29":"ŋ","30":"w","31":"ʌ","32":"hˈ","33":"ɡˈ","34":"ə","35":"θˈ","36":"dˈ","37":"wˌ","38":"h","39":"z","40":"k","41":"ð","42":"ɡˌ","43":"ˈ","44":"fˈ","45":"i","46":"s","47":"ʃ","48":"wˈ","49":"ðˈ","50":"ɹˈ","51":"lˈ","52":"ɡ","53":"oː","54":"mˈ","55":"e","56":"ɑː","57":"nˈ","58":"m","59":"θˌ","60":"sˈ","61":"f","62":"ɔː","63":"hˌ","64":"b","65":"jˈ","66":"ɐ","67":"ʒˈ","68":"θ","69":"bˈ","70":"ɾ","71":"ɜː","72":"ʌˈ","73":"ʃˌ","74":"bˌ","75":"kˈ","76":"ɔ","77":"zˈ","78":"ᵻ","79":"kˌ","80":"vˈ","81":"fˌ","82":"ʒ","83":"ʃˈ","84":"ɹˌ","85":"tˌ","86":"pˈ","87":"ðˌ","88":"sˌ","89":"nˌ","90":"lˌ","91":"̩","92":"ʔ","93":"vˌ","94":"ɪˈ","95":"\"","96":"ɪˌ","97":"ʒˌ","98":"uːˌ","99":"ʊˈ","100":"jˌ","101":"uːˈ","102":"iːˈ","103":"zˌ","104":".ˈ","105":"…","106":"ŋˌ","107":"ɐˌ","108":"—ˈ","109":"iˌ","110":"iːˌ","111":"ɛː","112":")","113":")ˈ","114":"(","115":"u","116":"-","117":"ɖˈ","118":"iˈ","119":"ʰˈ","120":"ɟˈ","121":"̃","122":"eː","123":"ɾˈ","124":"r","125":"ʰ","126":"-ˌ","127":"ɫ","128":"q","129":"—","130":"ʊˌ","131":"aː","132":"cˈ","133":"…ˈ","134":"c","135":"ɳ","136":"ɐˈ","137":"x","138":"ʔˌ","139":".ˌ","140":"ɑ","141":"?ˈ","142":"̩ˈ","143":"\"ˈ","144":",ˈ","145":"ŋˈ","146":"əˌ","147":"!ˈ","148":"\"ˌ","149":"?ˌ","150":",ˌ","151":"—ˌ","152":"̩ˌ","153":"əˈ","154":"!ˌ","155":"ɬ","156":"ʲ","157":"¡","158":"ɯ","159":"qˌ","160":"ʑ","161":"ʑˈ","162":"¿","163":"ɑːˈ","164":"iːː","165":"ɛˈ","166":"¡ˈ","167":"æˈ","168":"ç","169":"ɾˌ","170":"ᵻˈ","171":"xˈ","172":"ɔːˈ","173":";","174":"ɬˌ","175":":","176":"ʔˈ","177":"ɑːˌ","178":"ɬˈ","179":"”","180":"“","181":"“ˈ","182":"“ˌ","183":";ˈ","184":";ˌ","185":":ˈ","186":"1","187":"rˈ","188":"qˈ","189":"ᵻˌ","190":"ä","191":"̞ˌ","192":"̞","193":"ũˌ","194":"ʑˌ","195":"ᵝ","196":"ɽ","197":"ʲˌ","198":"ᵝˌ","199":"ũ","200":"ũˈ","201":"äˌ","202":"ɕ","203":"ɕˌ","204":"ɽˌ","205":"çˌ","206":"…ˌ","207":"̞ˈ","208":"äˈ","209":"ɽˈ","210":"ɸˌ","211":"ɴ","212":"ɸˈ","213":"ɕˈ","214":"ɸ","215":"ᵝˈ","216":"ʲˈ","217":"ĩ","218":"çˈ","219":"ĩˌ","220":"oˌ","221":"eˈ","222":"ʍ","223":"eˌ","224":"uˌ","225":"ʍˌ","226":"uˈ","227":"oˈ","228":"aˈ"}
+	
+	root = str(cfg.data_dir)
+
+	def add( dir, type="training" ):
+		name = str(dir)
+		name = name.replace(root, "data/")
+
+		Path(f'{cfg.relpath}/{name}/').mkdir(parents=True, exist_ok=True)
+
+		if f'{type}/{name}' not in hf:
+			return
+
+		ids = [ key for key in hf[f'{type}/{name}'].keys() ]
+
+		for id in tqdm(ids, desc=f"Processing {name}"):
+			try:
+				key = f'{type}/{name}/{id}'
+
+				if key not in hf:
+					tqdm.write(f'Missing key: {key}')
+					continue
+
+				group = hf[key]
+				if not "text" in group:
+					tqdm.write(f'Missing text: {key}')
+					continue
+
+				tokens = group["text"][:][1:-1]
+				content = list("".join([ reverse_symmap[f'{token}'] for token in tokens ]).replace("  ", " "))
+
+				tokens = cfg.tokenizer.encode("".join(content))
+				tokens = np.array(tokens).astype(np.uint8) 
+
+				del group['text']
+				group.create_dataset('text', data=tokens, compression='lzf')
+
+			except Exception as e:
+				raise e
+
+	# training
+	for data_dir in tqdm(cfg.dataset.training, desc="Processing Training"):
+		add( data_dir, type="training" )
+
+	# validation
+	for data_dir in tqdm(cfg.dataset.validation, desc='Processing Validation'):
+		add( data_dir, type="validation" )
+
+	# write symmap
+	if "symmap" in hf:
+		del hf['symmap']
+
+	hf.create_dataset('symmap', data=json.dumps(symmap))
+	hf.close()
+
 if __name__ == "__main__":
 	import argparse
 
@@ -1023,6 +1162,10 @@ if __name__ == "__main__":
 
 	if args.action == "hdf5":
 		create_dataset_hdf5()
+	if args.action == "extract-hdf5":
+		extract_dataset_hdf5()
+	if args.action == "retokenize-hdf5":
+		retokenize_dataset_hdf5()
 	elif args.action == "metadata":
 		create_dataset_metadata()
 	elif args.action == "sample":

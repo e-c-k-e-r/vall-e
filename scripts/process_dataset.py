@@ -5,14 +5,20 @@ import torchaudio
 
 from tqdm.auto import tqdm
 from pathlib import Path
+from vall_e.config import cfg
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
-# to-do: use argparser
+# things that could be args
+cfg.sample_rate = 24_000
+cfg.inference.audio_backend = "encodec"
+
 input_audio = "voices"
-input_metadata = "training/metadata"
-output_dataset = "training/data"
+input_metadata = "./training/metadata"
+output_dataset = f"./training/data-{'2' if cfg.sample_rate else '4'}4KHz-{cfg.inference.audio_backend}"
 device = "cuda"
+
+audio_extension = ".dac" if cfg.inference.audio_backend == "dac" else ".enc"
 
 slice = "auto"
 missing = {
@@ -28,6 +34,9 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 	if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
 		print("Is not dir:", f'./{input_audio}/{dataset_name}/')
 		continue
+	
+	if dataset_name in ["LibriVox", "Audiobooks"]:
+		continue
 
 	for speaker_id in tqdm(sorted(os.listdir(f'./{input_audio}/{dataset_name}/')), desc=f"Processing speaker in {dataset_name}"):
 		if not os.path.isdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
@@ -35,6 +44,23 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 			continue
 		
 		os.makedirs(f'./{output_dataset}/{dataset_name}/{speaker_id}/', exist_ok=True)
+
+		if speaker_id == "Noise":
+			for filename in sorted(os.listdir(f'./{input_audio}/{dataset_name}/{speaker_id}/')):
+				inpath = Path(f'./{input_audio}/{dataset_name}/{speaker_id}/{filename}')
+				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{filename}')
+
+				if _replace_file_extension(outpath, audio_extension).exists():
+					continue
+
+				waveform, sample_rate = torchaudio.load(inpath)
+				qnt = valle_quantize(waveform, sr=sample_rate, device=device)
+				if cfg.inference.audio_backend == "dac":
+					qnt.save(_replace_file_extension(outpath, audio_extension))
+				else:
+					torch.save( qnt, _replace_file_extension(outpath, audio_extension) )
+
+			continue
 		
 		metadata_path = Path(f'./{input_metadata}/{dataset_name}/{speaker_id}/whisper.json')
 		if not metadata_path.exists():
@@ -46,6 +72,9 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 		except Exception as e:
 			missing["transcription"].append(str(metadata_path))
 			continue
+
+		if f'{dataset_name}/{speaker_id}' not in dataset:
+			dataset.append(f'{dataset_name}/{speaker_id}')
 
 		txts = []
 		wavs = []
@@ -64,9 +93,6 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 			waveform, sample_rate = None, None
 			language = metadata[filename]["language"] if "language" in metadata[filename] else "english"
 
-			if f'{dataset_name}/{speaker_id}' not in dataset:
-				dataset.append(f'{dataset_name}/{speaker_id}')
-
 			if len(metadata[filename]["segments"]) == 0 or not use_slices:
 				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}.{extension}')
 				text = metadata[filename]["text"]
@@ -74,7 +100,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 				if len(text) == 0:
 					continue
 
-				if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, ".dac").exists():
+				if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, audio_extension).exists():
 					continue
 
 				if not _replace_file_extension(outpath, ".json").exists():
@@ -84,7 +110,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 						language,
 					))
 				
-				if not _replace_file_extension(outpath, ".dac").exists():
+				if not _replace_file_extension(outpath, audio_extension).exists():
 					if waveform is None:
 						waveform, sample_rate = torchaudio.load(inpath)
 
@@ -100,7 +126,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 					i = i + 1
 					outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
 
-					if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, ".dac").exists():
+					if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, audio_extension).exists():
 						continue
 
 					if not _replace_file_extension(outpath, ".json").exists():
@@ -110,7 +136,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 							language,
 						))
 					
-					if not _replace_file_extension(outpath, ".dac").exists():
+					if not _replace_file_extension(outpath, audio_extension).exists():
 						if waveform is None:
 							waveform, sample_rate = torchaudio.load(inpath)
 
@@ -132,7 +158,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 						))
 
 		if len(txts) > 0:
-			for job in tqdm(txts, desc=f"Phonemizing: {speaker_id}"):
+			for job in tqdm(txts, desc=f"Phonemizing: {speaker_id}", disable=True):
 				outpath, text, language = job
 				phones = valle_phonemize(text)
 				data = {
@@ -147,10 +173,13 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 				try:
 					outpath, waveform, sample_rate = job
 					qnt = valle_quantize(waveform, sr=sample_rate, device=device)
-					qnt.save(_replace_file_extension(outpath, ".dac"))
+					if cfg.inference.audio_backend == "dac":
+						qnt.save(_replace_file_extension(outpath, audio_extension))
+					else:
+						torch.save( qnt, _replace_file_extension(outpath, audio_extension) )
 				except Exception as e:
 					print(f"Failed to quantize: {outpath}:", e)
 					continue
 
-open("./training/missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
-open("./training/dataset_list.json", 'w', encoding='utf-8').write(json.dumps(dataset))
+open("./missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
+open("./dataset_list.json", 'w', encoding='utf-8').write(json.dumps(dataset))
