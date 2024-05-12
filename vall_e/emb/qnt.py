@@ -276,7 +276,7 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.mod
 		if not isinstance(levels, int):
 			levels = 8 if model.model_type == "24khz" else None
 
-		with torch.autocast("cuda", dtype=torch.bfloat16, enabled=False): # or True for about 2x speed, not enabling by default for systems that do not have bfloat16 
+		with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
 			artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
 
 		# trim to 8 codebooks if 24Khz
