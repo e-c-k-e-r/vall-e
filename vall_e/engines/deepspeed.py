@@ -60,6 +60,8 @@ class Engine(DeepSpeedEngine):
 		self.global_samples = stats["global_samples"]
 		self.tokens_processed = stats["tokens_processed"]
 
+		self.max_nan_losses = 8
+
 	def freeze(self, freeze_all=True):
 		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):
 			raise Exception("freeze_all=False yet self._cfg.frozen_params is None")
@@ -112,6 +114,11 @@ class Engine(DeepSpeedEngine):
 
 		losses = self.gather_attribute("loss")
 		loss = torch.stack([*losses.values()]).sum()
+
+		if torch.isnan(loss).any():
+			self.max_nan_losses = self.max_nan_losses - 1
+			if self.max_nan_losses < 0:
+				raise RuntimeError("Too many NaN losses detected.")
 
 		stats = {}
 		stats |= {k: v.item() for k, v in losses.items()}

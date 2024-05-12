@@ -544,6 +544,13 @@ class Trainer:
 			return torch.float8_e4m3fn
 		return torch.float32
 
+	@cached_property
+	def scale_loss(self):
+		# currently cannot feasibly apply loss scaling with DeepSpeed backend (it can handle it itself anyways)
+		if self.backend != "local":
+			return False
+		return self.dtype == torch.float16
+
 
 @dataclass()
 class Inference:
