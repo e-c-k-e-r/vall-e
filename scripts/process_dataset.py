@@ -15,7 +15,7 @@ cfg.inference.audio_backend = "encodec"
 
 input_audio = "voices"
 input_metadata = "./training/metadata"
-output_dataset = f"./training/data-{'2' if cfg.sample_rate else '4'}4KHz-{cfg.inference.audio_backend}"
+output_dataset = f"./training/data-{'2' if cfg.sample_rate == 24_000 else '4'}4KHz-{cfg.inference.audio_backend}"
 device = "cuda"
 
 audio_extension = ".dac" if cfg.inference.audio_backend == "dac" else ".enc"

@@ -125,7 +125,7 @@ Unfortunately, efforts to train a *good* foundational model seems entirely predi
 
 #### Backend Architectures
 
-As the core of VALL-E makes use of a language model, various LLM architectures can be supported and slotted in. Currently supported:
+As the core of VALL-E makes use of a language model, various LLM architectures can be supported and slotted in. Currently supported LLm architectures:
 
 * `llama`: using HF transformer's LLaMa implementation for its attention-based transformer, boasting RoPE and other improvements.
 * `mixtral`: using HF transformer's Mixtral implementation for its attention-based transformer, also utilizing its MoE implementation.
@@ -135,9 +135,24 @@ As the core of VALL-E makes use of a language model, various LLM architectures c
 * `retnet`: using [TorchScale's RetNet](https://github.com/microsoft/torchscale/blob/main/torchscale/architecture/retnet.py) implementation, a retention-based approach can be used instead.
   - Its implementation for MoE can also be utilized.
 * `retnet-hf`: using [syncdoth/RetNet/](https://github.com/syncdoth/RetNet) with a HuggingFace-compatible RetNet model
-  - inferencing cost is about 0.5x, and MoE is not implemented.
+  - has an inference penality, and MoE is not implemented.
 
-It's recommended to use `llama` with `xformers`-based attention, as the savings are huge in comparison to even `retnet`-backed models.
+For audio backends:
+
+* [`encodec`](https://github.com/facebookresearch/encodec): a tried-and-tested EnCodec to encode/decode audio.
+* [`vocos`](https://huggingface.co/charactr/vocos-encodec-24khz): a higher quality EnCodec decoder.
+  - encoding audio will use the `encodec` backend automagically, as there's no EnCodec encoder under `vocos`
+* [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality
+  - **Note** models using `descript-audio-codec` at 24KHz + 6kbps will NOT converge. Unknown if 44KHz fares any better.
+
+`llama`-based models also support different attention backends:
+* `math`: torch's SDPA's `math` implementation
+* `mem_efficient`: torch's SDPA's memory efficient (`xformers` adjacent) implementation
+* `flash`: torch's SDPA's flash attention implementation
+* `xformers`: [facebookresearch/xformers](https://github.com/facebookresearch/xformers/)'s memory efficient attention
+* `auto`: determine the best fit from the above
+* `sdpa`: integrated `LlamaSdpaAttention` attention model
+* `flash_attention_2`: integrated `LlamaFlashAttetion2` attention model
 
 ## Export
 

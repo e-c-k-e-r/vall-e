@@ -147,7 +147,7 @@ def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 	if not cfg.variable_sample_rate:
 		# yes there's a better way, something like f'{cfg.sample.rate//1000}hz'
 		if cfg.sample_rate == 44_000:
-			kwargs["model_type"] = "44kz"
+			kwargs["model_type"] = "44khz"
 		elif cfg.sample_rate == 24_000:
 			kwargs["model_type"] = "24khz"
 		elif cfg.sample_rate == 16_000:

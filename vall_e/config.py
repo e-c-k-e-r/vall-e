@@ -558,7 +558,7 @@ class Inference:
 	amp: bool = False
 
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
-	audio_backend: str = "dac"
+	audio_backend: str = "vocos" # encodec, vocos, dac
 
 	# legacy / backwards compat
 	use_vocos: bool = True
@@ -731,6 +731,7 @@ try:
 	if cfg.dataset.use_hdf5:
 		cfg.load_hdf5()
 except Exception as e:
+	cfg.dataset.use_hdf5 = False
 	print("Error while parsing config YAML:", e)
 	pass
 
