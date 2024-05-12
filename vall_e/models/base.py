@@ -658,8 +658,11 @@ class Base(nn.Module):
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
 
+		# Disabling for now, it might be broken
+		"""
 		if self.config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
 			self.model = ml.replace_attention( self.model, klass=Llama_Attention, target=LlamaAttention, mode=self.config.attention )
+		"""
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 

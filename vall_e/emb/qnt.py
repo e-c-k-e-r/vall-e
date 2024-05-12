@@ -212,12 +212,12 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 		dummy = False
 		if metadata is None:
 			metadata = dict(
-				chunk_length=120,
+				chunk_length= codes.shape[-1],
 				original_length=0,
 				input_db=-12,
 				channels=1,
 				sample_rate=model.sample_rate,
-				padding=False,
+				padding=True,
 				dac_version='1.0.0',
 			)
 			dummy = True

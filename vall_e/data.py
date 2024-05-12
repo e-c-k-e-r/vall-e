@@ -1034,13 +1034,29 @@ if __name__ == "__main__":
 			"validation": [ next(iter(val_dl)),  next(iter(val_dl)) ],
 		}
 
+		Path("./data/sample-test/").mkdir(parents=True, exist_ok=True)
+
 		for k, v in samples.items():
 			for i in range(len(v)):
-				del v[i]['proms']
-				del v[i]['resps']
-			print(f'{k}:', v)
+				for j in tqdm(range(len(v[i]['proms'])), desc="Decoding..."):
+					"""
+					try:
+						decode_to_file( v[i]['proms'][j], f"./data/sample-test/{k}.{i}.{j}.proms.wav", device="cpu" )
+					except Exception as e:
+						print(f"Error while decoding prom {k}.{i}.{j}.wav:", str(e))
+					try:
+						decode_to_file( v[i]['resps'][j], f"./data/sample-test/{k}.{i}.{j}.resps.wav", device="cpu" )
+					except Exception as e:
+						print(f"Error while decoding resp {k}.{i}.{j}.wav:", str(e))
+					"""
+					v[i]['proms'][j] = v[i]['proms'][j].shape
+					v[i]['resps'][j] = v[i]['resps'][j].shape
+		
+		for k, v in samples.items():
+			for i in range(len(v)):
+				print(f'{k}[{i}]:', v[i])
 
-		train_dl.dataset.save_state_dict(cfg.relpath / "train_dataset.pt")
+		#train_dl.dataset.save_state_dict(cfg.relpath / "train_dataset.pt")
 
 	elif args.action == "tasks":
 		index = 0
