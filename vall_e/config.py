@@ -343,7 +343,6 @@ class DeepSpeed:
 	inferencing: bool = False
 	
 	amp: bool = False
-	fp16: bool = False
 
 	config: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 
@@ -373,7 +372,7 @@ class DeepSpeed:
 			autotune_params['exps_dir'] = str( cfg.relpath / "autotune" / "exps_" )
 
 		# DeepSpeed fp16 is incompatible with its AMP
-		if cfg.trainer.weight_dtype.lower() == "float16" and self.fp16:
+		if cfg.trainer.weight_dtype.lower() == "float16":
 			self.amp = False
 
 		# disable local AMP
@@ -393,7 +392,7 @@ class DeepSpeed:
 			} if not cfg.hyperparameters.torch_scheduler else None,
 			"gradient_clipping": cfg.hyperparameters.gradient_clipping,
 			"fp16": {
-				"enabled": cfg.trainer.weight_dtype.lower() == "float16" and self.fp16,
+				"enabled": cfg.trainer.weight_dtype.lower() == "float16",
 				"auto_cast": True, # ???
 			},
 			"bf16": {
