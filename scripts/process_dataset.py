@@ -6,16 +6,22 @@ import torchaudio
 from tqdm.auto import tqdm
 from pathlib import Path
 from vall_e.config import cfg
+
+# things that could be args
+cfg.sample_rate = 44_000
+cfg.inference.audio_backend = "dac"
+"""
+cfg.inference.weight_dtype = "bfloat16"
+cfg.inference.dtype = torch.bfloat16
+cfg.inference.amp = True
+"""
+
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
-# things that could be args
-cfg.sample_rate = 24_000
-cfg.inference.audio_backend = "encodec"
-
 input_audio = "voices"
-input_metadata = "./training/metadata"
-output_dataset = f"./training/data-{'2' if cfg.sample_rate == 24_000 else '4'}4KHz-{cfg.inference.audio_backend}"
+input_metadata = "metadata"
+output_dataset = f"training-{'2' if cfg.sample_rate == 24_000 else '4'}4KHz-{cfg.inference.audio_backend}"
 device = "cuda"
 
 audio_extension = ".dac" if cfg.inference.audio_backend == "dac" else ".enc"
@@ -33,9 +39,6 @@ def pad(num, zeroes):
 for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 	if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
 		print("Is not dir:", f'./{input_audio}/{dataset_name}/')
-		continue
-	
-	if dataset_name in ["LibriVox", "Audiobooks"]:
 		continue
 
 	for speaker_id in tqdm(sorted(os.listdir(f'./{input_audio}/{dataset_name}/')), desc=f"Processing speaker in {dataset_name}"):
@@ -55,10 +58,29 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 
 				waveform, sample_rate = torchaudio.load(inpath)
 				qnt = valle_quantize(waveform, sr=sample_rate, device=device)
+
 				if cfg.inference.audio_backend == "dac":
-					qnt.save(_replace_file_extension(outpath, audio_extension))
+					np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
+						"codes": qnt.codes.numpy().astype(np.uint16),
+						"metadata": {
+							"original_length": qnt.original_length,
+							"sample_rate": qnt.sample_rate,
+							
+							"input_db": qnt.input_db.numpy().astype(np.float32),
+							"chunk_length": qnt.chunk_length,
+							"channels": qnt.channels,
+							"padding": qnt.padding,
+							"dac_version": "1.0.0",
+						},
+					})
 				else:
-					torch.save( qnt, _replace_file_extension(outpath, audio_extension) )
+					np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
+						"codes": qnt.numpy().astype(np.uint16),
+						"metadata": {
+							"original_length": waveform.shape[-1],
+							"sample_rate": sample_rate,
+						},
+					})
 
 			continue
 		
@@ -91,7 +113,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 			fname = filename.replace(f'.{extension}', "")
 
 			waveform, sample_rate = None, None
-			language = metadata[filename]["language"] if "language" in metadata[filename] else "english"
+			language = metadata[filename]["language"] if "language" in metadata[filename] else "en"
 
 			if len(metadata[filename]["segments"]) == 0 or not use_slices:
 				outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}.{extension}')
@@ -100,83 +122,98 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 				if len(text) == 0:
 					continue
 
-				if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, audio_extension).exists():
+				if _replace_file_extension(outpath, audio_extension).exists():
 					continue
 
-				if not _replace_file_extension(outpath, ".json").exists():
-					txts.append((
-						outpath,
-						text,
-						language,
-					))
-				
-				if not _replace_file_extension(outpath, audio_extension).exists():
-					if waveform is None:
-						waveform, sample_rate = torchaudio.load(inpath)
+				if waveform is None:
+					waveform, sample_rate = torchaudio.load(inpath)
+					if waveform.shape[0] > 1:
+						waveform = torch.mean(waveform, dim=0, keepdim=True)
 
-					wavs.append((
-						outpath,
-						waveform,
-						sample_rate
-					))
+				wavs.append((
+					outpath,
+					text,
+					language,
+					waveform,
+					sample_rate
+				))
 			else:
 				i = 0
 				for segment in metadata[filename]["segments"]:
 					id = pad(i, 4)
 					i = i + 1
-					outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
 
-					if _replace_file_extension(outpath, ".json").exists() and _replace_file_extension(outpath, audio_extension).exists():
+					outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
+					text = metadata[filename]["text"]
+
+					if len(text) == 0:
 						continue
 
-					if not _replace_file_extension(outpath, ".json").exists():
-						txts.append((
-							outpath,
-							segment["text"],
-							language,
-						))
-					
-					if not _replace_file_extension(outpath, audio_extension).exists():
-						if waveform is None:
-							waveform, sample_rate = torchaudio.load(inpath)
+					if _replace_file_extension(outpath, audio_extension).exists():
+						continue
 
-						start = int(segment['start'] * sample_rate)
-						end = int(segment['end'] * sample_rate)
+					if waveform is None:
+						waveform, sample_rate = torchaudio.load(inpath)
+						if waveform.shape[0] > 1:
+							waveform = torch.mean(waveform, dim=0, keepdim=True)
 
-						if start < 0:
-							start = 0
-						if end >= waveform.shape[-1]:
-							end = waveform.shape[-1] - 1
+					start = int(segment['start'] * sample_rate)
+					end = int(segment['end'] * sample_rate)
 
-						if end - start < 0:
-							continue
+					if start < 0:
+						start = 0
+					if end >= waveform.shape[-1]:
+						end = waveform.shape[-1] - 1
 
-						wavs.append((
-							outpath,
-							waveform[:, start:end],
-							sample_rate
-						))
+					if end - start < 0:
+						continue
 
-		if len(txts) > 0:
-			for job in tqdm(txts, desc=f"Phonemizing: {speaker_id}", disable=True):
-				outpath, text, language = job
-				phones = valle_phonemize(text)
-				data = {
-					"text": text.strip(),
-					"phonemes": phones,
-					"language": language,
-				}
-				open(_replace_file_extension(outpath, ".json"), 'w', encoding='utf-8').write(json.dumps(data))
+					wavs.append((
+						outpath,
+						text,
+						language,
+						waveform[:, start:end],
+						sample_rate
+					))
 
 		if len(wavs) > 0:
 			for job in tqdm(wavs, desc=f"Quantizing: {speaker_id}"):
 				try:
-					outpath, waveform, sample_rate = job
+					outpath, text, language, waveform, sample_rate = job
+
+					phones = valle_phonemize(text)
 					qnt = valle_quantize(waveform, sr=sample_rate, device=device)
+
 					if cfg.inference.audio_backend == "dac":
-						qnt.save(_replace_file_extension(outpath, audio_extension))
+						np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
+							"codes": qnt.codes.numpy().astype(np.uint16),
+							"metadata": {
+								"original_length": qnt.original_length,
+								"sample_rate": qnt.sample_rate,
+								
+								"input_db": qnt.input_db.numpy().astype(np.float32),
+								"chunk_length": qnt.chunk_length,
+								"channels": qnt.channels,
+								"padding": qnt.padding,
+								"dac_version": "1.0.0",
+
+								"text": text.strip(),
+								"phonemes": "".join(phones),
+								"language": language,
+							},
+						})
 					else:
-						torch.save( qnt, _replace_file_extension(outpath, audio_extension) )
+						np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
+							"codes": qnt.numpy().astype(np.uint16),
+							"metadata": {
+								"original_length": waveform.shape[-1],
+								"sample_rate": sample_rate,
+
+								"text": text.strip(),
+								"phonemes": "".join(phones),
+								"language": language,
+							},
+						})
 				except Exception as e:
 					print(f"Failed to quantize: {outpath}:", e)
 					continue

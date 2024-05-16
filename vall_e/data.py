@@ -86,19 +86,15 @@ def _calculate_durations( type="training" ):
 def _load_paths(dataset, type="training"):
 	return { cfg.get_spkr( cfg.data_dir / data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
 
-def _load_paths_from_metadata(dataset_name, type="training", validate=False):
-	data_dir = dataset_name if cfg.dataset.use_hdf5 else cfg.data_dir / dataset_name
+def _load_paths_from_metadata(group_name, type="training", validate=False):
+	data_dir = group_name if cfg.dataset.use_hdf5 else cfg.data_dir / group_name
 
 	_fn = _get_hdf5_paths if cfg.dataset.use_hdf5 else _get_paths_of_extensions
 
-	def key( id ):
-		if not cfg.dataset.use_hdf5:
-			return data_dir / id
+	def key( id, entry=None ):
+		return f"/{type}/{_get_hdf5_path(data_dir)}/{id}" if cfg.dataset.use_hdf5 else data_dir / id
 
-		return f"/{type}/{_get_hdf5_path(data_dir)}/{id}" 
-
-
-	metadata_path = cfg.metadata_dir / f'{dataset_name}.json'
+	metadata_path = cfg.metadata_dir / f'{group_name}.json'
 	metadata = {}
 
 	if cfg.dataset.use_metadata and metadata_path.exists():
@@ -107,10 +103,7 @@ def _load_paths_from_metadata(dataset_name, type="training", validate=False):
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_quant_extension(), validate )
 
-
-	def _validate( id ):
-		entry = metadata[id]
-
+	def _validate( id, entry ):
 		phones = entry['phones'] if "phones" in entry else 0
 		duration = entry['duration'] if "duration" in entry else 0
 		if type not in _total_durations:
@@ -118,14 +111,16 @@ def _load_paths_from_metadata(dataset_name, type="training", validate=False):
 		
 		_total_durations[type] += duration
 		
+		"""
 		if cfg.dataset.use_hdf5:
 			k = key( id )
 			if k not in cfg.hdf5 or "audio" not in cfg.hdf5[k] or "text" not in cfg.hdf5[k]:
 				return False
+		"""
 
-		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
+		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration #and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
-	return [ key(id) for id in metadata.keys() if not validate or _validate(id) ]
+	return [ key(id, entry) for id, entry in metadata.items() if not validate or _validate(id, entry) ]
 
 
 def _get_hdf5_path(path):
@@ -136,16 +131,16 @@ def _get_hdf5_path(path):
 def _get_hdf5_paths( data_dir, type="training", validate=False ):
 	data_dir = str(data_dir)
 
-	def _validate( child ):
-		phones = child.attrs['phonemes']
-		duration = child.attrs['duration']
+	def _validate( id, entry ):
+		phones = entry.attrs['phonemes']
+		duration = entry.attrs['duration']
 		if type not in _total_durations:
 			_total_durations[type] = 0
-		_total_durations[type] += child.attrs['duration']
-		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
+		_total_durations[type] += entry.attrs['duration']
+		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration #and cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
 
 	key = f"/{type}/{_get_hdf5_path(data_dir)}"
-	return [ Path(f"{key}/{child.attrs['id']}") for child in cfg.hdf5[key].values() if not validate or _validate(child) ] if key in cfg.hdf5 else []
+	return [ Path(f"{key}/{id}") for id, entry in cfg.hdf5[key].items() if not validate or _validate(id, entry) ] if key in cfg.hdf5 else []
 
 def _get_paths_of_extensions( path, extensions=_get_quant_extension(), validate=False ):
 	if isinstance(path, str):
@@ -807,47 +802,30 @@ def create_dataset_metadata( skip_existing=True ):
 				if id not in metadata:
 					metadata[id] = {}
 
-				# audio
+				utterance_metadata = {}
 				if audios:
-					if _get_quant_extension() == ".dac":
-						dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
-						qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
+					# ideally we'll encode Encodec-based audio in a similar manner because np has smaller files than pt
+					dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
+					qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
 
-						duration = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
-						metadata[id]["metadata"] = {
-							"original_length": dac["metadata"]["original_length"],
-							"sample_rate": dac["metadata"]["sample_rate"],
-						}
-					else:
-						qnt = torch.load(f'{root}/{name}/{id}{_get_quant_extension()}')[0].t()
-						duration = qnt.shape[0] / cfg.dataset.frames_per_second
-
-					metadata[id]["duration"] = duration
-				else:
-					metadata[id]["duration"] = 0
-				
+					if "text" in dac["metadata"]:
+						utterance_metadata["text"] = dac["metadata"]["text"]
+					if "phonemes" in dac["metadata"]:
+						utterance_metadata["phonemes"] = dac["metadata"]["phonemes"]
+					if "language" in dac["metadata"]:
+						utterance_metadata["language"] = dac["metadata"]["language"]
+					if "original_length" in dac["metadata"] and "sample_rate" in dac["metadata"]:
+						utterance_metadata["duration"] = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
 				# text
 				if texts:
-					if _get_phone_extension() == ".json":
-						json_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
-						content = json_metadata["phonemes"]
-						txt = json_metadata["text"]
-						lang = json_metadata["language"][:2]
-					else:
-						content = open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read().split(" ")
-						txt = ""
-						lang = "en"
+					if not utterance_metadata:
+						utterance_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
 
-					phn = cfg.tokenizer.encode("".join(content))
-					phn = np.array(phn).astype(np.uint8) 
+				for k, v in utterance_metadata.items():
+					metadata[id][k] = v
 
-					metadata[id]["phones"] = len(phn)
-					metadata[id]["transcription"] = txt
-					metadata[id]["language"] = lang
 			except Exception as e:
-				#raise e
-				print(id, e)
-				#pass
+				tqdm.write(f'Error while processing {id}: {e}')
 
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
 			f.write( json.dumps( metadata ) )
@@ -900,84 +878,68 @@ def create_dataset_hdf5( skip_existing=True ):
 
 		for id in tqdm(ids, desc=f"Processing {name}"):
 			try:
-				audio_exists = os.path.exists(f'{root}/{name}/{id}{_get_quant_extension()}') if audios else True
-				text_exists = os.path.exists(f'{root}/{name}/{id}{_get_phone_extension()}') if texts else True
+				audio_exists = os.path.exists(f'{root}/{name}/{id}{_get_quant_extension()}')
+				text_exists = os.path.exists(f'{root}/{name}/{id}{_get_phone_extension()}') if type != "Noise" else True
 
-				if not audio_exists or not text_exists:
+				if not audio_exists:
 					continue
 
 				key = f'{type}/{speaker_name}/{id}'
 
+				"""
 				if skip_existing and key in hf:
 					continue
+				"""
 
 				group = hf.create_group(key) if key not in hf else hf[key]
 
+				"""
 				group.attrs['id'] = id
 				group.attrs['type'] = type
 				group.attrs['speaker'] = speaker_name
+				"""
 
 				if id not in metadata:
 					metadata[id] = {}
 
+				utterance_metadata = {}
+
 				# audio
 				if audios:
-					if _get_quant_extension() == ".dac":
-						dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
-						qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
+					# ideally we'll encode Encodec-based audio in a similar manner because np has smaller files than pt
+					dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
+					qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
 
-						duration = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
-						metadata[id]["metadata"] = {
-							"original_length": dac["metadata"]["original_length"],
-							"sample_rate": dac["metadata"]["sample_rate"],
-						}
-					else:
-						qnt = torch.load(f'{root}/{name}/{id}{_get_quant_extension()}')[0].t()
-						duration = qnt.shape[0] / cfg.dataset.frames_per_second
-					
-					qnt = qnt.numpy().astype(np.int16)
+					if "text" in dac["metadata"]:
+						utterance_metadata["text"] = dac["metadata"]["text"]
+					if "phonemes" in dac["metadata"]:
+						utterance_metadata["phonemes"] = dac["metadata"]["phonemes"]
+					if "language" in dac["metadata"]:
+						utterance_metadata["language"] = dac["metadata"]["language"]
+					if "original_length" in dac["metadata"] and "sample_rate" in dac["metadata"]:
+						utterance_metadata["duration"] = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
 
 					if "audio" not in group:
-						group.create_dataset('audio', data=qnt, compression='lzf')
+						group.create_dataset('audio', data=qnt.numpy().astype(np.int16), compression='lzf')
 
-					group.attrs['duration'] = duration
-					metadata[id]["duration"] = duration
-				else:
-					group.attrs['duration'] = 0
-					metadata[id]["duration"] = 0
-				
 				# text
 				if texts:
-					if _get_phone_extension() == ".json":
-						json_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
-						content = json_metadata["phonemes"]
-						txt = json_metadata["text"]
-						lang = json_metadata["language"][:2]
-					else:
-						content = open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read().split(" ")
-						txt = ""
-						lang = "en"
+					if not utterance_metadata and text_exists:
+						utterance_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
 
-					phn = cfg.tokenizer.encode("".join(content))
+					phn = "".join(utterance_metadata["phonemes"])
+					phn = cfg.tokenizer.encode(phn)
 					phn = np.array(phn).astype(np.uint8) 
 
 					if "text" not in group:
 						group.create_dataset('text', data=phn, compression='lzf')
 
-					group.attrs['phonemes'] = len(phn)
-					group.attrs['transcription'] = txt
-					group.attrs['language'] = lang
+				for k, v in utterance_metadata.items():
+					group.attrs[k] = v
+					metadata[id][k] = v
 
-					metadata[id]["phones"] = len(phn)
-					metadata[id]["transcription"] = txt
-					metadata[id]["language"] = lang
-				else:
-					group.attrs['phonemes'] = 0
-					metadata[id]["phones"] = 0
 			except Exception as e:
-				#raise e
-				print(id, e)
-				#pass
+				tqdm.write(f'Error while processing {id}: {e}')
 
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
 			f.write( json.dumps( metadata ) )
@@ -994,119 +956,6 @@ def create_dataset_hdf5( skip_existing=True ):
 	# noise
 	for data_dir in tqdm(cfg.dataset.noise, desc='Processing Noise'):
 		add( data_dir, type="noise", texts=False )
-
-	# write symmap
-	if "symmap" in hf:
-		del hf['symmap']
-
-	hf.create_dataset('symmap', data=json.dumps(symmap))
-	hf.close()
-
-def extract_dataset_hdf5( skip_existing=True ):
-	cfg.dataset.use_hdf5 = True
-	cfg.load_hdf5(write=False)
-	hf = cfg.hdf5
-
-	symmap = get_phone_symmap()
-
-	reverse_symmap = {"1":"<s>","2":"</s>","3":" ","4":".","5":",","6":"!","7":"p","8":"iː","9":"ɚ","10":"ˌ","11":"dˌ","12":"mˌ","13":"d","14":"ɹ","15":"tˈ","16":"pˌ","17":"uː","18":"l","19":"æ","20":"ɛ","21":"ɪ","22":"j","23":"ʊ","24":"t","25":"n","26":"v","27":"a","28":"o","29":"ŋ","30":"w","31":"ʌ","32":"hˈ","33":"ɡˈ","34":"ə","35":"θˈ","36":"dˈ","37":"wˌ","38":"h","39":"z","40":"k","41":"ð","42":"ɡˌ","43":"ˈ","44":"fˈ","45":"i","46":"s","47":"ʃ","48":"wˈ","49":"ðˈ","50":"ɹˈ","51":"lˈ","52":"ɡ","53":"oː","54":"mˈ","55":"e","56":"ɑː","57":"nˈ","58":"m","59":"θˌ","60":"sˈ","61":"f","62":"ɔː","63":"hˌ","64":"b","65":"jˈ","66":"ɐ","67":"ʒˈ","68":"θ","69":"bˈ","70":"ɾ","71":"ɜː","72":"ʌˈ","73":"ʃˌ","74":"bˌ","75":"kˈ","76":"ɔ","77":"zˈ","78":"ᵻ","79":"kˌ","80":"vˈ","81":"fˌ","82":"ʒ","83":"ʃˈ","84":"ɹˌ","85":"tˌ","86":"pˈ","87":"ðˌ","88":"sˌ","89":"nˌ","90":"lˌ","91":"̩","92":"ʔ","93":"vˌ","94":"ɪˈ","95":"\"","96":"ɪˌ","97":"ʒˌ","98":"uːˌ","99":"ʊˈ","100":"jˌ","101":"uːˈ","102":"iːˈ","103":"zˌ","104":".ˈ","105":"…","106":"ŋˌ","107":"ɐˌ","108":"—ˈ","109":"iˌ","110":"iːˌ","111":"ɛː","112":")","113":")ˈ","114":"(","115":"u","116":"-","117":"ɖˈ","118":"iˈ","119":"ʰˈ","120":"ɟˈ","121":"̃","122":"eː","123":"ɾˈ","124":"r","125":"ʰ","126":"-ˌ","127":"ɫ","128":"q","129":"—","130":"ʊˌ","131":"aː","132":"cˈ","133":"…ˈ","134":"c","135":"ɳ","136":"ɐˈ","137":"x","138":"ʔˌ","139":".ˌ","140":"ɑ","141":"?ˈ","142":"̩ˈ","143":"\"ˈ","144":",ˈ","145":"ŋˈ","146":"əˌ","147":"!ˈ","148":"\"ˌ","149":"?ˌ","150":",ˌ","151":"—ˌ","152":"̩ˌ","153":"əˈ","154":"!ˌ","155":"ɬ","156":"ʲ","157":"¡","158":"ɯ","159":"qˌ","160":"ʑ","161":"ʑˈ","162":"¿","163":"ɑːˈ","164":"iːː","165":"ɛˈ","166":"¡ˈ","167":"æˈ","168":"ç","169":"ɾˌ","170":"ᵻˈ","171":"xˈ","172":"ɔːˈ","173":";","174":"ɬˌ","175":":","176":"ʔˈ","177":"ɑːˌ","178":"ɬˈ","179":"”","180":"“","181":"“ˈ","182":"“ˌ","183":";ˈ","184":";ˌ","185":":ˈ","186":"1","187":"rˈ","188":"qˈ","189":"ᵻˌ","190":"ä","191":"̞ˌ","192":"̞","193":"ũˌ","194":"ʑˌ","195":"ᵝ","196":"ɽ","197":"ʲˌ","198":"ᵝˌ","199":"ũ","200":"ũˈ","201":"äˌ","202":"ɕ","203":"ɕˌ","204":"ɽˌ","205":"çˌ","206":"…ˌ","207":"̞ˈ","208":"äˈ","209":"ɽˈ","210":"ɸˌ","211":"ɴ","212":"ɸˈ","213":"ɕˈ","214":"ɸ","215":"ᵝˈ","216":"ʲˈ","217":"ĩ","218":"çˈ","219":"ĩˌ","220":"oˌ","221":"eˈ","222":"ʍ","223":"eˌ","224":"uˌ","225":"ʍˌ","226":"uˈ","227":"oˈ","228":"aˈ"}
-	
-	root = str(cfg.data_dir)
-
-	def add( type="training", audios=True, texts=True ):
-		for group in tqdm( hf[f'{type}/data/'].keys(), desc=f"Processing {type}"):
-			for name in tqdm( hf[f'{type}/data/{group}'].keys(), desc=f"Processing {group}"):
-				(cfg.data_dir / group / name).mkdir(parents=True, exist_ok=True)
-
-				for id in tqdm( hf[f'{type}/data/{group}/{name}'].keys(), desc=f"Processing {name}"):
-					try:
-						key = f'{type}/data/{group}/{name}/{id}'
-
-						if key not in hf:
-							tqdm.write(f'Missing key: {key}')
-							continue
-
-						audio_exists = "audio" in hf[key]
-						text_exists = "text" in hf[key]
-
-						if not audio_exists or not text_exists:
-							tqdm.write(f'Missing audio/text: {key}')
-							continue
-
-						audio_path = Path(f'{root}/{group}/{name}/{id}.enc')
-						text_path = Path(f'{root}/{group}/{name}/{id}.json')
-
-						# audio
-						if audios and audio_exists and not audio_path.exists():
-							qnt = hf[key]["audio"][:, :]
-							torch.save( qnt, audio_path )
-
-						# text
-						if texts and text_exists and not text_path.exists():
-							tokens = hf[key]["text"][:][1:-1]
-							phones = [ reverse_symmap[f'{token}'] for token in tokens ]
-							phones = list("".join(phones).replace("  ", " "))
-
-							j = {
-								"text": "",
-								"phonemes": phones,
-								"language": "en"
-							}
-
-							with open(text_path, "w", encoding="utf-8") as f:
-								f.write( json.dumps( j ) )
-
-					except Exception as e:
-						raise e
-
-	add( type="training" )
-	add( type="validation" )
-	add( type="noise", texts=False )
-
-	hf.close()
-
-def retokenize_dataset_hdf5( skip_existing=True ):
-	cfg.dataset.use_hdf5 = True
-	cfg.load_hdf5(write=True)
-	hf = cfg.hdf5
-
-	symmap = get_phone_symmap()
-	reverse_symmap = {"1":"<s>","2":"</s>","3":" ","4":".","5":",","6":"!","7":"p","8":"iː","9":"ɚ","10":"ˌ","11":"dˌ","12":"mˌ","13":"d","14":"ɹ","15":"tˈ","16":"pˌ","17":"uː","18":"l","19":"æ","20":"ɛ","21":"ɪ","22":"j","23":"ʊ","24":"t","25":"n","26":"v","27":"a","28":"o","29":"ŋ","30":"w","31":"ʌ","32":"hˈ","33":"ɡˈ","34":"ə","35":"θˈ","36":"dˈ","37":"wˌ","38":"h","39":"z","40":"k","41":"ð","42":"ɡˌ","43":"ˈ","44":"fˈ","45":"i","46":"s","47":"ʃ","48":"wˈ","49":"ðˈ","50":"ɹˈ","51":"lˈ","52":"ɡ","53":"oː","54":"mˈ","55":"e","56":"ɑː","57":"nˈ","58":"m","59":"θˌ","60":"sˈ","61":"f","62":"ɔː","63":"hˌ","64":"b","65":"jˈ","66":"ɐ","67":"ʒˈ","68":"θ","69":"bˈ","70":"ɾ","71":"ɜː","72":"ʌˈ","73":"ʃˌ","74":"bˌ","75":"kˈ","76":"ɔ","77":"zˈ","78":"ᵻ","79":"kˌ","80":"vˈ","81":"fˌ","82":"ʒ","83":"ʃˈ","84":"ɹˌ","85":"tˌ","86":"pˈ","87":"ðˌ","88":"sˌ","89":"nˌ","90":"lˌ","91":"̩","92":"ʔ","93":"vˌ","94":"ɪˈ","95":"\"","96":"ɪˌ","97":"ʒˌ","98":"uːˌ","99":"ʊˈ","100":"jˌ","101":"uːˈ","102":"iːˈ","103":"zˌ","104":".ˈ","105":"…","106":"ŋˌ","107":"ɐˌ","108":"—ˈ","109":"iˌ","110":"iːˌ","111":"ɛː","112":")","113":")ˈ","114":"(","115":"u","116":"-","117":"ɖˈ","118":"iˈ","119":"ʰˈ","120":"ɟˈ","121":"̃","122":"eː","123":"ɾˈ","124":"r","125":"ʰ","126":"-ˌ","127":"ɫ","128":"q","129":"—","130":"ʊˌ","131":"aː","132":"cˈ","133":"…ˈ","134":"c","135":"ɳ","136":"ɐˈ","137":"x","138":"ʔˌ","139":".ˌ","140":"ɑ","141":"?ˈ","142":"̩ˈ","143":"\"ˈ","144":",ˈ","145":"ŋˈ","146":"əˌ","147":"!ˈ","148":"\"ˌ","149":"?ˌ","150":",ˌ","151":"—ˌ","152":"̩ˌ","153":"əˈ","154":"!ˌ","155":"ɬ","156":"ʲ","157":"¡","158":"ɯ","159":"qˌ","160":"ʑ","161":"ʑˈ","162":"¿","163":"ɑːˈ","164":"iːː","165":"ɛˈ","166":"¡ˈ","167":"æˈ","168":"ç","169":"ɾˌ","170":"ᵻˈ","171":"xˈ","172":"ɔːˈ","173":";","174":"ɬˌ","175":":","176":"ʔˈ","177":"ɑːˌ","178":"ɬˈ","179":"”","180":"“","181":"“ˈ","182":"“ˌ","183":";ˈ","184":";ˌ","185":":ˈ","186":"1","187":"rˈ","188":"qˈ","189":"ᵻˌ","190":"ä","191":"̞ˌ","192":"̞","193":"ũˌ","194":"ʑˌ","195":"ᵝ","196":"ɽ","197":"ʲˌ","198":"ᵝˌ","199":"ũ","200":"ũˈ","201":"äˌ","202":"ɕ","203":"ɕˌ","204":"ɽˌ","205":"çˌ","206":"…ˌ","207":"̞ˈ","208":"äˈ","209":"ɽˈ","210":"ɸˌ","211":"ɴ","212":"ɸˈ","213":"ɕˈ","214":"ɸ","215":"ᵝˈ","216":"ʲˈ","217":"ĩ","218":"çˈ","219":"ĩˌ","220":"oˌ","221":"eˈ","222":"ʍ","223":"eˌ","224":"uˌ","225":"ʍˌ","226":"uˈ","227":"oˈ","228":"aˈ"}
-	
-	root = str(cfg.data_dir)
-
-	def add( type="training" ):
-		for group in tqdm( hf[f'{type}/data/'].keys(), desc=f"Processing {type}"):
-			for name in tqdm( hf[f'{type}/data/{group}'].keys(), desc=f"Processing {group}"):
-				(cfg.data_dir / group / name).mkdir(parents=True, exist_ok=True)
-
-				for id in tqdm( hf[f'{type}/data/{group}/{name}'].keys(), desc=f"Processing {name}"):
-					try:
-						key = f'{type}/data/{group}/{name}/{id}'
-
-						if key not in hf:
-							tqdm.write(f'Missing key: {key}')
-							continue
-
-						if "text" not in hf[key]:
-							tqdm.write(f'Missing text: {key}')
-							continue
-
-						# text
-						tokens = hf[key]["text"][:][1:-1]
-						content = list("".join([ reverse_symmap[f'{token}'] for token in tokens ]).replace("  ", " "))
-
-						tokens = cfg.tokenizer.encode("".join(content))
-						tokens = np.array(tokens).astype(np.uint8) 
-
-						del hf[key]['text']
-						hf[key].create_dataset('text', data=tokens, compression='lzf')
-
-					except Exception as e:
-						raise e
-
-	add( type="training" )
-	add( type="validation" )
 
 	# write symmap
 	if "symmap" in hf:
@@ -1135,10 +984,6 @@ if __name__ == "__main__":
 
 	if args.action == "hdf5":
 		create_dataset_hdf5()
-	if args.action == "extract-hdf5":
-		extract_dataset_hdf5()
-	if args.action == "retokenize-hdf5":
-		retokenize_dataset_hdf5()
 	elif args.action == "list-dataset":
 		dataset = []
 		for group in os.listdir(cfg.data_dir):
@@ -1147,7 +992,7 @@ if __name__ == "__main__":
 					continue
 				dataset.append(f'{group}/{name}')
 
-		print(dataset)
+		print(json.dumps(dataset))
 	elif args.action == "metadata":
 		create_dataset_metadata()
 	elif args.action == "sample":
