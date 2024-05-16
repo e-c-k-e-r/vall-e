@@ -373,7 +373,7 @@ class Dataset(_Dataset):
 			"""
 
 		prom_length = 0
-		trim_length = random.randint(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second
+		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
 
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
@@ -474,7 +474,7 @@ class Dataset(_Dataset):
 					resps = torch.concat([ resps, qnt ])
 		
 		task = "tts"
-		trim_length = random.randint(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second
+		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
 		proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
 
 
