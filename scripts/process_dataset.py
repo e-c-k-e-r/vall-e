@@ -144,7 +144,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 					i = i + 1
 
 					outpath = Path(f'./{output_dataset}/{dataset_name}/{speaker_id}/{fname}_{id}.{extension}')
-					text = metadata[filename]["text"]
+					text = segment["text"]
 
 					if len(text) == 0:
 						continue

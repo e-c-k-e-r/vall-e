@@ -285,7 +285,8 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.mod
 	wav = convert_audio(wav, sr, model.sample_rate, model.channels)
 	wav = wav.to(device)
 
-	encoded_frames = model.encode(wav)
+	with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
+		encoded_frames = model.encode(wav)
 	qnt = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)  # (b q t)
 
 	return qnt
