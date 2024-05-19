@@ -426,6 +426,11 @@ class Base(nn.Module):
 	def ignore_index(self):
 		return -100
 
+	def loss_factor(self, k):
+		if self.config is None:
+			return 1.0
+		return self.config.loss_factors[k] if k in self.config.loss_factors else 1.0
+
 	def __init__(
 		self,
 		n_tokens: int = 1024,
@@ -880,6 +885,31 @@ class Base(nn.Module):
 
 		return x_list
 
+	def training_targets_split(
+		self,
+		inputs: list,
+	):
+		text_lists = []
+		resp_lists = []
+
+		for bi in range(len(inputs)):
+			text_batch = []
+			resp_batch = []
+
+			for i in range(len(inputs[bi])):
+				name, input = inputs[bi][i]
+				device = input.device
+
+				if name in ["text", "lang" ]:
+					text_batch.append( input )
+				elif name == "targ":
+					resp_batch.append( input )
+
+			text_lists.append( _join( text_batch, torch.tensor(self.ignore_index, device=device) ) )
+			resp_lists.append( _join( resp_batch, torch.tensor(self.ignore_index, device=device) ) )
+
+		return text_lists, resp_lists
+
 	def forward(
 		self,
 		inputs: list,
@@ -929,30 +959,80 @@ class Base(nn.Module):
 		
 		# compute loss if the target is given
 		if training:
-			target_list = self.training_targets( inputs )
-			
-			# modify only for the AR so it can properly behave like a transformer
-			for i in range(len(target_list)):
-				if quant_levels is not None and quant_levels[i] > 0:
-					continue
+			if not self.config.loss_factors:
+				target_list = self.training_targets( inputs )
+				
+				# modify only for the AR so it can properly behave like a transformer
+				for i in range(len(target_list)):
+					if quant_levels is not None and quant_levels[i] > 0:
+						continue
 
-				logits[i] = logits[i][..., :-1, :] # shift the target so that token n...
-				target_list[i] = target_list[i][..., 1:] # predicts token n + 1
+					logits[i] = logits[i][..., :-1, :] # shift the target so that token n...
+					target_list[i] = target_list[i][..., 1:] # predicts token n + 1
 
-			target = torch.cat( target_list )
-			inputs = torch.cat( logits )
+				target = torch.cat( target_list )
+				inputs = torch.cat( logits )
 
-			self.loss = dict(
-				# "nll" was in the original implementation and should actually just be called something else
-				nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
-			)
-			self.stats = dict(
-				acc = self.accuracy_metric( inputs, target ),
-				# precision = self.precision_metric( inputs, target ),
-			)
+				self.loss = dict(
+					# "nll" was in the original implementation and should actually just be called something else
+					nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
+				)
+				self.stats = dict(
+					acc = self.accuracy_metric( inputs, target ),
+					# precision = self.precision_metric( inputs, target ),
+				)
+			# split our loss
+			else:
+				target_text_list, target_resp_list = self.training_targets_split( inputs )
 
+				# grab respective slice of logits
+				logits_text = [ hi[:li.shape[0]] for hi, li in zip(logits, target_text_list) ]
+				logits_resp = [ hi[-li.shape[0]:] for hi, li in zip(logits, target_resp_list) ]
+
+				# modify only for the AR so it can properly behave like a transformer
+				for i in range(len(target_text_list)):
+					if quant_levels is not None and quant_levels[i] > 0:
+						continue
+
+					# shift the target so that token n...
+					logits_text[i] = logits_text[i][..., :-1, :]
+					logits_resp[i] = logits_resp[i][..., :-1, :]
+
+					# predicts token n + 1
+					target_text_list[i] = target_text_list[i][..., 1:] 
+					target_resp_list[i] = target_resp_list[i][..., 1:]
+
+				target_text = torch.cat( target_text_list ).long()
+				target_resp = torch.cat( target_resp_list ).long()
+
+				inputs_text = torch.cat( logits_text )
+				inputs_resp = torch.cat( logits_resp )
+
+				self.loss = dict(
+					text = F.cross_entropy( inputs_text, target_text, ignore_index=self.ignore_index ),
+					resp = F.cross_entropy( inputs_resp, target_resp, ignore_index=self.ignore_index ),
+				)
+
+				for k in self.loss:
+					self.loss[k] *= self.loss_factor(k)
+
+				# to-do: compute loss per individual batch to scale per RVQ level
+				"""
+				rvq_loss_factor = self.loss_factor("quant")
+				if isinstance( rvq_loss_factor, list ):
+					...
+				"""
+
+				self.stats = dict(
+					acc = dict(
+						text = self.accuracy_metric( inputs_text, target_text ),
+						resp = self.accuracy_metric( inputs_resp, target_resp ),
+					),
+				)
+
+			# include any additional losses (for example: MoE router)
 			if aux_loss is not None:
-				self.loss["nll"] += aux_loss
+				self.loss["aux_loss"] = aux_loss
 			
 		return (logits, state) if state is not None else logits
 

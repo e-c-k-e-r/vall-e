@@ -348,12 +348,15 @@ def example_usage():
 
 	text_list = [
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
+		#tokenize("ˈaɪ wɪl nˌɑːt ˈæsk").to(device),
 	]
 	proms_list = [
 		qnt[:cfg.dataset.frames_per_second, :].to(device),
+		#qnt[:cfg.dataset.frames_per_second, :].to(device),
 	]
 	resps_list = [
-		qnt.to(device),
+		qnt[:, :].to(device),
+		#qnt[:cfg.dataset.frames_per_second, :].to(device),
 	]
 
 	text_list = text_list[:1]

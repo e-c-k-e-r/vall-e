@@ -213,9 +213,13 @@ class Model:
 	attention: str = "auto"
 	audio_embedding_sums: bool = True
 	dropout: float = 0.1 # adjustable dropout value
+	loss_factors: dict = field(default_factory=lambda: {})
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
+	
+	def loss_factor(self, k):
+		return self.loss_factors[k] if k in self.loss_factors else 1.0
 
 	@property
 	def max_levels(self):
@@ -490,6 +494,11 @@ class DeepSpeed:
 			ds_cfg.update(self.config)
 
 		return ds_cfg
+
+@dataclass()
+class LossFactor:
+	text: float = 1.0
+	resp: float = 1.0
 
 @dataclass()
 class Trainer:

@@ -6,41 +6,38 @@ models:
   tasks: 8
   langs: 2
   tones: 1
-  arch_type: "retnet"
+  arch_type: llama
   training: True
-  version: 3
+  version: 4
+  attention: flash_attention_2
+  dropout: 0.1
+
+  loss_factors:
+    text: 0.1
+    resp: 1.0
 
 hyperparameters:
-  batch_size: 4
+  autotune: False
+  autotune_params:
+    start_profile_step: 1
+    end_profile_step: 50
+    num_tuning_micro_batch_sizes: 8
+
+  batch_size: 16
   gradient_accumulation_steps: 4
-  gradient_clipping: 10
-  
-  optimizer: Adagrad
+  gradient_clipping: 1.0
+  warmup_steps: 100
+
+  optimizer: Prodigy
+  learning_rate: 1.0
   torch_optimizer: True
-  learning_rate: 1.0e-2
   
-  scheduler_type: ""
-  #scheduler_type: OneCycle
-  #scheduler_params:
-  #  cycle_first_step_size: 10_000
-  #  cycle_first_stair_count: 10_000
-
-  #  cycle_second_step_size: 15_000
-  #  cycle_second_stair_count: 15_000
-
-  #  decay_step_size: 5_000
-
-  #  cycle_min_lr: 2.5e-4 # 1.0e-5
-  #  cycle_max_lr: 2.5e-4 # 1.0e-4
-  #  decay_lr_rate: 0.0
-
-  #  cycle_min_mom: 0.90
-  #  cycle_max_mom: 0.99
-  #  decay_mom_rate: 0.0
+  scheduler: "" # ScheduleFree
+  torch_scheduler: True
 
 evaluation:
   batch_size: 8
-  frequency: 10000
+  frequency: 5000
   size: 8
   
   steps: 500
@@ -49,8 +46,9 @@ evaluation:
   load_disabled_engines: True
 
 trainer:
-  no_logger: True
-
+  #no_logger: True
+  ddp: False
+  #check_for_oom: False
   iterations: 1_000_000
   
   save_tag: step
@@ -72,7 +70,7 @@ trainer:
   
   gc_mode: None # "global_step"
 
-  weight_dtype: float32
+  weight_dtype: float32 # float16 or bfloat16
   amp: False
 
   backend: deepspeed
@@ -81,34 +79,34 @@ trainer:
     zero_optimization_level: 0
     use_compression_training: False
 
+    amp: False
+
   activation_checkpointing: True
 
-  load_webui: True
+  load_webui: False
 
 inference:
   backend: deepspeed
   audio_backend: "dac"
   normalize: False
 
-  weight_dtype: float32
+  weight_dtype: float32 # float16 or bfloat16
   amp: False
 
-bitsandbytes:
-  enabled: False
-
+optimizations:
   injects: False
-  replace: False
+  replace: True
 
   linear: False
   embedding: False
-  
-  bitnet: False
+  optimizers: True
 
-fp8:
-  enabled: False
-  backend: "te"
-  
-experimental: True
+  bitsandbytes: False
+  dadaptation: False
+  bitnet: False
+  fp8: False
+
+experimental: True # practically required now it seems
 
 dataset:
   speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
@@ -121,23 +119,19 @@ dataset:
   hdf5_flag: r
   validate: True
 
-  workers: 8
+  workers: 2
   cache: True
-
-  #phones_range: [4, 512]
-  #duration_range: [1.0, 32.0]
   
-  phones_range: [0, 512]
-  duration_range: [0.0, 64.0]
+  duration_range: [3.0, 5.0]
 
   random_utterance: 1.0
-  max_prompts: 3
-  prompt_duration: 6.0
+  max_prompts: 1
+  prompt_duration: 3.0
   
   max_resps: 1
   p_resp_append: 0.25
 
-  sample_type: speaker
+  sample_type: path # speaker
 
   tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"]
 
