@@ -319,6 +319,8 @@ class AR_NAR(Base):
 def example_usage():
 	#cfg.trainer.backend = "local"
 	cfg.hyperparameters.gradient_accumulation_steps = 1
+	if cfg.inference.audio_backend == "dac":
+		cfg.sample_rate = 44_000
 
 	from functools import partial
 	from einops import repeat
@@ -371,7 +373,7 @@ def example_usage():
 		'n_layers': 8, # 32
 		'n_experts': 1,
 
-		'p_dropout': 0.0,
+		'p_dropout': 0.1,
 
 		'l_padding': 8 if cfg.optimizations.fp8 else 0,
 
@@ -386,7 +388,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 1000
+	steps = 200
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
