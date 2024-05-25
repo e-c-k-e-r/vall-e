@@ -8,8 +8,8 @@ from pathlib import Path
 from vall_e.config import cfg
 
 # things that could be args
-cfg.sample_rate = 44_000
-cfg.inference.audio_backend = "dac"
+cfg.sample_rate = 24_000
+cfg.inference.audio_backend = "encodec"
 """
 cfg.inference.weight_dtype = "bfloat16"
 cfg.inference.dtype = torch.bfloat16

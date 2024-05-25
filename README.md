@@ -143,7 +143,8 @@ For audio backends:
 * [`vocos`](https://huggingface.co/charactr/vocos-encodec-24khz): a higher quality EnCodec decoder.
   - encoding audio will use the `encodec` backend automagically, as there's no EnCodec encoder under `vocos`
 * [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality
-  - **Note** models using `descript-audio-codec` at 24KHz + 8kbps will NOT converge. Audio encoded through the 44KHz seems to work.
+  - **Note** models using `descript-audio-codec` at 24KHz + 8kbps will NOT converge in any manner.
+  - **Note** models using `descript-audio-codec` at 44KHz + 8kbps stops improving after a while. 
 
 `llama`-based models also support different attention backends:
 * `math`: torch's SDPA's `math` implementation

@@ -63,10 +63,10 @@ def _replace_file_extension(path, suffix):
 	return (path.parent / path.name.split(".")[0]).with_suffix(suffix)
 
 def _get_quant_extension():
-	return ".dac" if cfg.inference.audio_backend == "dac" else ".enc"
+	return ".dac" if cfg.audio_backend == "dac" else ".enc"
 
 def _get_phone_extension():
-	return ".json" # if cfg.inference.audio_backend == "dac" else ".phn.txt"
+	return ".json" # if cfg.audio_backend == "dac" else ".phn.txt"
 
 def _get_quant_path(path):
 	return _replace_file_extension(path, _get_quant_extension())
@@ -876,11 +876,35 @@ def create_dataset_hdf5( skip_existing=True ):
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return
-		# tqdm.write(f'{root}/{name}')
+
 		files = os.listdir(f'{root}/{name}/')
 
 		# grab IDs for every file
 		ids = { file.replace(_get_quant_extension(), "").replace(_get_phone_extension(), "") for file in files }
+
+		"""
+		# rephonemizes if you fuck up and use and old tokenizer...
+		for id, entry in tqdm(metadata.items(), desc=f"Processing {name}"):
+			key = f'{type}/{speaker_name}/{id}'
+
+			if key not in hf:
+				continue
+			
+			group = hf[key]
+
+			if "phonemes" not in entry:
+				continue
+			if "text" not in group:
+				continue
+
+			txt = entry["phonemes"]
+			phn = "".join(txt)
+			phn = cfg.tokenizer.encode(phn)
+			phn = np.array(phn).astype(np.uint8) 
+
+			del group["text"]
+			group.create_dataset('text', data=phn, compression='lzf')
+		"""
 
 		for id in tqdm(ids, desc=f"Processing {name}"):
 			try:
@@ -938,8 +962,10 @@ def create_dataset_hdf5( skip_existing=True ):
 			except Exception as e:
 				tqdm.write(f'Error while processing {id}: {e}')
 
+		"""
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
 			f.write( json.dumps( metadata ) )
+		"""
 
 
 	# training

@@ -156,7 +156,7 @@ class Dataset:
 	p_resp_append: float = 1.0
 
 	sample_type: str = "path" # path | speaker
-	
+
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 	
 	_frames_per_second: int = 0 # allows setting your own hint
@@ -166,7 +166,7 @@ class Dataset:
 		if self._frames_per_second > 0:
 			return self._frames_per_second
 
-		if cfg.inference.audio_backend == "dac":
+		if cfg.audio_backend == "dac":
 			# using the 44KHz model with 24KHz sources has a frame rate of 41Hz
 			if cfg.variable_sample_rate and cfg.sample_rate == 24_000:
 				return 41
@@ -567,7 +567,7 @@ class Inference:
 	amp: bool = False
 
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
-	audio_backend: str = "vocos" # encodec, vocos, dac
+	audio_backend: str = "" # encodec, vocos, dac
 
 	# legacy / backwards compat
 	use_vocos: bool = True
@@ -627,6 +627,8 @@ class Config(_Config):
 
 	sample_rate: int = 24_000
 	variable_sample_rate: bool = False # NOT recommended, as running directly 24Khz audio in the 44Khz DAC model will have detrimental quality loss
+
+	audio_backend: str = "vocos"
 
 	@property
 	def distributed(self):
@@ -726,6 +728,9 @@ class Config(_Config):
 
 		if self.trainer.backend == "local" and self.distributed:
 			self.trainer.ddp = True
+		
+		if self.inference.audio_backend != "" and self.audio_backend == "":
+			self.audio_backend = self.inference.audio_backend
 
 # Preserves the old behavior
 class NaiveTokenizer:

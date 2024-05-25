@@ -112,7 +112,18 @@ class TTS():
 			paths = [ Path(p) for p in paths.split(";") ]
 
 		# merge inputs
-		res = torch.cat([qnt.encode_from_file(path)[0][:, :].t().to(torch.int16) for path in paths])
+
+		proms = []
+
+		for path in paths:
+			prom = qnt.encode_from_file(path)
+			if hasattr( prom, "codes" ):
+				prom = prom.codes
+			prom = prom[0][:, :].t().to(torch.int16)
+
+			proms.append( prom )
+
+		res = torch.cat(proms)
 		
 		if trim_length:
 			res = trim( res, int( cfg.dataset.frames_per_second * trim_length ) )

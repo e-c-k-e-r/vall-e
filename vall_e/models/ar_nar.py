@@ -319,7 +319,7 @@ class AR_NAR(Base):
 def example_usage():
 	#cfg.trainer.backend = "local"
 	cfg.hyperparameters.gradient_accumulation_steps = 1
-	if cfg.inference.audio_backend == "dac":
+	if cfg.audio_backend == "dac":
 		cfg.sample_rate = 44_000
 
 	from functools import partial
@@ -340,7 +340,7 @@ def example_usage():
 		return torch.tensor( cfg.tokenizer.encode(content) )
 
 	def _load_quants(path) -> Tensor:
-		if cfg.inference.audio_backend == "dac":
+		if cfg.audio_backend == "dac":
 			qnt = np.load(f'{path}.dac', allow_pickle=True)[()]
 			return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.prom_levels, :].t().to(torch.int16)
 		return torch.load(f'{path}.pt')[0][:, :cfg.model.prom_levels].t().to(torch.int16)
@@ -456,13 +456,13 @@ def example_usage():
 
 	@torch.inference_mode()
 	def sample( name, steps=1000 ):
-		if cfg.inference.audio_backend == "dac" and name == "init":
+		if cfg.audio_backend == "dac" and name == "init":
 			return
 
 		engine.eval()
 		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
 		
-		if cfg.inference.audio_backend != "dac":
+		if cfg.audio_backend != "dac":
 			for i, o in enumerate(resps_list):
 				_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)
 

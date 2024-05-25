@@ -170,7 +170,7 @@ def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 	return model
 
 @cache
-def _load_model(device="cuda", backend=cfg.inference.audio_backend, levels=cfg.model.max_levels):
+def _load_model(device="cuda", backend=cfg.audio_backend, levels=cfg.model.max_levels):
 	if backend == "dac":
 		return _load_dac_model(device, levels=levels)
 	if backend == "vocos":
@@ -267,7 +267,7 @@ def _replace_file_extension(path, suffix):
 
 @torch.inference_mode()
 def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.model.max_levels, return_metadata=True):
-	if cfg.inference.audio_backend == "dac":
+	if cfg.audio_backend == "dac":
 		model = _load_dac_model(device, levels=levels )
 		signal = AudioSignal(wav, sample_rate=sr)
 		
@@ -307,7 +307,7 @@ def encode_from_files(paths, device="cuda"):
 
 	wav = torch.cat(wavs, dim=-1)
 	
-	return encode(wav, sr, "cpu")
+	return encode(wav, sr, device)
 
 def encode_from_file(path, device="cuda"):
 	if isinstance( path, list ):
