@@ -164,6 +164,9 @@ def train():
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 	
 	def eval_fn(engines):
+		do_gc()
+		engines.eval()
+		# wrapped in a try block because it's sometimes prone to breaking
 		try:
 			run_eval(engines, "subtrain", subtrain_dl)
 			run_eval(engines, "val", val_dl)
@@ -171,6 +174,7 @@ def train():
 			print("Error occurred while performing eval:", str(e))
 			print(traceback.format_exc())
 
+		engines.train()
 		qnt.unload_model()
 		do_gc()
 

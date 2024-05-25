@@ -142,9 +142,8 @@ def train(
 	# Pre-loop command
 	command = _non_blocking_input()
 	if command in ["eval", "eval_quit"]:
-		engines.eval()
 		eval_fn(engines=engines)
-		engines.train()
+
 	if command in ["quit", "eval_quit"]:
 		return
 
@@ -261,12 +260,8 @@ def train(
 
 			if engines.global_step != last_eval_step:
 				if engines.global_step % cfg.evaluation.frequency == 0 or command in ["eval"]:
-					do_gc()
-
-					engines.eval()
-					eval_fn(engines=engines)
-					engines.train()
 					last_eval_step = engines.global_step
+					eval_fn(engines=engines)
 
 			if command in ["quit"]:
 				return
