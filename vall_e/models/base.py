@@ -56,6 +56,10 @@ except Exception as e:
 try:
 	from bitnet.bit_transformer import Transformer as BitNetTransformerBlock, RMSNorm as BitNetRMSNorm
 
+	# re-enable logging because zetascale fucking sucks
+	import logging
+	logging.getLogger().setLevel(logging.DEBUG)
+
 	# override for wrapping checkpointing
 	def BitNetTransformerBlock_forward(self, x: Tensor, *args, **kwargs) -> Tensor:
 		skip = x
