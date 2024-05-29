@@ -5,3 +5,4 @@ __pycache__
 /*.egg-info
 /vall_e/version.py
 /.cache
+/voices
