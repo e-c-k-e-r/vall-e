@@ -352,7 +352,7 @@ class AudioEmbedding(nn.Module):
 				x = self.embeddings[k]( xi[:, k] ) * (self.weight[k] if self.weight is not None else 1)
 		# AR resp
 		elif quant_levels is None or quant_levels == 0:
-			x = self.embeddings[0]( xi[:, 0] )
+			x = self.embeddings[0]( xi if len(xi.shape) == 1 else xi[:, 0] )
 		# NAR resp
 		else:
 			if self.sums:
