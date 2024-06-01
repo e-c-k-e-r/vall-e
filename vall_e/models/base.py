@@ -538,7 +538,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=n_heads,
+					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
@@ -554,7 +554,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=n_heads,
+					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
 					sliding_window=75 * 12, # 12 second context window
 					output_router_logits=training,
 					hidden_act="gelu",
