@@ -491,6 +491,12 @@ class Engines(dict[str, Engine]):
 
 			elapsed_time = time.time() - start_time
 			total_elapsed_time += elapsed_time
+			grad_norm = engine.get_global_grad_norm()
+			loss_scale = 1
+			if hasattr(engine.optimizer, "loss_scale"):
+				loss_scale = engine.optimizer.loss_scale
+			
+			grad_norm /= loss_scale
 
 			stats.update(
 				flatten_dict(
@@ -498,7 +504,8 @@ class Engines(dict[str, Engine]):
 						name.split("-")[0]: dict(
 							**engine_stats,
 							lr=engine.get_lr()[0],
-							grad_norm=engine.get_global_grad_norm(),
+							grad_norm=grad_norm,
+							loss_scale=loss_scale if loss_scale != 1 else None,
 							elapsed_time=elapsed_time,
 							engine_step=engine.global_step,
 							samples_processed=engine.global_samples,
