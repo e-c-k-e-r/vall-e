@@ -242,8 +242,8 @@ class Dataset(_Dataset):
 			# recreate paths_by_spkr_name
 			self.paths_by_spkr_name = {}
 			for path in self.paths:
-				name = cfg.get_spkr( path )
-				if name not in self.paths_by_spkr_name[name]:
+				name = cfg.get_spkr( Path(path) )
+				if name not in self.paths_by_spkr_name:
 					self.paths_by_spkr_name[name] = []
 				self.paths_by_spkr_name[name].append( path )
 
