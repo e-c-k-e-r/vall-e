@@ -213,7 +213,7 @@ class Model:
 	attention: str = "auto"
 	audio_embedding_sums: bool = True
 	dropout: float = 0.1 # adjustable dropout value
-	loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 0.0, "resp": 1.0 })
+	loss_factors: dict = field(default_factory=lambda: {}) # "text": 0.1, "prom": 0.0, "resp": 1.0 })
 	kv_heads: int = 0
 
 	def get(self, name=None):
