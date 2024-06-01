@@ -162,7 +162,7 @@ def train(
 
 		#batch = to_device(batch, torch.cuda.current_device())
 		stats = engines.step(batch=batch, feeder=train_feeder)
-		stats['epoch'] = engines.global_samples / len(train_dl.dataset.paths)
+		stats['epoch'] = engines.global_samples / len(train_dl.dataset.paths) * world_size()
 
 		"""
 		stats['batch'] = {
