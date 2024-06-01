@@ -748,7 +748,7 @@ def create_datasets():
 	train_dataset = Dataset( training=True )
 	val_dataset = Dataset( phone_symmap=train_dataset.phone_symmap, training=False )
 
-	train_state_path = cfg.relpath / f"train_dataset.{global_rank()}.pt"
+	train_state_path = cfg.relpath / f"sampler.rank{global_rank()}.pt"
 	if train_state_path.exists():
 		train_dataset.load_state_dict( train_state_path )
 
