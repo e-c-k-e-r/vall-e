@@ -370,12 +370,10 @@ def example_usage():
 		else:
 			resp_list = [ [] for _ in range(len(text_list)) ]
 			for l in range(cfg.model.max_levels):
-				quant_levels = [ l ]
+				quant_levels = [ [ l ] for _ in range(len(text_list)) ]
 
 				input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resp_list, quant_levels=quant_levels, experimental=True)
 				min_length = len(input_ids[0]) + 1 
-
-				# print( "input:", l, input_ids.shape, input_ids )
 
 				output = model.generate(
 					input_ids=input_ids,
@@ -385,8 +383,6 @@ def example_usage():
 					eos_token_id=3,
 					do_sample=False
 				)
-
-				# print( "output:", l, output.shape, output )
 				
 				unfolded = unfold_outputs( output, quant_levels=quant_levels )
 
@@ -395,7 +391,6 @@ def example_usage():
 
 				for batch, resp in enumerate(unfolded["resp_list"]):
 					length = resp.shape[-1]
-					print( "LEN:", resp.shape, steps )
 
 					# store length
 					if l == 0:
@@ -433,7 +428,7 @@ def example_usage():
 			target_ids, target_attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resp_list, targ_list=resp_list, ignore_index=-100, quant_levels=quant_levels)
 			
 			stats |= engine.traverse(input_ids=input_ids, labels=target_ids, attention_mask=attention_mask)
-			stats |= {"grad_norm": engine.get_global_grad_norm(), "quant_level": quant_levels[0].item()}
+			stats |= {"grad_norm": engine.get_global_grad_norm()}
 
 			tqdm.write(f"{stats}")
 

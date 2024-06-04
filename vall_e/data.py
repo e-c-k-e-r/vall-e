@@ -106,6 +106,8 @@ def fold_inputs(
 		if quant_levels is not None:
 			# grab the previous rvq level
 			quant_level = quant_levels[i] - 1
+			# way to signal we want to inference for rvq level 0
+			# without it, it's a random chance for any level to be selected again
 			if quant_level < 0:
 				seq = sep
 			else:
