@@ -5,6 +5,7 @@ from .data import create_train_val_dataloader
 from .emb import qnt
 
 from .utils import setup_logging, to_device, trainer, flatten_dict, do_gc
+from .data import fold_inputs, unfold_outputs
 
 import auraloss
 import json
@@ -25,12 +26,29 @@ mel_stft_loss = auraloss.freq.MelSTFTLoss(cfg.sample_rate, device="cpu")
 
 def train_feeder(engine, batch):
 	with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
-		engine(
-			text_list=batch["text"],
-			proms_list=[prom[:, :engine._cfg.prom_levels] for prom in batch["proms"]], # reduce the input prompt to the target prom level
-			resps_list=batch["resps"],
-			lang_list=batch["lang"],
-		)
+		if engine.hyper_config.experimental:
+			input_ids, attention_mask = fold_inputs(
+				text_list=batch["text"],
+				prom_list=batch["proms"],
+				resp_list=batch["resps"],
+			)
+			target_ids, target_attention_mask = fold_inputs(
+				text_list=batch["text"],
+				prom_list=batch["proms"],
+				resp_list=batch["resps"],
+				ignore_index=-100
+			)
+			engine(
+				input_ids=input_ids,
+				labels=target_ids
+			)
+		else:
+			engine(
+				text_list=batch["text"],
+				proms_list=[prom[:, :engine._cfg.prom_levels] for prom in batch["proms"]], # reduce the input prompt to the target prom level
+				resps_list=batch["resps"],
+				lang_list=batch["lang"],
+			)
 
 		losses = engine.gather_attribute("loss")
 		stat = engine.gather_attribute("stats")
@@ -48,22 +66,6 @@ def train_feeder(engine, batch):
 
 @torch.inference_mode()
 def run_eval(engines, eval_name, dl):
-	AR = None
-	NAR = None
-	AR_NAR = None
-
-	names = []
-	for name, engine in engines.items():
-		if name[:6] == "ar+nar":
-			AR_NAR = engine
-		elif name[:2] == "ar":
-			AR = engine
-		elif name[:3] == "nar":
-			NAR = engine
-		else:
-			continue
-		names.append(name)
-
 	stats = defaultdict(list)
 	stats['loss'] = []
 
@@ -101,44 +103,22 @@ def run_eval(engines, eval_name, dl):
 		batch: dict = to_device(next(iter(dl)), cfg.device)
 		processed += len(batch["text"])
 
-		# if we're training both models, provide output for both
-		if AR is not None and NAR is not None:
-			name = "+".join(names)
+		for name in engines:
+			engine = engines[name]
 
-			resps_list = AR(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
-			resps_list = [ r.unsqueeze(-1) for r in resps_list ]
-			resps_list = NAR(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
+			if engine.hyper_config.experimental:
+				input_ids, attention_mask = fold_inputs(
+					text_list=batch["text"],
+					proms_list=batch["proms"],
+				)
+				output = engine.model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=cfg.evaluation.steps, eos_token_id=3, do_sample=False)
+				resps_list = unfold_outputs( output )["resp_list"]
+			else:
+				resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
+				resps_list = [ r.unsqueeze(-1) for r in resps_list ]
+				resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
 
 			process( name, batch, resps_list )
-		else:
-			for name in engines:
-				model = engines[name]
-
-				if name.startswith("ar+nar"):
-					resps_list = AR_NAR(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
-					resps_list = [ r.unsqueeze(-1) for r in resps_list ]
-					resps_list = AR_NAR(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
-				elif name.startswith("ar"):
-					resps_list = model(
-						text_list=batch["text"],
-						proms_list=batch["proms"],
-						lang_list=batch["lang"],
-						max_steps=cfg.evaluation.steps,
-						sampling_temperature=cfg.evaluation.ar_temperature,
-					)
-					resps_list = [r.unsqueeze(-1) for r in resps_list]
-				elif name.startswith("nar"):
-					resps_list = model(
-						text_list=batch["text"],
-						proms_list=batch["proms"],
-						lang_list=batch["lang"],
-						resps_list=[r[..., 0].unsqueeze(-1) for r in batch["resps"]],
-						sampling_temperature=cfg.evaluation.nar_temperature,
-					)
-				else:
-					raise NotImplementedError(name)
-
-				process( name, batch, resps_list )
 
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}

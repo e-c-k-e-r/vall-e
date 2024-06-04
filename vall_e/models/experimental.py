@@ -1,9 +1,20 @@
+"""
+This is an experiment to:
+* entertain a thought to try and abide by HF's transformers API (to benefit from caching better)
+* conform to a single embedding (instead of a bunch of them) by folding/unfolding inputs
+* stop trying to make a mixed AR+NAR model work since it seems lobotomized if I keep trying to enforce both recurrent and parallel inferencing (despite a penalty cost)
+	+ I will not cave and go with codebook patterns, not yet.
+"""
+
 from ..config import cfg
+
+from ..data import fold_inputs, unfold_outputs
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch import Tensor
 from torch.nn import CrossEntropyLoss
+from torch.utils.checkpoint import checkpoint
 
 import random
 import math
@@ -21,143 +32,39 @@ except Exception as e:
 	pass
 
 try:
-	from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig
+	from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig, MixerModel as MambaMixelModel, layer_norm_fn as MambaLayerNormFn, RMSNorm as MambaRMSNorm
+
+	def MambaMixelModel_forward(self, input_ids, inference_params=None, **mixer_kwargs):
+		hidden_states = self.embedding(input_ids)
+		residual = None
+		for layer in self.layers:
+			if self.gradient_checkpointing and hidden_states.requires_grad:
+				hidden_states, residual = checkpoint( layer, hidden_states, residual, inference_params=inference_params, use_reentrant=False )
+			else:
+				hidden_states, residual = layer( hidden_states, residual, inference_params=inference_params )
+		if not self.fused_add_norm:
+			residual = (hidden_states + residual) if residual is not None else hidden_states
+			hidden_states = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
+		else:
+			# Set prenorm=False here since we don't need the residual
+			hidden_states = MambaLayerNormFn(
+				hidden_states,
+				self.norm_f.weight,
+				self.norm_f.bias,
+				eps=self.norm_f.eps,
+				residual=residual,
+				prenorm=False,
+				residual_in_fp32=self.residual_in_fp32,
+				is_rms_norm=isinstance(self.norm_f, MambaRMSNorm)
+			)
+		return hidden_states
+
+	MambaMixelModel.forward = MambaMixelModel_forward
+
 	AVAILABLE_ARCHES.append("mamba")
 except Exception as e:
 	print("Error importing `mamba` arch:", e)
 	pass
-
-def _create_mask(l, device):
-	seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
-	stop = torch.tensor(l, device=device).unsqueeze(1)  # (b 1)
-	return (seq < stop).float()  # (b t)
-
-def list_to_tensor(x_list: list[Tensor]):
-	l = list(map(len, x_list))
-	x = pad_sequence(x_list).t()
-
-	m = _create_mask(l, x_list[0].device)
-	m = m.to(x)
-	return x, m
-
-# fold into a typical LLM sequence (one embedding rather than split embeddings)
-def fold(
-	text_list = [],
-	proms_list = [],
-	resp_list = [],
-
-	ignore_index = None,
-
-	sep = 3,
-	stop = 3,
-	
-	text_tokens = 256,
-	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.prom_levels
-):
-
-	device = text_list[0].device
-	batch_size = len(text_list)
-	input_ids = [ [] for _ in range(batch_size) ]
-
-	offset = 0
-	
-	sep = torch.Tensor([ sep ])
-	stop = torch.Tensor([ stop ])
-
-	for i, text in enumerate(text_list):
-		seq = text.to("cpu", dtype=torch.int64)
-		input_ids[i].append( seq )
-		input_ids[i].append( sep )
-	
-	offset = text_tokens
-	for i, prom in enumerate(proms_list):
-		if ignore_index is not None:
-			seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to("cpu", dtype=torch.int64)
-		else:
-			seq = prom.flatten().to("cpu", dtype=torch.int64)
-			for idx, token in enumerate( seq ):
-				token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
-
-		input_ids[i].append( seq )
-		input_ids[i].append( sep )
-	
-	offset = text_tokens + (audio_tokens * audio_rvq_levels)
-	for i, resp in enumerate(resp_list):
-		seq = resp.flatten().to("cpu", dtype=torch.int64)
-		for idx, token in enumerate( seq ):
-			token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
-		input_ids[i].append( seq )
-		input_ids[i].append( stop )
-
-	for i, batch in enumerate(input_ids):
-		input_ids[i] = torch.concat(input_ids[i], dim=-1).to(device=device, dtype=torch.int64)
-
-	return list_to_tensor(input_ids)
-
-# unfold from one unified token ID space to separate token spaces
-def unfold(
-	input_ids,
-
-	sep = 3,
-	stop = 3,
-	
-	text_tokens = 256,
-	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.prom_levels
-):
-	device = input_ids.device
-	batch_size = input_ids.shape[0]
-
-	text_list = [ [] for _ in range(batch_size) ]
-	prom_list = [ [] for _ in range(batch_size) ]
-	resp_list = [ [] for _ in range(batch_size) ]
-
-	for i, batch in enumerate( input_ids ):
-		for idx, token in enumerate( batch ):
-			id = token.item()
-			if id == sep or id == stop:
-				continue
-
-			if 0 <= id and id < text_tokens:
-				text_list[i].append( id )
-			elif text_tokens <= id and id < text_tokens + (audio_tokens * audio_rvq_levels):
-				prom_list[i].append( (id - text_tokens) % audio_tokens )
-			elif text_tokens + (audio_tokens * audio_rvq_levels) <= id:
-				resp_list[i].append( (id - text_tokens) % audio_tokens )
-
-		prom_len = len(prom_list[i])
-		if prom_len % audio_rvq_levels == 0 and False:
-			prom_list[i] = torch.Tensor(prom_list[i]).reshape( audio_rvq_levels, prom_len // audio_rvq_levels ).t()
-		else:
-			bins = [ [] for _ in range(audio_rvq_levels) ]
-			for pos in range( prom_len ):
-				rvq = pos % audio_rvq_levels
-				bins[rvq].append( prom_list[i][pos] )
-			nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
-			bins = bins[:nearest]
-			prom_list[i] = torch.Tensor(bins).t().to(dtype=torch.int64)
-
-
-		resp_len = len(resp_list[i])
-		if len(resp_list[i]) % audio_rvq_levels == 0 and False:
-			resp_list[i] = torch.Tensor(resp_list[i]).reshape( audio_rvq_levels, resp_len // audio_rvq_levels ).t()
-		else:
-			bins = [ [] for _ in range(audio_rvq_levels) ]
-			for pos in range( resp_len ):
-				rvq = pos % audio_rvq_levels
-				bins[rvq].append( resp_list[i][pos] )
-			nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
-			bins = bins[:nearest]
-			resp_list[i] = torch.Tensor(bins).t().to(dtype=torch.int64)
-		
-		text_list[i] = torch.Tensor( text_list[i] ).to(dtype=torch.int64)
-
-	return dict(
-		text_list=text_list,
-		prom_list=prom_list,
-		resp_list=resp_list
-	)
 
 
 SELECTED_ARCH = cfg.model.arch_type 
@@ -179,9 +86,12 @@ class Model(LlmArchClass):
 		n_heads=16,
 		p_dropout=0.1,
 
-		attention_backend=None,
-		activation_checkpointing=True,
+		config = None,
 	):
+		self.hyper_config  = config
+		
+		hf_attention = config.attention if config is not None else None
+		gradient_checkpointing = config.gradient_checkpointing if config is not None else True
 
 		if SELECTED_ARCH == "llama":
 			super().__init__(config=LlamaConfig(
@@ -197,10 +107,10 @@ class Model(LlmArchClass):
 				hidden_act="gelu",
 				is_encoder_decoder=False,
 				is_decoder=True,
-				attn_implementation=attention_backend,
+				attn_implementation=hf_attention,
 			))
 			
-			if activation_checkpointing:
+			if gradient_checkpointing:
 				self.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
@@ -209,8 +119,10 @@ class Model(LlmArchClass):
 				vocab_size=256 + (1024 * cfg.model.prom_levels) + (1024 * cfg.model.prom_levels) + 1,
 				d_model=d_model,
 				n_layer=n_layers*2,
-				#ssm_cfg={"layer": "Mamba2"},
+				#ssm_cfg={"layer": "Mamba2"}, # will ALWAYS nan
 			))
+
+			self.backbone.gradient_checkpointing = gradient_checkpointing
 
 
 	def forward(
@@ -293,9 +205,9 @@ def example_usage():
 	proms_list = proms_list[:1]
 	resps_list = resps_list[:1]
 
-	input_ids, attention_mask = fold(text_list, proms_list, resps_list)
-	target_ids, target_attention_mask = fold(text_list, proms_list, resps_list, ignore_index=-100)
-	prefix_input_ids, prefix_attention_mask = fold(text_list, proms_list)
+	input_ids, attention_mask = fold_inputs(text_list, proms_list, resps_list)
+	target_ids, target_attention_mask = fold_inputs(text_list, proms_list, resps_list, ignore_index=-100)
+	prefix_input_ids, prefix_attention_mask = fold_inputs(text_list, proms_list)
 
 	kwargs = {}
 	model = Model(**kwargs).to(device)
@@ -373,7 +285,7 @@ def example_usage():
 		else:
 			output = model.generate(input_ids=prefix_input_ids, attention_mask=prefix_attention_mask, max_length=steps, eos_token_id=3, do_sample=False)
 
-		unfolded = unfold( output )
+		unfolded = unfold_outputs( output )
 		for i, batch in enumerate(unfolded["resp_list"]):
 			_ = decode_to_file(batch.to(device=device), f"data/{SELECTED_ARCH}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
 

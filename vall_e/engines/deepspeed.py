@@ -32,10 +32,10 @@ if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
 
 class Engine(DeepSpeedEngine):
 	def __init__(self, *args, **kwargs):
-		self._cfg = None
-		if '_cfg' in kwargs:
-			self._cfg = kwargs['_cfg']
-			kwargs.pop("_cfg")
+		self.hyper_config = None
+		if 'hyper_config' in kwargs:
+			self.hyper_config = kwargs['hyper_config']
+			kwargs.pop("hyper_config")
 
 		kwargs['config'] = cfg.trainer.deepspeed.ds_cfg
 		kwargs['config_class'] = DeepSpeedConfig(kwargs['config'])
@@ -63,11 +63,11 @@ class Engine(DeepSpeedEngine):
 		self.max_nan_losses = 8
 
 	def freeze(self, freeze_all=True):
-		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):
-			raise Exception("freeze_all=False yet self._cfg.frozen_params is None")
+		if self.hyper_config is None or not hasattr(self.hyper_config, "frozen_params"):
+			raise Exception("freeze_all=False yet self.hyper_config.frozen_params is None")
 
 		for name, param in self.module.named_parameters():
-			if (freeze_all and param.requires_grad) or (not freeze_all and name in self._cfg.frozen_params):
+			if (freeze_all and param.requires_grad) or (not freeze_all and name in self.hyper_config.frozen_params):
 				param.requires_grad_(False)
 				self._frozen_params.add(param)
 
@@ -78,7 +78,7 @@ class Engine(DeepSpeedEngine):
 	
 	@property
 	def _training(self):
-		return self._cfg.training
+		return self.hyper_config.training
 
 	@property
 	def global_step(self):

@@ -1,3 +1,4 @@
+experimental: False # should probably expand this into a dict of experimental flags
 sample_rate: 24_000 # 44_000 for dac
 audio_backend: "vocos" # or dac
 
@@ -11,9 +12,10 @@ models:
   tones: 1
   arch_type: llama
   training: True
-  version: 4
+  version: 5
   attention: flash_attention_2
   dropout: 0.1
+  experimental: False
 
   loss_factors:
     text: 0.1
@@ -63,11 +65,10 @@ trainer:
 
   keep_last_checkpoints: 4
 
-  aggressive_optimizations: False
-  load_disabled_engines: False
+  gradient_checkpointing: True
 
-  #load_state_dict: True
   strict_loading: False
+  #load_state_dict: True
   #load_tag: "9500"
   #load_states: False
   #restart_step_count: True
@@ -84,8 +85,6 @@ trainer:
     use_compression_training: False
 
     amp: False
-
-  activation_checkpointing: True
 
   load_webui: False
 
@@ -108,8 +107,6 @@ optimizations:
   dadaptation: False
   bitnet: False
   fp8: False
-
-experimental: True # practically required now it seems
 
 dataset:
   speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"

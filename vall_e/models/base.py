@@ -64,7 +64,7 @@ try:
 	def BitNetTransformerBlock_forward(self, x: Tensor, *args, **kwargs) -> Tensor:
 		skip = x
 		for attn, ffn in zip(self.layers, self.ffn_layers):
-			if x.requires_grad and self.activation_checkpointing:
+			if x.requires_grad and self.gradient_checkpointing:
 				x, _ = checkpoint(attn, x, x, x, is_causal=True, *args, **kwargs, use_reentrant=False)
 			else:
 				x, _ = attn(x, x, x, is_causal=True, *args, **kwargs)
@@ -83,13 +83,13 @@ try:
 			num_tokens: int,
 			heads=8,
 			ff_mult=4,
-			activation_checkpointing = True
+			gradient_checkpointing = True
 		):
 			super().__init__()
 
 			self.transformer = BitNetTransformerBlock( dim=dim, depth=depth, heads=heads, ff_mult=ff_mult )
 			self.norm = BitNetRMSNorm(dim)
-			self.transformer.activation_checkpointing = activation_checkpointing
+			self.transformer.gradient_checkpointing = gradient_checkpointing
 
 		def forward(self, x):
 			x = self.transformer(x)
@@ -431,9 +431,9 @@ class Base(nn.Module):
 		return -100
 
 	def loss_factor(self, k):
-		if self.config is None:
+		if self.hyper_config is None:
 			return 1.0
-		return self.config.loss_factors[k] if k in self.config.loss_factors else 1.0
+		return self.hyper_config.loss_factors[k] if k in self.hyper_config.loss_factors else 1.0
 
 	def __init__(
 		self,
@@ -452,8 +452,8 @@ class Base(nn.Module):
 	):
 		super().__init__()
 		self.training = training
-		self.config = config
-		self.activation_checkpointing = self.config.activation_checkpointing if self.config is not None else True
+		self.hyper_config = config
+		self.gradient_checkpointing = self.hyper_config.gradient_checkpointing if self.hyper_config is not None else True
 
 		self.n_tokens = n_tokens
 		self.d_model = d_model
@@ -482,13 +482,13 @@ class Base(nn.Module):
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
 				levels=self.n_prom_levels if self.version > 3 else None,
-				sums=self.config.audio_embedding_sums if self.config is not None else True,
+				sums=self.hyper_config.audio_embedding_sums if self.hyper_config is not None else True,
 			)
 			# [1025] + [1024] * 8
 			self.resps_emb = AudioEmbedding(
 				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
-				sums=self.config.audio_embedding_sums if self.config is not None else True
+				sums=self.hyper_config.audio_embedding_sums if self.hyper_config is not None else True
 			)
 
 		
@@ -502,20 +502,20 @@ class Base(nn.Module):
 		self.sep = nn.Parameter(torch.randn(d_model))
 
 		# ick, there has to be a better way
-		hf_attention = self.config.attention if self.config is not None else None
+		hf_attention = self.hyper_config.attention if self.hyper_config is not None else None
 
-		if self.config.attention == "auto":
+		if self.hyper_config.attention == "auto":
 			if "flash" in AVAILABLE_ATTENTIONS:
-				self.config.attention = "flash"
+				self.hyper_config.attention = "flash"
 			elif "xformers" in AVAILABLE_ATTENTIONS:
-				self.config.attention = "xformers"
+				self.hyper_config.attention = "xformers"
 			else:
-				self.config.attention = "mem_efficient"
+				self.hyper_config.attention = "mem_efficient"
 
-		if self.config.attention in ["xformers", "mem_efficient", "math", "flash"]:
+		if self.hyper_config.attention in ["xformers", "mem_efficient", "math", "flash"]:
 			hf_attention = None
-			if self.config.attention not in AVAILABLE_ATTENTIONS:
-				raise ValueError(f"Requesting attention `{self.config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
+			if self.hyper_config.attention not in AVAILABLE_ATTENTIONS:
+				raise ValueError(f"Requesting attention `{self.hyper_config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
 
 
 		if self.arch_type == "transformer":
@@ -538,12 +538,12 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
+					num_key_value_heads=self.hyper_config.kv_heads if self.hyper_config.kv_heads > 0 else n_heads,
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
 					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.activation_checkpointing,
+					#gradient_checkpointing=self.gradient_checkpointing,
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -554,7 +554,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
+					num_key_value_heads=self.hyper_config.kv_heads if self.hyper_config.kv_heads > 0 else n_heads,
 					sliding_window=75 * 12, # 12 second context window
 					output_router_logits=training,
 					hidden_act="gelu",
@@ -563,10 +563,10 @@ class Base(nn.Module):
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
 					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.activation_checkpointing,
+					#gradient_checkpointing=self.gradient_checkpointing,
 				))
 
-			if self.activation_checkpointing and not self.model.gradient_checkpointing:
+			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
@@ -589,7 +589,7 @@ class Base(nn.Module):
 					is_encoder_decoder=False,
 					is_decoder=True,
 					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.activation_checkpointing,
+					#gradient_checkpointing=self.gradient_checkpointing,
 				))
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -609,10 +609,10 @@ class Base(nn.Module):
 					num_local_experts=n_experts,
 					num_experts_per_tok=min(2, n_experts),
 					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.activation_checkpointing,
+					#gradient_checkpointing=self.gradient_checkpointing,
 				))
 
-			if self.activation_checkpointing and not self.model.gradient_checkpointing:
+			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
@@ -628,7 +628,7 @@ class Base(nn.Module):
 				decoder_ffn_embed_dim=d_model * 4,
 				decoder_layers=n_layers,
 				dropout=p_dropout if training else 0.0,
-				checkpoint_activations=self.activation_checkpointing,
+				checkpoint_activations=self.gradient_checkpointing,
 				activation_fn="gelu",
 				use_layernorm=self.version < 3,
 				use_biases=self.version < 3,
@@ -660,7 +660,7 @@ class Base(nn.Module):
 				decoder_ffn_embed_dim=d_model * 4,
 				decoder_layers=n_layers,
 				dropout=p_dropout if training else 0.0,
-				checkpoint_activations=self.activation_checkpointing,
+				checkpoint_activations=self.gradient_checkpointing,
 				activation_fn="gelu",
 				use_glu=False, # self.version >= 3,
 
@@ -673,7 +673,7 @@ class Base(nn.Module):
 
 			self.model = RetNetDecoder_HF(RetNetConfig_HF(**kwargs))
 
-			if self.activation_checkpointing and not self.model.gradient_checkpointing:
+			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
@@ -684,13 +684,13 @@ class Base(nn.Module):
 				depth=n_layers,
 				heads=n_heads,
 				ff_mult=4,
-				activation_checkpointing=self.activation_checkpointing,
+				gradient_checkpointing=self.gradient_checkpointing,
 			)
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
 
-		if self.config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
-			self.model = ml.replace_attention( self.model, klass=Llama_Attention, target=LlamaAttention, mode=self.config.attention )
+		if self.hyper_config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
+			self.model = ml.replace_attention( self.model, klass=Llama_Attention, target=LlamaAttention, mode=self.hyper_config.attention )
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
@@ -877,7 +877,7 @@ class Base(nn.Module):
 		quant_levels: Tensor | None = None,
 	):
 		# old, "naive" way, no loss factoring
-		if not self.config.loss_factors:
+		if not self.hyper_config.loss_factors:
 			target_list = []
 			for batch in inputs:
 				target = []

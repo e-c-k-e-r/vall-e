@@ -52,9 +52,9 @@ if not distributed_initialized() and cfg.trainer.backend == "local": # and world
 # A very naive engine implementation using barebones PyTorch
 class Engine():
 	def __init__(self, *args, **kwargs):
-		if '_cfg' in kwargs:
-			self._cfg = kwargs['_cfg']
-			kwargs.pop("_cfg")
+		if 'hyper_config' in kwargs:
+			self.hyper_config = kwargs['hyper_config']
+			kwargs.pop("hyper_config")
 
 		self.module = kwargs['model'].to(cfg.device).to(torch.float32 if cfg.trainer.amp else cfg.trainer.dtype)
 		self.optimizer = kwargs['optimizer'] if 'optimizer' in kwargs else None
@@ -72,11 +72,11 @@ class Engine():
 
 	def freeze(self, freeze_all=True):
 		# set to freeze 
-		if self._cfg is None or not hasattr(self._cfg, "frozen_params"):
-			raise Exception("freeze_all=False yet self._cfg.frozen_params is None")
+		if self.hyper_config is None or not hasattr(self.hyper_config, "frozen_params"):
+			raise Exception("freeze_all=False yet self.hyper_config.frozen_params is None")
 
 		for name, param in self.module.named_parameters():
-			if (freeze_all and param.requires_grad) or (not freeze_all and name in self._cfg.frozen_params):
+			if (freeze_all and param.requires_grad) or (not freeze_all and name in self.hyper_config.frozen_params):
 				param.requires_grad_(False)
 				self._frozen_params.add(param)
 
@@ -87,9 +87,9 @@ class Engine():
 
 	@property
 	def _training(self):
-		if not hasattr(self, "_cfg"):
+		if not hasattr(self, "hyper_config"):
 			return True
-		return self._cfg.training
+		return self.hyper_config.training
 
 	@property
 	def global_step(self):

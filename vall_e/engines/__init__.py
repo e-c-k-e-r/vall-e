@@ -33,7 +33,7 @@ def load_engines(training=True):
 		optimizer = None
 		lr_scheduler = None
 
-		inferencing = cfg.mode == "inferencing" or not model._cfg.training
+		inferencing = cfg.mode == "inferencing" or not model.hyper_config.training
 		backend = cfg.inference.backend if inferencing else cfg.trainer.backend
 		dtype = cfg.inference.dtype if inferencing else cfg.trainer.dtype
 		amp = cfg.inference.amp if inferencing else cfg.trainer.amp
@@ -43,7 +43,7 @@ def load_engines(training=True):
 		engine_class = _Engine if backend == "local" or inferencing else Engine
 
 		if inferencing:
-			model._cfg.training = False
+			model.hyper_config.training = False
 
 		if cfg.optimizations.replace and cfg.optimizations.linear:
 			model.model = ml.replace_linear( model.model )
@@ -83,7 +83,7 @@ def load_engines(training=True):
 			params.update(cfg.hyperparameters.optimizer_params)
 
 			optimizer = optimizer_class(
-				[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
+				[ param for name, param in model.named_parameters() if name not in model.hyper_config.frozen_params ],
 				**params,
 			)
 
@@ -96,7 +96,7 @@ def load_engines(training=True):
 					raise ValueError(f'ScheduleFree not implemented with requested optimizer: {cfg.hyperparameters.optimizer}')
 
 				optimizer = scheduler_class(
-					[ param for name, param in model.named_parameters() if name not in model._cfg.frozen_params ],
+					[ param for name, param in model.named_parameters() if name not in model.hyper_config.frozen_params ],
 					lr = params['lr'],
 					warmup_steps = cfg.hyperparameters.warmup_steps
 				)
@@ -144,7 +144,7 @@ def load_engines(training=True):
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
-		_cfg = model._cfg
+		hyper_config = model.hyper_config
 
 		# wrap if DDP is requested
 		if ddp:
@@ -161,7 +161,7 @@ def load_engines(training=True):
 			optimizer=optimizer,
 			lr_scheduler=lr_scheduler,
 
-			_cfg=_cfg,
+			hyper_config=hyper_config,
 			stats=stats
 		)
 		

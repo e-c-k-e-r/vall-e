@@ -191,6 +191,7 @@ class Dataset:
 	def max_duration(self):
 		return self.duration_range[1]
 
+# I really need to clean this up
 @dataclass()
 class Model:
 	_max_levels: int = 0
@@ -215,6 +216,7 @@ class Model:
 	dropout: float = 0.1 # adjustable dropout value
 	loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 0.0, "resp": 1.0 })
 	kv_heads: int = 0
+	experimental: bool = False
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
@@ -305,6 +307,10 @@ class Model:
 	@property
 	def activation_checkpointing(self):
 		return cfg.trainer.activation_checkpointing
+	
+	@property
+	def gradient_checkpointing(self):
+		return cfg.trainer.gradient_checkpointing
 	
 @dataclass()
 class Hyperparameters:
@@ -519,7 +525,8 @@ class Trainer:
 	load_module_only: bool = False
 	restart_step_count: bool = False
 
-	activation_checkpointing: bool = True
+	activation_checkpointing: bool | None = None # deprecated
+	gradient_checkpointing: bool = True
 
 	aggressive_optimizations: bool = False
 	check_for_oom: bool = True
@@ -727,6 +734,9 @@ class Config(_Config):
 		
 		if self.inference.audio_backend != "" and self.audio_backend == "":
 			self.audio_backend = self.inference.audio_backend
+
+		if self.trainer.activation_checkpointing is not None:
+			self.trainer.gradient_checkpointing = self.trainer.activation_checkpointing
 
 # Preserves the old behavior
 class NaiveTokenizer:
