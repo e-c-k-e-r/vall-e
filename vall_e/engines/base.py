@@ -294,7 +294,7 @@ class Engines(dict[str, Engine]):
 		for engine in self.values():
 			engine.dispatch_attribute(*args, **kwargs)
 
-	def export(self, userdata={}):
+	def export(self, userdata={}, callback=None):
 		for name, engine in self.items():
 			outpath = cfg.ckpt_dir / name / "fp32.pth"
 			state_dict = {
@@ -307,6 +307,8 @@ class Engines(dict[str, Engine]):
 				},
 				"userdata": userdata
 			}
+			if callback:
+				state_dict = callback( state_dict, engine.module )
 			torch.save(state_dict, outpath)
 			print(f"Exported {name} to {outpath}")
 

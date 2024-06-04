@@ -135,11 +135,9 @@ def run_eval(engines, eval_name, dl):
 
 
 def train():
-	"""
 	parser = argparse.ArgumentParser("VALL-E TTS")
-	parser.add_argument("--eval", action="store_true")
+	parser.add_argument("--eval", action="store_true", default=None)
 	args = parser.parse_args()
-	"""
 
 	setup_logging(cfg.log_dir)
 
@@ -162,10 +160,8 @@ def train():
 
 	qnt.unload_model()
 
-	"""
 	if args.eval:
 		return eval_fn(engines=trainer.load_engines())
-	"""
 
 	"""
 	if cfg.trainer.load_webui:
