@@ -47,7 +47,6 @@ def fold_inputs(
 	audio_tokens = 1024,
 	audio_rvq_levels = cfg.model.max_levels,
 	quant_levels = None,
-	experimental = False
 ):
 	def _create_mask(l, device):
 		seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)

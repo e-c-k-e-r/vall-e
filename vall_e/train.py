@@ -135,7 +135,7 @@ def run_eval(engines, eval_name, dl):
 						input_ids, attention_mask = fold_inputs(text_list=batch["text"], prom_list=batch["proms"], resp_list=resps_list, quant_levels=quant_levels, experimental=True)
 						min_length = 1 
 						for batch in input_ids:
-							min_length = max( min_length, batch.shape[0] )
+							min_length = max( min_length, batch.shape[0] + 1 )
 
 						output = model.generate(
 							input_ids=input_ids,
