@@ -44,7 +44,7 @@ def fold_inputs(
 	
 	text_tokens = 256,
 	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.prom_levels
+	audio_rvq_levels = cfg.model.max_levels
 ):
 	def _create_mask(l, device):
 		seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
@@ -107,7 +107,7 @@ def unfold_outputs(
 	
 	text_tokens = 256,
 	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.prom_levels
+	audio_rvq_levels = cfg.model.max_levels
 ):
 	device = output_ids.device
 	batch_size = output_ids.shape[0]
@@ -139,7 +139,7 @@ def unfold_outputs(
 				bins[rvq].append( prom_list[i][pos] )
 			nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
 			bins = bins[:nearest]
-			prom_list[i] = torch.Tensor(bins).t().to(dtype=torch.int64)
+			prom_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
 
 
 		resp_len = len(resp_list[i])
@@ -152,9 +152,9 @@ def unfold_outputs(
 				bins[rvq].append( resp_list[i][pos] )
 			nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
 			bins = bins[:nearest]
-			resp_list[i] = torch.Tensor(bins).t().to(dtype=torch.int64)
+			resp_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
 		
-		text_list[i] = torch.Tensor( text_list[i] ).to(dtype=torch.int64)
+		text_list[i] = torch.Tensor( text_list[i] ).to(device=device, dtype=torch.int64)
 
 	return dict(
 		text_list=text_list,

@@ -1,6 +1,6 @@
 # https://github.com/syncdoth/RetNet/
 from ..ext.retnet_hf.configuration_retnet import RetNetConfig
-from ..ext.retnet_hf.modeling_retnet import RetNetModel as RetNetDecoder
+from ..ext.retnet_hf.modeling_retnet import RetNetModel as RetNetDecoder, RetNetForCausalLM
 
 # things we're overriding or required to override
 from ..ext.retnet_hf.modeling_retnet import RetNetDecoderLayer, MultiScaleRetention, theta_shift, split_heads, RMSNorm, FeedForwardNetwork, get_activation_fn, LayerNorm, RetNetRelPos
@@ -32,77 +32,74 @@ def FeedForwardNetwork_init(
 
 FeedForwardNetwork.__init__ = FeedForwardNetwork_init
 
-# removes embed_tokens
 def RetNetModel_init(
-		self,
-		config: RetNetConfig,
-		embed_tokens: torch.nn.Embedding = None,
-		tensor_parallel: bool = False,
-	):
-		super(RetNetDecoder, self).__init__(config)
-		self.config = config
+	self,
+	config: RetNetConfig,
+	embed_tokens: torch.nn.Embedding = None,
+	tensor_parallel: bool = False,
+):
+	super(RetNetDecoder, self).__init__(config)
+	self.config = config
 
-		self.dropout_module = torch.nn.Dropout(config.dropout)
+	self.dropout_module = torch.nn.Dropout(config.dropout)
 
-		self.embed_dim = config.decoder_embed_dim
-		self.embed_scale = (
-			1.0 if config.no_scale_embedding else math.sqrt(self.embed_dim)
+	self.embed_dim = config.decoder_embed_dim
+	self.embed_scale = (
+		1.0 if config.no_scale_embedding else math.sqrt(self.embed_dim)
+	)
+
+	if embed_tokens is None and config.vocab_size:
+		embed_tokens = torch.nn.Embedding(
+			config.vocab_size, config.decoder_embed_dim, config.pad_token_id
+		)
+	self.embed_tokens = embed_tokens
+
+	if config.layernorm_embedding:
+		self.layernorm_embedding = LayerNorm(self.embed_dim, eps=config.layernorm_eps) # RMSNorm
+	else:
+		self.layernorm_embedding = None
+
+	self.layers = torch.nn.ModuleList([])
+
+	for i in range(config.decoder_layers):
+		self.layers.append(
+			RetNetDecoderLayer(config, depth=i, tensor_parallel=tensor_parallel)
 		)
 
-		"""
-		if embed_tokens is None:
-			embed_tokens = torch.nn.Embedding(
-				config.vocab_size, config.decoder_embed_dim, config.pad_token_id
-			)
-		"""
-		self.embed_tokens = None
+	self.decoder_layers = len(self.layers)
 
-		if config.layernorm_embedding:
-			self.layernorm_embedding = LayerNorm(self.embed_dim, eps=config.layernorm_eps) # RMSNorm
-		else:
-			self.layernorm_embedding = None
+	if config.decoder_normalize_before:
+		self.layer_norm = LayerNorm(self.embed_dim, eps=config.layernorm_eps) # RMSNorm
+	else:
+		self.layer_norm = None
 
-		self.layers = torch.nn.ModuleList([])
+	self.retnet_rel_pos = RetNetRelPos(config)
+	self.recurrent_chunk_size = config.recurrent_chunk_size
 
-		for i in range(config.decoder_layers):
-			self.layers.append(
-				RetNetDecoderLayer(config, depth=i, tensor_parallel=tensor_parallel)
-			)
+	if config.deepnorm:
+		init_scale = math.pow(8.0 * config.decoder_layers, 0.25)
+		for name, p in self.named_parameters():
+			if (
+				"fc1" in name
+				or "fc2" in name
+				or "out_proj" in name
+				or "v_proj" in name
+			):
+				p.data.div_(init_scale)
 
-		self.decoder_layers = len(self.layers)
+	if config.subln and not config.use_glu:
+		init_scale = math.sqrt(math.log(config.decoder_layers * 2))
+		for name, p in self.named_parameters():
+			if (
+				"fc1" in name
+				or "fc2" in name
+				or "out_proj" in name
+				or "v_proj" in name
+			):
+				p.data.mul_(init_scale)
 
-		if config.decoder_normalize_before:
-			self.layer_norm = LayerNorm(self.embed_dim, eps=config.layernorm_eps) # RMSNorm
-		else:
-			self.layer_norm = None
-
-		self.retnet_rel_pos = RetNetRelPos(config)
-		self.recurrent_chunk_size = config.recurrent_chunk_size
-
-		if config.deepnorm:
-			init_scale = math.pow(8.0 * config.decoder_layers, 0.25)
-			for name, p in self.named_parameters():
-				if (
-					"fc1" in name
-					or "fc2" in name
-					or "out_proj" in name
-					or "v_proj" in name
-				):
-					p.data.div_(init_scale)
-
-		if config.subln and not config.use_glu:
-			init_scale = math.sqrt(math.log(config.decoder_layers * 2))
-			for name, p in self.named_parameters():
-				if (
-					"fc1" in name
-					or "fc2" in name
-					or "out_proj" in name
-					or "v_proj" in name
-				):
-					p.data.mul_(init_scale)
-
-		self.gradient_checkpointing = True
-		self.post_init()
+	self.gradient_checkpointing = True
+	self.post_init()
 
 RetNetDecoder.__init__ = RetNetModel_init
 

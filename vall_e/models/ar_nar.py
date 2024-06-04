@@ -386,7 +386,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 200
+	steps = 50
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
@@ -448,7 +448,7 @@ def example_usage():
 
 	torch.save( {
 		'module': model.state_dict()
-	}, "./data/test.pth" )
+	}, f"./data/{cfg.model.arch_type}.pth" )
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
@@ -459,16 +459,11 @@ def example_usage():
 
 		engine.eval()
 		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
-		
-		if cfg.audio_backend != "dac":
-			for i, o in enumerate(resps_list):
-				_ = decode_to_file(o, f"data/ar.{i}.{name}.wav", device=device)
-
 		resps_list = [r.unsqueeze(-1) for r in resps_list]
 		resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
 
 		for i, o in enumerate(resps_list):
-			_ = decode_to_file(o, f"data/ar+nar.{i}.{name}.wav", device=device)
+			_ = decode_to_file(o, f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
 
 		unload_model()
 
@@ -484,7 +479,7 @@ def example_usage():
 
 		torch.save( {
 			'module': model.state_dict()
-		}, "./data/test.pth" )
+		}, f"./data/{cfg.model.arch_type}.pth" )
 
 	sample("init", 5)
 	train()

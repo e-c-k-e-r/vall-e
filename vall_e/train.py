@@ -109,9 +109,9 @@ def run_eval(engines, eval_name, dl):
 			if engine.hyper_config.experimental:
 				input_ids, attention_mask = fold_inputs(
 					text_list=batch["text"],
-					proms_list=batch["proms"],
+					prom_list=batch["proms"],
 				)
-				output = engine.model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=cfg.evaluation.steps, eos_token_id=3, do_sample=False)
+				output = engine.module.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=cfg.evaluation.steps, eos_token_id=3, do_sample=False)
 				resps_list = unfold_outputs( output )["resp_list"]
 			else:
 				resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)

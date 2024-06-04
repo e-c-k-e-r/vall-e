@@ -32,6 +32,15 @@ except Exception as e:
 	pass
 
 try:
+	from .retnet_hf import RetNetConfig
+	from ..ext.retnet_hf.modeling_retnet import RetNetForCausalLM
+
+	AVAILABLE_ARCHES.append("retnet")
+except Exception as e:
+	print("Error importing `retnet` arch:", e)
+	pass
+
+try:
 	from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig, MixerModel as MambaMixelModel, layer_norm_fn as MambaLayerNormFn, RMSNorm as MambaRMSNorm
 
 	def MambaMixelModel_forward(self, input_ids, inference_params=None, **mixer_kwargs):
@@ -75,6 +84,8 @@ if SELECTED_ARCH == "mamba":
 	LlmArchClass = MambaLMHeadModel
 elif SELECTED_ARCH == "llama":
 	LlmArchClass = LlamaForCausalLM
+elif SELECTED_ARCH == "retnet":
+	LlmArchClass = RetNetForCausalLM
 else:
 	raise ValueError(f"Requesting arch `{SELECTED_ARCH}` but not available")
 
@@ -92,18 +103,19 @@ class Model(LlmArchClass):
 		
 		hf_attention = config.attention if config is not None else None
 		gradient_checkpointing = config.gradient_checkpointing if config is not None else True
+		vocab_size = 256 + (1024 * cfg.model.max_levels) + (1024 * cfg.model.max_levels) + 1
 
 		if SELECTED_ARCH == "llama":
 			super().__init__(config=LlamaConfig(
-				vocab_size=256 + (1024 * cfg.model.prom_levels) + (1024 * cfg.model.prom_levels) + 1,
+				vocab_size=vocab_size,
 				hidden_size=d_model,
-				max_position_embeddings=cfg.dataset.frames_per_second * cfg.model.prom_levels * 60, # max-length of 60 seconds
+				max_position_embeddings=cfg.dataset.frames_per_second * cfg.model.max_levels * 60, # max-length of 60 seconds
 				intermediate_size=d_model*4,
 				num_hidden_layers=n_layers,
 				num_attention_heads=n_heads,
 				attention_dropout=p_dropout,
 				num_key_value_heads=n_heads,
-				sliding_window=cfg.dataset.frames_per_second * cfg.model.prom_levels * 12,
+				sliding_window=cfg.dataset.frames_per_second * cfg.model.max_levels * 12,
 				hidden_act="gelu",
 				is_encoder_decoder=False,
 				is_decoder=True,
@@ -114,9 +126,31 @@ class Model(LlmArchClass):
 				self.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
+		elif SELECTED_ARCH == "retnet":
+			super().__init__(config=RetNetConfig(
+				vocab_size=vocab_size,
+				decoder_embed_dim=d_model,
+				decoder_value_embed_dim =d_model * 2,
+				decoder_retention_heads=n_heads,
+				decoder_ffn_embed_dim=d_model * 4,
+				decoder_layers=n_layers,
+				dropout=p_dropout,
+				checkpoint_activations=gradient_checkpointing,
+				activation_fn="gelu",
+				use_layernorm=False,
+				use_biases=False,
+				use_glu=True,
+
+				#chunkwise_recurrent=self.causal and self.recurrent_chunk_size > 0,
+				#recurrent_chunkwise_size=self.recurrent_chunk_size if self.causal else 0,
+				#no_output_layer=True,
+				#rotary_embedding_base=self.rotary_embedding_base, # 10000
+
+				decoder_normalize_before=True,
+			))
 		elif SELECTED_ARCH == "mamba":
 			super().__init__(config=MambaConfig(
-				vocab_size=256 + (1024 * cfg.model.prom_levels) + (1024 * cfg.model.prom_levels) + 1,
+				vocab_size=vocab_size,
 				d_model=d_model,
 				n_layer=n_layers*2,
 				#ssm_cfg={"layer": "Mamba2"}, # will ALWAYS nan
@@ -132,15 +166,15 @@ class Model(LlmArchClass):
 	):
 		output = super().forward(*args, **kwargs)
 
-		if SELECTED_ARCH == "llama":
+		if SELECTED_ARCH in ["llama", "retnet"]:
 			if output.loss is not None:
 				self.loss = dict(
 					nll = output.loss,
 				)
 		elif SELECTED_ARCH == "mamba":
 			if "labels" in kwargs:
-				logits = output.logits
 				labels = kwargs.pop("labels")
+				logits = output.logits
 
 				# Shift so that tokens < n predict n
 				shift_logits = logits[..., :-1, :].contiguous()
@@ -183,7 +217,7 @@ def example_usage():
 
 	def _load_quants(path) -> Tensor:
 		qnt = np.load(path, allow_pickle=True)[()]
-		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.prom_levels, :].t().to(torch.int16)
+		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.max_levels, :].t().to(torch.int16)
 
 	qnt = _load_quants(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 
@@ -278,7 +312,7 @@ def example_usage():
 	print(f"{LlmArchClass} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.inference_mode()
-	def sample( name, steps=cfg.model.prom_levels*cfg.dataset.frames_per_second*60 ):
+	def sample( name, steps=cfg.model.max_levels*cfg.dataset.frames_per_second*60 ):
 		engine.eval()
 		if SELECTED_ARCH == "mamba":
 			output = model.generate(input_ids=prefix_input_ids, cg=True, max_length=steps, eos_token_id=3)

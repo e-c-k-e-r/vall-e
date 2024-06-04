@@ -1,10 +1,9 @@
-from .ar_nar import AR_NAR
-from .experimental import Model as Experimental
 
 def get_model(cfg, training=True):
 	name = cfg.name
 
 	if not cfg.experimental:
+		from .ar_nar import AR_NAR
 		model = AR_NAR(
 			n_tokens=cfg.tokens,
 			d_model=cfg.dim,
@@ -21,6 +20,7 @@ def get_model(cfg, training=True):
 		)
 		model._cfg = cfg
 	else:
+		from .experimental import Model as Experimental
 		model = Experimental(
 			d_model=cfg.dim,
 			n_layers=cfg.layers,

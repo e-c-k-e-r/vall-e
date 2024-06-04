@@ -963,6 +963,7 @@ class RetNetModel(RetNetPreTrainedModel):
                     retention_mask,
                     forward_impl,
                     past_key_value,
+                    use_reentrant=True,
                 )
             else:
                 layer_outputs = layer(
