@@ -137,7 +137,7 @@ def run_eval(engines, eval_name, dl):
 def train():
 	parser = argparse.ArgumentParser("VALL-E TTS")
 	parser.add_argument("--eval", action="store_true", default=None)
-	args = parser.parse_args()
+	args, unknown = parser.parse_known_args()
 
 	setup_logging(cfg.log_dir)
 
