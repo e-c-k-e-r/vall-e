@@ -36,6 +36,7 @@ def fold_inputs(
 	text_list = [],
 	prom_list = [],
 	resp_list = [],
+	targ_list = [],
 
 	ignore_index = None,
 
@@ -46,6 +47,7 @@ def fold_inputs(
 	audio_tokens = 1024,
 	audio_rvq_levels = cfg.model.max_levels,
 	quant_levels = None,
+	experimental = False
 ):
 	def _create_mask(l, device):
 		seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
@@ -76,6 +78,7 @@ def fold_inputs(
 	
 	offset = text_tokens
 	for i, prom in enumerate(prom_list):
+		# deinterleaved
 		if quant_levels is not None:
 			quant_level = quant_levels[i]
 			if ignore_index is not None:
@@ -84,6 +87,7 @@ def fold_inputs(
 				seq = prom[:, quant_level].to("cpu", dtype=torch.int64)
 				for idx, token in enumerate( seq ):
 					token += offset + ( audio_tokens * quant_level )
+		# interleaved
 		else:
 			if ignore_index is not None:
 				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to("cpu", dtype=torch.int64)
@@ -96,7 +100,38 @@ def fold_inputs(
 		input_ids[i].append( sep )
 	
 	offset = text_tokens + (audio_tokens * audio_rvq_levels)
+
 	for i, resp in enumerate(resp_list):
+		# deinterleaved
+		if quant_levels is not None:
+			# grab the previous rvq level
+			quant_level = quant_levels[i] - 1
+			if quant_level < 0:
+				seq = sep
+			else:
+				# my shitcode keeps things as lists of tensors for each level, so this handles it because lists can't index by tuples
+				if isinstance(resp, list):
+					seq = resp[quant_level].to("cpu", dtype=torch.int64)
+				else:
+					seq = resp[:, quant_level].to("cpu", dtype=torch.int64)
+
+				for idx, token in enumerate( seq ):
+					token += offset + ( audio_tokens * quant_level )
+			
+
+			input_ids[i].append( seq )
+			input_ids[i].append( stop )
+		# interleaved
+		else:
+			seq = resp.flatten().to("cpu", dtype=torch.int64)
+			for idx, token in enumerate( seq ):
+				token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
+		
+			input_ids[i].append( seq )
+			input_ids[i].append( stop )
+
+	for i, resp in enumerate(targ_list):
+		# deinterleaved
 		if quant_levels is not None:
 			quant_level = quant_levels[i]
 			seq = resp[:, quant_level].to("cpu", dtype=torch.int64)
@@ -104,8 +139,8 @@ def fold_inputs(
 				token += offset + ( audio_tokens * quant_level )
 			
 			input_ids[i].append( seq )
-			if quant_level == 0:
-				input_ids[i].append( stop )
+			input_ids[i].append( stop )
+		# interleaved
 		else:
 			seq = resp.flatten().to("cpu", dtype=torch.int64)
 			for idx, token in enumerate( seq ):
@@ -140,9 +175,18 @@ def unfold_outputs(
 	resp_list = [ [] for _ in range(batch_size) ]
 
 	for i, batch in enumerate( output_ids ):
+		# crigne logic to handle prefix resp for rvq levels > 0
+		# a better way is to observe if the rvq level increased
+		should_flush = False
+		flushed = False
 		for idx, token in enumerate( batch ):
 			id = token.item()
 			if id == sep or id == stop:
+				if should_flush and quant_levels is not None and quant_levels[i] > 0:
+					resp_list[i] = []
+					should_flush = False
+					flushed = True
+
 				continue
 
 			if 0 <= id and id < text_tokens:
@@ -151,6 +195,8 @@ def unfold_outputs(
 				prom_list[i].append( (id - text_tokens) % audio_tokens )
 			elif text_tokens + (audio_tokens * audio_rvq_levels) <= id:
 				resp_list[i].append( (id - text_tokens) % audio_tokens )
+				if not flushed:
+					should_flush = True
 
 		if quant_levels is not None:
 			prom_list[i] = torch.Tensor(prom_list[i]).t().to(device=device, dtype=torch.int64)

@@ -179,6 +179,10 @@ class Model(LlmArchClass):
 		*args,
 		**kwargs,
 	):
+		if SELECTED_ARCH == "mamba":
+			if "attention_mask" in kwargs:
+				kwargs.pop("attention_mask")
+
 		output = super().forward(*args, **kwargs)
 
 		if SELECTED_ARCH in ["llama", "retnet"]:
@@ -241,18 +245,48 @@ def example_usage():
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
 		#tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
 	]
-	proms_list = [
+	prom_list = [
 		qnt[:cfg.dataset.frames_per_second, :].to(device),
 		#qnt[:cfg.dataset.frames_per_second, :].to(device),
 	]
-	resps_list = [
+	resp_list = [
 		qnt[:, :].to(device),
 		#qnt[cfg.dataset.frames_per_second:, :].to(device),
+		#qnt[:cfg.dataset.frames_per_second, :].to(device),
 	]
 
 	text_list = text_list[:1]
-	proms_list = proms_list[:1]
-	resps_list = resps_list[:1]
+	prom_list = prom_list[:1]
+	resp_list = resp_list[:1]
+
+	if False:
+		output_list = [ [] ]
+
+		input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=output_list, targ_list=resp_list, quant_levels=[0])
+		unfolded = unfold_outputs( input_ids, quant_levels=[0])
+		print( 0, "inputs:", input_ids.shape, input_ids )
+		print( 0, "outputs:", unfolded["resp_list"][0].shape, unfolded["resp_list"][0] )
+		output_list[0].append( resp_list[0][:, 0] )
+		
+		input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=output_list, targ_list=resp_list, quant_levels=[1])
+		unfolded = unfold_outputs( input_ids, quant_levels=[1])
+		print( 1, "inputs:", input_ids.shape, input_ids )
+		print( 1, "outputs:", unfolded["resp_list"][0].shape, unfolded["resp_list"][0] )
+		output_list[0].append( resp_list[0][:, 1] )
+
+		input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=output_list, targ_list=resp_list, quant_levels=[2])
+		unfolded = unfold_outputs( input_ids, quant_levels=[2])
+		print( 2, "inputs:", input_ids.shape, input_ids )
+		print( 2, "outputs:", unfolded["resp_list"][0].shape, unfolded["resp_list"][0] )
+		output_list[0].append( resp_list[0][:, 2] )
+
+		input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=output_list, targ_list=resp_list, quant_levels=[3])
+		unfolded = unfold_outputs( input_ids, quant_levels=[3])
+		print( 3, "inputs:", input_ids.shape, input_ids )
+		print( 3, "outputs:", unfolded["resp_list"][0].shape, unfolded["resp_list"][0] )
+		output_list[0].append( resp_list[0][:, 3] )
+
+		return
 
 	kwargs = {}
 	model = Model(**kwargs).to(device)
@@ -328,7 +362,7 @@ def example_usage():
 		target_length = 0
 		resp_list = None
 		if cfg.model.interleave:
-			input_ids, attention_mask = fold_inputs(text_list, proms_list)
+			input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list)
 			output = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=steps, eos_token_id=3, do_sample=False)
 			
 			unfolded = unfold_outputs( output )
@@ -337,17 +371,22 @@ def example_usage():
 			resp_list = [ [] for _ in range(len(text_list)) ]
 			for l in range(cfg.model.max_levels):
 				quant_levels = [ l ]
-				input_ids, attention_mask = fold_inputs(text_list, proms_list, quant_levels=quant_levels)
-				min_length = len(input_ids[0])
+
+				input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resp_list, quant_levels=quant_levels, experimental=True)
+				min_length = len(input_ids[0]) + 1 
+
+				# print( "input:", l, input_ids.shape, input_ids )
 
 				output = model.generate(
 					input_ids=input_ids,
 					attention_mask=attention_mask,
-					min_length=min_length+(steps if l > 0 else 0),
-					max_length=min_length+steps,
-					eos_token_id=3 if l == 0 else None ,
+					min_length=min_length,
+					max_length=min_length+steps*2,
+					eos_token_id=3,
 					do_sample=False
 				)
+
+				# print( "output:", l, output.shape, output )
 				
 				unfolded = unfold_outputs( output, quant_levels=quant_levels )
 
@@ -355,8 +394,17 @@ def example_usage():
 					steps = 0
 
 				for batch, resp in enumerate(unfolded["resp_list"]):
+					length = resp.shape[-1]
+					print( "LEN:", resp.shape, steps )
+
+					# store length
 					if l == 0:
-						steps = max( steps, resp.shape[0] )
+						steps = max( steps, length )
+					# pad
+					else:
+						resp = resp[:steps]
+						if length < steps:
+							resp = torch.cat([ resp, torch.Tensor([ 0 for _ in range(steps-length) ]).to(resp) ])
 					resp_list[batch].append( resp )
 
 			for i, resp in enumerate( resp_list ):
@@ -375,15 +423,17 @@ def example_usage():
 			
 			batch_size = len(text_list)
 			quant_levels = None if cfg.model.interleave else torch.randint(0, cfg.model.max_levels, (batch_size,))
-
-			input_ids, attention_mask = fold_inputs(text_list, proms_list, resps_list, quant_levels=quant_levels)
-			target_ids, target_attention_mask = fold_inputs(text_list, proms_list, resps_list, ignore_index=-100, quant_levels=quant_levels)
-			
-			if SELECTED_ARCH == "mamba":
-				stats |= engine.traverse(input_ids=input_ids, labels=target_ids)
+			if quant_levels is not None:
+				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
 			else:
-				stats |= engine.traverse(input_ids=input_ids, labels=target_ids, attention_mask=attention_mask)
-			stats |= {"grad_norm": engine.get_global_grad_norm()}
+				resps_list = [ resp for resp in resp_list ]
+
+
+			input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resps_list, targ_list=resp_list, quant_levels=quant_levels)
+			target_ids, target_attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resp_list, targ_list=resp_list, ignore_index=-100, quant_levels=quant_levels)
+			
+			stats |= engine.traverse(input_ids=input_ids, labels=target_ids, attention_mask=attention_mask)
+			stats |= {"grad_norm": engine.get_global_grad_norm(), "quant_level": quant_levels[0].item()}
 
 			tqdm.write(f"{stats}")
 
