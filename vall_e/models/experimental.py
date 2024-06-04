@@ -172,8 +172,8 @@ class Model(LlmArchClass):
 			if "do_sample" in kwargs:
 				kwargs.pop("do_sample")
 
-		return super().forward(*args, **kwargs)
-		
+		return super().generate(*args, **kwargs)
+
 	def forward(
 		self,
 		*args,
