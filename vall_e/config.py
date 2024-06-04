@@ -216,7 +216,7 @@ class Model:
 	dropout: float = 0.1 # adjustable dropout value
 	loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 0.0, "resp": 1.0 })
 	kv_heads: int = 0
-	experimental: bool = False
+	experimental: bool = False # for now it sets things to be HF compatible
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []

@@ -158,7 +158,22 @@ class Model(LlmArchClass):
 
 			self.backbone.gradient_checkpointing = gradient_checkpointing
 
+	def generate(
+		self,
+		*args,
+		**kwargs
+	):
+		if SELECTED_ARCH == "mamba":
+			kwargs["cg"] = True
 
+			if "attention_mask" in kwargs:
+				kwargs.pop("attention_mask")
+
+			if "do_sample" in kwargs:
+				kwargs.pop("do_sample")
+
+		return super().forward(*args, **kwargs)
+		
 	def forward(
 		self,
 		*args,
@@ -239,13 +254,9 @@ def example_usage():
 	proms_list = proms_list[:1]
 	resps_list = resps_list[:1]
 
-	input_ids, attention_mask = fold_inputs(text_list, proms_list, resps_list)
-	target_ids, target_attention_mask = fold_inputs(text_list, proms_list, resps_list, ignore_index=-100)
-	prefix_input_ids, prefix_attention_mask = fold_inputs(text_list, proms_list)
-
 	kwargs = {}
 	model = Model(**kwargs).to(device)
-	steps = 50
+	steps = 50 if cfg.model.interleave else 250
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
@@ -312,15 +323,46 @@ def example_usage():
 	print(f"{LlmArchClass} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.inference_mode()
-	def sample( name, steps=cfg.model.max_levels*cfg.dataset.frames_per_second*60 ):
+	def sample( name, steps=cfg.model.max_levels*cfg.dataset.frames_per_second*6 ):
 		engine.eval()
-		if SELECTED_ARCH == "mamba":
-			output = model.generate(input_ids=prefix_input_ids, cg=True, max_length=steps, eos_token_id=3)
+		target_length = 0
+		resp_list = None
+		if cfg.model.interleave:
+			input_ids, attention_mask = fold_inputs(text_list, proms_list)
+			output = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=steps, eos_token_id=3, do_sample=False)
+			
+			unfolded = unfold_outputs( output )
+			resp_list = unfolded["resp_list"]
 		else:
-			output = model.generate(input_ids=prefix_input_ids, attention_mask=prefix_attention_mask, max_length=steps, eos_token_id=3, do_sample=False)
+			resp_list = [ [] for _ in range(len(text_list)) ]
+			for l in range(cfg.model.max_levels):
+				quant_levels = [ l ]
+				input_ids, attention_mask = fold_inputs(text_list, proms_list, quant_levels=quant_levels)
+				min_length = len(input_ids[0])
 
-		unfolded = unfold_outputs( output )
-		for i, batch in enumerate(unfolded["resp_list"]):
+				output = model.generate(
+					input_ids=input_ids,
+					attention_mask=attention_mask,
+					min_length=min_length+(steps if l > 0 else 0),
+					max_length=min_length+steps,
+					eos_token_id=3 if l == 0 else None ,
+					do_sample=False
+				)
+				
+				unfolded = unfold_outputs( output, quant_levels=quant_levels )
+
+				if l == 0:
+					steps = 0
+
+				for batch, resp in enumerate(unfolded["resp_list"]):
+					if l == 0:
+						steps = max( steps, resp.shape[0] )
+					resp_list[batch].append( resp )
+
+			for i, resp in enumerate( resp_list ):
+				resp_list[i] = torch.stack( resp ).t()
+
+		for i, batch in enumerate(resp_list):
 			_ = decode_to_file(batch.to(device=device), f"data/{SELECTED_ARCH}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
 
 		unload_model()
@@ -330,6 +372,13 @@ def example_usage():
 		t = trange(steps)
 		for i in t:
 			stats = {"step": i}
+			
+			batch_size = len(text_list)
+			quant_levels = None if cfg.model.interleave else torch.randint(0, cfg.model.max_levels, (batch_size,))
+
+			input_ids, attention_mask = fold_inputs(text_list, proms_list, resps_list, quant_levels=quant_levels)
+			target_ids, target_attention_mask = fold_inputs(text_list, proms_list, resps_list, ignore_index=-100, quant_levels=quant_levels)
+			
 			if SELECTED_ARCH == "mamba":
 				stats |= engine.traverse(input_ids=input_ids, labels=target_ids)
 			else:

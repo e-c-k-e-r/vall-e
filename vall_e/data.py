@@ -44,7 +44,8 @@ def fold_inputs(
 	
 	text_tokens = 256,
 	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.max_levels
+	audio_rvq_levels = cfg.model.max_levels,
+	quant_levels = None,
 ):
 	def _create_mask(l, device):
 		seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
@@ -75,23 +76,43 @@ def fold_inputs(
 	
 	offset = text_tokens
 	for i, prom in enumerate(prom_list):
-		if ignore_index is not None:
-			seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to("cpu", dtype=torch.int64)
+		if quant_levels is not None:
+			quant_level = quant_levels[i]
+			if ignore_index is not None:
+				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] ) ] ).to("cpu", dtype=torch.int64)
+			else:
+				seq = prom[:, quant_level].to("cpu", dtype=torch.int64)
+				for idx, token in enumerate( seq ):
+					token += offset + ( audio_tokens * quant_level )
 		else:
-			seq = prom.flatten().to("cpu", dtype=torch.int64)
-			for idx, token in enumerate( seq ):
-				token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
+			if ignore_index is not None:
+				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to("cpu", dtype=torch.int64)
+			else:
+				seq = prom.flatten().to("cpu", dtype=torch.int64)
+				for idx, token in enumerate( seq ):
+					token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
 
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 	
 	offset = text_tokens + (audio_tokens * audio_rvq_levels)
 	for i, resp in enumerate(resp_list):
-		seq = resp.flatten().to("cpu", dtype=torch.int64)
-		for idx, token in enumerate( seq ):
-			token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
-		input_ids[i].append( seq )
-		input_ids[i].append( stop )
+		if quant_levels is not None:
+			quant_level = quant_levels[i]
+			seq = resp[:, quant_level].to("cpu", dtype=torch.int64)
+			for idx, token in enumerate( seq ):
+				token += offset + ( audio_tokens * quant_level )
+			
+			input_ids[i].append( seq )
+			if quant_level == 0:
+				input_ids[i].append( stop )
+		else:
+			seq = resp.flatten().to("cpu", dtype=torch.int64)
+			for idx, token in enumerate( seq ):
+				token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
+		
+			input_ids[i].append( seq )
+			input_ids[i].append( stop )
 
 	for i, batch in enumerate(input_ids):
 		input_ids[i] = torch.concat(input_ids[i], dim=-1).to(device=device, dtype=torch.int64)
@@ -99,6 +120,7 @@ def fold_inputs(
 	return list_to_tensor(input_ids)
 
 # unfold from one unified token ID space to separate token spaces
+# to-do: unfold at a specific RVQ level instead if requested
 def unfold_outputs(
 	output_ids,
 
@@ -107,7 +129,8 @@ def unfold_outputs(
 	
 	text_tokens = 256,
 	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.max_levels
+	audio_rvq_levels = cfg.model.max_levels,
+	quant_levels = None,
 ):
 	device = output_ids.device
 	batch_size = output_ids.shape[0]
@@ -129,30 +152,33 @@ def unfold_outputs(
 			elif text_tokens + (audio_tokens * audio_rvq_levels) <= id:
 				resp_list[i].append( (id - text_tokens) % audio_tokens )
 
-		prom_len = len(prom_list[i])
-		if prom_len % audio_rvq_levels == 0 and False:
-			prom_list[i] = torch.Tensor(prom_list[i]).reshape( audio_rvq_levels, prom_len // audio_rvq_levels ).t()
+		if quant_levels is not None:
+			prom_list[i] = torch.Tensor(prom_list[i]).t().to(device=device, dtype=torch.int64)
+			resp_list[i] = torch.Tensor(resp_list[i]).t().to(device=device, dtype=torch.int64)
 		else:
-			bins = [ [] for _ in range(audio_rvq_levels) ]
-			for pos in range( prom_len ):
-				rvq = pos % audio_rvq_levels
-				bins[rvq].append( prom_list[i][pos] )
-			nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
-			bins = bins[:nearest]
-			prom_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
+			prom_len = len(prom_list[i])
+			if prom_len % audio_rvq_levels == 0 and False:
+				prom_list[i] = torch.Tensor(prom_list[i]).reshape( audio_rvq_levels, prom_len // audio_rvq_levels ).t()
+			else:
+				bins = [ [] for _ in range(audio_rvq_levels) ]
+				for pos in range( prom_len ):
+					rvq = pos % audio_rvq_levels
+					bins[rvq].append( prom_list[i][pos] )
+				nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
+				bins = bins[:nearest]
+				prom_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
 
-
-		resp_len = len(resp_list[i])
-		if len(resp_list[i]) % audio_rvq_levels == 0 and False:
-			resp_list[i] = torch.Tensor(resp_list[i]).reshape( audio_rvq_levels, resp_len // audio_rvq_levels ).t()
-		else:
-			bins = [ [] for _ in range(audio_rvq_levels) ]
-			for pos in range( resp_len ):
-				rvq = pos % audio_rvq_levels
-				bins[rvq].append( resp_list[i][pos] )
-			nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
-			bins = bins[:nearest]
-			resp_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
+			resp_len = len(resp_list[i])
+			if len(resp_list[i]) % audio_rvq_levels == 0 and False:
+				resp_list[i] = torch.Tensor(resp_list[i]).reshape( audio_rvq_levels, resp_len // audio_rvq_levels ).t()
+			else:
+				bins = [ [] for _ in range(audio_rvq_levels) ]
+				for pos in range( resp_len ):
+					rvq = pos % audio_rvq_levels
+					bins[rvq].append( resp_list[i][pos] )
+				nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
+				bins = bins[:nearest]
+				resp_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
 		
 		text_list[i] = torch.Tensor( text_list[i] ).to(device=device, dtype=torch.int64)
 
