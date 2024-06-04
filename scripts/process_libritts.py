@@ -95,7 +95,7 @@ for paths in tqdm(txts, desc="Processing..."):
 				np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
 					"codes": qnt.cpu().numpy().astype(np.uint16),
 					"metadata": {
-						"original_length": qnt.shape[0] / 75.0,
+						"original_length": qnt.shape[-1] / 75.0,
 						"sample_rate": cfg.sample_rate,
 
 						"text": text.strip(),

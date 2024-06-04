@@ -340,12 +340,10 @@ def example_usage():
 		return torch.tensor( cfg.tokenizer.encode(content) )
 
 	def _load_quants(path) -> Tensor:
-		if cfg.audio_backend == "dac":
-			qnt = np.load(f'{path}.dac', allow_pickle=True)[()]
-			return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.prom_levels, :].t().to(torch.int16)
-		return torch.load(f'{path}.pt')[0][:, :cfg.model.prom_levels].t().to(torch.int16)
+		qnt = np.load(path, allow_pickle=True)[()]
+		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.prom_levels, :].t().to(torch.int16)
 
-	qnt = _load_quants("./data/qnt")
+	qnt = _load_quants(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 
 
 	text_list = [

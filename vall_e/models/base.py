@@ -944,8 +944,8 @@ class Base(nn.Module):
 						"logits": [],
 					}
 
-				info[name]["targets"].append( input )
-				info[name]["logits"].append( logit )
+				info[name]["targets"].append( input.contiguous() )
+				info[name]["logits"].append( logit.contiguous() )
 
 		for name, batch in info.items():
 			loss_factor = self.loss_factor(name)

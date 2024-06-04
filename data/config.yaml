@@ -1,3 +1,6 @@
+sample_rate: 24_000 # 44_000 for dac
+audio_backend: "vocos" # or dac
+
 models:
 - name: "ar+nar"
   size: "full"
@@ -14,6 +17,7 @@ models:
 
   loss_factors:
     text: 0.1
+    prom: 0.0
     resp: 1.0
 
 hyperparameters:
@@ -87,7 +91,6 @@ trainer:
 
 inference:
   backend: deepspeed
-  audio_backend: "dac"
   normalize: False
 
   weight_dtype: float32 # float16 or bfloat16
