@@ -32,7 +32,7 @@ def train_feeder(engine, batch):
 				quant_levels = None	
 				resps_list = [ resp for resp in batch["resps"] ]
 			else:
-				quant_levels = torch.randint(0, cfg.model.max_levels, (batch_size,))
+				quant_levels = torch.randint(0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels, (batch_size,))
 				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, batch["resps"]) ]
 
 			input_ids, attention_mask = fold_inputs(

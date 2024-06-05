@@ -434,7 +434,7 @@ def example_usage():
 			stats = {"step": i}
 			
 			batch_size = len(text_list)
-			quant_levels = None if cfg.model.interleave else torch.randint(0, cfg.model.max_levels, (batch_size,))
+			quant_levels = None if cfg.model.interleave else torch.randint(0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels, (batch_size,))
 			if quant_levels is not None:
 				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
 			else:

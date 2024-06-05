@@ -15,6 +15,8 @@ from ..emb.qnt import trim
 class AR_NAR(Base):
 	@property
 	def causal(self):
+		if hasattr(self, "config") and self.config:
+			return "ar" in self.capabilities
 		return True
 
 	@property
@@ -135,9 +137,9 @@ class AR_NAR(Base):
 								index = i
 						return int(index)
 
-					quant_levels = torch.Tensor([ generate(0, self.n_resp_levels) for _ in range(batch_size) ]).to(dtype=torch.int16)
+					quant_levels = torch.Tensor([ generate(0 if self.causal else 1, self.n_resp_levels) for _ in range(batch_size) ]).to(dtype=torch.int16)
 				else:
-					quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+					quant_levels = torch.randint(0 if self.causal else 1, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 					"""
 					if cfg.model.p_ar_level == "auto" or cfg.model.p_ar_level is None:
 						quant_levels = torch.randint(0, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
@@ -344,7 +346,7 @@ def example_usage():
 		cfg.model.prom_levels = 1
 		cfg.model.resp_levels = 1
 	"""
-	cfg.model.loss_factors = {}
+	# cfg.model.loss_factors = {}
 
 	def tokenize(content):
 		return torch.tensor( cfg.tokenizer.encode(content) )
@@ -396,7 +398,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 500 
+	steps = 200 
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
@@ -468,7 +470,11 @@ def example_usage():
 			return
 
 		engine.eval()
-		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
+		if "ar" in cfg.model.capabilities:
+			resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
+		else:
+			resps_list = [ qnt[:, 0].to( device ) ]
+
 		if cfg.model.max_levels > 1:
 			resps_list = [r.unsqueeze(-1) for r in resps_list]
 			resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
@@ -492,7 +498,7 @@ def example_usage():
 			'module': model.state_dict()
 		}, f"./data/{cfg.model.arch_type}.pth" )
 
-	sample("init", 5)
+	#sample("init", 5)
 	train()
 	sample("final")
 

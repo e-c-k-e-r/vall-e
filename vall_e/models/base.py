@@ -498,7 +498,6 @@ class Base(nn.Module):
 		self.l_padding = l_padding
 
 		# +1 to include the stop token
-		# to-do: undo this dogshit mistake; tasks tokens should be delegated to its own embedding
 		n_prom_tokens = n_tokens
 		n_resp_tokens = n_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
 
@@ -1009,11 +1008,14 @@ class Base(nn.Module):
 						"logits": [],
 					}
 
-				info[name]["targets"].append( input.contiguous() )
-				info[name]["logits"].append( logit.contiguous() )
+				info[name]["targets"].append( input ) # input.contiguous()
+				info[name]["logits"].append( logit ) # logit.contiguous()
 
 		for name, batch in info.items():
 			loss_factor = self.loss_factor(name)
+			if name not in ["text", "prom", "resp"]:
+				continue
+
 			if loss_factor == 0.0:
 				continue
 
@@ -1021,7 +1023,11 @@ class Base(nn.Module):
 			inputs = torch.cat( batch["logits"] )
 
 			self.loss[name] = F.cross_entropy( inputs, targets, ignore_index=self.ignore_index )  * loss_factor
-			self.stats["acc"][name] = self.accuracy_metric( inputs, targets )
+			try:
+				self.stats["acc"][name] = self.accuracy_metric( inputs, targets )
+			except Exception as e:
+				print( name, inputs.shape, targets.shape, e )
+				pass
 
 		# to-do: compute loss per individual batch to scale per RVQ level
 		"""
