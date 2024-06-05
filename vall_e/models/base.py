@@ -155,6 +155,40 @@ except Exception as e:
 	print("Error importing `mixtral` arch:", e)
 
 
+try:
+	from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig, MixerModel as MambaMixelModel, layer_norm_fn as MambaLayerNormFn, RMSNorm as MambaRMSNorm
+
+	def MambaMixelModel_forward(self, input_ids=None, hidden_states=None, inference_params=None, **mixer_kwargs):
+		if hidden_states is None:
+			hidden_states = self.embedding(input_ids)
+		residual = None
+		for layer in self.layers:
+			if self.gradient_checkpointing and hidden_states.requires_grad:
+				hidden_states, residual = checkpoint( layer, hidden_states, residual, inference_params=inference_params, use_reentrant=False )
+			else:
+				hidden_states, residual = layer( hidden_states, residual, inference_params=inference_params )
+		if not self.fused_add_norm:
+			residual = (hidden_states + residual) if residual is not None else hidden_states
+			hidden_states = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
+		else:
+			# Set prenorm=False here since we don't need the residual
+			hidden_states = MambaLayerNormFn(
+				hidden_states,
+				self.norm_f.weight,
+				self.norm_f.bias,
+				eps=self.norm_f.eps,
+				residual=residual,
+				prenorm=False,
+				residual_in_fp32=self.residual_in_fp32,
+				is_rms_norm=isinstance(self.norm_f, MambaRMSNorm)
+			)
+		return hidden_states
+
+	MambaMixelModel.forward = MambaMixelModel_forward
+except Exception as e:
+	print("Error importing `mixtral` arch:", e)
+
+
 AVAILABLE_ATTENTIONS = ["mem_efficient", "math"]
 
 try:
@@ -686,6 +720,21 @@ class Base(nn.Module):
 				ff_mult=4,
 				gradient_checkpointing=self.gradient_checkpointing,
 			)
+		elif self.arch_type in ["mamba","mamba2"]:
+			self.model = MambaMixelModel(
+				vocab_size=n_resp_tokens,
+				d_model=d_model,
+				n_layer=n_layers*2,
+				d_intermediate=0,
+				ssm_cfg={"layer": "Mamba2", "chunk_size":64} if self.arch_type == "mamba2" else {},
+				rms_norm=True,
+				fused_add_norm=True,
+				residual_in_fp32=True,
+				#attn_layer_idx=attn_layer_idx,
+				#attn_cfg=attn_cfg,
+				#initializer_cfg=initializer_cfg,
+			)
+			self.model.gradient_checkpointing = self.gradient_checkpointing
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
 
@@ -804,7 +853,8 @@ class Base(nn.Module):
 			x = out.last_hidden_state
 			if state is not None:
 				state = out.past_key_values
-				
+		elif self.arch_type in ["mamba","mamba2"]:
+			x = self.model( hidden_states=x )
 		elif self.arch_type == "bitnet":
 			x = self.model(x)
 

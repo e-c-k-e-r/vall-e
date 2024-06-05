@@ -158,6 +158,8 @@ class Model(LlmArchClass):
 				d_model=d_model,
 				n_layer=n_layers*2,
 				ssm_cfg={"layer": "Mamba2", "chunk_size":64} if SELECTED_ARCH == "mamba2" else {},
+				fused_add_norm=True,
+				residual_in_fp32=True,
 			))
 
 			self.backbone.gradient_checkpointing = gradient_checkpointing

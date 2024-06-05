@@ -317,7 +317,7 @@ class AR_NAR(Base):
 
 
 def example_usage():
-	#cfg.trainer.backend = "local"
+	cfg.trainer.backend = "local"
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 	if cfg.audio_backend == "dac":
 		cfg.sample_rate = 44_000
@@ -334,7 +334,11 @@ def example_usage():
 	import re
 
 	device = "cuda"
-	x8 = partial(repeat, pattern="t -> t l", l=cfg.model.prom_levels) 
+	
+	# mamba seems to ONLY be used as an AR (any NAR attempts lobotomizes it)
+	if "mamba" in cfg.model.arch_type:
+		cfg.model.prom_levels = 1
+		cfg.model.resp_levels = 1
 
 	def tokenize(content):
 		return torch.tensor( cfg.tokenizer.encode(content) )
@@ -368,7 +372,7 @@ def example_usage():
 		'n_tokens': 1024,
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
-		'n_layers': 8, # 32
+		'n_layers': 12, # 32
 		'n_experts': 1,
 
 		'p_dropout': 0.1,
@@ -386,7 +390,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 50
+	steps = 250 
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
@@ -459,11 +463,12 @@ def example_usage():
 
 		engine.eval()
 		resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
-		resps_list = [r.unsqueeze(-1) for r in resps_list]
-		resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
+		if cfg.model.max_levels > 1:
+			resps_list = [r.unsqueeze(-1) for r in resps_list]
+			resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
 
 		for i, o in enumerate(resps_list):
-			_ = decode_to_file(o, f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
+			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
 
 		unload_model()
 
