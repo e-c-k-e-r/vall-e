@@ -167,7 +167,9 @@ class AR_NAR(Base):
 					resps_list=resps_list,
 					targ_list=targ_list,
 					lang_list=lang_list,
-					tone_list=tone_list
+					tone_list=tone_list,
+
+					quant_levels=quant_levels,
 				)
 
 				return super().forward(
@@ -193,6 +195,7 @@ class AR_NAR(Base):
 					resps_list=prev_list,
 					lang_list=lang_list,
 					tone_list=tone_list,
+					quant_levels=quant_levels,
 				)
 
 				logits = super().forward(
@@ -336,9 +339,12 @@ def example_usage():
 	device = "cuda"
 	
 	# mamba seems to ONLY be used as an AR (any NAR attempts lobotomizes it)
+	"""
 	if "mamba" in cfg.model.arch_type:
 		cfg.model.prom_levels = 1
 		cfg.model.resp_levels = 1
+	"""
+	cfg.model.loss_factors = {}
 
 	def tokenize(content):
 		return torch.tensor( cfg.tokenizer.encode(content) )
@@ -390,7 +396,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 250 
+	steps = 500 
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
