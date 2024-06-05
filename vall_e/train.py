@@ -30,10 +30,10 @@ def train_feeder(engine, batch):
 			batch_size = len(batch["text"])
 			if cfg.model.interleave:
 				quant_levels = None	
-				resps_list = [ resp for resp in resp_list ]
+				resps_list = [ resp for resp in batch["resps"] ]
 			else:
 				quant_levels = torch.randint(0, cfg.model.max_levels, (batch_size,))
-				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
+				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, batch["resps"]) ]
 
 			input_ids, attention_mask = fold_inputs(
 				text_list=batch["text"],
