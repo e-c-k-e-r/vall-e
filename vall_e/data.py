@@ -76,6 +76,14 @@ def fold_inputs(
 		input_ids[i].append( sep )
 	
 	offset = text_tokens
+	# inject target quant_level
+	if quant_levels is not None:
+		for i, rvq in enumerate( quant_levels ):
+			seq = torch.Tensor([offset + rvq]).to("cpu", dtype=torch.int64)
+			input_ids[i].append( seq )
+			input_ids[i].append( sep )
+
+	offset = text_tokens + audio_rvq_levels
 	for i, prom in enumerate(prom_list):
 		# deinterleaved
 		if quant_levels is not None:
@@ -98,7 +106,7 @@ def fold_inputs(
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 	
-	offset = text_tokens + (audio_tokens * audio_rvq_levels)
+	offset = text_tokens + audio_rvq_levels + (audio_tokens * audio_rvq_levels)
 
 	for i, resp in enumerate(resp_list):
 		# deinterleaved
@@ -107,7 +115,10 @@ def fold_inputs(
 			quant_level = quant_levels[i] - 1
 			# way to signal we want to inference for rvq level 0
 			# without it, it's a random chance for any level to be selected again
+			
 			if quant_level < 0:
+				continue
+
 				seq = sep
 			else:
 				# my shitcode keeps things as lists of tensors for each level, so this handles it because lists can't index by tuples
@@ -192,10 +203,10 @@ def unfold_outputs(
 
 			if 0 <= id and id < text_tokens:
 				text_list[i].append( id )
-			elif text_tokens <= id and id < text_tokens + (audio_tokens * audio_rvq_levels):
-				prom_list[i].append( (id - text_tokens) % audio_tokens )
-			elif text_tokens + (audio_tokens * audio_rvq_levels) <= id:
-				resp_list[i].append( (id - text_tokens) % audio_tokens )
+			elif text_tokens + audio_rvq_levels <= id and id < text_tokens + audio_rvq_levels + (audio_tokens * audio_rvq_levels):
+				prom_list[i].append( (id - text_tokens - audio_rvq_levels) % audio_tokens )
+			elif text_tokens + audio_rvq_levels + (audio_tokens * audio_rvq_levels) <= id:
+				resp_list[i].append( (id - text_tokens - audio_rvq_levels) % audio_tokens )
 				if not flushed:
 					should_flush = True
 
