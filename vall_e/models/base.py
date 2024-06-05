@@ -912,13 +912,13 @@ class Base(nn.Module):
 				embedding = None
 				if name == "text":
 					embedding = self.text_emb( input )
-				elif name == "quant_level":
+				elif name == "quant_level" and self.rvq_level_emb is not None:
 					embedding = self.rvq_level_emb( input )
-				elif name == "lang":
+				elif name == "lang" and self.langs_emb is not None:
 					embedding = self.langs_emb( input )
 				elif name == "prom":
 					embedding = self.proms_emb( input )
-				elif name == "tone":
+				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
 					embedding = self.resps_emb( input, quant_level )
