@@ -143,11 +143,11 @@ def load_engines(training=True):
 				del state[k]
 
 			# resize text embedding
-			if model.config.text_tokens != state["text_emb.weight"].shape[0]:
+			if "text_emb.weight" in state and model.config.text_tokens != state["text_emb.weight"].shape[0]:
 				state["text_emb.weight"] = state["text_emb.weight"][:model.config.text_tokens]
 
 			# resize text embedding
-			if model.config.resp_levels != state["rvq_level_emb.weight"].shape[0]:
+			if "rvq_level_emb.weight" in state and model.config.resp_levels != state["rvq_level_emb.weight"].shape[0]:
 				state["rvq_level_emb.weight"] = state["rvq_level_emb.weight"][:model.config.resp_levels]
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)

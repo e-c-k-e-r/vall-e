@@ -77,7 +77,7 @@ class Engine(DeepSpeedEngine):
 		self._frozen_params.clear()
 	
 	@property
-	def _training(self):
+	def training(self):
 		return self.hyper_config.training
 
 	@property

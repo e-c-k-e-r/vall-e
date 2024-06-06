@@ -269,6 +269,8 @@ class AR_NAR(Base):
 				resps_list=resps_list,
 				lang_list=lang_list,
 				tone_list=tone_list,
+
+				quant_levels=torch.Tensor( [ 0 for _ in range( max( batch_size, sampling_beam_width ) ) ] ).to( device=device, dtype=torch.int32 ),
 			)
 
 			if recurrent_state is not None:

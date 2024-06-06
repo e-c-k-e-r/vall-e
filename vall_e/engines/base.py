@@ -86,7 +86,7 @@ class Engine():
 		self._frozen_params.clear()
 
 	@property
-	def _training(self):
+	def training(self):
 		if not hasattr(self, "hyper_config"):
 			return True
 		return self.hyper_config.training
@@ -308,7 +308,7 @@ class Engines(dict[str, Engine]):
 				"userdata": userdata
 			}
 			if callback:
-				state_dict = callback( state_dict, engine.module )
+				state_dict = callback( state_dict, engine.hyper_config )
 			torch.save(state_dict, outpath)
 			print(f"Exported {name} to {outpath}")
 
@@ -321,7 +321,7 @@ class Engines(dict[str, Engine]):
 
 		cfg.ckpt_dir.mkdir(parents=True, exist_ok=True)
 		for name, engine in self.items():
-			if not engine._training:
+			if not engine.training:
 				continue
 
 			save_dir = cfg.ckpt_dir / name
@@ -371,7 +371,7 @@ class Engines(dict[str, Engine]):
 
 	def set_lr(self, lr):
 		for engine in self.values():
-			if not engine._training:
+			if not engine.training:
 				continue
 			engine.set_lr(lr)
 
@@ -406,7 +406,7 @@ class Engines(dict[str, Engine]):
 			do_gc()
 
 		for name, engine in self.items():
-			if not engine._training:
+			if not engine.training:
 				continue
 
 			device = engine.device

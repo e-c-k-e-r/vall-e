@@ -157,6 +157,9 @@ def train(
 
 	# Training loop
 	for batch in _make_infinite_epochs(train_dl):
+		if not engine.training:
+			continue
+
 		if engines.global_step >= cfg.trainer.iterations:
 			break
 
