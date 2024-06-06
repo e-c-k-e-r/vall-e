@@ -207,9 +207,9 @@ class Base(nn.Module):
 		return -100
 
 	def loss_factor(self, k):
-		if self.hyper_config is None:
+		if self.config is None:
 			return 1.0
-		return self.hyper_config.loss_factors[k] if k in self.hyper_config.loss_factors else 1.0
+		return self.config.loss_factors[k] if k in self.config.loss_factors else 1.0
 
 	def __init__(
 		self,
@@ -231,8 +231,8 @@ class Base(nn.Module):
 	):
 		super().__init__()
 		self.training = training
-		self.hyper_config = config
-		self.gradient_checkpointing = self.hyper_config.gradient_checkpointing if self.hyper_config is not None else True
+		self.config = config
+		self.gradient_checkpointing = self.config.gradient_checkpointing if self.config is not None else True
 
 		self.n_text_tokens = n_text_tokens
 		self.n_audio_tokens = n_audio_tokens
@@ -246,7 +246,7 @@ class Base(nn.Module):
 
 		# +1 to include the stop token
 		n_prom_tokens = n_audio_tokens
-		n_resp_tokens = n_audio_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
+		n_resp_tokens = n_audio_tokens + 1 # (1 if self.causal else 0) interoperability
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -263,13 +263,13 @@ class Base(nn.Module):
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
 				levels=self.n_prom_levels if self.version > 3 else None,
-				sums=self.hyper_config.audio_embedding_sums if self.hyper_config is not None else True,
+				sums=self.config.audio_embedding_sums if self.config is not None else True,
 			)
 			# [1024 + STOP] + [1024] * 8
 			self.resps_emb = AudioEmbedding(
 				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
-				sums=self.hyper_config.audio_embedding_sums if self.hyper_config is not None else True
+				sums=self.config.audio_embedding_sums if self.config is not None else True
 			)
 
 		# useless since I actually removed using these with the input processing overhaul...
@@ -290,20 +290,20 @@ class Base(nn.Module):
 		self.sep = nn.Parameter(torch.randn(d_model))
 
 		# ick, there has to be a better way
-		hf_attention = self.hyper_config.attention if self.hyper_config is not None else None
+		hf_attention = self.config.attention if self.config is not None else None
 
-		if self.hyper_config.attention == "auto":
+		if self.config.attention == "auto":
 			if "flash" in AVAILABLE_ATTENTIONS:
-				self.hyper_config.attention = "flash"
+				self.config.attention = "flash"
 			elif "xformers" in AVAILABLE_ATTENTIONS:
-				self.hyper_config.attention = "xformers"
+				self.config.attention = "xformers"
 			else:
-				self.hyper_config.attention = "mem_efficient"
+				self.config.attention = "mem_efficient"
 
-		if self.hyper_config.attention in ["xformers", "mem_efficient", "math", "flash"]:
+		if self.config.attention in ["xformers", "mem_efficient", "math", "flash"]:
 			hf_attention = None
-			if self.hyper_config.attention not in AVAILABLE_ATTENTIONS:
-				raise ValueError(f"Requesting attention `{self.hyper_config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
+			if self.config.attention not in AVAILABLE_ATTENTIONS:
+				raise ValueError(f"Requesting attention `{self.config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
 
 
 		if self.arch_type == "transformer":
@@ -326,7 +326,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.hyper_config.kv_heads if self.hyper_config.kv_heads > 0 else n_heads,
+					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
@@ -342,7 +342,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.hyper_config.kv_heads if self.hyper_config.kv_heads > 0 else n_heads,
+					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
 					sliding_window=75 * 12, # 12 second context window
 					output_router_logits=training,
 					hidden_act="gelu",
@@ -492,8 +492,8 @@ class Base(nn.Module):
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
 
-		if self.hyper_config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
-			self.model = ml.replace_attention( self.model, klass=LlamaAttention, target=LlamaAttention_Base, mode=self.hyper_config.attention )
+		if self.config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
+			self.model = ml.replace_attention( self.model, klass=LlamaAttention, target=LlamaAttention_Base, mode=self.config.attention )
 
 		self.classifier = nn.Linear(d_model, n_resp_tokens)
 
@@ -691,7 +691,7 @@ class Base(nn.Module):
 		quant_levels: Tensor | None = None,
 	):
 		# old, "naive" way, no loss factoring
-		if not self.hyper_config.loss_factors:
+		if not self.config.loss_factors:
 			target_list = []
 			for batch_index, batch in enumerate(inputs):
 				target = []

@@ -54,13 +54,12 @@ def init_tts(restart=False):
 	
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
-	parser.add_argument("--model-ckpt", type=Path, default=None)
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default="auto")
 	args, unknown = parser.parse_known_args()
 
-	tts = TTS( config=args.yaml, model_ckpt=args.model_ckpt, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
+	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
 	return tts
 
 @gradio_wrapper(inputs=layout["inference"]["inputs"].keys())

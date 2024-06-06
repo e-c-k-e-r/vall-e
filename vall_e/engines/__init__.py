@@ -26,14 +26,14 @@ from functools import cache
 
 @cache
 def load_engines(training=True):
-	models = get_models(cfg.model.get(), training=training)
+	models = get_models(cfg.models, training=training)
 	engines = dict()
 
 	for name, model in models.items():
 		optimizer = None
 		lr_scheduler = None
 
-		inferencing = cfg.mode == "inferencing" or not model.hyper_config.training
+		inferencing = cfg.mode == "inferencing" or not model.config.training
 		backend = cfg.inference.backend if inferencing else cfg.trainer.backend
 		dtype = cfg.inference.dtype if inferencing else cfg.trainer.dtype
 		amp = cfg.inference.amp if inferencing else cfg.trainer.amp
@@ -43,7 +43,7 @@ def load_engines(training=True):
 		engine_class = _Engine if backend == "local" or inferencing else Engine
 
 		if inferencing:
-			model.hyper_config.training = False
+			model.config.training = False
 
 		if cfg.optimizations.replace and cfg.optimizations.linear:
 			model.model = ml.replace_linear( model.model )
@@ -83,7 +83,7 @@ def load_engines(training=True):
 			params.update(cfg.hyperparameters.optimizer_params)
 
 			optimizer = optimizer_class(
-				[ param for name, param in model.named_parameters() if name not in model.hyper_config.frozen_params ],
+				[ param for name, param in model.named_parameters() if name not in model.config.frozen_params ],
 				**params,
 			)
 
@@ -96,7 +96,7 @@ def load_engines(training=True):
 					raise ValueError(f'ScheduleFree not implemented with requested optimizer: {cfg.hyperparameters.optimizer}')
 
 				optimizer = scheduler_class(
-					[ param for name, param in model.named_parameters() if name not in model.hyper_config.frozen_params ],
+					[ param for name, param in model.named_parameters() if name not in model.config.frozen_params ],
 					lr = params['lr'],
 					warmup_steps = cfg.hyperparameters.warmup_steps
 				)
@@ -143,12 +143,16 @@ def load_engines(training=True):
 				del state[k]
 
 			# resize text embedding
-			if cfg.model.text_tokens != state["text_emb.weight"].shape[0]:
-				state["text_emb.weight"] = state["text_emb.weight"][:cfg.model.text_tokens]
+			if model.config.text_tokens != state["text_emb.weight"].shape[0]:
+				state["text_emb.weight"] = state["text_emb.weight"][:model.config.text_tokens]
+
+			# resize text embedding
+			if model.config.resp_levels != state["rvq_level_emb.weight"].shape[0]:
+				state["rvq_level_emb.weight"] = state["rvq_level_emb.weight"][:model.config.resp_levels]
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
-		hyper_config = model.hyper_config
+		hyper_config = model.config
 
 		# wrap if DDP is requested
 		if ddp:

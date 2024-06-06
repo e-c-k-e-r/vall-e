@@ -16,7 +16,7 @@ class AR_NAR(Base):
 	@property
 	def causal(self):
 		if hasattr(self, "config") and self.config:
-			return "ar" in self.capabilities
+			return "ar" in self.config.capabilities
 		return True
 
 	@property
@@ -31,6 +31,8 @@ class AR_NAR(Base):
 
 	@property
 	def n_prom_levels(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.prom_levels
 		return cfg.model.prom_levels
 
 	@property
@@ -41,18 +43,26 @@ class AR_NAR(Base):
 
 	@property
 	def n_max_levels(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.max_levels
 		return cfg.model.max_levels
 
 	@property
 	def n_tasks(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.tasks
 		return cfg.model.tasks
 	
 	@property
 	def n_langs(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.langs
 		return cfg.model.langs
 
 	@property
 	def n_tones(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.tones
 		return cfg.model.tones
 
 	@property

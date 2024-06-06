@@ -1,12 +1,13 @@
 # https://github.com/huggingface/transformers/blob/main/src/transformers/models/mixtral/modeling_mixtral.py
 
 import torch
+import torch.nn.functional as F
 
 from transformers import MixtralModel, MixtralConfig
 from transformers.models.mixtral.modeling_mixtral import load_balancing_loss_func, MixtralSparseMoeBlock
 
 # This is required because batch sizes > 1 throws errors
-def Fixed_MixtralSparseMoeBlock_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+def MixtralSparseMoeBlock_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
 	""" """
 	batch_size, sequence_length, hidden_dim = hidden_states.shape
 	hidden_states = hidden_states.reshape(-1, hidden_dim) # was view()
@@ -41,5 +42,4 @@ def Fixed_MixtralSparseMoeBlock_forward(self, hidden_states: torch.Tensor) -> to
 	final_hidden_states = final_hidden_states.reshape(batch_size, sequence_length, hidden_dim)
 	return final_hidden_states, router_logits
 
-Original_MixtralSparseMoeBlock_forward = MixtralSparseMoeBlock.forward
-MixtralSparseMoeBlock.forward = Fixed_MixtralSparseMoeBlock_forward
+MixtralSparseMoeBlock.forward = MixtralSparseMoeBlock_forward

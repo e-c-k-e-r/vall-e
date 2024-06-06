@@ -1,37 +1,36 @@
 
-def get_model(cfg, training=True):
-	name = cfg.name
+def get_model(config, training=True):
+	name = config.name
 
-	if not cfg.experimental:
+	if not config.experimental:
 		from .ar_nar import AR_NAR
 		model = AR_NAR(
-			n_text_tokens=cfg.text_tokens,
-			n_audio_tokens=cfg.audio_tokens,
-			d_model=cfg.dim,
-			n_heads=cfg.heads,
-			n_layers=cfg.layers,
-			n_experts=cfg.experts,
+			n_text_tokens=config.text_tokens,
+			n_audio_tokens=config.audio_tokens,
+			d_model=config.dim,
+			n_heads=config.heads,
+			n_layers=config.layers,
+			n_experts=config.experts,
 			
-			p_dropout=cfg.dropout,
+			p_dropout=config.dropout,
 			
-			l_padding = cfg.input_alignment,
+			l_padding = config.input_alignment,
 			
 			training = training,
-			config = cfg,
+			config = config,
 		)
-		model._cfg = cfg
 	else:
 		from .experimental import Model as Experimental
 		model = Experimental(
-			n_text_tokens=cfg.text_tokens,
-			n_audio_tokens=cfg.audio_tokens,
-			
-			d_model=cfg.dim,
-			n_layers=cfg.layers,
-			n_heads=cfg.heads,
-			p_dropout=cfg.dropout,
+			n_text_tokens=config.text_tokens,
+			n_audio_tokens=config.audio_tokens,
 
-			config = cfg,
+			d_model=config.dim,
+			n_layers=config.layers,
+			n_heads=config.heads,
+			p_dropout=config.dropout,
+
+			config = config,
 		)
 
 	print(f"{name} ({next(model.parameters()).dtype}): {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")

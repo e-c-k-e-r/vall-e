@@ -19,7 +19,7 @@ if deepspeed_available:
 	import deepspeed
 
 class TTS():
-	def __init__( self, config=None, model_ckpt=None, device=None, amp=None, dtype=None ):
+	def __init__( self, config=None, device=None, amp=None, dtype=None ):
 		self.loading = True 
 		
 		self.input_sample_rate = 24000
@@ -53,32 +53,12 @@ class TTS():
 
 		self.symmap = None
 
-		if model_ckpt:
-			state = torch.load(model_ckpt)
-			self.model = get_models(cfg.model.get(), training=False)[0]
-			
-			if "userdata" in state and 'symmap' in state['userdata']:
-				self.symmap = state['userdata']['symmap']
-			elif "symmap" in state:
-				self.symmap = state['symmap']
+		self.engines = load_engines(training=False)
+		for name, engine in self.engines.items():
+			if self.dtype != torch.int8:
+				engine.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
-			if "module" in state:
-				state = state['module']
-			
-			self.model.load_state_dict(state)
-
-			if cfg.inference.backend == "local" and deepspeed_available and cfg.trainer.deepspeed.inferencing:
-				self.model = deepspeed.init_inference(model=self.model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
-		else:
-			engines = load_engines(training=False)
-			for name, engine in engines.items():
-				self.model = engine.module
-				break
-
-		if self.dtype != torch.int8:
-			self.model = self.model.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
-
-		self.model.eval()
+		self.engines.eval()
 
 		if self.symmap is None:
 			self.symmap = get_phone_symmap()
@@ -159,6 +139,15 @@ class TTS():
 		wavs = []
 		sr = None
 
+		model_ar = None
+		model_nar = None
+
+		for name, engine in self.engines.items():
+			if "ar" in engine.hyper_config.capabilities:
+				model_ar = engine.module
+			if "nar" in engine.hyper_config.capabilities:
+				model_nar = engine.module
+
 		for line in lines:
 			if out_path is None:
 				out_path = f"./data/{cfg.start_time}.wav"
@@ -172,7 +161,7 @@ class TTS():
 			lang = to_device(lang, self.device).to(torch.uint8)
 
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-				resps_list = self.model(
+				resps_list = model_ar(
 					text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
 					sampling_temperature=ar_temp,
 					sampling_min_temperature=min_ar_temp,
@@ -183,8 +172,7 @@ class TTS():
 					sampling_mirostat_tau=mirostat_tau,
 					sampling_mirostat_eta=mirostat_eta,
 				)
-				resps_list = [r.unsqueeze(-1) for r in resps_list]
-				resps_list = self.model(
+				resps_list = model_nar(
 					text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
 					max_levels=max_nar_levels,
 					sampling_temperature=nar_temp,

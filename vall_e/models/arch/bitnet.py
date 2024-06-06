@@ -1,5 +1,7 @@
 # https://github.com/kyegomez/BitNet
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
+
 from bitnet.bit_transformer import Transformer as BitNetTransformerBlock, RMSNorm as BitNetRMSNorm
 
 # re-enable logging because zetascale fucking sucks

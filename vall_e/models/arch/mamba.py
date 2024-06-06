@@ -1,4 +1,6 @@
 # https://github.com/state-spaces/mamba
+from torch.utils.checkpoint import checkpoint
+
 from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig, MixerModel as MambaMixelModel, layer_norm_fn as MambaLayerNormFn, RMSNorm as MambaRMSNorm
 
 def MambaMixelModel_forward(self, input_ids=None, hidden_states=None, inference_params=None, **mixer_kwargs):

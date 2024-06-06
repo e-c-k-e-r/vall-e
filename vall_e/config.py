@@ -256,7 +256,7 @@ class Model:
 		if self.interleave:
 			name.append("interleaved")
 		else:
-			name.append(f'{cfg.model.prom_levels}')
+			name.append(f'{self.prom_levels}')
 
 
 		return "-".join(name)
@@ -627,8 +627,7 @@ class Config(_Config):
 	experimental: bool = False # So I can stop commenting out things when committing
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
-	model: Model = field(default_factory=lambda: Model)
-	models: dict | list | None = None # deprecated
+	models: dict | list | None = field(default_factory=lambda: [Model])
 	hyperparameters: Hyperparameters = field(default_factory=lambda: Hyperparameters)
 	evaluation: Evaluation = field(default_factory=lambda: Evaluation)
 	trainer: Trainer = field(default_factory=lambda: Trainer)
@@ -642,6 +641,14 @@ class Config(_Config):
 	variable_sample_rate: bool = False # NOT recommended, as running directly 24Khz audio in the 44Khz DAC model will have detrimental quality loss
 
 	audio_backend: str = "vocos"
+
+	@property
+	def model(self):
+		for i, model in enumerate(self.models):
+			if model.training:
+				return model
+
+		return self.models[0]
 
 	@property
 	def distributed(self):
@@ -681,8 +688,8 @@ class Config(_Config):
 		if isinstance(self.dataset, type):
 			self.dataset = dict()
 
-		if isinstance(self.model, type):
-			self.model = dict()
+		if isinstance(self.models, type):
+			self.models = dict()
 		
 		if isinstance(self.hyperparameters, type):
 			self.hyperparameters = dict()
@@ -704,10 +711,14 @@ class Config(_Config):
 		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
 		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
 
+		"""
 		if self.models is not None:
 			self.model = Model(**next(iter(self.models)))
 		else:
 			self.model = Model(**self.model)
+		"""
+
+		self.models = [ Model(**model) for model in self.models ]
 
 		self.hyperparameters = Hyperparameters(**self.hyperparameters)
 

@@ -13,7 +13,6 @@ def main():
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--yaml", type=Path, default=None)
-	parser.add_argument("--model-ckpt", type=Path, default=None)
 
 	parser.add_argument("--max-ar-steps", type=int, default=6 * 75)
 	parser.add_argument("--max-nar-levels", type=int, default=7)
@@ -40,7 +39,7 @@ def main():
 	parser.add_argument("--dtype", type=str, default=None)
 	args = parser.parse_args()
 
-	tts = TTS( config=args.yaml, model_ckpt=args.model_ckpt, device=args.device, dtype=args.dtype, amp=args.amp )
+	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype, amp=args.amp )
 	tts.inference(
 		text=args.text,
 		references=args.references,
