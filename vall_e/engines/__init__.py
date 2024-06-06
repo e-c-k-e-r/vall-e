@@ -142,6 +142,10 @@ def load_engines(training=True):
 			for k in erase:
 				del state[k]
 
+			# resize text embedding
+			if cfg.model.text_tokens != state["text_emb.weight"].shape[0]:
+				state["text_emb.weight"] = state["text_emb.weight"][:cfg.model.text_tokens]
+
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
 		hyper_config = model.hyper_config
