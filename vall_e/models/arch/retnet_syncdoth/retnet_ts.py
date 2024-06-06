@@ -1,9 +1,9 @@
 # https://github.com/syncdoth/RetNet/
-from ..ext.retnet_ts.config import RetNetConfig
-from ..ext.retnet_ts.retnet import RetNetModel as RetNetDecoder
+from ....ext.retnet_ts.config import RetNetConfig
+from ....ext.retnet_ts.retnet import RetNetModel as RetNetDecoder
 
 # things we're overriding or required to override
-from ..ext.retnet_ts.retnet import RetNetDecoderLayer, MultiScaleRetention, theta_shift, RMSNorm, FeedForwardNetwork, get_activation_fn, LayerNorm, RetNetRelPos
+from ....ext.retnet_ts.retnet import RetNetDecoderLayer, MultiScaleRetention, theta_shift, RMSNorm, FeedForwardNetwork, get_activation_fn, LayerNorm, RetNetRelPos
 
 import torch
 import math

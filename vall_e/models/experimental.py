@@ -24,73 +24,19 @@ import math
 from einops import rearrange
 from tqdm import trange
 
-AVAILABLE_ARCHES = []
+from .arch import *
 
-try:
-	from transformers import LlamaForCausalLM, LlamaConfig
-	AVAILABLE_ARCHES.append("llama")
-except Exception as e:
-	print("Error importing `llama` arch:", e)
-	pass
+if cfg.model.arch_type not in AVAILABLE_ARCHES:
+	raise ValueError(f"Requesting arch `{cfg.model.arch_type}` but not available")
 
-try:
-	from .retnet_hf import RetNetConfig
-	from ..ext.retnet_hf.modeling_retnet import RetNetForCausalLM
-
-	AVAILABLE_ARCHES.append("retnet")
-except Exception as e:
-	print("Error importing `retnet` arch:", e)
-	pass
-
-try:
-	from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel, MambaConfig, MixerModel as MambaMixelModel, layer_norm_fn as MambaLayerNormFn, RMSNorm as MambaRMSNorm
-
-	def MambaMixelModel_forward(self, input_ids, inference_params=None, **mixer_kwargs):
-		hidden_states = self.embedding(input_ids)
-		residual = None
-		for layer in self.layers:
-			if self.gradient_checkpointing and hidden_states.requires_grad:
-				hidden_states, residual = checkpoint( layer, hidden_states, residual, inference_params=inference_params, use_reentrant=False )
-			else:
-				hidden_states, residual = layer( hidden_states, residual, inference_params=inference_params )
-		if not self.fused_add_norm:
-			residual = (hidden_states + residual) if residual is not None else hidden_states
-			hidden_states = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
-		else:
-			# Set prenorm=False here since we don't need the residual
-			hidden_states = MambaLayerNormFn(
-				hidden_states,
-				self.norm_f.weight,
-				self.norm_f.bias,
-				eps=self.norm_f.eps,
-				residual=residual,
-				prenorm=False,
-				residual_in_fp32=self.residual_in_fp32,
-				is_rms_norm=isinstance(self.norm_f, MambaRMSNorm)
-			)
-		return hidden_states
-
-	MambaMixelModel.forward = MambaMixelModel_forward
-
-	AVAILABLE_ARCHES.append("mamba")
-	AVAILABLE_ARCHES.append("mamba2")
-except Exception as e:
-	print("Error importing `mamba` arch:", e)
-	pass
-
-
-SELECTED_ARCH = cfg.model.arch_type 
-if SELECTED_ARCH not in AVAILABLE_ARCHES:
-	raise ValueError(f"Requesting arch `{SELECTED_ARCH}` but not available")
-
-if SELECTED_ARCH in ["mamba","mamba2"]:
+if cfg.model.arch_type in ["mamba","mamba2"]:
 	LlmArchClass = MambaLMHeadModel
-elif SELECTED_ARCH == "llama":
+elif cfg.model.arch_type == "llama":
 	LlmArchClass = LlamaForCausalLM
-elif SELECTED_ARCH == "retnet":
+elif cfg.model.arch_type == "retnet":
 	LlmArchClass = RetNetForCausalLM
 else:
-	raise ValueError(f"Requesting arch `{SELECTED_ARCH}` but not available")
+	raise ValueError(f"Requesting arch `{cfg.model.arch_type}` but not available")
 
 class Model(LlmArchClass):
 	def __init__(
@@ -113,7 +59,7 @@ class Model(LlmArchClass):
 		# text_tokens + rvq levels + [audio tokens * codebooks] (prom) + [audio tokens * codebooks] (resp) + stop
 		vocab_size = n_text_tokens + cfg.model.max_levels + (n_audio_tokens * cfg.model.max_levels) + (n_audio_tokens * cfg.model.max_levels) + 1
 
-		if SELECTED_ARCH == "llama":
+		if cfg.model.arch_type == "llama":
 			super().__init__(config=LlamaConfig(
 				vocab_size=vocab_size,
 				hidden_size=d_model,
@@ -134,7 +80,7 @@ class Model(LlmArchClass):
 				self.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
-		elif SELECTED_ARCH == "retnet":
+		elif cfg.model.arch_type == "retnet":
 			super().__init__(config=RetNetConfig(
 				vocab_size=vocab_size,
 				decoder_embed_dim=d_model,
@@ -156,12 +102,12 @@ class Model(LlmArchClass):
 
 				decoder_normalize_before=True,
 			))
-		elif SELECTED_ARCH in ["mamba","mamba2"]:
+		elif cfg.model.arch_type in ["mamba","mamba2"]:
 			super().__init__(config=MambaConfig(
 				vocab_size=vocab_size,
 				d_model=d_model,
 				n_layer=n_layers*2,
-				ssm_cfg={"layer": "Mamba2", "chunk_size":64} if SELECTED_ARCH == "mamba2" else {},
+				ssm_cfg={"layer": "Mamba2", "chunk_size":64} if cfg.model.arch_type == "mamba2" else {},
 				fused_add_norm=True,
 				residual_in_fp32=True,
 			))
@@ -181,7 +127,7 @@ class Model(LlmArchClass):
 		*args,
 		**kwargs
 	):
-		if SELECTED_ARCH in ["mamba","mamba2"]:
+		if cfg.model.arch_type in ["mamba","mamba2"]:
 			kwargs["cg"] = True
 
 			if "attention_mask" in kwargs:
@@ -200,7 +146,7 @@ class Model(LlmArchClass):
 		*args,
 		**kwargs,
 	):
-		if SELECTED_ARCH in ["mamba","mamba2"]:
+		if cfg.model.arch_type in ["mamba","mamba2"]:
 			if "attention_mask" in kwargs:
 				kwargs.pop("attention_mask")
 
@@ -371,7 +317,7 @@ def example_usage():
 
 	torch.save( {
 		'module': model.state_dict()
-	}, f"./data/{SELECTED_ARCH}.pth" )
+	}, f"./data/{cfg.model.arch_type}.pth" )
 
 	print(f"{LlmArchClass} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
@@ -427,7 +373,7 @@ def example_usage():
 				resp_list[i] = torch.stack( resp ).t()
 
 		for i, batch in enumerate(resp_list):
-			_ = decode_to_file(batch.to(device=device), f"data/{SELECTED_ARCH}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
+			_ = decode_to_file(batch.to(device=device), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
 
 		unload_model()
 
@@ -456,7 +402,7 @@ def example_usage():
 
 		torch.save( {
 			'module': model.state_dict()
-		}, f"./data/{SELECTED_ARCH}.pth" )
+		}, f"./data/{cfg.model.arch_type}.pth" )
 
 	#sample("init", 5)
 	train()
