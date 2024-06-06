@@ -245,11 +245,10 @@ class Model:
 		elif isinstance(self.size, str) and self.size != "full":
 			name.append(self.size)
 
-		if self.arch_type != "transformer":
-			if self.experts > 1:
-				name.append(f'{self.experts}x'+self.arch_type.replace("/", "-"))
-			else:
-				name.append(self.arch_type.replace("/", "-"))
+		if self.experts > 1:
+			name.append(f'{self.experts}x'+self.arch_type.replace("/", "-"))
+		else:
+			name.append(self.arch_type.replace("/", "-"))
 
 		if cfg.optimizations.bitnet:
 			name.append("bitnet")
@@ -264,10 +263,19 @@ class Model:
 
 	@property
 	def tokens(self):
-		if isinstance(self.size, dict) and hasattr(self.size, "tokens"):
-			return self.size['tokens']
+		return self.audio_tokens
 
+	@property
+	def audio_tokens(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "audio_tokens"):
+			return self.size['audio_tokens']
 		return 1024
+
+	@property
+	def text_tokens(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "text_tokens"):
+			return self.size['text_tokens']
+		return 256
 
 	@property
 	def dim(self):

@@ -639,7 +639,8 @@ class Base(nn.Module):
 			if text_list is not None:
 				inputs[i].append( ( "text", text_list[i] ) )
 
-			inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
+			if self.rvq_level_emb is not None:
+				inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
 
 			if proms_list is not None:
 				inputs[i].append( ( "prom", proms_list[i] ) )
