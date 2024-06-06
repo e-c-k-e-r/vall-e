@@ -181,6 +181,11 @@ class AR_NAR(Base):
 			# is NAR
 			if max_levels == 0:
 				max_levels = self.n_resp_levels - 1
+
+			# expand if given a raw 1D tensor
+			for i, resp in enumerate(resps_list):
+				if resp.dim() == 1:
+					resps_list[i] = resp.unsqueeze(-1)
 			
 			prev_list = resps_list
 
@@ -377,7 +382,9 @@ def example_usage():
 
 	# rentet-full is the only configuration with BitNet's BitLinear that converges despite the grad_norm saying otherwise
 	kwargs = {
-		'n_tokens': 1024,
+		'n_text_tokens': 256,
+		'n_audio_tokens': 1024,
+
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
@@ -475,8 +482,7 @@ def example_usage():
 		else:
 			resps_list = [ qnt[:, 0].to( device ) ]
 
-		if cfg.model.max_levels > 1:
-			resps_list = [r.unsqueeze(-1) for r in resps_list]
+		if "nar" in cfg.model.capabilities:
 			resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
 
 		for i, o in enumerate(resps_list):

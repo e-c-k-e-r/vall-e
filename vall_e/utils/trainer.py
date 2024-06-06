@@ -164,18 +164,6 @@ def train(
 		stats = engines.step(batch=batch, feeder=train_feeder)
 		stats['epoch'] = engines.global_samples / (len(train_dl.dataset.paths) * world_size())
 
-		"""
-		stats['batch'] = {
-			'size': len(batch['text']),
-			'id': batch['spkr_id'],
-			'index': [ index for index in batch['index'] ],
-			'text_len': [ text.shape[0] for text in batch['text'] ],
-			'prom_len': [ prom.shape[0] for prom in batch['proms'] ],
-			'resp_len': [ resp.shape[0] for resp in batch['resps'] ],
-		}
-		"""
-
-
 		elapsed_time = stats.get("elapsed_time", 0)
 		try:
 			metrics = json.dumps(stats)

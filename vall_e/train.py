@@ -174,7 +174,6 @@ def run_eval(engines, eval_name, dl):
 					resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
 				if "nar" in engine.hyper_config.capabilities:
-					resps_list = [ r.unsqueeze(-1) for r in resps_list ]
 					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
 
 			process( name, batch, resps_list )

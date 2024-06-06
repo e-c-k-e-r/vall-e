@@ -8,6 +8,8 @@ An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/),
 
 > **Note** Development on this is very sporadic. Gomen.
 
+> **Note** Compatibility for existing models may break at any time while I feverishly try and work out the best way to crank out a model. Gomen.
+
 ## Requirements
 
 * [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/):
@@ -24,11 +26,13 @@ I've tested this repo under Python versions `3.10.9` and `3.11.3`.
 
 ## Try Me
 
-To quickly try it out, you can run `python -m vall_e.models.ar_nar yaml="./data/config.yaml"`
+To quickly try it out, you can run `python -m vall_e.models.ar_nar yaml="./data/config.yaml"`.
 
-Each model file has a barebones trainer and inference routine.
+A small trainer will overfit a provided utterance to ensure a model configuration works.
 
 ## Pre-Trained Model
+
+> **Note** Pre-Trained weights aren't up to par until I finally nail the best training methodologies and model code. Gomen.
 
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 
@@ -44,13 +48,13 @@ Training is very dependent on:
 
 ### Pre-Processed Dataset
 
+> **Note** The provided dataset needs to be reprocessed to better suit a new training dataset format. Gomen.
+
 A "libre" dataset utilizing EnCodec quantized audio can be found [here](https://huggingface.co/ecker/vall-e) under `data.tar.gz`.
 
 A script to setup a proper environment and train can be invoked with `./scripts/setup-training.sh`
 
 ### Leverage Your Own Dataset
-
-> **Note** Preparing a dataset is a bit messy.
 
 If you already have a dataset you want, for example your own large corpus, or for finetuning, you can use your own dataset instead.
 
@@ -79,10 +83,11 @@ If you already have a dataset you want, for example your own large corpus, or fo
 
 Two dataset formats are supported:
 * the standard way:
-  - for Encodec/Vocos audio backends, data is stored under `./training/data/{group}/{speaker}/{id}.phn.txt` and `./training/data/{group}/{speaker}/{id}.qnt.pt`
-  - for Descript-Audio-Codec audio backend, data is stored under `./training/data/{group}/{speaker}/{id}.json` and `./training/data/{group}/{speaker}/{id}.dac`
+  - for Encodec/Vocos audio backends, data is stored under `./training/data/{group}/{speaker}/{id}.enc` as a NumPy file.
+  - for Descript-Audio-Codec audio backend, data is stored under `./training/data/{group}/{speaker}/{id}.dac` as a NumPy file.
+  - it is *highly* recommended to generate metadata to speed up dataset pre-load with `python3 -m vall_e.data yaml="./training/config.yaml" --action=metadata`
 * using an HDF5 dataset:
-  - you can convert from the standard way with the following command: `python3 -m vall_e.data yaml="./training/config.yaml"`
+  - you can convert from the standard way with the following command: `python3 -m vall_e.data yaml="./training/config.yaml"` (metadata for dataset pre-load is generated alongside HDF5 creation)
   - this will shove everything into a single HDF5 file and store some metadata alongside (for now, the symbol map generated, and text/audio lengths)
   - be sure to also define `use_hdf5` in your config YAML.
 
@@ -98,7 +103,6 @@ You can enter `save` to save the state at any time, or `quit` to save and quit t
 
 The `lr` will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
 
-
 ### Plotting Metrics
 
 Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot yaml="./training/config.yaml"`
@@ -107,35 +111,41 @@ You can specify what X and Y labels you want to plot against by passing `--xs to
 
 ### Notices
 
-If you're training under `float16`, it is recommended to use the `local` backend with `amp` enabled. There's something really funky with `deepspeed` as a backend that's causing issues with training.
-
 #### Training Under Windows
 
 As training under `deepspeed` and Windows is not (easily) supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
 
-Keep in mind that creature comforts like distributed training or `float16` training cannot be verified as working at the moment with the local trainer.
+Creature comforts like `float16`, `amp`, and multi-GPU training *should* work, but extensive testing still needs to be done to ensure it all functions.
 
 #### Training Caveats
 
 Unfortunately, efforts to train a *good* foundational model seems entirely predicated on a good dataset. My dataset might be too fouled with:
 * too short utterances: trying to extrapolate longer contexts seems to utterly fall apart from just the `text` being too long.
   + It might help to, instead, initially train with smaller utterances, train for two epochs, then increase the each sample length.
+    - This does seem to help speed up the model "learning" better.
 * too tightly trimmed utterances: there being little to no space at the start and end might harm associating `<s>` and `</s>` tokens with empty utterances.
 * a poorly mapped phoneme mapping: I naively crafted my own phoneme mapping, where a HuggingFace tokenizer might supply a better token mapping.
+  + This seems remedied with settling for using a HuggingFace tokenizer to handle everything.
+* having a unified AR and NAR model might sound too convenient, but each task may lobotomize the other, due to the nature of things.
+  + This *might* be remedied with better sequence formatting.
 
 #### Backend Architectures
 
 As the core of VALL-E makes use of a language model, various LLM architectures can be supported and slotted in. Currently supported LLm architectures:
 
 * `llama`: using HF transformer's LLaMa implementation for its attention-based transformer, boasting RoPE and other improvements.
+  + I aim to utilize this for the foundational model, as I get to leverage a bunch of things tailored for LLaMA (and converting to them is rather easy).
 * `mixtral`: using HF transformer's Mixtral implementation for its attention-based transformer, also utilizing its MoE implementation.
 * `bitnet`: using [this](https://github.com/kyegomez/BitNet/) implementation of BitNet's transformer.
   - Setting `cfg.optimizers.bitnet=True` will make use of BitNet's linear implementation.
 * `transformer`: a basic attention-based transformer implementation, with attention heads + feed forwards.
 * `retnet`: using [TorchScale's RetNet](https://github.com/microsoft/torchscale/blob/main/torchscale/architecture/retnet.py) implementation, a retention-based approach can be used instead.
   - Its implementation for MoE can also be utilized.
-* `retnet-hf`: using [syncdoth/RetNet/](https://github.com/syncdoth/RetNet) with a HuggingFace-compatible RetNet model
+* `retnet-hf`: using [syncdoth/RetNet](https://github.com/syncdoth/RetNet) with a HuggingFace-compatible RetNet model
   - has an inference penality, and MoE is not implemented.
+* `mamba`: using [state-spaces/mamba](https://github.com/state-spaces/mamba) (needs to mature)
+  - ***really hard*** to have a unified AR and NAR model
+  - inference penalty makes it a really hard sell, despite the loss already being a low 3 after a short amount of samples processed
 
 For audio backends:
 
@@ -144,7 +154,7 @@ For audio backends:
   - encoding audio will use the `encodec` backend automagically, as there's no EnCodec encoder under `vocos`
 * [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality
   - **Note** models using `descript-audio-codec` at 24KHz + 8kbps will NOT converge in any manner.
-  - **Note** models using `descript-audio-codec` at 44KHz + 8kbps stops improving after a while. 
+  - **Note** models using `descript-audio-codec` at 44KHz + 8kbps seems harder to model its "language", but despite the loss being rather high, it sounds fine.
 
 `llama`-based models also support different attention backends:
 * `math`: torch's SDPA's `math` implementation
@@ -154,6 +164,8 @@ For audio backends:
 * `auto`: determine the best fit from the above
 * `sdpa`: integrated `LlamaSdpaAttention` attention model
 * `flash_attention_2`: integrated `LlamaFlashAttetion2` attention model
+
+The wide support for various backends is solely while I try and figure out which is the "best" for a core foundation model.
 
 ## Export
 

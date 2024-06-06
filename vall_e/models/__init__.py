@@ -5,7 +5,8 @@ def get_model(cfg, training=True):
 	if not cfg.experimental:
 		from .ar_nar import AR_NAR
 		model = AR_NAR(
-			n_tokens=cfg.tokens,
+			n_text_tokens=cfg.text_tokens,
+			n_audio_tokens=cfg.audio_tokens,
 			d_model=cfg.dim,
 			n_heads=cfg.heads,
 			n_layers=cfg.layers,
@@ -22,6 +23,9 @@ def get_model(cfg, training=True):
 	else:
 		from .experimental import Model as Experimental
 		model = Experimental(
+			n_text_tokens=cfg.text_tokens,
+			n_audio_tokens=cfg.audio_tokens,
+			
 			d_model=cfg.dim,
 			n_layers=cfg.layers,
 			n_heads=cfg.heads,

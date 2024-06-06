@@ -95,6 +95,10 @@ else:
 class Model(LlmArchClass):
 	def __init__(
 		self,
+
+		n_text_tokens = 256,
+		n_audio_tokens = 1024,
+
 		d_model=1024,
 		n_layers=12,
 		n_heads=16,
@@ -107,7 +111,7 @@ class Model(LlmArchClass):
 		hf_attention = config.attention if config is not None else None
 		gradient_checkpointing = config.gradient_checkpointing if config is not None else True
 		# text_tokens + rvq levels + [audio tokens * codebooks] (prom) + [audio tokens * codebooks] (resp) + stop
-		vocab_size = 256 + cfg.model.max_levels + (1024 * cfg.model.max_levels) + (1024 * cfg.model.max_levels) + 1
+		vocab_size = n_text_tokens + cfg.model.max_levels + (n_audio_tokens * cfg.model.max_levels) + (n_audio_tokens * cfg.model.max_levels) + 1
 
 		if SELECTED_ARCH == "llama":
 			super().__init__(config=LlamaConfig(

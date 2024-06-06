@@ -458,7 +458,7 @@ class Base(nn.Module):
 	def stop_token(self):
 		if not self.causal:
 			raise ValueError("Not using stop token!")
-		return self.n_tokens
+		return self.n_audio_tokens
 
 	@property
 	def ignore_index(self):
@@ -471,7 +471,10 @@ class Base(nn.Module):
 
 	def __init__(
 		self,
-		n_tokens: int = 1024,
+		
+		n_text_tokens: int = 256,
+		n_audio_tokens: int = 1024,
+
 		d_model: int = 512,
 		n_heads: int = 8,
 		n_layers: int = 12,
@@ -489,7 +492,9 @@ class Base(nn.Module):
 		self.hyper_config = config
 		self.gradient_checkpointing = self.hyper_config.gradient_checkpointing if self.hyper_config is not None else True
 
-		self.n_tokens = n_tokens
+		self.n_text_tokens = n_text_tokens
+		self.n_audio_tokens = n_audio_tokens
+
 		self.d_model = d_model
 		self.n_heads = n_heads
 		self.n_layers = n_layers
@@ -498,10 +503,10 @@ class Base(nn.Module):
 		self.l_padding = l_padding
 
 		# +1 to include the stop token
-		n_prom_tokens = n_tokens
-		n_resp_tokens = n_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
+		n_prom_tokens = n_audio_tokens
+		n_resp_tokens = n_audio_tokens + (1 if self.causal else 0) # AR requires a stop token to... know when to stop
 
-		self.text_emb = Embedding(n_tokens, d_model)
+		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
 		self.tones_emb = None
 		self.tasks_emb = None
@@ -518,24 +523,28 @@ class Base(nn.Module):
 				levels=self.n_prom_levels if self.version > 3 else None,
 				sums=self.hyper_config.audio_embedding_sums if self.hyper_config is not None else True,
 			)
-			# [1025] + [1024] * 8
+			# [1024 + STOP] + [1024] * 8
 			self.resps_emb = AudioEmbedding(
 				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
 				sums=self.hyper_config.audio_embedding_sums if self.hyper_config is not None else True
 			)
 
-		
+		# useless since I actually removed using these with the input processing overhaul...
 		if self.version >= 3:
 			self.langs_emb = Embedding(self.n_langs, d_model) if self.n_langs > 0 else None
 			self.tasks_emb = Embedding(self.n_tasks, d_model) if self.n_tasks > 0 else None
-		
+		# never actually got added... I kept forgetting to classify all my audio for speaker's tone
 		if self.version >= 4:
 			self.tones_emb = Embedding(self.n_tones, d_model) if self.n_tones > 0 else None
 
+		# mamba requires this if a model does both AR and NAR tasks
+		# this *might* help for AR and NAR tasks since we explicitly specify the current RVQ level for a sequence, rather than having it "encoded" in the embeddings
+		# this ***might*** let me also unify the proms_emb and resps_embedding
 		if self.version >= 5:
 			self.rvq_level_emb = Embedding(self.n_resp_levels, d_model)
 
+		# this would be nicer to be a stop token or live inside an embedding
 		self.sep = nn.Parameter(torch.randn(d_model))
 
 		# ick, there has to be a better way
@@ -943,7 +952,6 @@ class Base(nn.Module):
 			target_list = []
 			for batch_index, batch in enumerate(inputs):
 				target = []
-				quant_level = quant_levels[batch_index] if quant_levels is not None else None
 				for name, input in batch:
 					if name == "prom":
 						target.append( torch.full_like(input[..., 0], self.ignore_index) )
@@ -960,19 +968,36 @@ class Base(nn.Module):
 				logits[i] = logits[i][..., :-1, :] # shift the target so that token n...
 				target_list[i] = target_list[i][..., 1:] # predicts token n + 1
 
-			target = torch.cat( target_list )
-			inputs = torch.cat( logits )
+			# see comments for the split-loss calc cross_entropy call
+			if False:
+				target = torch.cat( target_list )
+				inputs = torch.cat( logits )
+				self.loss = dict(
+					# "nll" was in the original implementation and should actually just be called something else
+					nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
+				)
+				self.stats = dict(
+					acc = self.accuracy_metric( inputs, target ),
+					# precision = self.precision_metric( inputs, target ),
+				)
+			else:
+				self.loss = dict(
+					nll = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor for targets, inputs in zip( target_list, logits ) ]) / len(batch)
+				)
+				self.stats = dict(
+					acc = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( target_list, logits ) ] ) / len(batch)
+				)
 
-			self.loss = dict(
-				# "nll" was in the original implementation and should actually just be called something else
-				nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
-			)
-			self.stats = dict(
-				acc = self.accuracy_metric( inputs, target ),
-				# precision = self.precision_metric( inputs, target ),
-			)
 			return
 
+		"""
+		# considerations:
+		# * split losses does not maintain the entire sequence
+		# * the first token is ignored for all pieces, rather than just the first text token (which is always provided)
+		#     + the other way at least should keep it intact this way
+		#     + extra logic might be required to instead offset from the end for the resp, rather than fit snuggly
+		#     + this might just be a spook since the odds the very first token of the AR mattering is slim (although I swear I hear a very brief audio pop sometimes)
+		"""
 		self.loss = dict()
 		self.stats = dict(acc = dict())
 
@@ -998,6 +1023,7 @@ class Base(nn.Module):
 				it += seq_len + 1 # +1 to incorporate the separator
 				
 				# for the AR, shift sequence so that it predicts the next token
+				#     (the NAR predicts the next token in place, so it's not necessary to do any modifications for it)
 				if quant_level is None or quant_level == 0:
 					logit = logit[..., :-1, :] # get all but the final logit
 					input = input[..., 1:] # shift sequence to the right by one
@@ -1008,8 +1034,9 @@ class Base(nn.Module):
 						"logits": [],
 					}
 
-				info[name]["targets"].append( input ) # input.contiguous()
-				info[name]["logits"].append( logit ) # logit.contiguous()
+				# modeling_llama.py has some comment about requiring .contiguous() but I feel it's a spook since that incurs a memory allocation
+				info[name]["targets"].append( input.long() )
+				info[name]["logits"].append( logit )
 
 		for name, batch in info.items():
 			loss_factor = self.loss_factor(name)
@@ -1019,15 +1046,20 @@ class Base(nn.Module):
 			if loss_factor == 0.0:
 				continue
 
-			targets = torch.cat( batch["targets"] ).long()
-			inputs = torch.cat( batch["logits"] )
-
-			self.loss[name] = F.cross_entropy( inputs, targets, ignore_index=self.ignore_index )  * loss_factor
-			try:
+			# "faster" if cross_entropy has speedups for processing an entire batch, but torch.cat allocates new tensors
+			# to-do: set this to a var
+			if False:
+				targets = torch.cat( batch["targets"] ).long()
+				inputs = torch.cat( batch["logits"] )
+				self.loss[name] = F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor
 				self.stats["acc"][name] = self.accuracy_metric( inputs, targets )
-			except Exception as e:
-				print( name, inputs.shape, targets.shape, e )
-				pass
+			# probably consumes less memory due to not having to allocate memory
+			# this method also opens the way to scale loss per RVQ level (although it shouldn't really be needed)
+			else:
+				self.loss[name] = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor for targets, inputs in zip( batch["targets"], batch["logits"] ) ]) / len(batch)
+				self.stats["acc"][name] = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( batch["targets"], batch["logits"] ) ] ) / len(batch)
+			
+			# accuracy sometimes breaks for mamba
 
 		# to-do: compute loss per individual batch to scale per RVQ level
 		"""
@@ -1049,9 +1081,8 @@ class Base(nn.Module):
 
 		# yes, there's a better way.
 		training = False
-		for b_i in range(len(inputs)):
-			for i in range(len(inputs[b_i])):
-				name, input = inputs[b_i][i]
+		for batch_index, batch in enumerate(inputs):
+			for name, input in batch:
 				if name == "targ":
 					training = True
 
@@ -1115,13 +1146,16 @@ class Base(nn.Module):
 	):
 		if min_temperature < 0:
 			min_temperature = temperature
+
 		# (NAR) return the entire generated response
+		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)
 		if quant_levels is not None:
 			logits = [ logit[-l:] for logit, l in zip(logits, map(len, resps_list)) ]
 		# (AR chunkwise) return the last chunkwise piece
 		elif self.causal and self.recurrent_chunk_size > 0:
 			logits = [ logit[-l:] for logit, l in zip(logits, self.recurrent_chunk_size) ]
 		# (AR) return just the last code
+		# Recurrent decoding relies on the last token in the logits, because each token predicts the next token in the sequence (obviously)
 		else:
 			logits = [ logit[-1:] for logit in logits ]
 
