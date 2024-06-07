@@ -429,7 +429,7 @@ class Dataset(_Dataset):
 		self.training = training
 		self.dataset_type = "training" if self.training else "validation"
 		self.dataset = cfg.dataset.training if self.training else cfg.dataset.validation
-		self.sampler_type = cfg.dataset.sample_type if self.dataset_type == "training" else "group"
+		self.sampler_type = cfg.dataset.sample_type # if self.dataset_type == "training" else "group"
 
 		# to-do: do not do validation if there's nothing in the validation
 		# this just makes it be happy

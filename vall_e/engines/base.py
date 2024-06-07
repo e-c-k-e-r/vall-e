@@ -86,7 +86,7 @@ class Engine():
 		self._frozen_params.clear()
 
 	@property
-	def training(self):
+	def _training(self):
 		if not hasattr(self, "hyper_config"):
 			return True
 		return self.hyper_config.training
@@ -321,7 +321,7 @@ class Engines(dict[str, Engine]):
 
 		cfg.ckpt_dir.mkdir(parents=True, exist_ok=True)
 		for name, engine in self.items():
-			if not engine.training:
+			if not engine._training:
 				continue
 
 			save_dir = cfg.ckpt_dir / name

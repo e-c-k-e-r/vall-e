@@ -57,7 +57,7 @@ def train_feeder(engine, batch):
 		else:
 			engine(
 				text_list=batch["text"],
-				proms_list=[prom[:, :engine._cfg.prom_levels] for prom in batch["proms"]], # reduce the input prompt to the target prom level
+				proms_list=batch["proms"],
 				resps_list=batch["resps"],
 				lang_list=batch["lang"],
 			)
