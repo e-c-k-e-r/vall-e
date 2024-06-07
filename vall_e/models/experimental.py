@@ -315,9 +315,11 @@ def example_usage():
 	
 	engine = Engine(model=model, optimizer=optimizer)
 
+	"""
 	torch.save( {
 		'module': model.state_dict()
 	}, f"./data/{cfg.model.arch_type}.pth" )
+	"""
 
 	print(f"{LlmArchClass} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
@@ -400,9 +402,11 @@ def example_usage():
 
 			tqdm.write(f"{stats}")
 
+		"""
 		torch.save( {
 			'module': model.state_dict()
 		}, f"./data/{cfg.model.arch_type}.pth" )
+		"""
 
 	#sample("init", 5)
 	train()

@@ -66,16 +66,11 @@ class AR_NAR(Base):
 		return cfg.model.tones
 
 	@property
-	def recurrent_chunk_size(self) -> int:
-		return 0
-
-	"""
-	@property
-	def rotary_embedding_base(self) -> float:
-		if hasattr(self, "config") and self.config:
-			return self.config.rotary_embedding_base
-		return cfg.model.rotary_embedding_base
-	"""
+	def causal_size(self) -> int:
+		# 1 for the stop token
+		# governs how much to shift the logits by
+		# could *technically* make it work to where it can also predict *ALL* RVQ levels in one step, but experimental.py is the better way to go about it
+		return 1 if self.causal else 0
 
 	@property
 	def interleave(self) -> bool:
@@ -241,7 +236,7 @@ class AR_NAR(Base):
 			max_steps *= self.n_prom_levels
 
 		# get next in sequence
-		for n in trange(max_steps // max(1, self.recurrent_chunk_size), desc="AR"):
+		for n in trange(max_steps // max(1, self.causal_size), desc="AR"):
 			# experimental rolling response to avoid too-long perplexity hits despite RetNet allegedly fixing this.
 			# UNTESTED. In theory it would be better to also adjust the text, but there's no way of correlating text to segment of audio without something like wav2vec2
 			if max_resp_context > 0:
@@ -463,9 +458,11 @@ def example_usage():
 	
 	engine = Engine(model=model, optimizer=optimizer)
 
+	"""
 	torch.save( {
 		'module': model.state_dict()
 	}, f"./data/{cfg.model.arch_type}.pth" )
+	"""
 
 	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
@@ -498,9 +495,11 @@ def example_usage():
 
 			tqdm.write(f"{stats}")
 
+		"""
 		torch.save( {
 			'module': model.state_dict()
 		}, f"./data/{cfg.model.arch_type}.pth" )
+		"""
 
 	#sample("init", 5)
 	train()
