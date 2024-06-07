@@ -70,7 +70,7 @@ class AR_NAR(Base):
 		# 1 for the stop token
 		# governs how much to shift the logits by
 		# could *technically* make it work to where it can also predict *ALL* RVQ levels in one step, but experimental.py is the better way to go about it
-		return 1 if self.causal else 0
+		return 1 # if self.causal else 0
 
 	@property
 	def interleave(self) -> bool:
