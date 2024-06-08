@@ -206,8 +206,8 @@ class Model:
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
-	experimental: bool = False # for now it sets things to be HF compatible
-	kv_heads: int = 0
+	experimental: str | None = None # for now it sets things to be HF compatible
+	kv_heads: int = 0 # MHA or GQA (for supported backends)
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []

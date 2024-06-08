@@ -115,13 +115,13 @@ class AudioEmbedding_Old(nn.Module):
 		# weight influencer for the influence for each level (desu this should be really useless because the weights in the embedding themselves should factor this)
 		self.weight = nn.ParameterList([nn.Parameter( torch.Tensor([1]) ) for i in range(levels)]) if levels is not None else None
 
-	def forward(self, xi: Tensor, quant_level: int | Tensor | None = None ) -> Tensor:
+	def forward(self, xi: Tensor, offset: int | None = 0 ) -> Tensor:
 		# prom
-		if quant_level is None and xi.shape[-1] > 1:
+		if offset == 0 and xi.shape[-1] > 1:
 			x = sum( [ self.embeddings[k]( xi[:, k] ) * (self.weight[k] if self.weight is not None else 1) for k in range(xi.shape[-1]) ] )
 		# AR resp
-		elif quant_level is None or quant_level == 0:
-			x = self.embeddings[0]( xi if len(xi.shape) == 1 else xi[:, 0] )
+		elif quant_level == 0:
+			x = self.embeddings[0]( xi if xi.dim() == 1 else xi[:, 0] )
 		# NAR resp
 		else:
 			x = sum( [ self.embeddings[k+1]( xi[:, k] ) * (self.weight[k+1] if self.weight is not None else 1) for k in range(xi.shape[-1]) ] )
@@ -147,19 +147,13 @@ class AudioEmbedding(nn.Module):
 		self.sums = sums
 
 	# maintaining compat is hard
-	def forward(self, xi: Tensor, quant_level: int | Tensor | None = None ) -> Tensor:
-		if quant_level is None:
-			quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
-
-		# jank but needed
-		if xi.dim() == 1:
-			return self.embeddings[quant_level]( xi )
+	def forward(self, xi: Tensor, quant_level: int | Tensor | None = None, offset: int = 0 ) -> Tensor:
+		quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
 		
-		offset = 0 if self.mode == "prom" else 1
 		if self.sums and quant_level > 0:
 			x = sum( [ self.embeddings[k + offset]( xi[:, k] ) for k in range( quant_level ) ] )
 		else:
-			k = quant_level - 1
+			k = quant_level
 			x = self.embeddings[k + offset]( xi if xi.dim() == 1 else xi[:, k] )
 
 		return x
@@ -218,6 +212,10 @@ class Base(nn.Module):
 		return 1
 
 	@property
+	def capabilities(self) -> list[str]:
+		raise NotImplementedError
+
+	@property
 	def stop_token(self):
 		if not self.causal:
 			raise ValueError("Not using stop token!")
@@ -273,7 +271,8 @@ class Base(nn.Module):
 		self.langs_emb = None
 		self.tones_emb = None
 		self.tasks_emb = None
-		self.rvq_level_emb = None
+		self.rvq_l_emb = None
+		self.len_emb = None
 
 		if self.version == 1: # legacy
 			n_prom_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
@@ -298,7 +297,7 @@ class Base(nn.Module):
 			)
 			self.resps_emb = AudioEmbedding(
 				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
-				"resp",
+				"resp:len" if "len" in self.capabilities else "resp",
 				sums=self.config.audio_embedding_sums if self.config is not None else True
 			)
 
@@ -314,7 +313,10 @@ class Base(nn.Module):
 		# this *might* help for AR and NAR tasks since we explicitly specify the current RVQ level for a sequence, rather than having it "encoded" in the embeddings
 		# this ***might*** let me also unify the proms_emb and resps_embedding
 		if self.version >= 5:
-			self.rvq_level_emb = Embedding(self.n_resp_levels, d_model)
+			self.rvq_l_emb = Embedding(self.n_resp_levels, d_model)
+		
+			# experimental NAR-only mode
+			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
 
 		# this would be nicer to be a stop token or live inside an embedding
 		self.sep = nn.Parameter(torch.randn(d_model))
@@ -623,6 +625,8 @@ class Base(nn.Module):
 
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
+		len_list: list[Tensor] | None = None,
+		task_list: list[str] | None = None,
 
 		quant_levels: int | list[int] | Tensor | None = None
 	):
@@ -632,17 +636,41 @@ class Base(nn.Module):
 		inputs = [ [] for _ in range(batch_size) ]
 		for i in range(batch_size):
 			quant_level = quant_levels[i] if quant_levels is not None else 0
+			task_type = task_list[i] if task_list is not None else "tts"
 
-			if text_list is not None:
-				inputs[i].append( ( "text", text_list[i] ) )
+			inputs[i].append( ( "task", task_type ) )
 
-			if self.rvq_level_emb is not None:
-				inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
+			# <text><sep><rvq lvl><sep><prom><sep><resp>
+			if task_type == "tts":
+				if text_list is not None:
+					inputs[i].append( ( "text", text_list[i] ) )
+				if self.rvq_l_emb is not None:
+					inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
+				if proms_list is not None:
+					inputs[i].append( ( "prom", proms_list[i] ) )
+				if resps_list is not None:
+					inputs[i].append( ( "resp", resps_list[i] ) )
+			# <text><sep><rvq lvl><prom><sep><len>
+			elif task_type == "len":
+				# throw an error so we don't silently train without this
+				if self.len_emb is None:
+					raise Exception(f"Requesting task `{task_type}` but corresponding embedding is not defined.")
+				if text_list is not None:
+					inputs[i].append( ( "text", text_list[i] ) )
+				# technically will always be level 0 but for the sake of keeing the input formatting coherent...
+				if self.rvq_l_emb is not None:
+					# override to 0 (I don't know if this change propagates, I'm not familiar with when python passes by (copied) value or reference)
+					quant_levels[i] = 0
+					# inputs[i].append( ( "quant_level", torch.Tensor([ 0 ]).to(device=device, dtype=torch.int16) ) )
+				if proms_list is not None:
+					inputs[i].append( ( "prom", proms_list[i] ) )
 
-			if proms_list is not None:
-				inputs[i].append( ( "prom", proms_list[i] ) )
-			if resps_list is not None:
-				inputs[i].append( ( "resp", resps_list[i] ) )
+				if len_list is not None:
+					inputs[i].append( ( "len", len_list[i] ) )
+				# "encode" length to tokens for 0-9 + stop
+				elif resps_list is not None:
+					# yes this could be encoded better
+					inputs[i].append( ( "len", torch.Tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ]).to(device=device, dtype=torch.int16) ) )
 
 		return inputs
 
@@ -656,26 +684,40 @@ class Base(nn.Module):
 			batch = []
 			quant_level = quant_levels[batch_index] if quant_levels is not None else 0
 			for name, input in batch_input:
+				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
 				embedding = None
-				if name == "text":
+
+				if name == "task":
+					# noop
+					# *maybe* inject a token for specifying task type
+					...
+					continue
+				elif name == "text":
 					embedding = self.text_emb( input )
-				elif name == "quant_level" and self.rvq_level_emb is not None:
-					embedding = self.rvq_level_emb( input )
+				elif name == "quant_level" and self.rvq_l_emb is not None:
+					embedding = self.rvq_l_emb( input )
 				elif name == "lang" and self.langs_emb is not None:
 					embedding = self.langs_emb( input )
 				elif name == "prom":
 					# get RVQ level 0, or up to targetted RVQ level inference
-					embedding = self.proms_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], quant_level if self.version >= 5 else None )
+					embedding = self.proms_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], offset = 0 )
 				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
-					# get RVQ level 0, or up to targetted RVQ level inference
-					embedding = self.resps_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], quant_level )
+					if "len" in self.capabilities and quant_level == 0:
+						# fill with "stop" tokens for NAR-only model
+						embedding = self.resps_emb( torch.full_like(input if input.dim() == 1 else input[..., 0], self.stop_token), offset = 0 )
+					else:
+						# get RVQ level 0, or up to targetted RVQ level inference
+						embedding = self.resps_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], offset = 0 if quant_level == 0 else 1 )
+				elif name == "len" and self.len_emb is not None:
+					embedding = self.len_emb( input )
 				else:
+					# should probably raise an exception so things aren't processed silently
 					continue
 
 				batch.append(embedding)
-	
+			
 			x_list.append( _join( batch, self.sep ) )
 
 		return x_list
@@ -690,22 +732,24 @@ class Base(nn.Module):
 		# old, "naive" way, no loss factoring
 		if not self.config.loss_factors:
 			target_list = []
+			task_list = []
 
 			for batch_index, batch in enumerate(inputs):
 				quant_level = quant_levels[batch_index]
-				prev_quant_level = 0 if quant_level == 0 else quant_level - 1
 				target = []
 				for name, input in batch:
-					if name == "prom":
+					if name == "task":
+						task_list.append( input )
+					elif name == "prom":
 						# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
 						if self.version < 4 or (self.version >= 5 and self.config.audio_embedding_sums):
 							target.append( torch.full_like(input[..., 0], self.ignore_index) )
 						# we *CAN* directly map to proms
 						else:
-							target.append( input if input.dim() == 1 else input[:, prev_quant_level] )
+							target.append( input if input.dim() == 1 else input[:, quant_level] )
 					elif name == "resp":
 						target.append( input if input.dim() == 1 else input[:, quant_level] )
-					elif name in ["text", "quant_level", "lang", "tone"]:
+					elif name in ["text", "quant_level", "lang", "tone", "len"]:
 						target.append( input )
 
 				target_list.append( _join( target, torch.tensor(self.ignore_index, device=target[-1].device) ) )
@@ -713,8 +757,12 @@ class Base(nn.Module):
 			batch_size = len(target_list)
 			# modify only for the AR so it can properly behave like a transformer
 			for i in range(batch_size):
-				if quant_levels is not None and quant_levels[i] > 0:
-					continue
+				if "len" in self.capabilities:
+					if task_list[i] != "len":
+						continue
+				else:
+					if quant_levels is not None and quant_levels[i] > 0:
+						continue
 
 				l = self.causal_size
 				logits[i] = logits[i][..., :-l, :] # shift the target so that token n...
@@ -758,7 +806,6 @@ class Base(nn.Module):
 
 		for i, batch in enumerate( inputs ):
 			quant_level = quant_levels[i]
-			prev_quant_level = 0 if quant_level == 0 else quant_level - 1
 
 			it = 0
 			for name, input in batch:
@@ -767,7 +814,10 @@ class Base(nn.Module):
 					input = input if input.dim() == 1 else input[:, quant_level]
 				# select prom level
 				elif name == "prom":
-					input = input[:, prev_quant_level]
+					input = input[:, quant_level]
+				# meta-input, no corresponding token at the moment
+				elif name == "task":
+					continue
 
 				seq_len = input.shape[0]
 
@@ -776,7 +826,7 @@ class Base(nn.Module):
 				
 				# for the AR, shift sequence so that it predicts the next token
 				#     (the NAR predicts the next token in place, so it's not necessary to do any modifications for it)
-				if quant_level == 0:
+				if quant_level == 0 and seq_len > 1:
 					l = self.causal_size
 					logit = logit[..., :-l, :]
 					input = input[..., l:] # shift sequence to the right by one (or causal chunk size)
@@ -793,7 +843,7 @@ class Base(nn.Module):
 
 		for name, batch in info.items():
 			loss_factor = self.loss_factor(name)
-			if name not in ["text", "prom", "resp"]:
+			if name not in ["text", "prom", "resp", "len"]:
 				continue
 
 			if loss_factor == 0.0:
