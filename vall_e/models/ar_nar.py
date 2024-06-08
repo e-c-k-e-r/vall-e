@@ -142,9 +142,11 @@ class AR_NAR(Base):
 								index = i
 						return int(index)
 
-					quant_levels = torch.Tensor([ generate(0 if self.causal else 1, self.n_resp_levels) for _ in range(batch_size) ]).to(dtype=torch.int16)
+					#quant_levels = torch.Tensor([ generate(0 if self.causal else 1, self.n_resp_levels) for _ in range(batch_size) ]).to(dtype=torch.int16)
+					quant_levels = [ generate(0 if self.causal else 1, self.n_resp_levels) for _ in range(batch_size) ]
 				else:
-					quant_levels = torch.randint(0 if self.causal else 1, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+					#quant_levels = torch.randint(0 if self.causal else 1, self.n_resp_levels, (batch_size,)) # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+					quant_levels = [ random.randint(0 if self.causal else 1, self.n_resp_levels) for _ in range(batch_size) ] # randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)] # r if l == 0 is technically correct since only r[:, 0] is passed through the embedding, but this should save some VRAM
 				
@@ -251,7 +253,7 @@ class AR_NAR(Base):
 				lang_list=lang_list,
 				tone_list=tone_list,
 
-				quant_levels=torch.Tensor( [ 0 for _ in range( max( batch_size, sampling_beam_width ) ) ] ).to( device=device, dtype=torch.int32 ),
+				quant_levels=[ 0 for _ in range( max( batch_size, sampling_beam_width ) ) ]
 			)
 
 			if recurrent_state is not None:

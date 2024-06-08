@@ -29,10 +29,10 @@ def train_feeder(engine, batch):
 		if engine.hyper_config.experimental:
 			batch_size = len(batch["text"])
 			if cfg.model.interleave:
-				quant_levels = None	
+				quant_levels = 0	
 				resps_list = [ resp for resp in batch["resps"] ]
 			else:
-				quant_levels = torch.randint(0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels, (batch_size,))
+				quant_levels = [ random.randint( 0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels) for _ in range(batch_size) ]
 				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, batch["resps"]) ]
 
 			input_ids, attention_mask = fold_inputs(
