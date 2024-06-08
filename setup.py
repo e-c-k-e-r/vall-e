@@ -8,7 +8,6 @@ def shell(*args):
     out = subprocess.check_output(args)
     return out.decode("ascii").strip()
 
-
 def write_version(version_core, pre_release=True):
     if pre_release:
         time = shell("git", "log", "-1", "--format=%cd", "--date=iso")
@@ -23,7 +22,6 @@ def write_version(version_core, pre_release=True):
 
     return version
 
-
 with open("README.md", "r") as f:
     long_description = f.read()
 
@@ -37,31 +35,60 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
-    install_requires=(["deepspeed>=0.7.7"] if not sys.platform.startswith("win") else []) +[
+    install_requires=(
+        # training backends
+        ["deepspeed>=0.7.7"] if not sys.platform.startswith("win") else [])
+        + [
+        # logging niceties
         "coloredlogs>=15.0.1",
+        "humanize>=4.4.0",
+        "matplotlib>=3.6.0",
+        "pandas>=1.5.0",
+
+        # boiler plate niceties
         "diskcache>=5.4.0",
         "einops>=0.6.0",
-        "encodec>=0.1.1",
-        "phonemizer>=2.1.0",
-        "matplotlib>=3.6.0",
-        "numpy",
-        "omegaconf==2.0.6",
-        "tqdm>=4.64.1",
-        "humanize>=4.4.0",
+        "tqdm",
+
+        # HF bloat
+        "tokenizers>4.37.0",
         "transformers>4.37.0",
 
-        "pandas>=1.5.0",
+        # training bloat
+        "auraloss[all]", # [all] is needed for MelSTFTLoss
+        "h5py",
+        "prodigyopt @ git+https://github.com/konstmish/prodigy",
+
+        # practically the reason to use python
+        "numpy",
         "torch>=1.13.0",
         "torchaudio>=0.13.0",
         "torchmetrics",
 
-        "auraloss[all]",
+        # core foundations
+        "phonemizer>=2.1.0",
+        "encodec>=0.1.1",
         "vocos",
-        "h5py",
-        "torchscale @ git+https://git.ecker.tech/mrq/torchscale",
-        "prodigyopt @ git+https://github.com/konstmish/prodigy",
-
         "descript-audio-codec",
+
+        # gradio web UI
+        "gradio"
+        
     ],
+    extras_require = {
+        "all": [
+            # retnet backend (even though two internal copies exist)
+            "torchscale @ git+https://git.ecker.tech/mrq/torchscale",
+            # bitnet
+            "bitnet",
+            # mamba
+            "causal-conv1d",
+            "mamba-ssm",
+
+            # attention helpers
+            "xformers",
+            # "flash-attn" --no-build-isolation # commented out right now because I want to query this for Volta freaks like me who can't use it
+        ]
+    },
     url="https://git.ecker.tech/mrq/vall-e",
 )

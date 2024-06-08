@@ -32,7 +32,8 @@ class TTS():
 		try:
 			cfg.format()
 		except Exception as e:
-			pass
+			print("Error while parsing config YAML:")
+			raise e # throw an error because I'm tired of silent errors messing things up for me
 
 		if amp is None:
 			amp = cfg.inference.amp

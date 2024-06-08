@@ -6,6 +6,8 @@ import os
 import subprocess
 import sys
 import time
+import argparse
+import yaml
 
 import torch
 
@@ -14,15 +16,13 @@ from dataclasses import asdict, dataclass, field
 from functools import cached_property
 from pathlib import Path
 
-from omegaconf import OmegaConf
-
 from .utils.distributed import world_size
 
 # Yuck
 from transformers import PreTrainedTokenizerFast
 
 @dataclass()
-class _Config:
+class BaseConfig:
 	cfg_path: str | None = None
 
 	@property
@@ -81,39 +81,29 @@ class _Config:
 		with open(path, "w") as f:
 			f.write(self.dumps())
 
-	@staticmethod
-	def _is_cfg_argv(s):
-		return "=" in s and "--" not in s
-
 	@classmethod
 	def from_yaml( cls, yaml_path ):
-		return cls.from_cli( [f'yaml="{yaml_path}"'] )
+		return cls.from_cli( [f'--yaml="{yaml_path}"'] )
 
 	@classmethod
 	def from_cli(cls, args=sys.argv):
-		cli_cfg = OmegaConf.from_cli([s for s in args if cls._is_cfg_argv(s)])
+		# legacy support for yaml=`` format
+		for i, arg in enumerate(args):
+			if arg.startswith("yaml"):
+				args[i] = f'--{arg}'
 
-		# Replace argv to ensure there are no omegaconf options, for compatibility with argparse.
-		sys.argv = [s for s in sys.argv if not cls._is_cfg_argv(s)]
+		parser = argparse.ArgumentParser(allow_abbrev=False)
+		parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
+		args, unknown = parser.parse_known_args(args=args)
 
-		if cli_cfg.get("help"):
-			print(f"Configurable hyperparameters with their default values:")
-			print(json.dumps(asdict(cls()), indent=2, default=str))
-			exit()
+		state = {}
+		if args.yaml:
+			cfg_path = args.yaml
+			
+			state = yaml.safe_load(open(cfg_path, "r", encoding="utf-8"))
+			state.setdefault("cfg_path", cfg_path)
 
-		if "yaml" in cli_cfg:
-			yaml_cfg = OmegaConf.load(cli_cfg.yaml)
-			yaml_path = Path(cli_cfg.yaml).absolute()
-			cfg_path = Path(*yaml_path.relative_to(Path.cwd()).parts[:-1])
-			cfg_path = cfg_path.with_suffix("")
-			cfg_path = f'./{cfg_path}'
-
-			yaml_cfg.setdefault("cfg_path", cfg_path)
-			cli_cfg.pop("yaml")
-		else:
-			yaml_cfg = {}
-		merged = OmegaConf.merge(yaml_cfg, cli_cfg)
-		return cls(**dict(merged))
+		return cls(**state)
 
 	def __repr__(self):
 		return str(self)
@@ -621,7 +611,7 @@ class Optimizations:
 	fp8: bool = False # use fp8
 
 @dataclass()
-class Config(_Config):
+class Config(BaseConfig):
 	device: str = "cuda"
 	mode: str = "training" # "inferencing"
 	experimental: bool = False # So I can stop commenting out things when committing
@@ -668,6 +658,7 @@ class Config(_Config):
 			return diskcache.Cache(self.cache_dir).memoize
 		return lambda: lambda x: x
 
+	# I don't remember why this is needed
 	def load_yaml( self, config_path ):
 		tmp = Config.from_yaml( config_path )
 		self.__dict__.update(tmp.__dict__)
@@ -759,6 +750,10 @@ class Config(_Config):
 		if self.trainer.activation_checkpointing is not None:
 			self.trainer.gradient_checkpointing = self.trainer.activation_checkpointing
 
+		# load our HDF5 file if requested here
+		if self.dataset.use_hdf5:
+			self.load_hdf5()
+
 # Preserves the old behavior
 class NaiveTokenizer:
 	def get_vocab( self ):
@@ -787,15 +782,12 @@ class NaiveTokenizer:
 
 cfg = Config.from_cli()
 
-# OmegaConf might not coerce the dicts into the @dataclass decorated classes, so we (try to) coerce them ourselves
+# some safety for remapping deprecated formats and re-coercing uninitialized properties into actual types
 try:
 	cfg.format()
-	if cfg.dataset.use_hdf5:
-		cfg.load_hdf5()
 except Exception as e:
-	cfg.dataset.use_hdf5 = False
-	print("Error while parsing config YAML:", e)
-	pass
+	print("Error while parsing config YAML:")
+	raise e # throw an error because I'm tired of silent errors messing things up for me
 
 try:
 	from transformers import PreTrainedTokenizerFast
