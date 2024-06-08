@@ -169,7 +169,7 @@ def run_eval(engines, eval_name, dl):
 						resps_list[i] = torch.stack( resp ).t()
 			else:
 				if "len" in engine.hyper_config.capabilities:
-					len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=steps )
+					len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=10 ) # don't need more than that
 					resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list )
 				else:
 					if "ar" in engine.hyper_config.capabilities:
