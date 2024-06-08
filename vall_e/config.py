@@ -99,9 +99,8 @@ class BaseConfig:
 		state = {}
 		if args.yaml:
 			cfg_path = args.yaml
-			
 			state = yaml.safe_load(open(cfg_path, "r", encoding="utf-8"))
-			state.setdefault("cfg_path", cfg_path)
+			state.setdefault("cfg_path", cfg_path.parent)
 
 		return cls(**state)
 
@@ -670,9 +669,9 @@ class Config(BaseConfig):
 		if self.distributed:
 			self.dataset.hdf5_flag = "r"
 		try:
-			self.hdf5 = h5py.File(f'{self.cfg_path}/{self.dataset.hdf5_name}', 'a' if write else self.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
+			self.hdf5 = h5py.File(f'{self.relpath}/{self.dataset.hdf5_name}', 'a' if write else self.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
 		except Exception as e:
-			print("Error while opening HDF5 file:", f'{self.cfg_path}/{self.dataset.hdf5_name}', str(e))
+			print("Error while opening HDF5 file:", f'{self.relpath}/{self.dataset.hdf5_name}', str(e))
 			self.dataset.use_hdf5 = False
 
 	def format( self ):
