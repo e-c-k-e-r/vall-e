@@ -204,7 +204,7 @@ class Model:
 	attention: str = "auto"
 	audio_embedding_sums: bool = True
 	dropout: float = 0.1 # adjustable dropout value
-	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 0.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
+	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
 	experimental: bool = False # for now it sets things to be HF compatible

@@ -692,7 +692,12 @@ class Base(nn.Module):
 				target = []
 				for name, input in batch:
 					if name == "prom":
-						target.append( torch.full_like(input[..., 0], self.ignore_index) )
+						# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
+						if self.version < 4 or (self.version >= 5 and self.config.audio_embedding_sums):
+							target.append( torch.full_like(input[..., 0], self.ignore_index) )
+						# we *CAN* directly map to proms
+						else:
+							target.append( input if input.dim() == 1 else input[:, quant_level-1] )
 					elif name == "resp":
 						target.append( input if input.dim() == 1 else input[:, quant_level-1] )
 					elif name in ["text", "quant_level", "lang", "tone"]:
