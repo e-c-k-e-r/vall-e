@@ -168,13 +168,17 @@ def run_eval(engines, eval_name, dl):
 					for i, resp in enumerate( resps_list ):
 						resps_list[i] = torch.stack( resp ).t()
 			else:
-				if "ar" in engine.hyper_config.capabilities:
-					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
+				if "len" in engine.hyper_config.capabilities:
+					len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=steps )
+					resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list )
 				else:
-					resps_list = [ resp[:, 0] for resp in batch["resps"] ]
+					if "ar" in engine.hyper_config.capabilities:
+						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
+					else:
+						resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
-				if "nar" in engine.hyper_config.capabilities:
-					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
+					if "nar" in engine.hyper_config.capabilities:
+						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
 
 			process( name, batch, resps_list )
 

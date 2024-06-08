@@ -661,7 +661,7 @@ class Base(nn.Module):
 				if self.rvq_l_emb is not None:
 					# override to 0 (I don't know if this change propagates, I'm not familiar with when python passes by (copied) value or reference)
 					quant_levels[i] = 0
-					# inputs[i].append( ( "quant_level", torch.Tensor([ 0 ]).to(device=device, dtype=torch.int16) ) )
+					inputs[i].append( ( "quant_level", torch.Tensor([ 0 ]).to(device=device, dtype=torch.int16) ) )
 				if proms_list is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
 
@@ -709,7 +709,7 @@ class Base(nn.Module):
 						embedding = self.resps_emb( torch.full_like(input if input.dim() == 1 else input[..., 0], self.stop_token), offset = 0 )
 					else:
 						# get RVQ level 0, or up to targetted RVQ level inference
-						embedding = self.resps_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], offset = 0 if quant_level == 0 else 1 )
+						embedding = self.resps_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], offset = 0 if quant_level == 0 or "len" in self.capabilities else 1 )
 				elif name == "len" and self.len_emb is not None:
 					embedding = self.len_emb( input )
 				else:

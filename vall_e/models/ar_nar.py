@@ -158,10 +158,10 @@ class AR_NAR(Base):
 								index = i
 						return int(index)
 
-					quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for _ in range(batch_size) ]
+					quant_levels = [ 0 if task_list[i] == "len" else generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
 				else:
 					# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1]) for _ in range(batch_size) ]
+					quant_levels = [ 0 if task_list[i] == "len" else random.randint(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
 
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 				
@@ -290,6 +290,7 @@ class AR_NAR(Base):
 		task_list = [ "len" if "len" in self.capabilities else "tts" for _ in range(batch_size) ]
 
 		if "len" in self.capabilities:
+			sequence_list = [ torch.Tensor([0]).to(device=device,dtype=torch.int16) for _ in range(batch_size) ]
 			for n in trange(10, desc="AR"):
 				len_list = sequence_list
 
@@ -309,6 +310,10 @@ class AR_NAR(Base):
 				)
 
 				r = [ logit[-1:].argmax(dim=1) for logit in logits ]
+				# sanitize
+				for i, token in enumerate(r):
+					if token > 10:
+						r[i] = 0
 
 				# append tokens
 				for i, ri in enumerate(r):
