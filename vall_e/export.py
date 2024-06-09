@@ -63,7 +63,7 @@ def main():
 	parser = argparse.ArgumentParser("Save trained model to path.")
 	parser.add_argument("--module-only", action='store_true')
 	parser.add_argument("--hf", action='store_true', default=None) # convert to HF-style
-	args = parser.parse_args()
+	args, unknown = parser.parse_known_args()
 
 	if args.module_only:
 		cfg.trainer.load_module_only = True

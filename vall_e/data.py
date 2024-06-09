@@ -1230,7 +1230,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser("Save trained model to path.")
 	parser.add_argument("--action", type=str)
 	parser.add_argument("--tasks", type=str)
-	args = parser.parse_args()
+	args, unknown = parser.parse_known_args()
 
 	task = args.action
 

@@ -104,7 +104,7 @@ if __name__ == "__main__":
 
 	parser.add_argument("--filename", default="log.txt")
 	parser.add_argument("--group-level", default=1)
-	args = parser.parse_args()
+	args, unknown = parser.parse_known_args()
 
 	path = cfg.rel_path / "logs"
 	paths = path.rglob(f"./*/{args.filename}")

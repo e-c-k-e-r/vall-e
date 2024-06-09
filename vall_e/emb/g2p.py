@@ -59,24 +59,3 @@ def encode(text: str, language="en-us", backend="auto") -> list[str]:
 
 	return tokenized.split(" ")
 	"""
-
-
-@torch.no_grad()
-def main():
-	parser = argparse.ArgumentParser()
-	parser.add_argument("folder", type=Path)
-	parser.add_argument("--suffix", type=str, default=".txt")
-	args = parser.parse_args()
-
-	paths = list(args.folder.rglob(f"*{args.suffix}"))
-
-	for path in tqdm(paths):
-		phone_path = path.with_name(path.stem.split(".")[0] + ".phn.txt")
-		if phone_path.exists():
-			continue
-		phones = encode(open(path, "r", encoding="utf-8").read())
-		open(phone_path, "w", encoding="utf-8").write(" ".join(phones))
-
-
-if __name__ == "__main__":
-	main()

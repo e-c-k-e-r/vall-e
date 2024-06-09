@@ -378,25 +378,3 @@ def merge_audio( *args, device="cpu", scale=[], levels=cfg.model.max_levels ):
 
 	combined = sum(decoded) / len(decoded)
 	return encode(combined, cfg.sample_rate, device="cpu", levels=levels)[0].t()
-
-def main():
-	parser = argparse.ArgumentParser()
-	parser.add_argument("folder", type=Path)
-	parser.add_argument("--suffix", default=".wav")
-	parser.add_argument("--device", default="cuda")
-	parser.add_argument("--backend", default="encodec")
-	args = parser.parse_args()
-
-	device = args.device
-	paths = [*args.folder.rglob(f"*{args.suffix}")]
-
-	for path in tqdm(paths):
-		out_path = _replace_file_extension(path, ".qnt.pt")
-		if out_path.exists():
-			continue
-		qnt = encode_from_file(path, device=device)
-		torch.save(qnt.cpu(), out_path)
-
-
-if __name__ == "__main__":
-	main()

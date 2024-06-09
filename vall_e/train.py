@@ -6,6 +6,7 @@ from .emb import qnt
 
 from .utils import setup_logging, to_device, trainer, flatten_dict, do_gc
 from .data import fold_inputs, unfold_outputs
+from .utils.distributed import is_global_leader
 
 import auraloss
 import json
@@ -205,7 +206,7 @@ def train():
 	# create log folder
 	setup_logging(cfg.log_dir)
 	# copy config yaml to backup
-	if cfg.yaml_path is not None:
+	if cfg.yaml_path is not None and is_global_leader():
 		shutil.copy( cfg.yaml_path, cfg.log_dir / "config.yaml" )
 
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
