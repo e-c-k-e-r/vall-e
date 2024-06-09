@@ -14,6 +14,7 @@ import random
 import torch
 import torch.nn.functional as F
 import traceback
+import shutil
 
 from collections import defaultdict
 
@@ -201,7 +202,11 @@ def train():
 	parser.add_argument("--eval", action="store_true", default=None)
 	args, unknown = parser.parse_known_args()
 
+	# create log folder
 	setup_logging(cfg.log_dir)
+	# copy config yaml to backup
+	if cfg.yaml_path is not None:
+		shutil.copy( cfg.yaml_path, cfg.log_dir / "config.yaml" )
 
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 	

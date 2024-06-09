@@ -23,31 +23,35 @@ from transformers import PreTrainedTokenizerFast
 
 @dataclass()
 class BaseConfig:
-	cfg_path: str | None = None
+	yaml_path: str | None = None
 
 	@property
-	def relpath(self):
+	def cfg_path(self):
+		return Path(self.yaml_path.parent) if self.yaml_path is not None else None
+
+	@property
+	def rel_path(self):
 		return Path(self.cfg_path)
 
 	@property
 	def cache_dir(self):
-		return self.relpath / ".cache"
+		return self.rel_path / ".cache"
 
 	@property
 	def data_dir(self):
-		return self.relpath / "data"
+		return self.rel_path / "data"
 	
 	@property
 	def metadata_dir(self):
-		return self.relpath / "metadata"
+		return self.rel_path / "metadata"
 
 	@property
 	def ckpt_dir(self):
-		return self.relpath / "ckpt"
+		return self.rel_path / "ckpt"
 
 	@property
 	def log_dir(self):
-		return self.relpath / "logs" / str(self.start_time)
+		return self.rel_path / "logs" / str(self.start_time)
 
 	@cached_property
 	def start_time(self):
@@ -98,9 +102,9 @@ class BaseConfig:
 
 		state = {}
 		if args.yaml:
-			cfg_path = args.yaml
-			state = yaml.safe_load(open(cfg_path, "r", encoding="utf-8"))
-			state.setdefault("cfg_path", cfg_path.parent)
+			yaml_path = args.yaml
+			state = yaml.safe_load(open(yaml_path, "r", encoding="utf-8"))
+			state.setdefault("yaml_path", yaml_path)
 
 		return cls(**state)
 
@@ -376,10 +380,10 @@ class DeepSpeed:
 			autotune_params['enabled'] = True
 		
 		if "results_dir" not in autotune_params:
-			autotune_params['results_dir'] = str( cfg.relpath / "autotune" / "results" )
+			autotune_params['results_dir'] = str( cfg.rel_path / "autotune" / "results" )
 		
 		if "exps_dir" not in autotune_params:
-			autotune_params['exps_dir'] = str( cfg.relpath / "autotune" / "exps_" )
+			autotune_params['exps_dir'] = str( cfg.rel_path / "autotune" / "exps_" )
 
 		# DeepSpeed fp16 is incompatible with its AMP
 		if cfg.trainer.weight_dtype.lower() == "float16":
@@ -653,7 +657,7 @@ class Config(BaseConfig):
 
 	@cached_property
 	def diskcache(self):
-		if self.cfg_path is not None and self.dataset.cache:
+		if self.yaml_path is not None and self.dataset.cache:
 			return diskcache.Cache(self.cache_dir).memoize
 		return lambda: lambda x: x
 
@@ -669,9 +673,9 @@ class Config(BaseConfig):
 		if self.distributed:
 			self.dataset.hdf5_flag = "r"
 		try:
-			self.hdf5 = h5py.File(f'{self.relpath}/{self.dataset.hdf5_name}', 'a' if write else self.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
+			self.hdf5 = h5py.File(f'{self.rel_path}/{self.dataset.hdf5_name}', 'a' if write else self.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
 		except Exception as e:
-			print("Error while opening HDF5 file:", f'{self.relpath}/{self.dataset.hdf5_name}', str(e))
+			print("Error while opening HDF5 file:", f'{self.rel_path}/{self.dataset.hdf5_name}', str(e))
 			self.dataset.use_hdf5 = False
 
 	def format( self ):
@@ -790,7 +794,7 @@ except Exception as e:
 
 try:
 	from transformers import PreTrainedTokenizerFast
-	cfg.tokenizer = (cfg.relpath if cfg.cfg_path is not None else Path("./data/")) / cfg.tokenizer
+	cfg.tokenizer = (cfg.rel_path if cfg.yaml_path is not None else Path("./data/")) / cfg.tokenizer
 	cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(cfg.tokenizer))
 except Exception as e:
 	cfg.tokenizer = NaiveTokenizer()

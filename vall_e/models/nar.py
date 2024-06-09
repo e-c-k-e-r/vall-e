@@ -357,9 +357,9 @@ def example_usage():
 	model = NAR(**kwargs).to(device)
 	steps = 200 
 
-	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.cfg_path is not None else "prodigy"
-	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.cfg_path is not None else ""
-	learning_rate = cfg.hyperparameters.learning_rate if cfg.cfg_path is not None else None
+	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
+	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
+	learning_rate = cfg.hyperparameters.learning_rate if cfg.yaml_path is not None else None
 
 	if cfg.optimizations.dadaptation:
 		# do not combine the two

@@ -965,7 +965,7 @@ def create_datasets():
 	train_dataset = Dataset( training=True )
 	val_dataset = Dataset( phone_symmap=train_dataset.phone_symmap, training=False )
 
-	train_state_path = cfg.relpath / f"sampler.rank{global_rank()}.pt"
+	train_state_path = cfg.rel_path / f"sampler.rank{global_rank()}.pt"
 	if train_state_path.exists():
 		train_dataset.load_state_dict( train_state_path )
 
@@ -1286,7 +1286,7 @@ if __name__ == "__main__":
 			for i in range(len(v)):
 				print(f'{k}[{i}]:', v[i])
 
-		#train_dl.dataset.save_state_dict(cfg.relpath / "train_dataset.pt")
+		#train_dl.dataset.save_state_dict(cfg.rel_path / "train_dataset.pt")
 
 	elif args.action == "tasks":
 		index = 0

@@ -106,7 +106,7 @@ if __name__ == "__main__":
 	parser.add_argument("--group-level", default=1)
 	args = parser.parse_args()
 
-	path = cfg.relpath / "logs"
+	path = cfg.rel_path / "logs"
 	paths = path.rglob(f"./*/{args.filename}")
 
 	args.models = [ model for model in cfg.model.get() if model.training and (args.model == "*" or model.name in args.model) ]
@@ -116,5 +116,5 @@ if __name__ == "__main__":
 
 	plot(paths, args)
 
-	out_path = cfg.relpath / "metrics.png"
+	out_path = cfg.rel_path / "metrics.png"
 	plt.savefig(out_path, bbox_inches="tight")

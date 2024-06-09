@@ -186,7 +186,7 @@ def load_engines(training=True):
 
 		# copy embeddings if requested
 		if cfg.model._embeddings is not None:
-			embeddings_path = cfg.relpath / cfg.model._embeddings
+			embeddings_path = cfg.rel_path / cfg.model._embeddings
 			
 			if embeddings_path.exists():
 				embeddings = torch.load(embeddings_path, map_location=torch.device(cfg.device))
