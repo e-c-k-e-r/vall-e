@@ -19,6 +19,23 @@ def get_model(config, training=True):
 			training = training,
 			config = config,
 		)
+	elif "len" in config.capabilities:
+		from .nar import NAR
+		model = NAR(
+			n_text_tokens=config.text_tokens,
+			n_audio_tokens=config.audio_tokens,
+			d_model=config.dim,
+			n_heads=config.heads,
+			n_layers=config.layers,
+			n_experts=config.experts,
+			
+			p_dropout=config.dropout,
+			
+			l_padding = config.input_alignment,
+			
+			training = training,
+			config = config,
+		)
 	else:
 		from .experimental import Model as Experimental
 		model = Experimental(

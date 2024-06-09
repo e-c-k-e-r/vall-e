@@ -1,3 +1,14 @@
+"""
+Core model for handling all VALL-E tasks.
+This should handle all the "low" level things such as:
+* parsing inputs to sequences
+* converting sequences to embeddings
+* forward pass
+* processing loss and returning logits
+
+Additional functionality (preparing inputs, generating full audio) should be delegated to classes that inheret the base model
+"""
+
 import math
 import torch
 import torch.nn.functional as F
@@ -100,6 +111,7 @@ class MultiEmbedding(nn.Module):
 		return x_list
 
 # Embedding that sums each RVQ-bin level within a given input acoustic prompt
+# _Old, to preserve compat with previous models.
 class AudioEmbedding_Old(nn.Module):
 	def __init__(
 		self,
@@ -115,12 +127,12 @@ class AudioEmbedding_Old(nn.Module):
 		# weight influencer for the influence for each level (desu this should be really useless because the weights in the embedding themselves should factor this)
 		self.weight = nn.ParameterList([nn.Parameter( torch.Tensor([1]) ) for i in range(levels)]) if levels is not None else None
 
-	def forward(self, xi: Tensor, offset: int | None = 0 ) -> Tensor:
+	def forward(self, xi: Tensor, quant_level: Tensor | None = None ) -> Tensor:
 		# prom
-		if offset == 0 and xi.shape[-1] > 1:
+		if quant_level is None and xi.shape[-1] > 1:
 			x = sum( [ self.embeddings[k]( xi[:, k] ) * (self.weight[k] if self.weight is not None else 1) for k in range(xi.shape[-1]) ] )
-		# AR resp
-		elif quant_level == 0:
+		# prom / AR resp
+		elif quant_level is None or quant_level == 0:
 			x = self.embeddings[0]( xi if xi.dim() == 1 else xi[:, 0] )
 		# NAR resp
 		else:
@@ -128,26 +140,26 @@ class AudioEmbedding_Old(nn.Module):
 
 		return x
 
+# Embedding that sums each RVQ-bin level within a given input acoustic prompt
+# Mostly to handle some oversights and errors during testing
 class AudioEmbedding(nn.Module):
 	def __init__(
 		self,
 		l_tokens: int, # list of number of tokens (needed because AR resps includes stop token)
 		token_dim: int, # dimensionality of the embedding
-		mode: str, # prom | resp
 		sums: bool = True # whether to sum all previous layers of embeddings to factor in other RVQ bin levels (I do not know which way is better)
 	):
 		super().__init__()
 		# array of embeddings
 		#   proms are [0, prom_levels]
 		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
+		#     + resps cannot share the AR and NAR embeddings, since they do encode whether to predict the same level but in the next token or predict in place but the next level
 		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
-		# 
-		self.mode = mode
 		# 
 		self.sums = sums
 
 	# maintaining compat is hard
-	def forward(self, xi: Tensor, quant_level: int | Tensor | None = None, offset: int = 0 ) -> Tensor:
+	def forward(self, xi: Tensor, offset: int = 0 ) -> Tensor:
 		quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
 		
 		if self.sums and quant_level > 0:
@@ -159,6 +171,8 @@ class AudioEmbedding(nn.Module):
 		return x
 
 class Base(nn.Module):
+	# to-do: clean up this property mess
+
 	@property
 	def causal(self) -> bool:
 		raise NotImplementedError
@@ -292,12 +306,10 @@ class Base(nn.Module):
 		else:
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
-				"prom",
 				sums=self.config.audio_embedding_sums if self.config is not None else True
 			)
 			self.resps_emb = AudioEmbedding(
 				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
-				"resp:len" if "len" in self.capabilities else "resp",
 				sums=self.config.audio_embedding_sums if self.config is not None else True
 			)
 
@@ -700,16 +712,31 @@ class Base(nn.Module):
 					embedding = self.langs_emb( input )
 				elif name == "prom":
 					# get RVQ level 0, or up to targetted RVQ level inference
-					embedding = self.proms_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], offset = 0 )
+					if self.version <= 4:
+						embedding = self.proms_emb( input if quant_level == 0 else input[:, :quant_level] )
+					else:
+						if quant_level == 0:
+							embedding = self.proms_emb( input if input.dim() == 1 else input[:, :1], offset = 0 )
+						else:
+							embedding = self.proms_emb( input if input.dim() == 1 else input[:, :quant_level], offset = 0 )
 				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
 					if "len" in self.capabilities and quant_level == 0:
 						# fill with "stop" tokens for NAR-only model
-						embedding = self.resps_emb( torch.full_like(input if input.dim() == 1 else input[..., 0], self.stop_token), offset = 0 )
+						embedding = self.resps_emb(
+							torch.full_like(input if input.dim() == 1 else input[..., 0], self.stop_token),
+							offset = 0
+						)
 					else:
 						# get RVQ level 0, or up to targetted RVQ level inference
-						embedding = self.resps_emb( input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level], offset = 0 if quant_level == 0 or "len" in self.capabilities else 1 )
+						if self.version <= 4:
+							embedding = self.resps_emb( input if quant_level == 0 else input[:, :quant_level], quant_level )
+						else:
+							embedding = self.resps_emb(
+								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
+								offset = 0 if quant_level == 0 or "len" in self.capabilities else 1
+							)
 				elif name == "len" and self.len_emb is not None:
 					embedding = self.len_emb( input )
 				else:
