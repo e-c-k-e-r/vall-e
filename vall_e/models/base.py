@@ -231,7 +231,7 @@ class Base(nn.Module):
 
 	@property
 	def stop_token(self):
-		if not self.causal:
+		if not self.causal or "len" not in self.capabilities:
 			raise ValueError("Not using stop token!")
 		return self.n_audio_tokens
 
