@@ -27,10 +27,10 @@ class TTS():
 
 		if config:
 			cfg.load_yaml( config )
-			cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 
 		try:
-			cfg.format()
+			cfg.format( training=False )
+			cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 		except Exception as e:
 			print("Error while parsing config YAML:")
 			raise e # throw an error because I'm tired of silent errors messing things up for me
@@ -161,7 +161,19 @@ class TTS():
 			phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
 			lang = to_device(lang, self.device).to(torch.uint8)
 
+			text_list = [ phns ]
+			proms_list = [ prom ]
+
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
+				# AR temp: 1
+				# NAR temp: 0.05
+				# prom size: 3
+				
+				"""
+				resps_list = engine(text_list=text_list, proms_list=proms_list, max_steps=max_ar_steps, sampling_temperature=ar_temp)
+				resps_list = engine(text_list=text_list, proms_list=proms_list, resps_list=resps_list, sampling_temperature=nar_temp)
+				"""
+
 				resps_list = model_ar(
 					text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
 					sampling_temperature=ar_temp,
@@ -181,6 +193,8 @@ class TTS():
 					sampling_top_p=top_p, sampling_top_k=top_k,
 					sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 				)
+				"""
+				"""
 
 			wav, sr = qnt.decode_to_file(resps_list[0], out_path, device=self.device)
 			wavs.append(wav)

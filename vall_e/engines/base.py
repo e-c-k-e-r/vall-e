@@ -371,7 +371,7 @@ class Engines(dict[str, Engine]):
 
 	def set_lr(self, lr):
 		for engine in self.values():
-			if not engine.training:
+			if not engine._training:
 				continue
 			engine.set_lr(lr)
 
@@ -406,7 +406,7 @@ class Engines(dict[str, Engine]):
 			do_gc()
 
 		for name, engine in self.items():
-			if not engine.training:
+			if not engine._training:
 				continue
 
 			device = engine.device

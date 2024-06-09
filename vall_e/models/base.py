@@ -365,7 +365,7 @@ class Base(nn.Module):
 				self.model = MistralModel(MistralConfig(
 					vocab_size=n_resp_tokens,
 					hidden_size=d_model,
-					max_position_embeddings=75 * 60, # max-length of 60 seconds
+					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
 					intermediate_size=d_model*4,
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
@@ -381,7 +381,7 @@ class Base(nn.Module):
 				self.model = MixtralModel(MixtralConfig(
 					vocab_size =n_resp_tokens,
 					hidden_size=d_model,
-					max_position_embeddings=75 * 60, # max-length of 60 seconds
+					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
 					intermediate_size=d_model*4,
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
@@ -410,7 +410,7 @@ class Base(nn.Module):
 				self.model = LlamaModel(LlamaConfig(
 					vocab_size=n_resp_tokens,
 					hidden_size=d_model,
-					max_position_embeddings=75 * 60, # max-length of 60 seconds
+					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
 					intermediate_size=d_model*4,
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
@@ -427,7 +427,7 @@ class Base(nn.Module):
 				self.model = MixtralModel(MixtralConfig(
 					vocab_size =n_resp_tokens,
 					hidden_size=d_model,
-					max_position_embeddings=75 * 60, # max-length of 60 seconds
+					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
 					intermediate_size=d_model*4,
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
@@ -983,6 +983,10 @@ class Base(nn.Module):
 
 		# perform repetition penalizing	
 		logits = [ reptition_penalize(logit, previous=resps[:, -1], factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
+
+		# argmax instead
+		if temperature <= 0.0:
+			return [ logit.argmax(dim=1) for logit in logits ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:

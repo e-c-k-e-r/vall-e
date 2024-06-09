@@ -14,18 +14,18 @@ def main():
 
 	parser.add_argument("--yaml", type=Path, default=None)
 
-	parser.add_argument("--max-ar-steps", type=int, default=6 * 75)
+	parser.add_argument("--max-ar-steps", type=int, default=12 * cfg.dataset.frames_per_second)
 	parser.add_argument("--max-nar-levels", type=int, default=7)
 	parser.add_argument("--max-ar-context", type=int, default=-1)
 
 	parser.add_argument("--ar-temp", type=float, default=1.0)
-	parser.add_argument("--nar-temp", type=float, default=1.0)
+	parser.add_argument("--nar-temp", type=float, default=0.01)
 	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
 	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
 	parser.add_argument("--input-prompt-length", type=float, default=3.0)
 
 	parser.add_argument("--top-p", type=float, default=1.0)
-	parser.add_argument("--top-k", type=int, default=0)
+	parser.add_argument("--top-k", type=int, default=16)
 	parser.add_argument("--repetition-penalty", type=float, default=1.0)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)

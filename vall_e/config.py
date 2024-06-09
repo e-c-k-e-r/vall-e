@@ -87,7 +87,10 @@ class BaseConfig:
 
 	@classmethod
 	def from_yaml( cls, yaml_path ):
-		return cls.from_cli( [f'--yaml="{yaml_path}"'] )
+		state = {}
+		state = yaml.safe_load(open(yaml_path, "r", encoding="utf-8"))
+		state.setdefault("yaml_path", yaml_path)
+		return cls(**state)
 
 	@classmethod
 	def from_cli(cls, args=sys.argv):
@@ -100,13 +103,10 @@ class BaseConfig:
 		parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
 		args, unknown = parser.parse_known_args(args=args)
 
-		state = {}
 		if args.yaml:
-			yaml_path = args.yaml
-			state = yaml.safe_load(open(yaml_path, "r", encoding="utf-8"))
-			state.setdefault("yaml_path", yaml_path)
+			return cls.from_yaml( args.yaml )			
 
-		return cls(**state)
+		return cls(**{})
 
 	def __repr__(self):
 		return str(self)
@@ -678,7 +678,7 @@ class Config(BaseConfig):
 			print("Error while opening HDF5 file:", f'{self.rel_path}/{self.dataset.hdf5_name}', str(e))
 			self.dataset.use_hdf5 = False
 
-	def format( self ):
+	def format( self, training=True ):
 		if isinstance(self.dataset, type):
 			self.dataset = dict()
 
@@ -753,9 +753,23 @@ class Config(BaseConfig):
 		if self.trainer.activation_checkpointing is not None:
 			self.trainer.gradient_checkpointing = self.trainer.activation_checkpointing
 
+		if not training:
+			self.dataset.use_hdf5 = False
+
 		# load our HDF5 file if requested here
 		if self.dataset.use_hdf5:
 			self.load_hdf5()
+
+		# load tokenizer
+		try:
+			from transformers import PreTrainedTokenizerFast
+			cfg.tokenizer = (cfg.rel_path if cfg.yaml_path is not None else Path("./data/")) / cfg.tokenizer
+			cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(cfg.tokenizer))
+		except Exception as e:
+			cfg.tokenizer = NaiveTokenizer()
+			print("Error while parsing tokenizer:", e)
+			pass
+
 
 # Preserves the old behavior
 class NaiveTokenizer:
@@ -791,15 +805,6 @@ try:
 except Exception as e:
 	print("Error while parsing config YAML:")
 	raise e # throw an error because I'm tired of silent errors messing things up for me
-
-try:
-	from transformers import PreTrainedTokenizerFast
-	cfg.tokenizer = (cfg.rel_path if cfg.yaml_path is not None else Path("./data/")) / cfg.tokenizer
-	cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(cfg.tokenizer))
-except Exception as e:
-	cfg.tokenizer = NaiveTokenizer()
-	print("Error while parsing tokenizer:", e)
-	pass
 
 if __name__ == "__main__":
 	print(cfg)
