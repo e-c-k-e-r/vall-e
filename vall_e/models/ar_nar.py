@@ -168,7 +168,7 @@ class AR_NAR(Base):
 					quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
 				else:
 					# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
+					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
 
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 				
@@ -496,7 +496,7 @@ def example_usage():
 	}, f"./data/{cfg.model.arch_type}.pth" )
 	"""
 
-	print(f"AR+NAR parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+	print(f"AR+NAR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.inference_mode()
 	def sample( name, steps=1000 ):

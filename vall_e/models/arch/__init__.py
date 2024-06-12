@@ -54,3 +54,9 @@ try:
 	AVAILABLE_ARCHES.append("mamba2")
 except Exception as e:
 	print("Error importing `mamba` arch:", e)
+
+try:
+	from .mmfreelm import *
+	AVAILABLE_ARCHES.append("mmfreelm")
+except Exception as e:
+	print("Error importing `mmfreelm` arch:", e)

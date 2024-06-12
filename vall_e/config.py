@@ -206,6 +206,7 @@ class Model:
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 	attention: str = "auto"
 	audio_embedding_sums: bool = True
+	split_classifiers: bool = False
 	dropout: float = 0.1 # adjustable dropout value
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
