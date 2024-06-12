@@ -2,24 +2,7 @@
 def get_model(config, training=True):
 	name = config.name
 
-	if not config.experimental:
-		from .ar_nar import AR_NAR
-		model = AR_NAR(
-			n_text_tokens=config.text_tokens,
-			n_audio_tokens=config.audio_tokens,
-			d_model=config.dim,
-			n_heads=config.heads,
-			n_layers=config.layers,
-			n_experts=config.experts,
-			
-			p_dropout=config.dropout,
-			
-			l_padding = config.input_alignment,
-			
-			training = training,
-			config = config,
-		)
-	elif "len" in config.capabilities:
+	if "len" in config.capabilities:
 		from .nar import NAR
 		model = NAR(
 			n_text_tokens=config.text_tokens,
@@ -36,7 +19,7 @@ def get_model(config, training=True):
 			training = training,
 			config = config,
 		)
-	else:
+	elif config.experimental:
 		from .experimental import Model as Experimental
 		model = Experimental(
 			n_text_tokens=config.text_tokens,
@@ -47,6 +30,23 @@ def get_model(config, training=True):
 			n_heads=config.heads,
 			p_dropout=config.dropout,
 
+			config = config,
+		)
+	else:
+		from .ar_nar import AR_NAR
+		model = AR_NAR(
+			n_text_tokens=config.text_tokens,
+			n_audio_tokens=config.audio_tokens,
+			d_model=config.dim,
+			n_heads=config.heads,
+			n_layers=config.layers,
+			n_experts=config.experts,
+			
+			p_dropout=config.dropout,
+			
+			l_padding = config.input_alignment,
+			
+			training = training,
 			config = config,
 		)
 

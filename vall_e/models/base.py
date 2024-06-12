@@ -279,7 +279,9 @@ class Base(nn.Module):
 
 	@property
 	def stop_token(self):
-		if not self.causal and "len" not in self.capabilities:
+		if "len" in self.capabilities:
+			return 0
+		if not self.causal:
 			raise ValueError("Not using stop token!")
 		return self.n_audio_tokens
 
@@ -325,9 +327,15 @@ class Base(nn.Module):
 		
 		self.l_padding = l_padding
 
-		# +1 to include the stop token
 		n_prom_tokens = n_audio_tokens
-		n_resp_tokens = n_audio_tokens + self.causal_size
+
+		if "len" not in self.capabilities:
+			# +1 to include the stop token
+			n_resp_tokens = n_audio_tokens + self.causal_size
+			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+		else:
+			n_resp_tokens = n_audio_tokens
+			l_tokens = [n_resp_tokens] * self.n_resp_levels
 
 		audio_embedding_sums = self.config.audio_embedding_sums if self.config is not None else True
 		split_classifiers = self.config.split_classifiers if self.config is not None else True
@@ -351,7 +359,7 @@ class Base(nn.Module):
 			)
 			# [1024 + STOP] + [1024] * 8
 			self.resps_emb = AudioEmbedding_Old(
-				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
+				l_tokens, d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
 			)
 		else:
@@ -360,7 +368,7 @@ class Base(nn.Module):
 				sums=audio_embedding_sums,
 			)
 			self.resps_emb = AudioEmbedding(
-				[n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1), d_model,
+				l_tokens, d_model,
 				sums=audio_embedding_sums,
 			)
 
@@ -634,13 +642,11 @@ class Base(nn.Module):
 
 			self.metrics = None
 		else:
-			levels = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-
 			self.classifier = None
-			self.classifiers = AudioClassifier( levels, d_model )
+			self.classifiers = AudioClassifier( l_tokens, d_model )
 			self.accuracy_metric = None
 			self.precision_metric = None
-			self.metrics = Metrics( levels )
+			self.metrics = Metrics( l_tokens )
 
 
 	def _forward(
@@ -905,7 +911,7 @@ class Base(nn.Module):
 				self.loss = dict(
 					nll = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) for targets, inputs in zip( target_list, logits ) ]) / batch_size
 				)
-				self.stats = self.metrics( inputs, targets, quant_levels ) if self.metrics is not None else dict(
+				self.stats = self.metrics( logits, target_list, quant_levels ) if self.metrics is not None else dict(
 					acc = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( target_list, logits ) ] ) / batch_size
 				)
 

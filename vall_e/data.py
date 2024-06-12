@@ -615,8 +615,6 @@ class Dataset(_Dataset):
 		prom_length = 0
 		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
 
-		print(trim_length / cfg.dataset.frames_per_second)
-
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
 			if cfg.dataset.use_hdf5:

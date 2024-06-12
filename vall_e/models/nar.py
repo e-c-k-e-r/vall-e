@@ -145,8 +145,8 @@ class NAR(Base):
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
 
-			# is training
-			assert n_levels == self.n_resp_levels
+			# assert n_levels == self.n_resp_levels
+
 			# to-do: make this YAML configurable
 			def sample_task():
 				return "len" if random.random() < p_len_task else "tts"
@@ -170,7 +170,12 @@ class NAR(Base):
 				quant_levels = [ 0 if task_list[i] == "len" else generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
 			else:
 				# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-				quant_levels = [ 0 if task_list[i] == "len" else random.randint(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
+				quant_levels = [ 0 if task_list[i] == "len" else random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
+			
+			# clamp quant_levels because some of my audio was saved for only 8 out of 9 RVQ levels for DAC...
+			for i, resp in enumerate(resps_list):
+				if quant_levels[i] >= resp.shape[-1]:
+					quant_levels[i] = resp.shape[-1] - 1
 
 			resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 
@@ -355,7 +360,7 @@ def example_usage():
 	"""
 
 	model = NAR(**kwargs).to(device)
-	steps = 200 
+	steps = 500 
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
