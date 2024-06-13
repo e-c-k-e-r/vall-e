@@ -51,8 +51,8 @@ setup(
         "tqdm",
 
         # HF bloat
-        "tokenizers>4.37.0",
-        "transformers>4.37.0",
+        "tokenizers",
+        "transformers",
 
         # training bloat
         "auraloss[all]", # [all] is needed for MelSTFTLoss
