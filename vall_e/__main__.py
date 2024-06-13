@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 from .inference import TTS
+from .config import cfg
 
 def path_list(arg):
 	return [Path(p) for p in arg.split(";")]

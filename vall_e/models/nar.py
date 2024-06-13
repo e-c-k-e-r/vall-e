@@ -229,7 +229,25 @@ class NAR(Base):
 					quant_levels=quant_levels,
 				)
 
+				"""
 				resps_list = [ logit[-l:].argmax(dim=1) for logit, l in zip(logits, len_list) ]
+				"""
+
+				resps_list = super().sample(
+					logits=logits,
+					resps_list=prev_list,
+					quant_levels=quant_levels,
+
+					temperature=1.0 if n == 0 else sampling_temperature,
+					min_temperature=sampling_min_temperature,
+					top_p=sampling_top_p,
+					top_k=sampling_top_k,
+					repetition_penalty=sampling_repetition_penalty,
+					repetition_penalty_decay=sampling_repetition_penalty_decay,
+					#length_penalty=sampling_length_penalty,
+					#beam_width=sampling_beam_width,
+					#mirostat=mirostat,
+				)
 
 				if n == 0:
 					prev_list = [ r.unsqueeze(-1).to(device) for r in resps_list ]
