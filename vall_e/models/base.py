@@ -583,7 +583,7 @@ class Base(nn.Module):
 				d_model=d_model,
 				n_layer=n_layers*2,
 				d_intermediate=0,
-				ssm_cfg={"layer": "Mamba2", "chunk_size":64} if self.arch_type == "mamba2" else {},
+				ssm_cfg={"layer": "Mamba2"} if self.arch_type == "mamba2" else {},
 				rms_norm=True,
 				fused_add_norm=True,
 				residual_in_fp32=True,

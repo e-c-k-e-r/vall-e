@@ -430,7 +430,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 200 
+	steps = 50 if cfg.model.arch_type in ["mamba","mamba2"] else 200
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
