@@ -581,8 +581,8 @@ class Base(nn.Module):
 			self.model = MambaMixelModel(
 				vocab_size=n_resp_tokens,
 				d_model=d_model,
-				n_layer=n_layers*2,
-				d_intermediate=0,
+				n_layer=n_layers,
+				d_intermediate=d_model*4,
 				ssm_cfg={"layer": "Mamba2"} if self.arch_type == "mamba2" else {},
 				rms_norm=True,
 				fused_add_norm=True,
@@ -1092,7 +1092,8 @@ class Base(nn.Module):
 		logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 
 		# perform repetition penalizing	
-		logits = [ reptition_penalize(logit, previous=resps[:, -1], factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
+		if "len" not in self.capabilities:
+			logits = [ reptition_penalize(logit, previous=resps[:, -1], factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
 
 		# argmax instead
 		if temperature <= 0.0:

@@ -106,8 +106,10 @@ class Model(LlmArchClass):
 			super().__init__(config=MambaConfig(
 				vocab_size=vocab_size,
 				d_model=d_model,
-				n_layer=n_layers*2,
-				ssm_cfg={"layer": "Mamba2", "chunk_size":64} if cfg.model.arch_type == "mamba2" else {},
+				n_layer=n_layers,
+				d_intermediate=d_model*4,
+				ssm_cfg={"layer": "Mamba2"} if cfg.model.arch_type == "mamba2" else {},
+				rms_norm=True,
 				fused_add_norm=True,
 				residual_in_fp32=True,
 			))

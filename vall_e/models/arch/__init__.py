@@ -49,7 +49,7 @@ except Exception as e:
 	print("Error importing `mixtral` arch:", e)
 
 try:
-	from .mamba import MambaMixelModel, MambaLMHeadModel
+	from .mamba import MambaMixelModel, MambaLMHeadModel, MambaConfig
 	AVAILABLE_ARCHES.append("mamba")
 	AVAILABLE_ARCHES.append("mamba2")
 except Exception as e:
