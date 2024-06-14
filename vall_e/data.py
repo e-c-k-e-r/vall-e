@@ -12,7 +12,7 @@ import itertools
 
 from .config import cfg
 from .emb.qnt import trim, trim_random, repeat_extend_audio, merge_audio, decode_to_file
-from .utils.sampler import Sampler
+from .utils.sampler import PoolSampler, OrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
 
 from collections import defaultdict
@@ -424,6 +424,7 @@ class Dataset(_Dataset):
 	):
 		super().__init__()
 		self._head = None
+		self.shuffle = False
 		self.sampler = None
 
 		self.paths = []
@@ -503,7 +504,6 @@ class Dataset(_Dataset):
 			# just interleave
 			self.paths = [*_interleaved_reorder(self.paths, self.get_speaker)]
 
-		self.samplers = { name: Sampler( paths, keep_all=True ) for name, paths in self.paths_by_spkr_name.items() }
 		
 		# dict of speakers keyed by speaker group
 		self.spkrs_by_spkr_group = {}
@@ -521,8 +521,6 @@ class Dataset(_Dataset):
 
 		self.spkr_groups = list(self.spkrs_by_spkr_group.keys())
 
-		self.spkr_samplers = { name: Sampler( [*set(speakers)], keep_all=True ) for name, speakers in self.spkrs_by_spkr_group.items() }
-
 		self.noise_paths = _load_paths(cfg.dataset.noise, "noise")
 		self.noise_paths = list(itertools.chain.from_iterable(self.noise_paths.values()))
 
@@ -538,6 +536,20 @@ class Dataset(_Dataset):
 
 		if len(self.paths) == 0:
 			raise ValueError(f"No valid path is found for {self.dataset_type}")
+		
+
+		sampler_path = cfg.rel_path / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
+
+		if self.sampler_type == "path":
+			self.sampler = OrderedSampler( len(self) )
+			self.samplers = {}
+			self.spkr_samplers = {}
+		else:
+			self.sampler = RandomSampler( len(self) )
+			self.samplers = { name: PoolSampler( paths, keep_all=True ) for name, paths in self.paths_by_spkr_name.items() }
+			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True ) for name, speakers in self.spkrs_by_spkr_group.items() }
+
+		self.load_state_dict()
 		
 	def get_speaker(self, path):
 		if isinstance(path, str):
@@ -568,21 +580,39 @@ class Dataset(_Dataset):
 	def tasks(self):
 		return cfg.dataset.tasks_list # ["tts", "tts", "ns", "sr", "tse", "tts", "tts"] # , "cse", "nse"
 
-	def save_state_dict(self, path):
-		state_dict = {
-			"samplers": { name: sampler.current_pool for name, sampler in self.samplers.items() }
-		}
+	def save_state_dict(self, path = None):
+		if path is None:
+			path = cfg.rel_path / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
+
+		if self.sampler_type == "path":
+			state_dict = self.sampler.get_state()
+		else:
+			state_dict = {
+				"samplers": { name: sampler.get_state() for name, sampler in self.samplers.items() },
+				"spkr_samplers": { name: sampler.get_state() for name, sampler in self.spkr_samplers.items() },
+			}
 		torch.save(state_dict, path)
 
-	def load_state_dict(self, path):
-		state_dict = torch.load(path)
+	def load_state_dict(self, path = None):
+		if path is None:
+			path = cfg.rel_path / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
 
-		if "samplers" in state_dict:
-			# better than naively setting the entire object
+		if not path.exists():
+			return
+
+		state_dict = torch.load(path)
+		if self.sampler_type == "path":
+			state_dict = self.sampler.load_state(state_dict)
+		else:
 			for name, sampler in state_dict["samplers"].items():
 				if name not in self.samplers:
 					continue
-				self.samplers[name].current_pool = sampler
+				self.samplers[name].load_state( sampler )
+
+			for name, sampler in state_dict["spkr_samplers"].items():
+				if name not in self.spkr_samplers:
+					continue
+				self.spkr_samplers[name].load_state( sampler )
 
 	def _get_phone_symmap(self):
 		return get_phone_symmap()
@@ -965,35 +995,28 @@ def _seed_worker(worker_id):
 
 
 def _create_dataloader(dataset, training):
-	sampler = None
-	shuffle = True
-
 	"""
 	if cfg.distributed and training:
 		sampler = DistributedSampler(dataset)
 		shuffle = False
-	"""
+	"""		
 
 	return DataLoader(
 		dataset=dataset,
 		batch_size=cfg.hyperparameters.batch_size if training else cfg.evaluation.batch_size,
-		shuffle=shuffle,
+		shuffle=dataset.shuffle,
 		drop_last=training,
 		num_workers=cfg.dataset.workers,
 		collate_fn=collate_fn,
 		persistent_workers=cfg.dataset.workers > 1,
 		pin_memory=False, # True,
 		worker_init_fn=_seed_worker,
-		sampler=sampler,
+		sampler=dataset.sampler,
 	)
 
 def create_datasets():
 	train_dataset = Dataset( training=True )
 	val_dataset = Dataset( phone_symmap=train_dataset.phone_symmap, training=False )
-
-	train_state_path = cfg.rel_path / f"sampler.rank{global_rank()}.pt"
-	if train_state_path.exists():
-		train_dataset.load_state_dict( train_state_path )
 
 	return train_dataset, val_dataset
 
@@ -1311,8 +1334,6 @@ if __name__ == "__main__":
 		for k, v in samples.items():
 			for i in range(len(v)):
 				print(f'{k}[{i}]:', v[i])
-
-		#train_dl.dataset.save_state_dict(cfg.rel_path / "train_dataset.pt")
 
 	elif args.action == "tasks":
 		index = 0
