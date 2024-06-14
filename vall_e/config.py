@@ -149,6 +149,7 @@ class Dataset:
 	p_resp_append: float = 1.0
 
 	sample_type: str = "path" # path | speaker
+	sample_order: str = "shuffle" # duration
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 	
