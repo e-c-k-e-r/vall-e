@@ -111,10 +111,11 @@ def load_engines(training=True):
 
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
 		load_path = cfg.ckpt_dir / name / "fp32.pth"
+
 		if not loads_state_dict and backend == "deepspeed" and not (cfg.ckpt_dir / name / "latest").exists() and load_path.exists():
 			print("DeepSpeed checkpoint missing, but weights found.")
 			loads_state_dict = True
-
+	
 		stats = None
 		if loads_state_dict:
 			state = torch.load(load_path, map_location=torch.device(cfg.device))

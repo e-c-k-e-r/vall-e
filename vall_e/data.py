@@ -602,17 +602,17 @@ class Dataset(_Dataset):
 
 		state_dict = torch.load(path)
 		if self.sampler_type == "path":
-			state_dict = self.sampler.load_state(state_dict)
+			state_dict = self.sampler.set_state(state_dict)
 		else:
 			for name, sampler in state_dict["samplers"].items():
 				if name not in self.samplers:
 					continue
-				self.samplers[name].load_state( sampler )
+				self.samplers[name].set_state( sampler )
 
 			for name, sampler in state_dict["spkr_samplers"].items():
 				if name not in self.spkr_samplers:
 					continue
-				self.spkr_samplers[name].load_state( sampler )
+				self.spkr_samplers[name].set_state( sampler )
 
 	def _get_phone_symmap(self):
 		return get_phone_symmap()

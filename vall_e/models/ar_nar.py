@@ -207,7 +207,7 @@ class AR_NAR(Base):
 			
 			prev_list = resps_list
 
-			for n in trange( max_levels, desc="NAR" ):
+			for n in trange( max_levels, desc="NAR" ):				
 				level = prev_list[0].shape[-1]
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
@@ -243,6 +243,15 @@ class AR_NAR(Base):
 					#beam_width=sampling_beam_width,
 					#mirostat=mirostat,
 				)
+
+				# filter
+				"""
+				if self.arch_type in ["mamba2-hf"]:
+					for batch_index, resp in enumerate(resps_list):
+						for i, token in enumerate(resp):
+							if token >= 1024:
+								resps_list[batch_index][i] = 1023
+				"""
 
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
