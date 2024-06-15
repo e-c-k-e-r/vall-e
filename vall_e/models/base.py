@@ -329,6 +329,10 @@ class Base(nn.Module):
 
 		n_prom_tokens = n_audio_tokens
 
+		# check if requested arch is unavailable
+		if self.arch_type in ERROR_ARCHES:
+			raise ERROR_ARCHES[self.arch_type]
+
 		if "len" not in self.capabilities:
 			# +1 to include the stop token
 			n_resp_tokens = n_audio_tokens + self.causal_size
@@ -592,6 +596,21 @@ class Base(nn.Module):
 				#initializer_cfg=initializer_cfg,
 			)
 			self.model.gradient_checkpointing = self.gradient_checkpointing
+		elif self.arch_type in ["mamba2-hf"]:
+			self.model = Mamba2Model_HF(Mamba2Config_HF(
+				vocab_size=n_resp_tokens,
+				hidden_size=d_model,
+				max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
+				expand=4,
+				num_hidden_layers=n_layers,
+				is_encoder_decoder=False,
+				is_decoder=True,
+				use_triton_kernels=False, # the entire reason is to NOT use triton (because V100s hate it)
+			))
+			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
+				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
+					use_reentrant=False
+				))
 		elif self.arch_type == "mmfreelm":
 			self.model = HGRNBitModel(HGRNBitConfig(
 				vocab_size=n_resp_tokens,
@@ -616,6 +635,9 @@ class Base(nn.Module):
 			#	self.model.training = True
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
+
+		if hasattr( self.model, "embeddings" ):
+			del self.model.embeddings
 
 		if self.config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
 			self.model = ml.replace_attention( self.model, klass=LlamaAttention, target=LlamaAttention_Base, mode=self.config.attention )
@@ -713,6 +735,19 @@ class Base(nn.Module):
 				state = out.past_key_values
 		elif self.arch_type in ["mamba","mamba2"]:
 			x = self.model( hidden_states=x )
+		elif self.arch_type == "mamba2-hf":
+			first = state is None or len(state) == 0
+
+			kwargs = dict(
+				inputs_embeds=x,
+				cache_params=state,
+				return_dict=True,
+			)
+
+			out = self.model(**kwargs)
+			x = out.last_hidden_state
+			if state is not None:
+				state = out.cache_params 
 		elif self.arch_type == "bitnet":
 			x = self.model(x)
 		elif self.arch_type == "mmfreelm":
