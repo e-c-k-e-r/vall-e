@@ -1024,7 +1024,12 @@ def create_datasets():
 def create_train_val_dataloader():
 	train_dataset, val_dataset = create_datasets()
 
-	subtrain_dataset = copy.deepcopy(train_dataset)
+	# it'll cry about trying to pickle a torch._C_generator or something
+	try:
+		subtrain_dataset = copy.deepcopy(train_dataset)
+	except Exception as e:
+		subtrain_dataset = Dataset( training=True )
+
 	if subtrain_dataset.sampler_type == "path":
 		subtrain_dataset.head_(cfg.evaluation.size)
 
