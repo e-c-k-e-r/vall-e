@@ -6,9 +6,10 @@ import torch.nn
 from .data import get_phone_symmap
 from .engines import load_engines
 from .config import cfg
+from .models.lora import lora_get_state_dict
 
-# stitches embeddings into one embedding + classifier => lm_head
-def convert_to_hf( state_dict, config = None ):
+# stitches embeddings into one embedding & classifier => lm_head
+def convert_to_hf( state_dict, config = None, save_path = None ):
 	n_tokens = 256 + (1024 * 8) + (1024 * 8) + 1
 	token_dim = 1024
 	embedding = torch.nn.Embedding(n_tokens, token_dim)
@@ -53,22 +54,46 @@ def convert_to_hf( state_dict, config = None ):
 	state_dict['module']['lm_head.weight'] = out_proj
 	del state_dict['module']['classifier.bias']
 
-	torch.save(state_dict, "./data/export_test.pth")
+	return state_dict
 
-	raise Exception("!")
+def extract_lora( state_dict, config = None, save_path = None ):
+	lora = state_dict["lora"] if "lora" in state_dict else None
+	# should always be included, but just in case
+	if lora is None and "module" in state_dict:
+		lora, module = lora_get_state_dict( state_dict["module"], split = True )
+		state_dict["module"] = module
+		state_dict["lora"] = lora
+
+	# should raise an exception since there's nothing to extract, or at least a warning
+	if not lora:
+		return state_dict
+
+	# save lora specifically
+	# should probably export other attributes, similar to what SD LoRAs do
+	save_path = save_path.parent / "lora.pth"
+	torch.save( { "module": lora }, save_path )
 
 	return state_dict
+
 
 def main():
 	parser = argparse.ArgumentParser("Save trained model to path.")
 	parser.add_argument("--module-only", action='store_true')
 	parser.add_argument("--hf", action='store_true', default=None) # convert to HF-style
+	parser.add_argument("--lora", action='store_true', default=None) # exports LoRA
 	args, unknown = parser.parse_known_args()
 
 	if args.module_only:
 		cfg.trainer.load_module_only = True
 
-	callback = convert_to_hf if args.hf else None
+	callback = None
+	if args.hf:
+		callback = convert_to_hf
+	elif args.lora:
+		callback = extract_lora
+
+	if args.hf and args.lora:
+		raise Exception("Requesting more than one callback")
 
 	engines = load_engines()
 	engines.export(userdata={"symmap": get_phone_symmap()}, callback=callback)

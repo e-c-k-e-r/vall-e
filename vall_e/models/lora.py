@@ -14,7 +14,7 @@ USE_PARAMETRIZATION = True
 
 # LoRA Linear for replacement
 # Pros: simple, just needs to reuse the replace_linear and copy weights
-# Cons: does not work with other Linears (bnb, bitnet, te's fp8, etc)
+# Cons: does not work with other Linears (bnb, bitnet, te's fp8, etc), cannot apply multiple LoRAs (although for audio why would you)
 class Linear(nn.Linear):
 	def __init__(
 		self, 

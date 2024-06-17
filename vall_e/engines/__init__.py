@@ -12,6 +12,8 @@ from .base import Engines, TrainFeeder, default_feeder, Engine as LocalEngine
 
 from ..models import get_models
 from ..utils import wrapper as ml
+from ..models.lora import apply_lora
+
 import torch
 import re
 
@@ -30,6 +32,8 @@ def load_engines(training=True):
 	engines = dict()
 
 	for name, model in models.items():
+		hyper_config = model.config
+
 		optimizer = None
 		lr_scheduler = None
 
@@ -50,6 +54,9 @@ def load_engines(training=True):
 		
 		if cfg.optimizations.replace and cfg.optimizations.embedding:
 			model.model = ml.replace_embedding( model.model )
+
+		for lora in cfg.loras:
+			model.model = apply_lora( model.model, rank = lora.rank, alpha = lora.alpha, policy = model.config.lora_policy )
 
 		if backend == "local" or (backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):
 			optimizer_class = None
@@ -153,8 +160,6 @@ def load_engines(training=True):
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
-		hyper_config = model.config
-
 		# wrap if DDP is requested
 		if ddp:
 			model = ddp_model(model)
@@ -177,9 +182,6 @@ def load_engines(training=True):
 
 	engines = Engines(engines)
 	engines.setup()
-
-	for name, engine in engines.items():
-		engine.load_loras()
 
 	if not cfg.trainer.load_state_dict:
 		engines.load_checkpoint()

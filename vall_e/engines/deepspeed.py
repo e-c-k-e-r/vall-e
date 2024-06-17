@@ -68,7 +68,12 @@ class Engine(DeepSpeedEngine):
 
 		# freeze non-LoRA params if requested
 		if not self.hyper_config.frozen_params and not freeze_all and cfg.lora is not None:
-			return freeze_non_lora_weights( self.module )
+			for name, param in self.module.named_parameters():
+				should = 'lora_' in name
+				param.requires_grad_(should)
+				if not should:
+					self._frozen_params.add(param)
+			return
 
 		for name, param in self.module.named_parameters():
 			if (freeze_all and param.requires_grad) or (not freeze_all and name in self.hyper_config.frozen_params):
@@ -127,16 +132,6 @@ class Engine(DeepSpeedEngine):
 			save_dir = cfg.ckpt_dir / cfg.lora.full_name
 
 		return super().save_checkpoint( save_dir, **kwargs )
-
-	def load_loras( self ):
-		# apply lora weights
-		for lora in cfg.loras:
-			self.module = apply_lora( self.module, rank = lora.rank, alpha = lora.alpha, policy = self.hyper_config.lora_policy )
-
-			lora_path = cfg.ckpt_dir / lora.full_name / "fp32.pth"
-			if lora_path.exists():
-				state_dict = torch.load(lora_path, map_location=torch.device(cfg.device))
-				self.module = lora_load_state_dict( self.module, state_dict )
 
 	def traverse(self, *args, **kwargs):
 		with ml.autocast():

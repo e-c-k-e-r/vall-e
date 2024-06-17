@@ -29,7 +29,7 @@ def default_feeder(engine, batch):
 from ..config import cfg
 from ..utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
 from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader, world_size
-from ..models.lora import apply_lora, freeze_non_lora_weights, lora_get_state_dict, lora_load_state_dict
+from ..models.lora import freeze_non_lora_weights, lora_get_state_dict, lora_load_state_dict
 
 import logging
 import time
@@ -190,17 +190,6 @@ class Engine():
 		if 'lora' in state:
 			lora_load_state_dict( self.module, state['lora'] )
 
-
-	def load_loras( self ):
-		# apply lora weights
-		for lora in cfg.loras:
-			self.module = apply_lora( self.module, rank = lora.rank, alpha = lora.alpha, policy = self.hyper_config.lora_policy )
-
-			lora_path = cfg.ckpt_dir / lora.full_name / "fp32.pth"
-			if lora_path.exists():
-				state_dict = torch.load(lora_path, map_location=torch.device(cfg.device))
-				self.module = lora_load_state_dict( self.module, state_dict )
-
 	def eval(self):
 		return self.module.eval()
 	
@@ -334,11 +323,11 @@ class Engines(dict[str, Engine]):
 		for name, engine in self.items():
 			module = engine.module.state_dict()
 			lora = None
-			save_dir = cfg.ckpt_dir / name / "fp32.pth"
+			save_path = cfg.ckpt_dir / name / "fp32.pth"
 
 			if cfg.lora is not None:				
 				lora, module = lora_get_state_dict( module, split = True )
-				save_dir = cfg.ckpt_dir / cfg.lora.full_name / "fp32.pth"
+				save_path = cfg.ckpt_dir / cfg.lora.full_name / "fp32.pth"
 
 			state_dict = {
 				'module': module,
@@ -352,9 +341,9 @@ class Engines(dict[str, Engine]):
 				"userdata": userdata
 			}
 			if callback:
-				state_dict = callback( state_dict, engine.hyper_config )
+				state_dict = callback( state_dict, config = engine.hyper_config, save_path = save_path )
 
-			torch.save(state_dict, save_dir)
+			torch.save(state_dict, save_path)
 			print(f"Exported {name} to {outpath}")
 
 	def save_checkpoint(self, tag=None):
