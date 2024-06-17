@@ -8,7 +8,7 @@ if cfg.trainer.backend == "deepspeed":
 elif cfg.trainer.backend == "local":
 	from .base import Engine
 
-from .base import Engines, TrainFeeder, default_feeder, Engine as _Engine
+from .base import Engines, TrainFeeder, default_feeder, Engine as LocalEngine
 
 from ..models import get_models
 from ..utils import wrapper as ml
@@ -40,7 +40,7 @@ def load_engines(training=True):
 		loads_state_dict = cfg.trainer.load_state_dict or inferencing
 		ddp = cfg.trainer.ddp
 
-		engine_class = _Engine if backend == "local" or inferencing else Engine
+		engine_class = LocalEngine if backend == "local" or inferencing else Engine
 
 		if inferencing:
 			model.config.training = False
@@ -101,9 +101,9 @@ def load_engines(training=True):
 					warmup_steps = cfg.hyperparameters.warmup_steps
 				)
 
-
-
+		"""
 		# set up our LR scheduler here
+		"""
 
 		if inferencing:
 			optimizer = None
@@ -113,7 +113,7 @@ def load_engines(training=True):
 		load_path = cfg.ckpt_dir / name / "fp32.pth"
 
 		if not loads_state_dict and not (cfg.ckpt_dir / name / "latest").exists() and load_path.exists():
-			print("DeepSpeed checkpoint missing, but weights found.")
+			print("Checkpoint missing, but weights found.")
 			loads_state_dict = True
 	
 		stats = None
@@ -161,7 +161,7 @@ def load_engines(training=True):
 
 		# deepspeed inferencing
 		elif backend == "local" and inferencing and deepspeed_available and cfg.trainer.deepspeed.inferencing: #and sys.platform.startswith("win"):
-			engine_class = _Engine
+			engine_class = LocalEngine
 			model = deepspeed.init_inference(model=model, mp_size=1, replace_with_kernel_inject=True, dtype=dtype if not amp else torch.float32).module
 
 		# use base engine if requested

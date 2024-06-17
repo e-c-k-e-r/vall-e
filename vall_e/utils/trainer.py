@@ -28,7 +28,7 @@ from .distributed import (
 	local_leader_only,
 )
 
-from ..engines import _Engine, Engine, Engines, TrainFeeder, default_feeder, load_engines
+from ..engines import Engine, Engines, TrainFeeder, default_feeder, load_engines
 
 from .utils import to_device, do_gc, truncate_json
 from ..utils import wrapper as ml
