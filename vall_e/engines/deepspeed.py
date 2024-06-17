@@ -108,6 +108,9 @@ class Engine(DeepSpeedEngine):
 		except Exception as e:
 			print(str(e))
 
+	def load_loras(self):
+		...
+
 	def traverse(self, *args, **kwargs):
 		with ml.autocast():
 			self.forward(*args, **kwargs)

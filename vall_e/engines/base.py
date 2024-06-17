@@ -29,6 +29,7 @@ def default_feeder(engine, batch):
 from ..config import cfg
 from ..utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
 from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader, world_size
+from ..models.lora import apply_lora, freeze_non_lora_weights, lora_get_state_dict, lora_load_state_dict
 
 import logging
 import time
@@ -70,10 +71,16 @@ class Engine():
 		self.max_nan_losses = 8
 		self.loss_scaler = torch.cuda.amp.GradScaler() if cfg.trainer.scale_loss else None
 
+		self._global_grad_norm = None
+
 	def freeze(self, freeze_all=True):
 		# set to freeze 
 		if self.hyper_config is None or not hasattr(self.hyper_config, "frozen_params"):
 			raise Exception("freeze_all=False yet self.hyper_config.frozen_params is None")
+
+		# freeze non-LoRA params if requested
+		if not self.hyper_config.frozen_params and not freeze_all:
+			return freeze_non_lora_weights( self.module )
 
 		for name, param in self.module.named_parameters():
 			if (freeze_all and param.requires_grad) or (not freeze_all and name in self.hyper_config.frozen_params):
@@ -119,10 +126,21 @@ class Engine():
 
 	def save_checkpoint(self, save_dir, tag ):
 		if is_global_leader():
+			module = self.module.state_dict()
+
+			# if training lora
+			# this is a separate path to override saving the weights
+			lora = None
+			if cfg.lora is not None:
+				lora, module = lora_get_state_dict( module, split = True )
+				save_dir = cfg.ckpt_dir / cfg.lora.full_name
+
 			save_path = save_dir / tag / "state.pth"
 			save_path.parent.mkdir(parents=True, exist_ok=True)
+
 			torch.save({
-				"module": self.module.state_dict(),
+				"module": module,
+				"lora": lora,
 				"optimizer": self.optimizer.state_dict() if self.optimizer is not None else None,
 				"lr_scheduler": self.lr_scheduler.state_dict() if self.lr_scheduler is not None else None,
 				
@@ -164,6 +182,20 @@ class Engine():
 		
 		if load_lr_scheduler_states:
 			self.lr_scheduler.load_state_dict(state['lr_scheduler']) #, map_location=torch.device(cfg.device))
+
+		if 'lora' in state:
+			lora_load_state_dict( self.module, state['lora'] )
+
+
+	def load_loras( self ):
+		# apply lora weights
+		for lora in cfg.loras:
+			self.module = apply_lora( self.module, rank = lora.rank, alpha = lora.alpha )
+
+			lora_path = cfg.ckpt_dir / lora.full_name / "fp32.pth"
+			if lora_path.exists():
+				state_dict = torch.load(lora_path, map_location=torch.device(cfg.device))
+				self.module = lora_load_state_dict( self.module, state_dict )
 
 	def eval(self):
 		return self.module.eval()

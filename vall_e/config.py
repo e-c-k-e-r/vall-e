@@ -188,9 +188,6 @@ class Dataset:
 # I really need to clean this up
 @dataclass()
 class Model:
-	_max_levels: int = 0
-	_embeddings: str | None = None
-
 	name: str = "" # vanity name for the model
 	version: int = 1 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding
 	size: str | dict = "full" # preset string or explicitly defined dimensionality
@@ -223,7 +220,7 @@ class Model:
 
 	@property
 	def max_levels(self):
-		return self._max_levels if self._max_levels > 0 else self.prom_levels
+		return max(self.prom_levels, self.resp_levels)
 
 	@property
 	# required for fp8 as the lengths needs to be divisible by 8
@@ -316,6 +313,18 @@ class Model:
 	@property
 	def gradient_checkpointing(self):
 		return cfg.trainer.gradient_checkpointing
+
+@dataclass()
+class LoRA:
+	name: str = "lora" # vanity name
+	rank: int = 8 # rank for the LoRA
+	alpha: int = 1 # rank for the LoRA
+	training: bool = True # 
+
+	@property
+	def full_name(self):
+		name = [ self.name, f"r{self.rank}", f"a{self.alpha}" ]
+		return "-".join(name)
 	
 @dataclass()
 class Hyperparameters:
@@ -622,7 +631,8 @@ class Config(BaseConfig):
 	experimental: bool = False # So I can stop commenting out things when committing
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
-	models: dict | list | None = field(default_factory=lambda: [Model])
+	models: dict | list | None = field(default_factory=lambda: [])
+	loras: dict | list | None = field(default_factory=lambda: [])
 	hyperparameters: Hyperparameters = field(default_factory=lambda: Hyperparameters)
 	evaluation: Evaluation = field(default_factory=lambda: Evaluation)
 	trainer: Trainer = field(default_factory=lambda: Trainer)
@@ -643,7 +653,15 @@ class Config(BaseConfig):
 			if model.training:
 				return model
 
-		return self.models[0]
+		return self.models[0] if len(self.models) > 0 else None
+
+	@property
+	def lora(self):
+		for i, lora in enumerate(self.loras):
+			if lora.training:
+				return lora
+
+		return self.loras[0] if len(self.loras) > 0 else None
 
 	@property
 	def distributed(self):
@@ -686,6 +704,9 @@ class Config(BaseConfig):
 
 		if isinstance(self.models, type):
 			self.models = dict()
+
+		if isinstance(self.loras, type):
+			self.loras = dict()
 		
 		if isinstance(self.hyperparameters, type):
 			self.hyperparameters = dict()
@@ -715,6 +736,7 @@ class Config(BaseConfig):
 		"""
 
 		self.models = [ Model(**model) for model in self.models ]
+		self.loras = [ LoRA(**lora) for lora in self.loras ]
 
 		self.hyperparameters = Hyperparameters(**self.hyperparameters)
 
@@ -757,6 +779,10 @@ class Config(BaseConfig):
 
 		if not training:
 			self.dataset.use_hdf5 = False
+
+		# raise error if DeepSpeed and a LoRA is loaded, because I don't support it yet
+		if self.trainer.backend == "deepspeed" and self.lora is not None:
+			raise Exception("LoRAs are currently unsupported with deepspeed backend")
 
 		# load our HDF5 file if requested here
 		if self.dataset.use_hdf5:

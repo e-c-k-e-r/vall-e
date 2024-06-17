@@ -112,7 +112,7 @@ def load_engines(training=True):
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
 		load_path = cfg.ckpt_dir / name / "fp32.pth"
 
-		if not loads_state_dict and backend == "deepspeed" and not (cfg.ckpt_dir / name / "latest").exists() and load_path.exists():
+		if not loads_state_dict and not (cfg.ckpt_dir / name / "latest").exists() and load_path.exists():
 			print("DeepSpeed checkpoint missing, but weights found.")
 			loads_state_dict = True
 	
@@ -178,6 +178,9 @@ def load_engines(training=True):
 	engines = Engines(engines)
 	engines.setup()
 
+	for name, engine in engines.items():
+		engine.load_loras()
+
 	if not cfg.trainer.load_state_dict:
 		engines.load_checkpoint()
 
@@ -185,6 +188,7 @@ def load_engines(training=True):
 	for name, engine in engines.items():
 		engine.freeze(freeze_all=False)
 
+		"""
 		# copy embeddings if requested
 		if cfg.model._embeddings is not None:
 			embeddings_path = cfg.rel_path / cfg.model._embeddings
@@ -210,6 +214,7 @@ def load_engines(training=True):
 						continue
 					param.requires_grad_(False)
 					engine._frozen_params.add(param)
+		"""
 			
 		
 	#do_gc()
