@@ -331,14 +331,18 @@ class Engines(dict[str, Engine]):
 			engine.dispatch_attribute(*args, **kwargs)
 
 	def export(self, userdata={}, callback=None):
-		# to-do: lora exporting
-		if cfg.lora is not None:
-			return
-
 		for name, engine in self.items():
-			outpath = cfg.ckpt_dir / name / "fp32.pth"
+			module = engine.module.state_dict()
+			lora = None
+			save_dir = cfg.ckpt_dir / name / "fp32.pth"
+
+			if cfg.lora is not None:				
+				lora, module = lora_get_state_dict( module, split = True )
+				save_dir = cfg.ckpt_dir / cfg.lora.full_name / "fp32.pth"
+
 			state_dict = {
-				'module': engine.module.state_dict(),
+				'module': module,
+				'lora': lora,
 				"stats": {
 					"global_step": engine.global_step,
 					"micro_step": engine.micro_step,
@@ -349,7 +353,8 @@ class Engines(dict[str, Engine]):
 			}
 			if callback:
 				state_dict = callback( state_dict, engine.hyper_config )
-			torch.save(state_dict, outpath)
+
+			torch.save(state_dict, save_dir)
 			print(f"Exported {name} to {outpath}")
 
 	def save_checkpoint(self, tag=None):

@@ -793,10 +793,6 @@ class Config(BaseConfig):
 		if not training:
 			self.dataset.use_hdf5 = False
 
-		# raise error if DeepSpeed and a LoRA is loaded, because I don't support it yet
-		if self.trainer.backend == "deepspeed" and self.lora is not None:
-			raise Exception("LoRAs are currently unsupported with deepspeed backend")
-
 		# load our HDF5 file if requested here
 		if self.dataset.use_hdf5:
 			self.load_hdf5()

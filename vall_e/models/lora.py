@@ -10,7 +10,7 @@ import math
 from typing import Optional, List
 
 # to-do: set cfg to decide
-USE_PARAMETRIZATION = False
+USE_PARAMETRIZATION = True
 
 # LoRA Linear for replacement
 # Pros: simple, just needs to reuse the replace_linear and copy weights
