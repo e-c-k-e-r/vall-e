@@ -38,8 +38,8 @@ class Linear(nn.Linear):
 		self.merge_weights = merge_weights
 		self.merged = False
 
-		self.lora_A = nn.Parameter( self.weight.new_zeros( (rank, in_features) ) )
 		self.lora_B = nn.Parameter( self.weight.new_zeros( (out_features, rank) ) )
+		self.lora_A = nn.Parameter( self.weight.new_zeros( (rank, in_features) ) )
 		self.scaling = self.alpha / self.rank
 		
 		self.weight.requires_grad = False
@@ -75,8 +75,12 @@ class Linear(nn.Linear):
 		return F.linear(x, self.weight, bias=self.bias)
 
 	@classmethod
-	def from_linear( cls, layer, **kwargs ):
-		return cls( in_features = layer.in_features, out_features = layer.out_features, bias = layer.bias is not None, **kwargs )
+	def from_linear( cls, layer, device = None, dtype = None, **kwargs ):
+		if device is None:
+			device = layer.weight.device
+		if dtype is None:
+			dtype = layer.weight.dtype
+		return cls( in_features = layer.in_features, out_features = layer.out_features, bias = layer.bias is not None, **kwargs ).to(device=device, dtype=dtype)
 
 # Uses parametrization to inject LoRA weights
 # Pros: should work with any Linears
@@ -102,8 +106,8 @@ class ParameterizedLinear(nn.Module):
 		self.alpha = alpha
 		self.dropout = nn.Dropout(p=dropout) if dropout > 0 else lambda x: x
 
-		self.lora_A = nn.Parameter( torch.zeros( (rank, in_features) ) ).to( device=device, dtype=dtype )
 		self.lora_B = nn.Parameter( torch.zeros( (out_features, rank) ) ).to( device=device, dtype=dtype )
+		self.lora_A = nn.Parameter( torch.zeros( (rank, in_features) ) ).to( device=device, dtype=dtype )
 		self.scaling = self.alpha / self.rank
 		self.enabled = True
 		
@@ -120,46 +124,52 @@ class ParameterizedLinear(nn.Module):
 		return x
 
 	@classmethod
-	def from_linear( cls, layer, **kwargs ):
+	def from_linear( cls, layer, device = None, dtype = None, **kwargs ):
+		if device is None:
+			device = layer.weight.device
+		if dtype is None:
+			dtype = layer.weight.dtype
 		# swap because we're feeding the output as our input
-		return cls( in_features = layer.out_features, out_features = layer.in_features, bias = layer.bias is not None, **kwargs )
+		# M$'s LoRA class arranges things to where this isn't necessary
+		return cls( in_features = layer.out_features, out_features = layer.in_features, bias = layer.bias is not None, **kwargs ).to(device=device, dtype=dtype)
 
-def parametrize_model( layer, register = True, merge = False, **kwargs ):
-	if not isinstance( layer, nn.Linear ):
-		return
+def passes_policy( policy, name ):
+	if policy is None:
+		return True
 
-	if register:
-		parametrize.register_parametrization( layer, "weight", ParameterizedLinear.from_linear( layer, **kwargs ) )
-	else:
-		parametrize.remove_parametrizations( layer, "weight", leave_parametrized=merge )
+	if "exclude" in policy:
+		for term in policy["exclude"]:
+			if term in name:
+				return False
 
-def apply_lora( model, **kwargs ):
+	if "include" in policy:
+		for term in policy["include"]:
+			if term in name:
+				return True
+
+	return False
+
+
+def apply_lora( model, register = True, merge = False, policy = None, **kwargs ):
 	device =  next(model.parameters()).device
 	dtype = next(model.parameters()).dtype
 
-	if USE_PARAMETRIZATION:
-		model.apply( partial( parametrize_model, device=device, dtype=dtype, **kwargs ) )
-	else:
-		klass = Linear
-		target = nn.Linear
+	klass = Linear
+	target = nn.Linear
 
-		device =  next(model.parameters()).device
-		dtype = next(model.parameters()).dtype
-		modules = [k.split('.') for k, m in model.named_modules() if isinstance(m, target)]
+	device =  next(model.parameters()).device
+	dtype = next(model.parameters()).dtype
+	modules = [ k.split('.') for k, m in model.named_modules() if isinstance(m, target) and not isinstance(m, klass) and passes_policy( policy, k ) ]
 
-		for *parent, k in modules:
-			name = '.'.join(parent)
+	for *parent, k in modules:
+		name = '.'.join(parent)
+		layer = getattr( model.get_submodule(name), k )
 
-			layer = getattr( model.get_submodule(name), k )
-
-			if isinstance(layer, klass):
-				continue
-
-			injected = klass( in_features = layer.in_features, out_features = layer.out_features, bias = layer.bias is not None, **kwargs ).to(device=device, dtype=dtype)
-			injected.weight = layer.weight
-
-			# overwrite
-			setattr( model.get_submodule(name), k, injected )
+		if USE_PARAMETRIZATION:
+			parametrize.register_parametrization( layer, "weight", ParameterizedLinear.from_linear( layer, device=device, dtype=dtype, **kwargs ) )
+			# parametrize.remove_parametrizations( layer, "weight", leave_parametrized=merge )
+		else:
+			setattr( model.get_submodule(name), k, Linear.from_linear( layer, device=device, dtype=dtype, **kwargs ) )
 
 	return model
 

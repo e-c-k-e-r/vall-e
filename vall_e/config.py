@@ -314,17 +314,30 @@ class Model:
 	def gradient_checkpointing(self):
 		return cfg.trainer.gradient_checkpointing
 
+	@property
+	def lora_policy(self):
+		include = ["model"] # by default only adapt the main model (not embeddings nor classifier/output projection/LM head/whatever)
+		exclude = []
+
+		if self.arch_type == "llama":
+			include = ["self_attn", "mlp"] # target only the attention + mlp
+			exclude = ["self_attn.k_proj"] # common literature says to ignore it
+
+		return dict(include=include, exclude=exclude)
+
 @dataclass()
 class LoRA:
 	name: str = "lora" # vanity name
+	# to-do: find sane default values
 	rank: int = 8 # rank for the LoRA
-	alpha: int = 1 # rank for the LoRA
+	alpha: int = 16 # rank for the LoRA
 	training: bool = True # 
 
 	@property
 	def full_name(self):
 		name = [ self.name, f"r{self.rank}", f"a{self.alpha}" ]
 		return "-".join(name)
+
 	
 @dataclass()
 class Hyperparameters:

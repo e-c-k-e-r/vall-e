@@ -157,6 +157,10 @@ class Engine():
 		torch.distributed.barrier()
 
 	def load_checkpoint(self, load_dir, tag=None, load_module_strict=True, load_optimizer_states=True, load_lr_scheduler_states=True, load_module_only=False):
+		# override to load the lora instead
+		if cfg.lora is not None:
+			load_dir = cfg.ckpt_dir / cfg.lora.full_name
+
 		if tag is None:
 			tag_path = load_dir / "latest"
 			if not tag_path.exists():
@@ -190,7 +194,7 @@ class Engine():
 	def load_loras( self ):
 		# apply lora weights
 		for lora in cfg.loras:
-			self.module = apply_lora( self.module, rank = lora.rank, alpha = lora.alpha )
+			self.module = apply_lora( self.module, rank = lora.rank, alpha = lora.alpha, policy = self.hyper_config.lora_policy )
 
 			lora_path = cfg.ckpt_dir / lora.full_name / "fp32.pth"
 			if lora_path.exists():
@@ -327,6 +331,10 @@ class Engines(dict[str, Engine]):
 			engine.dispatch_attribute(*args, **kwargs)
 
 	def export(self, userdata={}, callback=None):
+		# to-do: lora exporting
+		if cfg.lora is not None:
+			return
+
 		for name, engine in self.items():
 			outpath = cfg.ckpt_dir / name / "fp32.pth"
 			state_dict = {
