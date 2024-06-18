@@ -39,6 +39,12 @@ def length_penalize( logits, length, factor=0.0, token=-1 ):
 	logits[:, token] /= (length ** factor)
 	return logits
 
+# Simple way to ban tokens
+def ban_tokens( logits, tokens ):
+	for token in tokens:
+		logits[:, token] = -float("inf")
+	return logits
+
 # Credit to https://github.com/microsoft/unilm/blob/master/xtune/src/transformers/modeling_utils.py#L1145 / https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
 def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"), min_tokens=1 ):
 	"""Filter a distribution of logits using top-k and/or nucleus (top-p) filtering

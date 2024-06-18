@@ -29,7 +29,7 @@ from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, Mult
 
 from .arch import *
 from ..utils import wrapper as ml
-from ..samplers import reptition_penalize, length_penalize, top_k_top_p_filtering, dynamic_temperature, top_k_logits_list, mirostat_sample
+from ..samplers import reptition_penalize, length_penalize, ban_tokens, top_k_top_p_filtering, dynamic_temperature, top_k_logits_list, mirostat_sample
 
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
@@ -1138,6 +1138,9 @@ class Base(nn.Module):
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
+		# (NAR) disable stop token
+		else:
+			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, resps_list) ) ]
 
 		# perform top_k/top_p filtering of our logits
 		if top_k > 0 or top_p < 1.0:

@@ -255,15 +255,6 @@ class AR_NAR(Base):
 					#mirostat=mirostat,
 				)
 
-				# filter
-				"""
-				if self.arch_type in ["mamba2-hf"] or cfg.lora is not None:
-					for batch_index, resp in enumerate(resps_list):
-						for i, token in enumerate(resp):
-							if token >= 1024:
-								resps_list[batch_index][i] = 1023
-				"""
-
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 			if cfg.lora is not None:
