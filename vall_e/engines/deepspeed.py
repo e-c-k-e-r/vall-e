@@ -63,9 +63,6 @@ class Engine(DeepSpeedEngine):
 		self.max_nan_losses = 8
 
 	def freeze(self, freeze_all=True):
-		if self.hyper_config is None or not hasattr(self.hyper_config, "frozen_params"):
-			raise Exception("freeze_all=False yet self.hyper_config.frozen_params is None")
-
 		# freeze non-LoRA params if requested
 		if not self.hyper_config.frozen_params and not freeze_all and cfg.lora is not None:
 			for name, param in self.module.named_parameters():
@@ -74,6 +71,9 @@ class Engine(DeepSpeedEngine):
 				if not should:
 					self._frozen_params.add(param)
 			return
+
+		if self.hyper_config is None or not hasattr(self.hyper_config, "frozen_params"):
+			raise Exception("freeze_all=False yet self.hyper_config.frozen_params is None")
 
 		for name, param in self.module.named_parameters():
 			if (freeze_all and param.requires_grad) or (not freeze_all and name in self.hyper_config.frozen_params):

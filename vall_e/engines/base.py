@@ -344,7 +344,7 @@ class Engines(dict[str, Engine]):
 				state_dict = callback( state_dict, config = engine.hyper_config, save_path = save_path )
 
 			torch.save(state_dict, save_path)
-			print(f"Exported {name} to {outpath}")
+			print(f"Exported {name} to {save_path}")
 
 	def save_checkpoint(self, tag=None):
 		if not tag:

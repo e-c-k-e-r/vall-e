@@ -10,7 +10,7 @@ import math
 from typing import Optional, List
 
 # to-do: set cfg to decide
-USE_PARAMETRIZATION = True
+USE_PARAMETRIZATION = False
 
 # LoRA Linear for replacement
 # Pros: simple, just needs to reuse the replace_linear and copy weights
@@ -27,7 +27,7 @@ class Linear(nn.Linear):
 		alpha: int = 1, 
 		
 		dropout: float = 0.1,
-		merge_weights: bool = True,
+		merge_weights: bool = False,
 		**kwargs,
 	):
 		super().__init__(in_features=in_features, out_features=out_features, bias=bias, **kwargs)
@@ -37,6 +37,7 @@ class Linear(nn.Linear):
 		self.dropout = nn.Dropout(p=dropout) if dropout > 0 else lambda x: x
 		self.merge_weights = merge_weights
 		self.merged = False
+		self.enabled = True
 
 		self.lora_B = nn.Parameter( self.weight.new_zeros( (out_features, rank) ) )
 		self.lora_A = nn.Parameter( self.weight.new_zeros( (rank, in_features) ) )
@@ -67,7 +68,7 @@ class Linear(nn.Linear):
 			self.merged = True   
 
 	def forward(self, x: torch.Tensor):
-		if not self.merged:
+		if not self.merged and self.enabled:
 			result = F.linear(x, self.weight, bias=self.bias)			
 			result += (self.dropout(x) @ self.lora_A.transpose(0, 1) @ self.lora_B.transpose(0, 1)) * self.scaling
 			return result
@@ -120,7 +121,6 @@ class ParameterizedLinear(nn.Module):
 	def forward(self, x: torch.Tensor):
 		if self.enabled:
 			return x + torch.matmul(self.lora_B, self.dropout(self.lora_A)).view(x.shape) * self.scaling
-
 		return x
 
 	@classmethod
@@ -172,6 +172,16 @@ def apply_lora( model, register = True, merge = False, policy = None, **kwargs )
 			setattr( model.get_submodule(name), k, Linear.from_linear( layer, device=device, dtype=dtype, **kwargs ) )
 
 	return model
+
+def enable_lora( model, mode = True ):
+	for name, module in model.named_modules():
+		if not isinstance( module, ParameterizedLinear if USE_PARAMETRIZATION else Linear ):
+			continue
+		module.enabled = mode
+	return model
+
+def disable_lora( model ):
+	return enable_lora( model, False )
 
 def freeze_non_lora_weights( model ):
 	for name, param in model.named_parameters():

@@ -131,6 +131,10 @@ def load_engines(training=True):
 			if "stats" in state:
 				stats = state["stats"]
 
+			# do not load stats if we're training a LoRA
+			if "lora" not in state:
+				stats = None
+
 			if "module" in state:
 				state = state["module"]
 

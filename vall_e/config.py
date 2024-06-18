@@ -211,6 +211,7 @@ class Model:
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
 	experimental: str | None = None # for now it sets things to be HF compatible
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
+	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
@@ -332,12 +333,17 @@ class LoRA:
 	rank: int = 8 # rank for the LoRA
 	alpha: int = 16 # rank for the LoRA
 	training: bool = True # 
+	rvq_levels: list[int] = field(default_factory=lambda: []) # determines RVQ levels to activate the LoRA
 
 	@property
 	def full_name(self):
 		name = [ self.name, f"r{self.rank}", f"a{self.alpha}" ]
 		return "-".join(name)
 
+	def active_level( self, level ):
+		if not self.rvq_levels:
+			return True
+		return level in self.rvq_levels
 	
 @dataclass()
 class Hyperparameters:

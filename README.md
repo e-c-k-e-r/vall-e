@@ -104,6 +104,27 @@ You can enter `save` to save the state at any time, or `quit` to save and quit t
 
 The `lr` will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
 
+
+### Finetuning
+
+Finetuning can be done by training the full model, or using a LoRA.
+
+Finetuning the full model is done the same way as training a model, but be sure to have the weights in the correct spot, as if you're loading them for inferencing.
+
+For training a LoRA, add the following block to your `config.yaml`:
+
+```
+loras:
+- name : "arbitrary name" # whatever you want
+  rank: 128 # dimensionality of the LoRA
+  alpha: 256 # scaling factor of the LoRA
+  training: True
+```
+
+And thats it. Training of the LoRA is done with the same command. Depending on the rank and alpha specified, the loss may be higher than it should, as the LoRA weights are initialized to appropriately random values.
+
+To export your LoRA weights, run `python3 -m vall_e.export --lora --yaml="./training/config.yaml"`.
+
 ### Plotting Metrics
 
 Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot --yaml="./training/config.yaml"`

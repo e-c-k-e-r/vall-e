@@ -20,12 +20,20 @@ from tqdm import trange
 
 from ..emb.qnt import trim
 
+from .lora import enable_lora
+
 class AR_NAR(Base):
 	@property
 	def capabilities(self) -> list[str]:
 		if hasattr(self, "config") and self.config:
 			return self.config.capabilities
 		return cfg.model.capabilities
+
+	@property
+	def quant_level_range(self) -> list[int]:
+		if hasattr(self, "config") and self.config.rvq_level_range:
+			return self.config.rvq_level_range
+		return [ 0 if self.causal else 1, self.n_resp_levels ]
 
 	@property
 	def causal(self):
@@ -153,7 +161,7 @@ class AR_NAR(Base):
 				task_list = [ sample_task() for _ in range(batch_size) ]
 
 				# determines which RVQ level to target per batch
-				quant_level_range = [ 0 if self.causal else 1, self.n_resp_levels ]
+				quant_level_range = self.quant_level_range
 
 				if cfg.experimental:
 					# makes higher levels less likely
@@ -212,6 +220,9 @@ class AR_NAR(Base):
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
 
+				if cfg.lora is not None:
+					enable_lora( self, cfg.lora.active_level( level ) )
+
 				quant_levels = [ level for _ in range(batch_size) ] # torch.full((len(text_list),), level)
 
 				inputs = self.inputs(
@@ -246,7 +257,7 @@ class AR_NAR(Base):
 
 				# filter
 				"""
-				if self.arch_type in ["mamba2-hf"]:
+				if self.arch_type in ["mamba2-hf"] or cfg.lora is not None:
 					for batch_index, resp in enumerate(resps_list):
 						for i, token in enumerate(resp):
 							if token >= 1024:
@@ -255,9 +266,15 @@ class AR_NAR(Base):
 
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
+			if cfg.lora is not None:
+				enable_lora( self )
+
 			return prev_list
 		
 		# is AR
+		if cfg.lora is not None:
+			enable_lora( self, cfg.lora.active_level( 0 ) )
+
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 		
