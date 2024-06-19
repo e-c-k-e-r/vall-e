@@ -333,6 +333,7 @@ class LoRA:
 	rank: int = 8 # rank for the LoRA
 	alpha: int = 16 # rank for the LoRA
 	training: bool = True # 
+	parametrize: bool = False # 
 	rvq_levels: list[int] = field(default_factory=lambda: []) # determines RVQ levels to activate the LoRA
 
 	@property

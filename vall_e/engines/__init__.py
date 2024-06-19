@@ -56,9 +56,9 @@ def load_engines(training=True):
 			model.model = ml.replace_embedding( model.model )
 
 		for lora in cfg.loras:
-			model.model = apply_lora( model.model, rank = lora.rank, alpha = lora.alpha, policy = model.config.lora_policy )
+			model.model = apply_lora( model.model, rank = lora.rank, alpha = lora.alpha, policy = model.config.lora_policy, use_parametrize = lora.parametrize )
 
-		if backend == "local" or (backend == "deepspeed" and cfg.hyperparameters.torch_optimizer):
+		if not inferencing and (backend == "local" or (backend == "deepspeed" and cfg.hyperparameters.torch_optimizer)):
 			optimizer_class = None
 			scheduler_class = None
 
@@ -163,6 +163,14 @@ def load_engines(training=True):
 				state["rvq_l_emb.weight"] = state["rvq_l_emb.weight"][:model.config.resp_levels]
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
+
+		# load lora weights if exists
+		if cfg.lora is not None:
+			lora_path = cfg.ckpt_dir / lora.full_name / "lora.pth"
+			if lora_path.exists():
+				state = torch.load(lora_path, map_location=torch.device(cfg.device))
+				state = state['lora' if 'lora' in state else 'module']
+				model.load_state_dict(state, strict=False)
 
 		# wrap if DDP is requested
 		if ddp:
