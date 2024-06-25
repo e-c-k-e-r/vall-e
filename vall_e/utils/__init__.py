@@ -7,4 +7,5 @@ from .utils import (
     to_device,
     tree_map,
     do_gc,
+    set_seed,
 )

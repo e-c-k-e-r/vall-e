@@ -7,8 +7,11 @@ from .distributed import global_rank, local_rank, global_leader_only
 import gc
 import logging
 import pandas as pd
+import numpy as np
 import re
 import torch
+import random
+import time
 
 from coloredlogs import ColoredFormatter
 from logging import StreamHandler
@@ -34,6 +37,14 @@ def flatten_dict(d):
 	records = pd.json_normalize(d).to_dict(orient="records")
 	return records[0] if records else {}
 
+
+def set_seed(seed=None):
+	if not seed:
+		seed = int(time.time())
+
+	random.seed(seed)
+	np.random.seed(seed)
+	torch.manual_seed(seed)
 
 def _get_named_modules(module, attrname):
 	for name, module in module.named_modules():

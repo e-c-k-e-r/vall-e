@@ -34,6 +34,8 @@ def main():
 	
 	parser.add_argument("--mirostat-tau", type=float, default=0)
 	parser.add_argument("--mirostat-eta", type=float, default=0)
+	
+	parser.add_argument("--seed", type=int, default=None)
 
 	parser.add_argument("--device", type=str, default=None)
 	parser.add_argument("--amp", action="store_true")
@@ -55,7 +57,8 @@ def main():
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
-		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta
+		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
+		seed=args.seed,
 	)
 
 if __name__ == "__main__":

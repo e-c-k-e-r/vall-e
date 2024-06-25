@@ -1,6 +1,7 @@
 import torch
 import torchaudio
 import soundfile
+import time
 
 from torch import Tensor
 from einops import rearrange
@@ -8,7 +9,7 @@ from pathlib import Path
 
 from .emb import g2p, qnt
 from .emb.qnt import trim, trim_random
-from .utils import to_device
+from .utils import to_device, set_seed, wrapper as ml
 
 from .config import cfg
 from .models import get_models
@@ -133,6 +134,9 @@ class TTS():
 		beam_width=0,
 		mirostat_tau=0,
 		mirostat_eta=0.1,
+
+		seed = None,
+
 		out_path=None
 	):
 		lines = text.split("\n")
@@ -151,10 +155,15 @@ class TTS():
 				model_len = engine.module
 			if "nar" in engine.hyper_config.capabilities:
 				model_nar = engine.module
+		
+		set_seed(seed)
 
 		for line in lines:
 			if out_path is None:
-				out_path = f"./data/{cfg.start_time}.wav"
+				output_dir = Path("./data/results/")
+				if not output_dir.exists():
+					output_dir.mkdir(parents=True, exist_ok=True)
+				out_path = output_dir / f"{time.time()}.wav"
 
 			prom = self.encode_audio( references, trim_length=input_prompt_length )
 			phns = self.encode_text( line, language=language )

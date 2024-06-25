@@ -116,10 +116,15 @@ def load_engines(training=True):
 			optimizer = None
 			lr_scheduler = None
 
+		checkpoint_path = cfg.ckpt_dir / name / "latest"
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
 		load_path = cfg.ckpt_dir / name / "fp32.pth"
 
-		if not loads_state_dict and not (cfg.ckpt_dir / name / "latest").exists() and load_path.exists():
+		# actually use the lora-specific checkpoint if available
+		if cfg.lora is not None:
+			checkpoint_path = cfg.ckpt_dir / lora.full_name / "latest"
+
+		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
 			print("Checkpoint missing, but weights found.")
 			loads_state_dict = True
 	

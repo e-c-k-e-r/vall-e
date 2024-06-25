@@ -131,10 +131,6 @@ def train(
 		_logger.info(cfg)
 	"""
 
-	# Setup global engines
-	global _engines
-	_engines = engines
-
 	events = []
 
 	eval_fn = global_leader_only(eval_fn)
