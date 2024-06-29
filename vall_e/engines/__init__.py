@@ -137,7 +137,7 @@ def load_engines(training=True):
 				stats = state["stats"]
 
 			# do not load stats if we're training a LoRA
-			if "lora" not in state:
+			if "lora" in state or cfg.lora is not None or cfg.trainer.restart_step_count:
 				stats = None
 
 			if "module" in state:

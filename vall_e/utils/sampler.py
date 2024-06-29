@@ -5,6 +5,8 @@ import random
 import torch
 from torch.utils.data import Sampler
 
+from .distributed import global_rank, local_rank, world_size
+
 # Randomly picks an index from an array of indices
 class PoolSampler():
 	def __init__( self, pool = [], keep_all = False ):
