@@ -6,14 +6,9 @@
 
 An unofficial PyTorch implementation of [VALL-E](https://valle-demo.github.io/), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
 
-> **Note** Development on this is very sporadic. Gomen.
-
-> **Note** Compatibility for existing models may break at any time while I feverishly try and work out the best way to crank out a model. Gomen.
-
 ## Requirements
 
-Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/):
-- For phonemizing text, this repo requires `espeak`/`espeak-ng` installed.
+Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/) for phonemizing text:
 - Linux users can consult their package managers on installing `espeak`/`espeak-ng`.
 - Windows users are required to install [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/releases/tag/1.51#Assets).
   + additionally, you may be required to set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
@@ -25,15 +20,11 @@ Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install g
 
 I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
-## Try Me
-
-To quickly try it out, you can run `python -m vall_e.models.ar_nar --yaml="./data/config.yaml"`.
-
-A small trainer will overfit a provided utterance to ensure a model configuration works.
 
 ## Pre-Trained Model
 
-> **Note** Pre-Trained weights aren't up to par until I finally nail the best training methodologies and model code. Gomen.
+> [!NOTE]
+> Pre-Trained weights aren't up to par as a pure zero-shot model at the moment, but are fine for finetuning / LoRAs.
 
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 
@@ -47,17 +38,13 @@ Training is very dependent on:
 * the bandwidth you quantized your audio to.
 * the underlying model architecture used.
 
-### Pre-Processed Dataset
+### Try Me
 
-> **Note** The provided dataset needs to be reprocessed to better suit a new training dataset format. Gomen.
-
-A "libre" dataset utilizing EnCodec quantized audio can be found [here](https://huggingface.co/ecker/vall-e) under `data.tar.gz`.
-
-A script to setup a proper environment and train can be invoked with `./scripts/setup-training.sh`
+To quickly test if a configuration works, you can run `python -m vall_e.models.ar_nar --yaml="./data/config.yaml"`; a small trainer will overfit a provided utterance.
 
 ### Leverage Your Own Dataset
 
-If you already have a dataset you want, for example your own large corpus, or for finetuning, you can use your own dataset instead.
+If you already have a dataset you want, for example, your own large corpus or for finetuning, you can use your own dataset instead.
 
 0. Set up a `venv` with `https://github.com/m-bain/whisperX/`.
   + At the moment only WhisperX is utilized. Using other variants like `faster-whisper` is an exercise left to the user at the moment.
@@ -84,8 +71,7 @@ If you already have a dataset you want, for example your own large corpus, or fo
 
 Two dataset formats are supported:
 * the standard way:
-  - for Encodec/Vocos audio backends, data is stored under `./training/data/{group}/{speaker}/{id}.enc` as a NumPy file.
-  - for Descript-Audio-Codec audio backend, data is stored under `./training/data/{group}/{speaker}/{id}.dac` as a NumPy file.
+  - dta is stored under `./training/data/{group}/{speaker}/{id}.{enc|dac}` as a NumPy file, where `enc` is for the EnCodec/Vocos backend, and `dac` for the Descript-Audio-Codec backend.
   - it is *highly* recommended to generate metadata to speed up dataset pre-load with `python3 -m vall_e.data --yaml="./training/config.yaml" --action=metadata`
 * using an HDF5 dataset:
   - you can convert from the standard way with the following command: `python3 -m vall_e.data --yaml="./training/config.yaml"` (metadata for dataset pre-load is generated alongside HDF5 creation)
@@ -104,7 +90,6 @@ You can enter `save` to save the state at any time, or `quit` to save and quit t
 
 The `lr` will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
 
-
 ### Finetuning
 
 Finetuning can be done by training the full model, or using a LoRA.
@@ -117,13 +102,13 @@ For training a LoRA, add the following block to your `config.yaml`:
 loras:
 - name : "arbitrary name" # whatever you want
   rank: 128 # dimensionality of the LoRA
-  alpha: 256 # scaling factor of the LoRA
+  alpha: 128 # scaling factor of the LoRA
   training: True
 ```
 
-And thats it. Training of the LoRA is done with the same command. Depending on the rank and alpha specified, the loss may be higher than it should, as the LoRA weights are initialized to appropriately random values.
+And thats it. Training of the LoRA is done with the same command. Depending on the rank and alpha specified, the loss may be higher than it should, as the LoRA weights are initialized to appropriately random values. I found rank and alpha of 128 works fine.
 
-To export your LoRA weights, run `python3 -m vall_e.export --lora --yaml="./training/config.yaml"`.
+To export your LoRA weights, run `python3 -m vall_e.export --lora --yaml="./training/config.yaml"`. You *should* be able to have the LoRA weights loaded from a training checkpoint automagically for inferencing, but export them just to be safe.
 
 ### Plotting Metrics
 
@@ -137,19 +122,7 @@ You can specify what X and Y labels you want to plot against by passing `--xs to
 
 As training under `deepspeed` and Windows is not (easily) supported, under your `config.yaml`, simply change `trainer.backend` to `local` to use the local training backend.
 
-Creature comforts like `float16`, `amp`, and multi-GPU training *should* work, but extensive testing still needs to be done to ensure it all functions.
-
-#### Training Caveats
-
-Unfortunately, efforts to train a *good* foundational model seems entirely predicated on a good dataset. My dataset might be too fouled with:
-* too short utterances: trying to extrapolate longer contexts seems to utterly fall apart from just the `text` being too long.
-  + It might help to, instead, initially train with smaller utterances, train for two epochs, then increase the each sample length.
-    - This does seem to help speed up the model "learning" better.
-* too tightly trimmed utterances: there being little to no space at the start and end might harm associating `<s>` and `</s>` tokens with empty utterances.
-* a poorly mapped phoneme mapping: I naively crafted my own phoneme mapping, where a HuggingFace tokenizer might supply a better token mapping.
-  + This seems remedied with settling for using a HuggingFace tokenizer to handle everything.
-* having a unified AR and NAR model might sound too convenient, but each task may lobotomize the other, due to the nature of things.
-  + This *might* be remedied with better sequence formatting, or separate embeddings for the AR/NAR
+Creature comforts like `float16`, `amp`, and multi-GPU training *should* work under the `local` backend, but extensive testing still needs to be done to ensure it all functions.
 
 #### Backend Architectures
 
@@ -175,8 +148,8 @@ For audio backends:
 * [`vocos`](https://huggingface.co/charactr/vocos-encodec-24khz): a higher quality EnCodec decoder.
   - encoding audio will use the `encodec` backend automagically, as there's no EnCodec encoder under `vocos`
 * [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality
-  - **Note** models using `descript-audio-codec` at 24KHz + 8kbps will NOT converge in any manner.
-  - **Note** models using `descript-audio-codec` at 44KHz + 8kbps seems harder to model its "language", but despite the loss being rather high, it sounds fine.
+  - models at 24KHz + 8kbps will NOT converge in any manner.
+  - models at 44KHz + 8kbps seems harder to model its "language", and the NAR side of the model suffers greatly.
 
 `llama`-based models also support different attention backends:
 * `math`: torch's SDPA's `math` implementation
@@ -204,11 +177,10 @@ Some additional flags you can pass are:
 * `--max-ar-steps`: maximum steps for inferencing through the AR model. Each second is 75 steps.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
 * `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output, but values close to it works fine.
-* `--nar-temp`: sampling temperature to use for the NAR pass. During experimentation, `0.2` provides clean output, but values upward of `0.6` seems fine too.
+* `--nar-temp`: sampling temperature to use for the NAR pass. During experimentation, the lower value, the better. Set to `0` to enable greedy sampling.
 
-And some experimental sampling flags you can use too (your mileage will ***definitely*** vary):
-* `--max-ar-context`: Number of `resp` tokens to keep in the context when inferencing. This is akin to "rolling context" in an effort to try and curb any context limitations, but currently does not seem fruitful.
-* `--min-ar-temp` / `--min-nar-temp`: triggers the dynamic temperature pathway, adjusting the temperature based on the confidence of the best token. Acceptable values are between `[0.0, (n)ar-temp)`.
+And some experimental sampling flags you can use too (your mileage will ***definitely*** vary, but most of these are bandaids for a bad AR):
+* `--min-ar-temp`: triggers the dynamic temperature pathway, adjusting the temperature based on the confidence of the best token. Acceptable values are between `[0.0, (n)ar-temp)`.
   + This simply uplifts the [original implementation](https://github.com/kalomaze/koboldcpp/blob/dynamic-temp/llama.cpp#L5132) to perform it.
   + **!**NOTE**!**: This does not seem to resolve any issues with setting too high/low of a temperature. The right values are yet to be found.
 * `--top-p`: limits the sampling pool to top sum of values that equal `P`% probability in the probability distribution.
@@ -225,23 +197,20 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 
 ## To-Do
 
-* train and release a ***good*** model.
-* explore alternative setups, like a NAR-only model
-  - this would require a audio length predictor, but could help with a lot of things (I believe Meta's Voicebox does this?)
-* explore better sampling techniques
-  - dynamic temperature shows promise despite it being a very early iteration
-  - mirostat seems to show promise too despite being a half-baked implementation
-  - penalty incurred from sampling is a bit steep at times...
-  - the NAR might need to be greedy sampled only
-* clean up the README, and document, document, document onto the wiki.
-* extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
-  - training additional tasks needs the SpeechX implementation to be reworked.
+* [x] train and release a serviceable model for finetuning against.
+* [ ] train and release a ***good*** zero-shot model.
+  - this should, hopefully, just simply requires another epoch or two for `ar+nar-llama-8`, as the foundation seems rather robust now.
+* [x] ~~explore alternative setups, like a NAR-only model~~
+  - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
+* [x] ~~explore better sampling techniques~~
+  - the AR doesn't *need* exotic sampling techniques, as they're bandaids for a bad AR.
+  - the NAR benefits from greedy sampling, and anything else just harms output quality.
+* [ ] clean up the README, and document, document, document onto the wiki.
+* [ ] extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - this requires a good foundational model before extending it to transfer tasks onto.
-* improve throughput (despite peaking at 120it/s):
-  - utilize an approach similar to [FasterDecoding/Medusa](https://github.com/FasterDecoding/Medusa/) with additional heads for decoding N+1, N+2, N+3 AR tokens
-    + this requires a properly trained AR, however.
-* audio streaming
+* [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
+  - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
 
 ## Notices and Citations
 
