@@ -28,8 +28,10 @@ mel_stft_loss = auraloss.freq.MelSTFTLoss(cfg.sample_rate, device="cpu")
 
 def train_feeder(engine, batch):
 	with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
+		batch_size = len(batch["text"])
+		engine.current_batch_size = batch_size
+		
 		if engine.hyper_config.experimental:
-			batch_size = len(batch["text"])
 			if cfg.model.interleave:
 				quant_levels = 0	
 				resps_list = [ resp for resp in batch["resps"] ]

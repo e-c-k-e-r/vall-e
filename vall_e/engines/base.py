@@ -71,6 +71,7 @@ class Engine():
 		self.max_nan_losses = 8
 		self.loss_scaler = torch.cuda.amp.GradScaler() if cfg.trainer.scale_loss else None
 
+		self.current_batch_size = 0
 		self._global_grad_norm = None
 
 	def freeze(self, freeze_all=True):
@@ -108,7 +109,7 @@ class Engine():
 
 	@property
 	def batch_size(self):
-		return cfg.hyperparameters.batch_size
+		return self.current_batch_size if self.current_batch_size > 0 else cfg.hyperparameters.batch_size
 
 	@property
 	def gradient_accumulation_steps(self):
@@ -176,7 +177,7 @@ class Engine():
 		self.micro_steps = state['stats']['micro_step'] if 'stats' in state else state['micro_step']
 		self.global_samples = state['stats']['global_samples'] if 'stats' in state else state['global_samples']
 		self.tokens_processed = state['stats']['tokens_processed'] if 'stats' in state else state['tokens_processed']
-		self.module.load_state_dict(state['module'])
+		self.module.load_state_dict(state['module'], strict=cfg.trainer.strict_loading)
 
 		load_optimizer_states = load_optimizer_states and self.optimizer is not None and 'optimizer' in state
 		load_lr_scheduler_states = load_lr_scheduler_states and self.lr_scheduler is not None and 'lr_scheduler' in state

@@ -61,6 +61,7 @@ class Engine(DeepSpeedEngine):
 		self.tokens_processed = stats["tokens_processed"]
 
 		self.max_nan_losses = 8
+		self.current_batch_size = 0
 
 	def freeze(self, freeze_all=True):
 		# freeze non-LoRA params if requested
@@ -99,7 +100,7 @@ class Engine(DeepSpeedEngine):
 
 	@property
 	def batch_size(self):
-		return cfg.hyperparameters.batch_size
+		return self.current_batch_size if self.current_batch_size > 0 else cfg.hyperparameters.batch_size
 
 	def gather_attribute(self, *args, **kwargs):
 		return gather_attribute(self.module, *args, **kwargs)
