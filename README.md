@@ -23,8 +23,7 @@ I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
 ## Pre-Trained Model
 
-> [!NOTE]
-> Pre-Trained weights aren't up to par as a pure zero-shot model at the moment, but are fine for finetuning / LoRAs.
+> [!NOTE] Pre-Trained weights aren't up to par as a pure zero-shot model at the moment, but are fine for finetuning / LoRAs.
 
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 

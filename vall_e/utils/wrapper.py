@@ -212,6 +212,20 @@ def replace_attention( model, klass, target, mode="math", verbose=False ):
 
 	return model
 
+# trim/expand a tensor (for example, in a state dict)
+def resize_weight( weight, target ):
+	# trim
+	if target < weight.shape[0]:
+		return weight[:target]
+	# expand
+	if target > weight.shape[0]:
+		return torch.stack(
+			[ x for x in weight ] +
+			[ torch.rand( weight[0].shape ).to(device=weight[0].device, dtype=weight[0].dtype) for _ in range( target - weight.shape[0] ) ]
+		)
+
+	return weight
+
 # https://github.com/konstmish/prodigy
 try:
 	from prodigyopt import Prodigy

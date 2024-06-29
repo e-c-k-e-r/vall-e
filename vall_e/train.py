@@ -30,7 +30,7 @@ def train_feeder(engine, batch):
 	with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
 		batch_size = len(batch["text"])
 		engine.current_batch_size = batch_size
-		
+
 		if engine.hyper_config.experimental:
 			if cfg.model.interleave:
 				quant_levels = 0	
@@ -116,7 +116,12 @@ def run_eval(engines, eval_name, dl):
 	
 	processed = 0
 	while processed < cfg.evaluation.size:
-		batch: dict = to_device(next(iter(dl)), cfg.device)
+		batch = to_device(next(iter(dl)), cfg.device)
+
+		# limit to eval batch size in the event we somehow have a weird dataloader
+		for key in batch.keys():
+			batch[key] = batch[key][:cfg.evaluation.batch_size]
+
 		processed += len(batch["text"])
 
 		for name in engines:

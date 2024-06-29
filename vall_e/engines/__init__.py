@@ -159,13 +159,11 @@ def load_engines(training=True):
 			for k in erase:
 				del state[k]
 
-			# resize text embedding
-			if "text_emb.weight" in state and model.config.text_tokens != state["text_emb.weight"].shape[0]:
-				state["text_emb.weight"] = state["text_emb.weight"][:model.config.text_tokens]
-
-			# resize text embedding
-			if "rvq_l_emb.weight" in state and model.config.resp_levels != state["rvq_l_emb.weight"].shape[0]:
-				state["rvq_l_emb.weight"] = state["rvq_l_emb.weight"][:model.config.resp_levels]
+			# resize embeddings
+			if "text_emb.weight" in state:
+				state["text_emb.weight"] = ml.resize_weight( state["text_emb.weight"], model.config.text_tokens )
+			if "rvq_l_emb.weight" in state:
+				state["rvq_l_emb.weight"] = ml.resize_weight( state["rvq_l_emb.weight"], model.config.resp_levels )
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 

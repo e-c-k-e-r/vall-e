@@ -1,4 +1,3 @@
-experimental: False # should probably expand this into a dict of experimental flags
 sample_rate: 24_000 # 44_000 for dac
 audio_backend: "vocos" # or dac
 
@@ -131,7 +130,9 @@ dataset:
   max_resps: 1
   p_resp_append: 0.25
 
-  sample_type: path # speaker
+  sample_type: path # path | speaker | group
+  sample_order: duration # shuffle | duration 
+  sample_max_duration_batch: 0 # used when above = duration, 120 seconds per batch at 12GiB of VRAM works
 
   tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"]
 
