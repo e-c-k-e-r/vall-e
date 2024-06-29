@@ -12,7 +12,7 @@ import itertools
 
 from .config import cfg
 from .emb.qnt import trim, trim_random, repeat_extend_audio, merge_audio, decode_to_file
-from .utils.sampler import PoolSampler, OrderedSampler, RandomSampler
+from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
 
 from collections import defaultdict
@@ -483,23 +483,29 @@ class Dataset(_Dataset):
 			if self.sampler_order != "duration":
 				continue
 
-			bucket = str(int(round(duration)))
+			bucket = int(round(duration))
 			if bucket not in self.duration_buckets:
 				self.duration_buckets[bucket] = []
 			self.duration_buckets[bucket].append( ( Path(path), duration ) )
 
+		# ensure they're ordered
+		self.duration_buckets = dict(sorted(self.duration_buckets.items()))
+
 		# sort by duration
 		if self.sampler_order == "duration":
+			flattened = {}
 			# sort and interleave
 			for bucket in self.duration_buckets:
 				# sort by duration
 				self.duration_buckets[bucket].sort( key=lambda x: x[1] )
+				# split to retain tuples
+				flattened[bucket] = self.duration_buckets[bucket]
 				# replace with path
-				self.duration_buckets[bucket] = [ x[0] for x in self.duration_buckets[bucket] ]
+				flattened[bucket] = [ x[0] for x in flattened[bucket] ]
 				# flatten by paths
-				self.duration_buckets[bucket] = [*_interleaved_reorder(self.duration_buckets[bucket], self.get_speaker)]
+				flattened[bucket] = [*_interleaved_reorder(flattened[bucket], self.get_speaker)]
 			# flatten paths
-			self.paths = list(itertools.chain.from_iterable(self.duration_buckets.values()))
+			self.paths = list(itertools.chain.from_iterable(flattened.values()))
 		elif self.sampler_order == "shuffle":
 			# just interleave
 			self.paths = [*_interleaved_reorder(self.paths, self.get_speaker)]
@@ -536,12 +542,14 @@ class Dataset(_Dataset):
 
 		if len(self.paths) == 0:
 			raise ValueError(f"No valid path is found for {self.dataset_type}")
-		
 
 		sampler_path = cfg.rel_path / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
 
 		if self.sampler_type == "path":
-			self.sampler = OrderedSampler( len(self) )
+			if self.sampler_order == "duration" and cfg.dataset.sample_max_duration_batch > 0:
+				self.sampler = BatchedOrderedSampler( self.duration_buckets, cfg.dataset.sample_max_duration_batch, cfg.hyperparameters.batch_size )
+			else:
+				self.sampler = OrderedSampler( len(self) )
 			self.samplers = {}
 			self.spkr_samplers = {}
 		else:
@@ -1001,17 +1009,23 @@ def _create_dataloader(dataset, training):
 		shuffle = False
 	"""		
 
+	kwargs = dict(
+		shuffle=dataset.shuffle,
+		batch_size=cfg.hyperparameters.batch_size if training else cfg.evaluation.batch_size,
+		drop_last=training,
+		sampler=dataset.sampler,
+	) if not isinstance(dataset.sampler, BatchedOrderedSampler) else dict(
+		batch_sampler=dataset.sampler,
+	)
+
 	return DataLoader(
 		dataset=dataset,
-		batch_size=cfg.hyperparameters.batch_size if training else cfg.evaluation.batch_size,
-		shuffle=dataset.shuffle,
-		drop_last=training,
 		num_workers=cfg.dataset.workers,
 		collate_fn=collate_fn,
 		persistent_workers=cfg.dataset.workers > 1,
 		pin_memory=False, # True,
 		worker_init_fn=_seed_worker,
-		sampler=dataset.sampler,
+		**kwargs,
 	)
 
 def create_datasets():

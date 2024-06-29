@@ -158,6 +158,8 @@ class Dataset:
 
 	sample_type: str = "path" # path | speaker
 	sample_order: str = "shuffle" # duration
+	sample_max_duration_batch: float = 0.0 # total number of seconds of utterances per batched, 0 to disable
+	# for a full sized model with 12GiB of VRAM for Encodec, 120 seconds is just enough
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 	
@@ -197,28 +199,29 @@ class Dataset:
 @dataclass()
 class Model:
 	name: str = "" # vanity name for the model
-	version: int = 1 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding
+	version: int = 5 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding, 3+ = additional embeddings
 	size: str | dict = "full" # preset string or explicitly defined dimensionality
 	resp_levels: int = 1 # RVQ-bin levels this model targets for outputs
 	prom_levels: int = 8 # RVQ-bin levels this model accepts as an input prompt
-	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc")
-	langs: int = 1 # defined languages
-	tones: int = 1 # defined tones
-	experts: int = 1
-	arch_type: str = "retnet" # or "transformer""
-	training: bool = True # unneeded now
+	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc") (unused)
+	langs: int = 1 # defined languages (semi-unused)
+	tones: int = 1 # defined tones (unsued)
+	experts: int = 1 # for mixtral / retnet-ts
+	arch_type: str = "llama" # underling LM architecture used
+	training: bool = True # I really need to attend to this
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
-	p_ar_level: float | str = "auto" # determines odds of selecting the AR (level 0) when training, "auto" for default behavior
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
-	attention: str = "auto"
-	audio_embedding_sums: bool = True
-	split_classifiers: bool = False
+	attention: str = "auto" # for llama arch_types: attention used
+	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
+	split_classifiers: bool = False # experimental, but each RVQ level gets its own classifier / output proj / LM head
 	dropout: float = 0.1 # adjustable dropout value
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
 	experimental: str | None = None # for now it sets things to be HF compatible
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
+	
+	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
 
 	def get(self, name=None):
@@ -338,8 +341,8 @@ class Model:
 class LoRA:
 	name: str = "lora" # vanity name
 	# to-do: find sane default values
-	rank: int = 8 # rank for the LoRA
-	alpha: int = 16 # rank for the LoRA
+	rank: int = 128 # rank for the LoRA
+	alpha: int = 128 # rank for the LoRA
 	training: bool = True # 
 	parametrize: bool = False # 
 	rvq_levels: list[int] = field(default_factory=lambda: []) # determines RVQ levels to activate the LoRA
@@ -349,6 +352,7 @@ class LoRA:
 		name = [ self.name, f"r{self.rank}", f"a{self.alpha}" ]
 		return "-".join(name)
 
+	# actually not needed anymore
 	def active_level( self, level ):
 		if not self.rvq_levels:
 			return True
@@ -360,10 +364,10 @@ class Hyperparameters:
 	gradient_accumulation_steps: int = 32
 	gradient_clipping: int | float = 100
 
-	optimizer: str = "Adamw"
+	optimizer: str = "Adamw" # should be 'Prodigyopt" now
 	optimizer_params: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 	
-	learning_rate: float = 3.25e-4
+	learning_rate: float = 3.25e-4 # should be 1.0 for ProdigyOpt
 	warmup_steps: int = 0
 
 	scheduler: str = ""
@@ -384,18 +388,18 @@ class Evaluation:
   
 	steps: int = 500
 	ar_temperature: float = 1.0
-	nar_temperature: float = 0.2
+	nar_temperature: float = 0.0
 
 	load_disabled_engines: bool = True
 
 @dataclass()
 class DeepSpeed:
 	zero_optimization_level: int = 0
-	use_compression_training: bool = False
-	compression_bits: int = 8
-	inferencing: bool = False
+	use_compression_training: bool = False # cope
+	compression_bits: int = 8 # cope
+	inferencing: bool = False # for using DeepSpeed's inferencing wrapper instead
 	
-	amp: bool = False
+	amp: bool = False # use DeepSpeed's AMP (requires some other package installed apparently)
 
 	config: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 
@@ -567,7 +571,7 @@ class Trainer:
 	load_module_only: bool = False
 	restart_step_count: bool = False
 
-	activation_checkpointing: bool | None = None # deprecated
+	activation_checkpointing: bool | None = None # deprecated, should technically be used for only on activations and not the entire gradients, but HF only has gradient checkpointing
 	gradient_checkpointing: bool = True
 
 	aggressive_optimizations: bool = False
@@ -612,16 +616,12 @@ class Inference:
 	amp: bool = False
 
 	normalize: bool = False # do NOT enable this unless you know exactly what you're doing
-	audio_backend: str = "" # encodec, vocos, dac
 
 	# legacy / backwards compat
+	audio_backend: str = "" # encodec, vocos, dac
 	use_vocos: bool = True
 	use_encodec: bool = True
 	use_dac: bool = True
-
-	# shit that doesn't work
-	recurrent_chunk_size: int = 0
-	recurrent_forward: bool = False
 
 	@cached_property
 	def dtype(self):
@@ -726,6 +726,7 @@ class Config(BaseConfig):
 			print("Error while opening HDF5 file:", f'{self.rel_path}/{self.dataset.hdf5_name}', str(e))
 			self.dataset.use_hdf5 = False
 
+	# to-do: prune unused keys
 	def format( self, training=True ):
 		if isinstance(self.dataset, type):
 			self.dataset = dict()

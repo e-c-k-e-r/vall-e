@@ -74,6 +74,53 @@ class OrderedSampler(Sampler):
 		self.position = state["position"]
 		self.length = state["length"]
 
+# Like the above, but will batch based on token count
+class BatchedOrderedSampler(Sampler):
+	def __init__( self, buckets, max_duration=0, max_batch_size=0 ):
+		self.position = 0
+		self.batches = []
+
+		assert max_duration != 0 and max_batch_size != 0, "max_duration and max_batch_size cannot both be 0"
+
+		current_batch = []
+		current_size = 0
+		current_index = 0
+		for key, bucket in buckets.items():
+			for path, duration in bucket:
+				# flush
+				should_flush = False
+				if max_duration > 0 and current_size + duration > max_duration:
+					should_flush = True
+				elif max_batch_size > 0 and len(current_batch) >= max_batch_size:
+					should_flush = True
+
+				if should_flush and len(current_batch) > 0:
+					self.batches.append( current_batch )
+					current_batch = []
+					current_size = 0
+				
+				current_batch.append( current_index )
+				current_index += 1
+				current_size += duration
+
+	def __len__(self):
+		return len(self.batches)
+
+	def __iter__(self):
+		if self.position >= len(self.batches):
+			self.position = 0
+
+		while self.position < len(self.batches):
+			yield self.batches[self.position]
+			self.position += 1
+
+	def get_state(self):
+		return { "position": self.position, "batches": self.batches }
+	
+	def set_state(self, state):
+		self.position = state["position"]
+		self.batches = state["batches"]
+
 # Randomly samples indices from a given sequence from 0 to length
 # Allows saving and loading state
 class RandomSampler(Sampler):

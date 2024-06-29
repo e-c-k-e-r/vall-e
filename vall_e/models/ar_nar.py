@@ -72,6 +72,12 @@ class AR_NAR(Base):
 		if hasattr(self, "config") and self.config:
 			return self.config.tasks
 		return cfg.model.tasks
+
+	@property
+	def p_rvq_levels(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.p_rvq_levels
+		return cfg.model.p_rvq_levels
 	
 	@property
 	def n_langs(self) -> int:
@@ -163,7 +169,10 @@ class AR_NAR(Base):
 				# determines which RVQ level to target per batch
 				quant_level_range = self.quant_level_range
 
-				if cfg.experimental:
+				if self.p_rvq_levels == "equal":
+					# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
+				else: # if self.p_rvq_levels == "auto":
 					# makes higher levels less likely
 					def generate( lo=0, hi=8 ):
 						index = lo
@@ -174,9 +183,6 @@ class AR_NAR(Base):
 						return int(index)
 
 					quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
-				else:
-					# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
 
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 				
