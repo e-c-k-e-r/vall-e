@@ -18,7 +18,7 @@ from einops import rearrange
 from torch import Tensor
 from tqdm import trange
 
-from ..emb.qnt import trim
+from ..emb.qnt import trim, encode_as_embedding
 
 from .lora import enable_lora
 
@@ -107,6 +107,12 @@ class AR_NAR(Base):
 		return True
 
 	@property
+	def use_external_audio_embeddings(self) -> bool:
+		if hasattr(self, "config") and self.config:
+			return self.config.use_external_audio_embeddings
+		return cfg.model.use_external_audio_embeddings
+
+	@property
 	def version(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.version
@@ -191,13 +197,22 @@ class AR_NAR(Base):
 
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 				
-				# append stop tokens for AR
-				# could technically do it in the .inputs call
 				for i in range(batch_size):
+					# cap quant_level if it exceeds its corresponding resp/prom
+					if quant_levels[i] >= resps_list[i].shape[-1]:
+						quant_levels[i] = resps_list[i].shape[-1] - 1
+
+					if quant_levels[i] >= proms_list[i].shape[-1]:
+						quant_levels[i] = proms_list[i].shape[-1] - 1
+
 					# only apply stop token for RVQ level 0
 					if quant_levels[i] > 0:
 						continue
+
+					# append stop tokens for AR
+					# could technically do it in the .inputs call
 					resps_list[i] = torch.cat([resps_list[i], torch.Tensor([self.stop_token]).to(device=device, dtype=torch.int16) ])
+
 
 				inputs = self.inputs(
 					text_list=text_list,

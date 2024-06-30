@@ -31,6 +31,8 @@ from .arch import *
 from ..utils import wrapper as ml
 from ..samplers import reptition_penalize, length_penalize, ban_tokens, top_k_top_p_filtering, dynamic_temperature, top_k_logits_list, mirostat_sample
 
+from ..emb.qnt import encode_as_embedding
+
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
 	seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
@@ -169,6 +171,26 @@ class AudioEmbedding(nn.Module):
 
 		return x
 
+# subjugates the audio backend's embeddings
+# inherits for use of the stop token
+class AudioEmbedding_External(AudioEmbedding):
+	def forward(self, input: Tensor, offset: int = 0 ) -> Tensor:
+		if not input.shape[0]:
+			return super().forward( input )
+
+		quant_level = 0 if input.dim() == 1 else input.shape[-1] - 1
+		has_stop_token = quant_level == 0 and input[-1] == 1024
+
+		if has_stop_token:
+			input = input[:-1]
+
+		embedding = encode_as_embedding( input, quant_level ).to(device=input.device, dtype=self.embeddings[0].weight.dtype)
+
+		if has_stop_token:
+			stop_token = super().forward( torch.Tensor([1024]).to(device=input.device, dtype=torch.int16), 0 )
+			embedding = torch.concat( [ embedding, stop_token ] )
+
+		return embedding
 # per-level classification
 class AudioClassifier(nn.Module):
 	def __init__(
@@ -270,6 +292,10 @@ class Base(nn.Module):
 		return False
 
 	@property
+	def use_external_audio_embeddings(self) -> bool:
+		return False
+
+	@property
 	def version(self) -> int:
 		return 1
 
@@ -365,6 +391,15 @@ class Base(nn.Module):
 			self.resps_emb = AudioEmbedding_Old(
 				l_tokens, d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
+			)
+		elif self.use_external_audio_embeddings:
+			self.proms_emb = AudioEmbedding_External(
+				[n_prom_tokens] * self.n_prom_levels, d_model,
+				sums=audio_embedding_sums,
+			)
+			self.resps_emb = AudioEmbedding_External(
+				l_tokens, d_model,
+				sums=audio_embedding_sums,
 			)
 		else:
 			self.proms_emb = AudioEmbedding(
@@ -835,6 +870,7 @@ class Base(nn.Module):
 				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
 				embedding = None
 
+				# is already an embedding		
 				if name == "task":
 					# noop
 					# *maybe* inject a token for specifying task type

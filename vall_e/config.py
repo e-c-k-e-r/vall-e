@@ -220,6 +220,7 @@ class Model:
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
 	experimental: str | None = None # for now it sets things to be HF compatible
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
+	use_external_audio_embeddings: bool = False # subjugates the audio backend's encoding/decoding model for embeddings
 	
 	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range

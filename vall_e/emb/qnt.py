@@ -182,7 +182,6 @@ def unload_model():
 	_load_model.cache_clear()
 	_load_encodec_model.cache_clear() # because vocos can only decode
 
-
 @torch.inference_mode()
 def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=None):
 	# upcast so it won't whine
@@ -264,6 +263,31 @@ def decode_to_file(resps: Tensor, path: Path, device="cuda"):
 def _replace_file_extension(path, suffix):
 	return (path.parent / path.name.split(".")[0]).with_suffix(suffix)
 
+# some experimental shit involving using the Encodec/DAC model's embeddings itself
+@torch.inference_mode()
+def encode_as_embedding(codes: Tensor, quant_level: int = 0, device="cpu"):
+	model = _load_model(device)
+
+
+	codes = codes.to(device=device, dtype=torch.int32)
+
+	if codes.dim() == 1:
+		codes = rearrange(codes, "t -> 1 t")
+	else:
+		codes = codes[:, quant_level]
+		codes = rearrange(codes, "t -> 1 t")
+
+	
+	if cfg.audio_backend == "dac":
+		emb = model.quantizer.quantizers[quant_level]
+
+		x = emb.decode_code(codes)
+		x = emb.out_proj(x)
+		x = x[0].t().detach()
+
+		return x
+
+	raise Exception(f'Currently only DAC is supported')
 
 @torch.inference_mode()
 def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.model.max_levels, return_metadata=True):
