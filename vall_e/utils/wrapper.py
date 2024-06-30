@@ -213,15 +213,16 @@ def replace_attention( model, klass, target, mode="math", verbose=False ):
 	return model
 
 # trim/expand a tensor (for example, in a state dict)
-def resize_weight( weight, target ):
+def resize_weight( weight, target, dim=0, random=True ):
 	# trim
-	if target < weight.shape[0]:
+	if target < weight.shape[dim]:
 		return weight[:target]
 	# expand
-	if target > weight.shape[0]:
+	if target > weight.shape[dim]:
+		fn = torch.rand if random else torch.zeros
 		return torch.stack(
 			[ x for x in weight ] +
-			[ torch.rand( weight[0].shape ).to(device=weight[0].device, dtype=weight[0].dtype) for _ in range( target - weight.shape[0] ) ]
+			[ fn( weight[0].shape ).to(device=weight[0].device, dtype=weight[0].dtype) for _ in range( target - weight.shape[dim] ) ]
 		)
 
 	return weight

@@ -149,7 +149,8 @@ class AudioEmbedding(nn.Module):
 		self,
 		l_tokens: list[int], # list of number of tokens (needed because AR resps includes stop token)
 		token_dim: int, # dimensionality of the embedding
-		sums: bool = True # whether to sum all previous layers of embeddings to factor in other RVQ bin levels (I do not know which way is better)
+		sums: bool = True, # whether to sum all previous layers of embeddings to factor in other RVQ bin levels (I do not know which way is better)
+		external_mode: str | None = None, # "exclusive" | "inclusive", whether to include the original audio backend's embeddings
 	):
 		super().__init__()
 		# array of embeddings
@@ -157,10 +158,42 @@ class AudioEmbedding(nn.Module):
 		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
 		#     + resps cannot share the AR and NAR embeddings, since they do encode whether to predict the same level but in the next token or predict in place but the next level
 		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
-		# 
+		# further experimentation is needed to see if this actually is useful
 		self.sums = sums
 
-	def forward(self, xi: Tensor, offset: int = 0 ) -> Tensor:
+		self.external_mode = external_mode
+
+		# set initial weights to zero
+		if self.external_mode == "inclusive":
+			for i, embedding in enumerate(self.embeddings):
+				embedding.weight = torch.nn.Parameter(torch.zeros( embedding.weight.shape ))
+
+	def external_embeddings(self, input: Tensor) -> Tensor:
+		quant_level = 0 if input.dim() == 1 else input.shape[-1] - 1
+
+		# for AR, trim any stop tokens
+		has_stop_token = False
+		if quant_level == 0:
+			stop_token = self.embeddings[0].weight.shape[0] - 1
+			stop_token_indices = (input == stop_token).nonzero()
+			has_stop_token = len(stop_token_indices) > 0
+		
+		if has_stop_token:
+			input = input[:stop_token_indices.min().item()]
+
+		# get external embedding
+		embedding = encode_as_embedding( input, quant_level ).to(device=input.device, dtype=self.embeddings[quant_level].weight.dtype)
+		# resize if necessary (in case the external embeddings do not match our model dim)
+		embedding = ml.resize_weight( embedding, self.embeddings[quant_level].weight.shape[-1], dim=-1, random=False )
+
+		# reintroduce stop token
+		if has_stop_token:
+			stop_token = self.internal_forward( torch.Tensor([stop_token]).to(device=input.device, dtype=torch.int16), 0 )
+			embedding = torch.concat( [ embedding, stop_token ] )
+
+		return embedding
+
+	def internal_forward(self, xi: Tensor, offset: int = 0 ) -> Tensor:
 		quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
 		
 		if self.sums and quant_level > 0:
@@ -171,26 +204,17 @@ class AudioEmbedding(nn.Module):
 
 		return x
 
-# subjugates the audio backend's embeddings
-# inherits for use of the stop token
-class AudioEmbedding_External(AudioEmbedding):
-	def forward(self, input: Tensor, offset: int = 0 ) -> Tensor:
-		if not input.shape[0]:
-			return super().forward( input )
+	def forward(self, xi: Tensor, offset: int = 0 ) -> Tensor:
+		x = self.internal_forward( xi, offset ) if self.external_mode != "exclusive" or xi.shape[0] == 0 else None
 
-		quant_level = 0 if input.dim() == 1 else input.shape[-1] - 1
-		has_stop_token = quant_level == 0 and input[-1] == 1024
+		if self.external_mode and xi.shape[0] > 0:
+			external_embeddings = self.external_embeddings( xi )
+			if self.external_mode == "exclusive":
+				return external_embeddings
+			x += external_embeddings
 
-		if has_stop_token:
-			input = input[:-1]
+		return x
 
-		embedding = encode_as_embedding( input, quant_level ).to(device=input.device, dtype=self.embeddings[0].weight.dtype)
-
-		if has_stop_token:
-			stop_token = super().forward( torch.Tensor([1024]).to(device=input.device, dtype=torch.int16), 0 )
-			embedding = torch.concat( [ embedding, stop_token ] )
-
-		return embedding
 # per-level classification
 class AudioClassifier(nn.Module):
 	def __init__(
@@ -292,8 +316,8 @@ class Base(nn.Module):
 		return False
 
 	@property
-	def use_external_audio_embeddings(self) -> bool:
-		return False
+	def audio_embeddings_mode(self) -> str | None:
+		return None
 
 	@property
 	def version(self) -> int:
@@ -392,23 +416,16 @@ class Base(nn.Module):
 				l_tokens, d_model,
 				levels=self.n_resp_levels if self.version > 3 else None,
 			)
-		elif self.use_external_audio_embeddings:
-			self.proms_emb = AudioEmbedding_External(
-				[n_prom_tokens] * self.n_prom_levels, d_model,
-				sums=audio_embedding_sums,
-			)
-			self.resps_emb = AudioEmbedding_External(
-				l_tokens, d_model,
-				sums=audio_embedding_sums,
-			)
 		else:
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
 				sums=audio_embedding_sums,
+				external_mode=self.audio_embeddings_mode,
 			)
 			self.resps_emb = AudioEmbedding(
 				l_tokens, d_model,
 				sums=audio_embedding_sums,
+				external_mode=self.audio_embeddings_mode,
 			)
 
 		# useless since I actually removed using these with the input processing overhaul...

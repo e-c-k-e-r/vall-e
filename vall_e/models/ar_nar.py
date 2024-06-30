@@ -107,10 +107,10 @@ class AR_NAR(Base):
 		return True
 
 	@property
-	def use_external_audio_embeddings(self) -> bool:
+	def audio_embeddings_mode(self) -> bool:
 		if hasattr(self, "config") and self.config:
-			return self.config.use_external_audio_embeddings
-		return cfg.model.use_external_audio_embeddings
+			return self.config.audio_embeddings_mode
+		return cfg.model.audio_embeddings_mode
 
 	@property
 	def version(self) -> int:
@@ -473,7 +473,7 @@ def example_usage():
 	"""
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 200 if cfg.model.arch_type in ["mamba","mamba2"] else 200
+	steps = 100
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""

@@ -263,11 +263,12 @@ def decode_to_file(resps: Tensor, path: Path, device="cuda"):
 def _replace_file_extension(path, suffix):
 	return (path.parent / path.name.split(".")[0]).with_suffix(suffix)
 
-# some experimental shit involving using the Encodec/DAC model's embeddings itself
+# an experimental way to include "trained" embeddings from the audio backend itself
+# > b-but why not just initialize the embedding weights to these instead of fetching them at r-runtime
+# each audio backend does their "embeddings" a different way that isn't just a embedding weights
 @torch.inference_mode()
 def encode_as_embedding(codes: Tensor, quant_level: int = 0, device="cpu"):
 	model = _load_model(device)
-
 
 	codes = codes.to(device=device, dtype=torch.int32)
 
@@ -277,7 +278,7 @@ def encode_as_embedding(codes: Tensor, quant_level: int = 0, device="cpu"):
 		codes = codes[:, quant_level]
 		codes = rearrange(codes, "t -> 1 t")
 
-	
+	# dac conveniently has its dim = 1024
 	if cfg.audio_backend == "dac":
 		emb = model.quantizer.quantizers[quant_level]
 
@@ -286,6 +287,15 @@ def encode_as_embedding(codes: Tensor, quant_level: int = 0, device="cpu"):
 		x = x[0].t().detach()
 
 		return x
+
+	"""
+	# vocos inconveniently has its dim = 128
+	elif cfg.audio_backend == "vocos":
+		x = model.codes_to_features(codes)
+	# encodec inconveniently has its dim = 300
+	elif cfg.audio_backend == "encodec":
+		...
+	"""
 
 	raise Exception(f'Currently only DAC is supported')
 
