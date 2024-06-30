@@ -252,12 +252,6 @@ def example_usage():
 	kwargs = {}
 	model = Model(**kwargs).to(device)
 	steps = 100
-	if cfg.model.arch_type == "mamba2":
-		steps = 100
-	elif cfg.model.arch_type == "llama":
-		steps = 500
-	elif cfg.model.interleave:
-		steps = 250
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""

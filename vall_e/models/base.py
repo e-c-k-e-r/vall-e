@@ -194,7 +194,7 @@ class AudioEmbedding(nn.Module):
 			input = input[:-1]
 
 		# get external embedding
-		embedding = encode_as_embedding( input, quant_level ).to(device=input.device, dtype=self.embeddings[quant_level].weight.dtype)
+		embedding = encode_as_embedding( input, quant_level, sums=self.sums ).to(device=input.device, dtype=self.embeddings[quant_level].weight.dtype)
 		# resize if necessary (in case the external embeddings do not match our model dim)
 		embedding = ml.resize_weight( embedding, self.embeddings[quant_level].weight.shape[-1], dim=-1, random=False )
 

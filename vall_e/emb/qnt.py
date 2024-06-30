@@ -267,10 +267,30 @@ def _replace_file_extension(path, suffix):
 # > b-but why not just initialize the embedding weights to these instead of fetching them at r-runtime
 # each audio backend does their "embeddings" a different way that isn't just a embedding weights
 @torch.inference_mode()
-def encode_as_embedding(codes: Tensor, quant_level: int = 0, device="cuda"):
+def encode_as_embedding(codes: Tensor, quant_level: int = 0, sums=False, device="cuda"):
 	model = _load_model(device)
 
 	codes = codes.to(device=device, dtype=torch.int32)
+
+	# yucky kludge
+	if sums:
+		if codes.dim() == 1:
+			codes = rearrange(codes, "t -> t 1")
+
+		if cfg.audio_backend == "dac":
+			x = []
+			for i in range(quant_level+1):
+				emb = model.quantizer.quantizers[i]
+				code = rearrange(codes[:, quant_level], "t -> 1 t")
+
+				xi = emb.decode_code(code)
+				xi = emb.out_proj(xi)
+				x.append( xi[0].t() )
+
+			return sum(x).detach()
+
+		raise Exception(f'Currently only DAC is supported')
+
 
 	if codes.dim() == 2:
 		codes = codes[:, quant_level]
