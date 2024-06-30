@@ -28,24 +28,8 @@ class NAR(Base):
 		return cfg.model.capabilities
 
 	@property
-	def quant_level_range(self) -> list[int]:
-		if hasattr(self, "config") and self.config.rvq_level_range:
-			return self.config.rvq_level_range
-		return [ 0 if self.causal else 1, self.n_resp_levels ]
-
-	@property
 	def causal(self):
 		return "len" in self.capabilities
-
-	@property
-	def norm_type(self):
-		return "ln" # if self.n_resp_levels == 1 else "adaln"
-
-	@property
-	def arch_type(self) -> str:
-		if hasattr(self, "config") and self.config:
-			return self.config.arch_type
-		return cfg.model.arch_type
 
 	@property
 	def n_prom_levels(self) -> int:
@@ -71,12 +55,6 @@ class NAR(Base):
 			return self.config.tasks
 		return cfg.model.tasks
 
-	@property
-	def p_rvq_levels(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.p_rvq_levels
-		return cfg.model.p_rvq_levels
-	
 	@property
 	def n_langs(self) -> int:
 		if hasattr(self, "config") and self.config:
@@ -159,12 +137,14 @@ class NAR(Base):
 			task_list = [ sample_task() for _ in range(batch_size) ]
 
 			# determines which RVQ level to target per batch
-			quant_level_range = self.quant_level_range
+			quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels ]
 
-			if self.p_rvq_levels == "equal":
+			p_rvq_levels = self.config.experimental.p_rvq_levels if self.config is not None else "equal"
+
+			if p_rvq_levels == "equal":
 				# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 				quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
-			else: # if self.p_rvq_levels == "auto":
+			else: # if p_rvq_levels == "auto":
 				# makes higher levels less likely
 				def generate( lo=0, hi=8 ):
 					index = lo

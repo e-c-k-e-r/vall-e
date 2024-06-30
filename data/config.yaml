@@ -2,24 +2,31 @@ sample_rate: 24_000 # 44_000 for dac
 audio_backend: "vocos" # or dac
 
 models:
-- name: "ar+nar"
-  size: "full"
-  resp_levels: 8
-  prom_levels: 8
-  tasks: 8
-  langs: 2
-  tones: 1
-  arch_type: llama
-  training: True
-  version: 5
-  attention: flash_attention_2
-  dropout: 0.1
-  experimental: False
+- name: "ar+nar" # vanity name
+  size: "full" # model dimensionality
+  resp_levels: 8 # RVQ levels this model targets
+  prom_levels: 8 # should always be the above
+  tasks: 8 # tasks this model can attend to, only tts is supported at the moment
+  langs: 2 # languages this model supports, semi-unused at the moment 
+  tones: 1 # tones this model supports, currently unused
+  arch_type: llama # underlying LLM arch to use, currently focusing on llama
+  training: True # signals this model is to be trained
+  version: 5 # helps keep backwards compatibility for when I add new things to the model
+  attention: auto # attention mechanism to use, "auto" for safety
+  dropout: 0.1 # percentage of the model to disable during training
 
+  # factors for split loss values, remove to have a unified loss calculation
   loss_factors:
-    text: 0.1
-    prom: 0.0
-    resp: 1.0
+    text: 0.1 # text phoneme portion of the sequence
+    prom: 0.0 # input prompt portion of the sequence
+    resp: 1.0 # output audio portin of the sequence
+
+  # experimental settings
+  experimental:
+    hf: False # uses vall_e.models.experimental, a wrapper around a HF model that could technically be used for non-pytorch backends later 
+    interleave: False # interleaves RVQ levels, only works with above for now
+    audio_embedding_mode: "" # "" | "inclusive" | "exclusive", whether to utilize the audio backend's embeddings with the input embeddings
+    audio_embedding_sums: False # whether the input embeddings include all prior RVQ levels (sums) or only the current one, further experimentation is needed to see if this matters
 
 hyperparameters:
   autotune: False

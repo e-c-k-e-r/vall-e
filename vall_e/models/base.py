@@ -283,14 +283,6 @@ class Base(nn.Module):
 		raise NotImplementedError
 
 	@property
-	def arch_type(self) -> str:
-		raise NotImplementedError
-
-	@property
-	def norm_type(self):
-		raise NotImplementedError
-
-	@property
 	def n_prom_levels(self) -> int:
 		raise NotImplementedError
 
@@ -377,6 +369,9 @@ class Base(nn.Module):
 		self.l_padding = l_padding
 
 		n_prom_tokens = n_audio_tokens
+		arch_type = self.config.arch_type if self.config is not None else "llama"
+
+		self.arch_type = arch_type
 
 		# check if requested arch is unavailable
 		if self.arch_type in ERROR_ARCHES:
@@ -392,7 +387,7 @@ class Base(nn.Module):
 
 		audio_embedding_sums = self.config.experimental.audio_embedding_sums if self.config is not None else False
 		split_classifiers = self.config.experimental.split_classifiers if self.config is not None else False
-		audio_embeddings_mode = self.config.experimental.audio_embeddings_mode if self.config is not None else ""
+		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -420,12 +415,12 @@ class Base(nn.Module):
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
 				sums=audio_embedding_sums,
-				external_mode=audio_embeddings_mode,
+				external_mode=audio_embedding_mode,
 			)
 			self.resps_emb = AudioEmbedding(
 				l_tokens, d_model,
 				sums=audio_embedding_sums,
-				external_mode=audio_embeddings_mode,
+				external_mode=audio_embedding_mode,
 			)
 
 		# useless since I actually removed using these with the input processing overhaul...
@@ -471,7 +466,7 @@ class Base(nn.Module):
 				n_heads=n_heads,
 				p_dropout=p_dropout if training else 0.0,
 				causal=self.causal,
-				norm_type=self.norm_type,
+				norm_type="ln", # adaln
 				n_levels=self.n_resp_levels,
 			) for _ in range(n_layers) ])
 		elif self.arch_type in ["mistral", "mixtral"]:

@@ -201,8 +201,10 @@ class ModelExperimentalSettings:
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (worse performance and results due to everything being causal)
 	split_classifiers: bool = False # each RVQ level gets its own classifier / output proj / LM head
 	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
-	audio_embeddings_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
+	audio_embedding_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
+	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
+	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
 
 # I really need to clean this up
 @dataclass()
@@ -224,9 +226,6 @@ class Model:
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
-	
-	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
-	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
 	
 	experimental: dict | ModelExperimentalSettings | None = None # experimental settings
 
