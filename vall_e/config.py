@@ -262,11 +262,7 @@ class Model:
 		if cfg.optimizations.bitnet:
 			name.append("bitnet")
 
-		if self.interleave:
-			name.append("interleaved")
-		else:
-			name.append(f'{self.prom_levels}')
-
+		name.append(f'{self.resp_levels}')
 
 		return "-".join(name)
 
