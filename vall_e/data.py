@@ -551,7 +551,11 @@ class Dataset(_Dataset):
 
 		if self.sampler_type == "path":
 			if self.sampler_order == "duration" and cfg.dataset.sample_max_duration_batch > 0:
-				self.sampler = BatchedOrderedSampler( self.duration_buckets, cfg.dataset.sample_max_duration_batch, cfg.hyperparameters.batch_size if self.training else cfg.evaluation.batch_size )
+				self.sampler = BatchedOrderedSampler(
+					self.duration_buckets if not sampler_path.exists() else {}, # pass nothing if we're just going to load from a state anyways
+					cfg.dataset.sample_max_duration_batch,
+					cfg.hyperparameters.batch_size if self.training else cfg.evaluation.batch_size
+				)
 			else:
 				self.sampler = OrderedSampler( len(self) )
 			self.samplers = {}

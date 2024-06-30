@@ -173,6 +173,9 @@ class AudioEmbedding(nn.Module):
 
 		# for AR, trim any stop tokens
 		has_stop_token = False
+		
+		# this block apparently doesn't work
+		"""
 		if quant_level == 0:
 			stop_token = self.embeddings[0].weight.shape[0] - 1
 			stop_token_indices = (input == stop_token).nonzero()
@@ -180,6 +183,15 @@ class AudioEmbedding(nn.Module):
 		
 		if has_stop_token:
 			input = input[:stop_token_indices.min().item()]
+		"""
+		has_stop_token = False
+
+		if quant_level == 0:
+			stop_token = self.embeddings[0].weight.shape[0] - 1
+			has_stop_token = input[-1] == stop_token
+
+		if has_stop_token:
+			input = input[:-1]
 
 		# get external embedding
 		embedding = encode_as_embedding( input, quant_level ).to(device=input.device, dtype=self.embeddings[quant_level].weight.dtype)
