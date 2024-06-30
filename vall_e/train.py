@@ -31,8 +31,8 @@ def train_feeder(engine, batch):
 		batch_size = len(batch["text"])
 		engine.current_batch_size = batch_size
 
-		if engine.hyper_config.experimental:
-			if cfg.model.interleave:
+		if engine.hyper_config.experimental.hf:
+			if engine.hyper_config.experimental.interleave:
 				quant_levels = 0	
 				resps_list = [ resp for resp in batch["resps"] ]
 			else:
@@ -129,8 +129,8 @@ def run_eval(engines, eval_name, dl):
 		for name in engines:
 			engine = engines[name]
 
-			if engine.hyper_config.experimental:
-				if cfg.model.interleave:
+			if engine.hyper_config.experimental.hf:
+				if engine.hyper_config.experimental.interleave:
 					input_ids, attention_mask = fold_inputs(
 						text_list=batch["text"],
 						prom_list=batch["proms"],

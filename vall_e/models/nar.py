@@ -28,6 +28,12 @@ class NAR(Base):
 		return cfg.model.capabilities
 
 	@property
+	def quant_level_range(self) -> list[int]:
+		if hasattr(self, "config") and self.config.rvq_level_range:
+			return self.config.rvq_level_range
+		return [ 0 if self.causal else 1, self.n_resp_levels ]
+
+	@property
 	def causal(self):
 		return "len" in self.capabilities
 
@@ -64,6 +70,12 @@ class NAR(Base):
 		if hasattr(self, "config") and self.config:
 			return self.config.tasks
 		return cfg.model.tasks
+
+	@property
+	def p_rvq_levels(self) -> int:
+		if hasattr(self, "config") and self.config:
+			return self.config.p_rvq_levels
+		return cfg.model.p_rvq_levels
 	
 	@property
 	def n_langs(self) -> int:
@@ -83,14 +95,6 @@ class NAR(Base):
 		# governs how much to shift the logits by
 		# could *technically* make it work to where it can also predict *ALL* RVQ levels in one step, but experimental.py is the better way to go about it
 		return 1 # if self.causal else 0
-
-	@property
-	def interleave(self) -> bool:
-		return False
-	
-	@property
-	def monolithic(self) -> bool:
-		return True
 
 	@property
 	def version(self) -> int:
@@ -155,9 +159,12 @@ class NAR(Base):
 			task_list = [ sample_task() for _ in range(batch_size) ]
 
 			# determines which RVQ level to target per batch
-			quant_level_range = [ 0 if self.causal else 1, self.n_resp_levels ]
+			quant_level_range = self.quant_level_range
 
-			if cfg.experimental:
+			if self.p_rvq_levels == "equal":
+				# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+				quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
+			else: # if self.p_rvq_levels == "auto":
 				# makes higher levels less likely
 				def generate( lo=0, hi=8 ):
 					index = lo
@@ -167,18 +174,16 @@ class NAR(Base):
 							index = i
 					return int(index)
 
-				quant_levels = [ 0 if task_list[i] == "len" else generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
-			else:
-				# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-				quant_levels = [ 0 if task_list[i] == "len" else random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
+				quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
 			
 			# clamp quant_levels because some of my audio was saved for only 8 out of 9 RVQ levels for DAC...
-			for i, prom in enumerate(proms_list):
-				if quant_levels[i] + 1 > prom.shape[-1]:
-					quant_levels[i] = prom.shape[-1] - 1
-			for i, resp in enumerate(resps_list):
-				if quant_levels[i] + 1 > resp.shape[-1]:
-					quant_levels[i] = resp.shape[-1] - 1
+			for i in range(batch_size):
+				# cap quant_level if it exceeds its corresponding resp/prom
+				if quant_levels[i] >= resps_list[i].shape[-1]:
+					quant_levels[i] = resps_list[i].shape[-1] - 1
+
+				if quant_levels[i] >= proms_list[i].shape[-1]:
+					quant_levels[i] = proms_list[i].shape[-1] - 1
 
 			resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 

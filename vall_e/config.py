@@ -195,6 +195,15 @@ class Dataset:
 	def max_duration(self):
 		return self.duration_range[1]
 
+@dataclass()
+class ModelExperimentalSettings:
+	hf: bool = False # strictly utilizes a HF model and handles converting input IDs / outputs accordingly
+	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (worse performance and results due to everything being causal)
+	split_classifiers: bool = False # each RVQ level gets its own classifier / output proj / LM head
+	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
+	audio_embeddings_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
+	kv_heads: int = 0 # MHA or GQA (for supported backends)
+
 # I really need to clean this up
 @dataclass()
 class Model:
@@ -209,21 +218,17 @@ class Model:
 	experts: int = 1 # for mixtral / retnet-ts
 	arch_type: str = "llama" # underling LM architecture used
 	training: bool = True # I really need to attend to this
-	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (experimental, worse performance and results)
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 	attention: str = "auto" # for llama arch_types: attention used
-	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
-	split_classifiers: bool = False # experimental, but each RVQ level gets its own classifier / output proj / LM head
 	dropout: float = 0.1 # adjustable dropout value
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
-	experimental: str | None = None # for now it sets things to be HF compatible
-	kv_heads: int = 0 # MHA or GQA (for supported backends)
-	audio_embeddings_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
 	
 	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
+	
+	experimental: dict | ModelExperimentalSettings | None = None # experimental settings
 
 	def get(self, name=None):
 		return [ self ] if not name or self.name == name else []
@@ -758,15 +763,26 @@ class Config(BaseConfig):
 		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
 		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
 
-		"""
-		if self.models is not None:
-			self.model = Model(**next(iter(self.models)))
-		else:
-			self.model = Model(**self.model)
-		"""
+		for model in self.models:
+			if not isinstance( model, dict ):
+				continue
+
+			if "audio_embedding_sums" not in model:
+				continue
+
+			if not model["experimental"]:
+				model["experimental"] = {}
+
+			model["experimental"]["audio_embedding_sums"] = model.pop("audio_embedding_sums")
+
 
 		self.models = [ Model(**model) for model in self.models ]
 		self.loras = [ LoRA(**lora) for lora in self.loras ]
+
+		for model in self.models:
+			if not isinstance( model.experimental, dict ):
+				continue
+			model.experimental = ModelExperimentalSettings(**model.experimental)
 
 		self.hyperparameters = Hyperparameters(**self.hyperparameters)
 

@@ -19,7 +19,7 @@ def get_model(config, training=True):
 			training = training,
 			config = config,
 		)
-	elif config.experimental:
+	elif config.experimental.hf:
 		from .experimental import Model as Experimental
 		model = Experimental(
 			n_text_tokens=config.text_tokens,

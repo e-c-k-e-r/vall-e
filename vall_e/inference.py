@@ -119,7 +119,6 @@ class TTS():
 		references,
 		language="en",
 		max_ar_steps=6 * cfg.dataset.frames_per_second,
-		max_ar_context=-1,
 		max_nar_levels=7,
 		input_prompt_length=0.0,
 		ar_temp=0.95,
@@ -182,7 +181,7 @@ class TTS():
 				# prom size: 3
 				if model_ar is not None:
 					resps_list = model_ar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, max_resp_context=max_ar_context,
+						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps,
 						sampling_temperature=ar_temp,
 						sampling_min_temperature=min_ar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k,

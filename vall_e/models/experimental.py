@@ -251,7 +251,7 @@ def example_usage():
 
 	kwargs = {}
 	model = Model(**kwargs).to(device)
-	steps = 100
+	steps = 100 if cfg.model.experimental.interleave else 300
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -324,7 +324,7 @@ def example_usage():
 		engine.eval()
 		batch_size = len(text_list)
 		resp_list = None
-		if cfg.model.interleave:
+		if cfg.model.experimental.interleave:
 			input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list)
 			output = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=steps, eos_token_id=3, do_sample=False)
 			
@@ -382,7 +382,7 @@ def example_usage():
 			stats = {"step": i}
 			
 			batch_size = len(text_list)
-			quant_levels = None if cfg.model.interleave else torch.randint(0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels, (batch_size,))
+			quant_levels = None if cfg.model.experimental.interleave else torch.randint(0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels, (batch_size,))
 			if quant_levels is not None:
 				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
 			else:

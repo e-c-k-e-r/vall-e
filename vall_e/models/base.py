@@ -278,7 +278,6 @@ class Metrics(nn.Module):
 
 class Base(nn.Module):
 	# to-do: clean up this property mess
-
 	@property
 	def causal(self) -> bool:
 		raise NotImplementedError
@@ -320,20 +319,8 @@ class Base(nn.Module):
 		raise NotImplementedError
 
 	@property
-	def interleave(self) -> bool:
-		return False
-
-	@property
-	def monolithic(self) -> bool:
-		return False
-
-	@property
-	def audio_embeddings_mode(self) -> str | None:
-		return None
-
-	@property
 	def version(self) -> int:
-		return 1
+		return 2
 
 	@property
 	def capabilities(self) -> list[str]:
@@ -403,8 +390,9 @@ class Base(nn.Module):
 			n_resp_tokens = n_audio_tokens
 			l_tokens = [n_resp_tokens] * self.n_resp_levels
 
-		audio_embedding_sums = self.config.audio_embedding_sums if self.config is not None else True
-		split_classifiers = self.config.split_classifiers if self.config is not None else True
+		audio_embedding_sums = self.config.experimental.audio_embedding_sums if self.config is not None else False
+		split_classifiers = self.config.experimental.split_classifiers if self.config is not None else False
+		audio_embeddings_mode = self.config.experimental.audio_embeddings_mode if self.config is not None else ""
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -432,12 +420,12 @@ class Base(nn.Module):
 			self.proms_emb = AudioEmbedding(
 				[n_prom_tokens] * self.n_prom_levels, d_model,
 				sums=audio_embedding_sums,
-				external_mode=self.audio_embeddings_mode,
+				external_mode=audio_embeddings_mode,
 			)
 			self.resps_emb = AudioEmbedding(
 				l_tokens, d_model,
 				sums=audio_embedding_sums,
-				external_mode=self.audio_embeddings_mode,
+				external_mode=audio_embeddings_mode,
 			)
 
 		# useless since I actually removed using these with the input processing overhaul...
@@ -476,7 +464,6 @@ class Base(nn.Module):
 			if self.config.attention not in AVAILABLE_ATTENTIONS:
 				raise ValueError(f"Requesting attention `{self.config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
 
-
 		if self.arch_type == "transformer":
 			self.sin_emb = SinusoidalEmbedding(d_model)
 			self.blocks = nn.ModuleList([TransformerBlock(
@@ -497,7 +484,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
+					num_key_value_heads=self.config.experimental.kv_heads if self.config is not None and self.config.experimental.kv_heads > 0 else n_heads,
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
@@ -513,7 +500,7 @@ class Base(nn.Module):
 					num_hidden_layers=n_layers,
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.config.kv_heads if self.config.kv_heads > 0 else n_heads,
+					num_key_value_heads=self.config.experimental.kv_heads if self.config is not None and self.config.experimental.kv_heads > 0 else n_heads,
 					sliding_window=75 * 12, # 12 second context window
 					output_router_logits=training,
 					hidden_act="gelu",
@@ -529,9 +516,6 @@ class Base(nn.Module):
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
-
-			#if training:
-			#	self.model.training = True
 		elif self.arch_type == "llama":
 			if n_experts <= 1:
 				self.model = LlamaModel(LlamaConfig(
@@ -575,9 +559,6 @@ class Base(nn.Module):
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
-
-			#if training:
-			#	self.model.training = True
 		elif self.arch_type == "retnet":
 			kwargs = dict(
 				vocab_size=n_resp_tokens,
@@ -695,9 +676,6 @@ class Base(nn.Module):
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
-
-			#if training:
-			#	self.model.training = True
 		else:
 			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
 
@@ -970,7 +948,7 @@ class Base(nn.Module):
 						task_list.append( input )
 					elif name == "prom":
 						# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
-						if self.version < 4 or (self.version >= 5 and self.config.audio_embedding_sums):
+						if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):
 							target.append( torch.full_like(input[..., 0], self.ignore_index) )
 						# we *CAN* directly map to proms
 						else:

@@ -761,7 +761,8 @@ class Dataset(_Dataset):
 		lang = torch.tensor([ self.lang_symmap[ self.get_language(spkr_group) ]]).to(torch.uint8)
 
 		# append additional prompts in an attempt to artifically increase lengths / offer new data
-		if cfg.experimental and cfg.dataset.max_resps > 1 and random.random() < cfg.dataset.p_resp_append:
+		"""
+		if cfg.dataset.max_resps > 1 and random.random() < cfg.dataset.p_resp_append:
 			choices = [*(set(self.paths_by_spkr_name[spkr_name]) - {path})]
 
 			if len(choices) > 0:
@@ -790,6 +791,7 @@ class Dataset(_Dataset):
 					# might be better to decode => concat waveforms with silence in between => reencode
 					# as you technically can't just append encodec sequences together like this without issues
 					resps = torch.concat([ resps, qnt ])
+		"""
 		
 		task = "tts"
 		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)

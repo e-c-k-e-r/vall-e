@@ -99,20 +99,6 @@ class AR_NAR(Base):
 		return 1 # if self.causal else 0
 
 	@property
-	def interleave(self) -> bool:
-		return False
-	
-	@property
-	def monolithic(self) -> bool:
-		return True
-
-	@property
-	def audio_embeddings_mode(self) -> bool:
-		if hasattr(self, "config") and self.config:
-			return self.config.audio_embeddings_mode
-		return cfg.model.audio_embeddings_mode
-
-	@property
 	def version(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.version
@@ -144,7 +130,6 @@ class AR_NAR(Base):
 
 		max_steps: int = 1000,
 		max_levels: int = 0,
-		max_resp_context: int = -1,
 
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
@@ -305,17 +290,9 @@ class AR_NAR(Base):
 
 		scores = [ 1.0 ] * sampling_beam_width
 
-		if self.interleave:
-			max_steps *= self.n_prom_levels
-
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.causal_size), desc="AR"):
-			# experimental rolling response to avoid too-long perplexity hits despite RetNet allegedly fixing this.
-			# UNTESTED. In theory it would be better to also adjust the text, but there's no way of correlating text to segment of audio without something like wav2vec2
-			if max_resp_context > 0:
-				resps_list = self._unsqueeze_list([ sequence[-max_resp_context:] for sequence in sequence_list ] )
-			else:
-				resps_list = self._unsqueeze_list(sequence_list)
+			resps_list = self._unsqueeze_list(sequence_list)
 
 			inputs = self.inputs(
 				text_list=text_list,
