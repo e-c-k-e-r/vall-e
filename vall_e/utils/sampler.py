@@ -9,14 +9,17 @@ from .distributed import global_rank, local_rank, world_size
 
 # Randomly picks an index from an array of indices
 class PoolSampler():
-	def __init__( self, pool = [], keep_all = False ):
+	def __init__( self, pool = [], keep_all = False, shuffle = False ):
 		self.length = len(pool)
+		self.shuffle = shuffle
 		self.global_pool = pool if keep_all else None
 		self.global_indices = [ i for i in range(self.length) ]
 		self.reset()
 
 	def reset(self):
 		self.current_pool = [ i for i in self.global_indices ]
+		if self.shuffle:
+			random(self.current_pool)
 
 	def sample(self, pool = None):
 		if pool is None:
@@ -78,9 +81,10 @@ class OrderedSampler(Sampler):
 
 # Like the above, but will batch based on token count
 class BatchedOrderedSampler(Sampler):
-	def __init__( self, buckets, max_duration=0, max_batch_size=0 ):
+	def __init__( self, buckets, max_duration=0, max_batch_size=0, shuffle=False ):
 		self.position = 0
 		self.batches = []
+		self.shuffle = shuffle
 
 		assert max_duration != 0 and max_batch_size != 0, "max_duration and max_batch_size cannot both be 0"
 
@@ -105,12 +109,17 @@ class BatchedOrderedSampler(Sampler):
 				current_index += 1
 				current_size += duration
 
+		if self.shuffle:
+			random.shuffle(self.batches)
+
 	def __len__(self):
 		return len(self.batches)
 
 	def __iter__(self):
 		if self.position >= len(self.batches):
 			self.position = 0
+			if self.shuffle:
+				random.shuffle(self.batches)
 
 		while self.position < len(self.batches):
 			yield self.batches[self.position]

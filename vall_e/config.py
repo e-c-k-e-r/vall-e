@@ -157,9 +157,10 @@ class Dataset:
 	p_resp_append: float = 1.0
 
 	sample_type: str = "path" # path | speaker
-	sample_order: str = "shuffle" # duration
+	sample_order: str = "interleaved" # duration
 	sample_max_duration_batch: float = 0.0 # total number of seconds of utterances per batched, 0 to disable
 	# for a full sized model with 12GiB of VRAM for Encodec, 120 seconds is just enough
+	sample_shuffle: bool = True # 
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 	
