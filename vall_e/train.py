@@ -181,7 +181,7 @@ def run_eval(engines, eval_name, dl):
 			else:
 				if "len" in engine.hyper_config.capabilities:
 					len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=10 ) # don't need more than that
-					resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list )
+					resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list, max_levels=cfg.evaluation.nar_levels )
 				else:
 					if "ar" in engine.hyper_config.capabilities:
 						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
@@ -189,7 +189,7 @@ def run_eval(engines, eval_name, dl):
 						resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
 					if "nar" in engine.hyper_config.capabilities:
-						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature)
+						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature, max_levels=cfg.evaluation.nar_levels )
 
 			process( name, batch, resps_list )
 

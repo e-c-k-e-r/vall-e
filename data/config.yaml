@@ -1,6 +1,7 @@
 sample_rate: 24_000 # 44_000 for dac
 audio_backend: "vocos" # or dac
 
+# model definitions to train
 models:
 - name: "ar+nar" # vanity name
   size: "full" # model dimensionality
@@ -29,121 +30,135 @@ models:
     audio_embedding_sums: False # whether the input embeddings include all prior RVQ levels (sums) or only the current one, further experimentation is needed to see if this matters
     p_rvq_levels: "equal" # "equal" | "auto", sets probabilities of which RVQ level to select during training, auto will have the next RVQ level half as likely as the previous one
 
+# hyperparameter settings (could be relegated to trainer settings)
 hyperparameters:
+  # deepspeed autotune
   autotune: False
   autotune_params:
     start_profile_step: 1
     end_profile_step: 50
     num_tuning_micro_batch_sizes: 8
 
-  batch_size: 16
-  gradient_accumulation_steps: 4
-  gradient_clipping: 1.0
-  warmup_steps: 100
+  batch_size: 16 # samples per batch, governs maximum batch size if using batch sampling
+  gradient_accumulation_steps: 4 # gradient accumulation: batches per update
+  gradient_clipping: 1.0 # smooths out the gradient when updating
+  warmup_steps: 100 # steps to warm up the optimizer but not update the model
 
+  # optimizer settings
   optimizer: Prodigy
-  learning_rate: 1.0
-  torch_optimizer: True
+  learning_rate: 1.0 # prodigyopt can keep its LR to 1
+  torch_optimizer: True # signals to deepspeed to not instantiate one
   
+  # deepspeed scheduler, local does have it implemented because I don't use one
   scheduler: "" # ScheduleFree
-  torch_scheduler: True
+  torch_scheduler: True # signals to deepspeed to not instantiate one
 
+# evaluation settings (could be pushed under trainer)
 evaluation:
-  batch_size: 8
-  frequency: 5000
-  size: 8
+  batch_size: 8 # batch size for evaluation / validation pass
+  frequency: 5000 # how often to perform eval during training
+  size: 8 # total samples to get for eval
   
-  steps: 500
-  ar_temperature: 0.95
-  nar_temperature: 0.25
-  load_disabled_engines: True
+  steps: 500 # how many AR steps to perform
+  ar_temperature: 0.95 # temperature for AR sampling
+  nar_temperature: 0.25 # temperature for NAR sampling
+  load_disabled_engines: True # deprecated
 
 trainer:
-  #no_logger: True
-  ddp: False
-  #check_for_oom: False
-  iterations: 1_000_000
+  #no_logger: True # deprecated, because the logger should always work now
+  ddp: False # whether to wrap the model with DDP, should automatically be set
+  #check_for_oom: False # wrap forward/backwards in a try/catch block and gracefully handles OOM conditions
+  iterations: 1_000_000 # how many total iterations to train before terminating, should just have this as 0 by default to not auto-terminiate
   
-  save_tag: step
-  save_on_oom: True
-  save_on_quit: True
-  save_frequency: 250
-  export_on_save: True
+  save_tag: step # tag name to save checkpoints under
+  save_on_oom: True # save if an OOM if caught
+  save_on_quit: True # save when `quit` is entered in the trainer
+  save_frequency: 250 # how often to save
+  export_on_save: True # export the weights every time the trainer saves
 
-  keep_last_checkpoints: 4
+  keep_last_checkpoints: 4 # how many previous checkpoints to keep
 
-  gradient_checkpointing: True
+  gradient_checkpointing: True # gradient checkpointing to save VRAM at the cost of some performance throughput
 
-  strict_loading: False
-  #load_state_dict: True
-  #load_tag: "9500"
-  #load_states: False
-  #restart_step_count: True
+  strict_loading: False # strict state dict loading (set to False if you're going to change some model settings)
+  #load_state_dict: True # load the state dict from fp32.pth instead of a checkpoint, should automagically be done
+  #load_tag: "9500" # specific tag to load from (instead of having to edit latest)
+  #load_states: False # flag to load optimizer / scheduler states or not
+  #restart_step_count: True # clear the trainer stats
   
-  gc_mode: None # "global_step"
+  gc_mode: None # "global_step" # flag to call GC at specific points, seems overkill now
 
-  weight_dtype: float32 # float16 or bfloat16
-  amp: False
+  weight_dtype: float32 # float32 | float16 | bfloat16, dtype for the model to load under
+  amp: False # mixed precision during training
 
-  backend: deepspeed
+  backend: deepspeed # deepspeed | local, training backend to use
+
+  # deepspeed specific settings
   deepspeed:
-    inferencing: True
-    zero_optimization_level: 0
-    use_compression_training: False
+    inferencing: True # use deepspeed inference wrapper for inferencing, should be relegated under inference
+    zero_optimization_level: 0 # ZeRO optimization level to use
+    use_compression_training: False # compression training (seems useless almost always)
 
-    amp: False
+    amp: False # use deepspeed's AMP instead (requires nvidia/apex installed)
 
-  load_webui: False
+  load_webui: False # initialize the web UI during training (the goal is to let you inference during training, but I never found a good way to go about it)
 
+# inferencing settings
 inference:
-  backend: deepspeed
-  normalize: False
+  backend: deepspeed # deepspeed | local, training backend to use
+  normalize: False # normalize audio before encoding / after decoding, only enable if you know what you're doing
 
-  weight_dtype: float32 # float16 or bfloat16
-  amp: False
+  weight_dtype: float32 # float32 | float16 | bfloat16, dtype for the model to load under
+  amp: False # mixed precision during inferencing
 
+# experimental optimization flags
 optimizations:
-  injects: False
-  replace: True
+  injects: False # replace the module in the torch package itself to achieve these
+  replace: True # replace the module in the model itself to achieve these
 
-  linear: False
-  embedding: False
-  optimizers: True
+  # bitsandbytes things
+  linear: False # enable nn.Linear optimizations
+  embedding: False # enable nn.Embedding optimizations
+  optimizers: True  # enable torch.optim optimizations
 
-  bitsandbytes: False
-  dadaptation: False
-  bitnet: False
-  fp8: False
+  bitsandbytes: False # use bitsandbytes
+  dadaptation: False # use dadaptation
+  bitnet: False # use bitnet
+  fp8: False # use nvidia/transformer-engine's fp8 AMP
 
+# dataset settings
 dataset:
-  speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'"
-  speaker_group_getter: "lambda p: f'{p.parts[-3]}'"
+  speaker_name_getter: "lambda p: f'{p.parts[-3]}_{p.parts[-2]}'" # function to eval when fetching the speaker from a name
+  speaker_group_getter: "lambda p: f'{p.parts[-3]}'" # function to eval when fetching the group from a name
+  # map to classify languages under when preparing a batch (in case the language is not provided in the dataset)
   speaker_languages:
     ja: []
 
-  use_hdf5: True
-  use_metadata: True
-  hdf5_flag: r
-  validate: True
+  use_hdf5: True # use HDF5 file to load the dataset from 
+  hdf5_flag: r # flag to load the HDF5 file under (should automatically set to `a` when generating the HDF5 dataset)
+  use_metadata: True # use generated metadata to help prepare the dataset
+  validate: True # cull samples if they are outside the duration threshold
 
-  workers: 2
-  cache: True
+  workers: 2 # worker processes to spawn for the dataloader
+  cache: True # cache the dataloader to disk to speed things up
   
-  duration_range: [3.0, 5.0]
+  duration_range: [3.0, 5.0] # allowed sample duration in the dataset
 
-  random_utterance: 1.0
-  max_prompts: 1
-  prompt_duration: 3.0
+  random_utterance: 1.0 # I don't remember desu
+  max_prompts: 1 # how many prompts to sample to create the input prompt
+  #prompt_duration: 3.0 # sugar for the below
+  prompt_duration_range: [3.0, 3.0] # range of durations for the input prompt to be trimmed under
   
-  max_resps: 1
-  p_resp_append: 0.25
+  # deprecated
+  max_resps: 1 # how many random response utterances to sample for the sample
+  p_resp_append: 0.25 # probability to append additional utterances for the above
 
-  sample_type: path # path | speaker | group
-  sample_order: duration # shuffle | duration 
+  sample_type: path # path | speaker | group, type to sample the paths from (by path, speaker, or group)
+  sample_order: duration # duration | anything else, method of ordering the paths (duration is by duration, any other value will interleave reorder)
   sample_max_duration_batch: 0 # used when above = duration, 120 seconds per batch at 12GiB of VRAM works
 
-  tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"]
+  tasks_list: [ "tts" ] # , [ "tts", "tts-c", "ns", "sr", "tse", "cse", "nse", "tts"], unused at the moment, but will determine which tasks to use
 
-  training: []
-  validation: []
-  noise: []
+  training: [] # paths for the training dataset
+  validation: [] # paths for the validation dataset
+  noise: [] # paths for the noise dataset (unused, but for the above tasks that call for injecting noise)

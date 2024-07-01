@@ -391,6 +391,7 @@ class Evaluation:
 	steps: int = 500
 	ar_temperature: float = 1.0
 	nar_temperature: float = 0.0
+	nar_levels: int = 0
 
 	load_disabled_engines: bool = True
 

@@ -1177,7 +1177,7 @@ class Base(nn.Module):
 		if quant_levels is None and self.causal:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
 		# (NAR) disable stop token
-		else:
+		elif "ar" in self.capabilities:
 			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, resps_list) ) ]
 
 		# perform top_k/top_p filtering of our logits
