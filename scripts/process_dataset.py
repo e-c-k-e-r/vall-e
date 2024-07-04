@@ -9,7 +9,7 @@ from vall_e.config import cfg
 
 # things that could be args
 cfg.sample_rate = 24_000
-cfg.inference.audio_backend = "encodec"
+cfg.audio_backend = "encodec"
 """
 cfg.inference.weight_dtype = "bfloat16"
 cfg.inference.dtype = torch.bfloat16
@@ -21,10 +21,10 @@ from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
 input_audio = "voices"
 input_metadata = "metadata"
-output_dataset = f"training-{'2' if cfg.sample_rate == 24_000 else '4'}4KHz-{cfg.inference.audio_backend}"
+output_dataset = f"training-{'2' if cfg.sample_rate == 24_000 else '4'}4KHz-{cfg.audio_backend}"
 device = "cuda"
 
-audio_extension = ".dac" if cfg.inference.audio_backend == "dac" else ".enc"
+audio_extension = ".dac" if cfg.audio_backend == "dac" else ".enc"
 
 slice = "auto"
 missing = {
@@ -59,7 +59,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 				waveform, sample_rate = torchaudio.load(inpath)
 				qnt = valle_quantize(waveform, sr=sample_rate, device=device)
 
-				if cfg.inference.audio_backend == "dac":
+				if cfg.audio_backend == "dac":
 					np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
 						"codes": qnt.codes.cpu().numpy().astype(np.uint16),
 						"metadata": {
@@ -184,7 +184,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 					phones = valle_phonemize(text)
 					qnt = valle_quantize(waveform, sr=sample_rate, device=device)
 
-					if cfg.inference.audio_backend == "dac":
+					if cfg.audio_backend == "dac":
 						np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
 							"codes": qnt.codes.cpu().numpy().astype(np.uint16),
 							"metadata": {
