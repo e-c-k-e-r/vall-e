@@ -776,6 +776,9 @@ class Config(BaseConfig):
 		self.models = [ Model(**model) for model in self.models ]
 		self.loras = [ LoRA(**lora) for lora in self.loras ]
 
+		if not self.models:
+			self.models = [ Model() ]
+
 		for model in self.models:
 			if not isinstance( model.experimental, dict ):
 				continue
