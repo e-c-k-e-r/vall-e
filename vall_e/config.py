@@ -175,7 +175,7 @@ class Dataset:
 			# using the 44KHz model with 24KHz sources has a frame rate of 41Hz
 			if cfg.variable_sample_rate and cfg.sample_rate == 24_000:
 				return 41
-			if cfg.sample_rate == 44_000:
+			if cfg.sample_rate == 44_000 or cfg.sample_rate == 44_100: # to-do: find the actual value for 44.1K
 				return 86
 			if cfg.sample_rate == 16_000:
 				return 50

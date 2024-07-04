@@ -291,7 +291,7 @@ def example_usage():
 	cfg.trainer.backend = "local"
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 	if cfg.audio_backend == "dac":
-		cfg.sample_rate = 44_000
+		cfg.sample_rate = 44_100
 
 	from functools import partial
 	from einops import repeat

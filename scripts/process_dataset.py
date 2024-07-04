@@ -21,10 +21,14 @@ from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
 
 input_audio = "voices"
 input_metadata = "metadata"
-output_dataset = f"training-{'2' if cfg.sample_rate == 24_000 else '4'}4KHz-{cfg.audio_backend}"
+output_dataset = f"training-{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}"
 device = "cuda"
 
-audio_extension = ".dac" if cfg.audio_backend == "dac" else ".enc"
+audio_extension = ".enc"
+if cfg.audio_backend == "dac":
+	audio_extension = ".dac"
+elif cfg.audio_backend == "audiodec":
+	audio_extension = ".dec"
 
 slice = "auto"
 missing = {

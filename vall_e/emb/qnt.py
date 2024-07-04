@@ -90,10 +90,10 @@ except Exception as e:
 	cfg.inference.use_dac = False
 	print(str(e))
 
-"""
 # uses https://github.com/facebookresearch/AudioDec/
 # I have set up a pip-ify'd version with the caveat of having to manually handle downloading the checkpoints with a wget + unzip
 # I was not happy with testing, it sounded rather mediocre.
+"""
 try:
 	from audiodec.utils.audiodec import AudioDec, assign_model as _audiodec_assign_model
 except Exception as e:
@@ -158,7 +158,7 @@ def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 	kwargs = dict(model_type="44khz",model_bitrate="8kbps",tag="latest")
 	if not cfg.variable_sample_rate:
 		# yes there's a better way, something like f'{cfg.sample.rate//1000}hz'
-		if cfg.sample_rate == 44_000 or cfg.sample_rate == 44_100:
+		if cfg.sample_rate == 44_000 or cfg.sample_rate == 44_100: # because I messed up and had assumed it was an even 44K and not 44.1K
 			kwargs["model_type"] = "44khz"
 		elif cfg.sample_rate == 16_000:
 			kwargs["model_type"] = "16khz"
@@ -178,7 +178,6 @@ def _load_dac_model(device="cuda", levels=cfg.model.max_levels):
 
 	return model
 
-"""
 @cache
 def _load_audiodec_model(device="cuda", model_name=None, levels=cfg.model.max_levels):
 	if not model_name:
@@ -193,14 +192,14 @@ def _load_audiodec_model(device="cuda", model_name=None, levels=cfg.model.max_le
 	model.sample_rate = sample_rate
 
 	return model
-"""
 
 @cache
-def _load_model(device="cuda", backend=cfg.audio_backend, levels=cfg.model.max_levels):
-	"""
+def _load_model(device="cuda", backend=None, levels=cfg.model.max_levels):
+	if not backend:
+		backend = cfg.audio_backend
+
 	if backend == "audiodec":
 		return _load_audiodec_model(device, levels=levels)
-	"""
 	if backend == "dac":
 		return _load_dac_model(device, levels=levels)
 	if backend == "vocos":
@@ -233,13 +232,11 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 	model = _load_model(device, levels=levels)
 
 	# AudioDec uses a different pathway
-	"""
 	if model.backend == "audiodec":
 		codes = codes.to( device=device )[0]
 		zq = model.rx_encoder.lookup( codes )
 		wav = model.decoder.decode(zq).squeeze(1)
 		return wav, model.sample_rate
-	"""
 
 	# DAC uses a different pathway
 	if model.backend == "dac":
@@ -372,9 +369,9 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.mod
 
 		with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
 			artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
+		return artifact.codes if not return_metadata else artifact
 
 	# AudioDec uses a different pathway
-	"""
 	if cfg.audio_backend == "audiodec":
 		model = _load_audiodec_model(device, levels=levels )
 		wav = wav.unsqueeze(0)
@@ -385,8 +382,6 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.mod
 		encoded = model.tx_encoder.encode(wav)
 		quantized = model.tx_encoder.quantize(encoded)
 		return quantized
-		return artifact.codes if not return_metadata else artifact
-	"""
 
 	# vocos does not encode wavs to encodecs, so just use normal encodec
 	model = _load_encodec_model(device, levels=levels)
@@ -490,13 +485,11 @@ def merge_audio( *args, device="cpu", scale=[], levels=cfg.model.max_levels ):
 
 """
 if __name__ == "__main__":
-	from vall_e.emb.qnt import encode, decode, cfg
-
 	cfg.sample_rate = 48_000
 	cfg.audio_backend = "audiodec"
 
 	wav, sr = torchaudio.load("in.wav")
-	codes = encode( wav, sr ).t()
+	codes = encode( wav, sr ).t() # for some reason
 	print( "ENCODED:", codes.shape, codes )
 	wav, sr = decode( codes )
 	print( "DECODED:", wav.shape, wav )
