@@ -210,11 +210,10 @@ class ModelExperimentalSettings:
 # I really need to clean this up
 @dataclass()
 class Model:
-	name: str = "" # vanity name for the model
+	name: str = "ar+nar" # vanity name for the model
 	version: int = 5 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding, 3+ = additional embeddings
 	size: str | dict = "full" # preset string or explicitly defined dimensionality
-	resp_levels: int = 1 # RVQ-bin levels this model targets for outputs
-	prom_levels: int = 8 # RVQ-bin levels this model accepts as an input prompt
+	resp_levels: int = 8 # RVQ-bin levels this model supports
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc") (unused)
 	langs: int = 1 # defined languages (semi-unused)
 	tones: int = 1 # defined tones (unsued)
@@ -238,7 +237,10 @@ class Model:
 
 	@property
 	def max_levels(self):
-		return max(self.prom_levels, self.resp_levels)
+		# return RVQ level range
+		if self.experimental is not None and self.experimental.rvq_level_range:
+			return self.experimental.rvq_level_range[-1]
+		return self.resp_levels
 
 	@property
 	# required for fp8 as the lengths needs to be divisible by 8
@@ -626,7 +628,7 @@ class Inference:
 	use_encodec: bool = True
 	use_dac: bool = True
 
-	@cached_property
+	@property
 	def dtype(self):
 		if self.weight_dtype == "float16":
 			return torch.float16
@@ -651,7 +653,7 @@ class Optimizations:
 	optimizers: bool = True # inject/replace optimizers (BnB, DAdaptation)
 	
 	bitsandbytes: bool = False # use bitsandbytes
-	dadaptation: bool = True # use dadaptation optimizer
+	dadaptation: bool = False # use dadaptation optimizer
 	bitnet: bool = False # use bitnet
 	fp8: bool = False # use fp8
 
@@ -671,7 +673,8 @@ class Config(BaseConfig):
 	bitsandbytes: dict | list | None = None # deprecated
 	optimizations: Optimizations = field(default_factory=lambda: Optimizations)
 	
-	tokenizer: str = "./tokenizer.json"
+	tokenizer: str | None = None
+	tokenizer_path: str = "./tokenizer.json"
 
 	sample_rate: int = 24_000
 	variable_sample_rate: bool = False # NOT recommended, as running directly 24Khz audio in the 44Khz DAC model will have detrimental quality loss
@@ -760,14 +763,21 @@ class Config(BaseConfig):
 		self.dataset.validation = [ Path(dir) for dir in self.dataset.validation ]
 		self.dataset.noise = [ Path(dir) for dir in self.dataset.noise ]
 
+		# do cleanup
 		for model in self.models:
 			if not isinstance( model, dict ):
 				continue
 
+			if "prom_levels" in model:
+				del model["prom_levels"]
+			
+			if "interleave" in model:
+				del model["interleave"]
+
 			if "audio_embedding_sums" not in model:
 				continue
 
-			if not model["experimental"]:
+			if "experimental" not in model or not model["experimental"]:
 				model["experimental"] = {}
 
 			model["experimental"]["audio_embedding_sums"] = model.pop("audio_embedding_sums")
@@ -837,9 +847,9 @@ class Config(BaseConfig):
 			try:
 				from transformers import PreTrainedTokenizerFast
 
-				tokenizer_path = cfg.rel_path / cfg.tokenizer
+				tokenizer_path = cfg.rel_path / cfg.tokenizer_path
 				if not tokenizer_path.exists():
-					tokenizer_path = Path("./data/") / cfg.tokenizer
+					tokenizer_path = Path("./data/") / cfg.tokenizer_path
 				cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
 			except Exception as e:
 				cfg.tokenizer = NaiveTokenizer()

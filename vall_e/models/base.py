@@ -123,7 +123,7 @@ class AudioEmbedding_Old(nn.Module):
 	):
 		super().__init__()
 		# array of embeddings
-		#   proms are [0, prom_levels]
+		#   proms are [0, resp_levels]
 		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
 		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
 		# weight influencer for the influence for each level (desu this should be really useless because the weights in the embedding themselves should factor this)
@@ -154,7 +154,7 @@ class AudioEmbedding(nn.Module):
 	):
 		super().__init__()
 		# array of embeddings
-		#   proms are [0, prom_levels]
+		#   proms are [0, resp_levels]
 		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
 		#     + resps cannot share the AR and NAR embeddings, since they do encode whether to predict the same level but in the next token or predict in place but the next level
 		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
@@ -283,10 +283,6 @@ class Base(nn.Module):
 		raise NotImplementedError
 
 	@property
-	def n_prom_levels(self) -> int:
-		raise NotImplementedError
-
-	@property
 	def n_resp_levels(self) -> int:
 		raise NotImplementedError
 
@@ -368,7 +364,6 @@ class Base(nn.Module):
 		
 		self.l_padding = l_padding
 
-		n_prom_tokens = n_audio_tokens
 		arch_type = self.config.arch_type if self.config is not None else "llama"
 
 		self.arch_type = arch_type
@@ -397,14 +392,14 @@ class Base(nn.Module):
 		self.len_emb = None
 
 		if self.version == 1: # legacy
-			n_prom_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
-			self.proms_emb = MultiEmbedding(self.n_prom_levels, n_prom_tokens, d_model)
+			n_audio_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
+			self.proms_emb = MultiEmbedding(self.n_resp_levels, n_audio_tokens, d_model)
 			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model, monolithic=self.monolithic)
 		elif self.version < 5:
 			# [1024] * 8
 			self.proms_emb = AudioEmbedding_Old(
-				[n_prom_tokens] * self.n_prom_levels, d_model,
-				levels=self.n_prom_levels if self.version > 3 else None,
+				[n_audio_tokens] * self.n_resp_levels, d_model,
+				levels=self.n_resp_levels if self.version > 3 else None,
 			)
 			# [1024 + STOP] + [1024] * 8
 			self.resps_emb = AudioEmbedding_Old(
@@ -413,7 +408,7 @@ class Base(nn.Module):
 			)
 		else:
 			self.proms_emb = AudioEmbedding(
-				[n_prom_tokens] * self.n_prom_levels, d_model,
+				[n_audio_tokens] * self.n_resp_levels, d_model,
 				sums=audio_embedding_sums,
 				external_mode=audio_embedding_mode,
 			)

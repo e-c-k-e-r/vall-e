@@ -19,6 +19,7 @@ tts = None
 layout = {}
 layout["inference"] = {}
 layout["training"] = {}
+layout["settings"] = {}
 
 for k in layout.keys():
 	layout[k]["inputs"] = { "progress": None }
@@ -37,14 +38,42 @@ def gradio_wrapper(inputs):
 	return decorated
 
 class timer:
-    def __enter__(self):
-        self.start = perf_counter()
-        return self
+	def __init__(self, msg="Elapsed time:"):
+		self.msg = msg
 
-    def __exit__(self, type, value, traceback):
-        print(f'[{datetime.now().isoformat()}] Elapsed time: {(perf_counter() - self.start):.3f}s')
+	def __enter__(self):
+		self.start = perf_counter()
+		return self
 
-def init_tts(restart=False):
+	def __exit__(self, type, value, traceback):
+		msg = f'{self.msg} {(perf_counter() - self.start):.3f}s'
+
+		gr.Info(msg)
+		print(f'[{datetime.now().isoformat()}] {msg}')
+
+# returns a list of models, assuming the models are placed under ./training/ or ./models/
+def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
+	yamls = []
+
+	for path in paths:
+		if not path.exists():
+			continue
+
+		for yaml in path.glob("**/*.yaml"):
+			if "/logs/" in str(yaml):
+				continue
+
+			yamls.append( yaml )
+
+	return yamls
+
+#
+def load_model( yaml ):
+	gr.Info(f"Loading: {yaml}")
+	init_tts( yaml=Path(yaml), restart=True )
+	gr.Info(f"Loaded model")
+
+def init_tts(yaml=None, restart=False):
 	global tts
 
 	if tts is not None:
@@ -53,13 +82,13 @@ def init_tts(restart=False):
 		del tts
 	
 	parser = argparse.ArgumentParser(allow_abbrev=False)
-	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
+	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', yaml)) # os environ so it can be specified in a HuggingFace Space too
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default="auto")
 	args, unknown = parser.parse_known_args()
 
-	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
+	tts = TTS( config=args.yaml if yaml is None else yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
 	return tts
 
 @gradio_wrapper(inputs=layout["inference"]["inputs"].keys())
@@ -78,7 +107,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*cfg.dataset.frames_per_second))
-	parser.add_argument("--max-nar-levels", type=int, default=kwargs["max-nar-levels"])
+	parser.add_argument("--max-nar-levels", type=int, default=0), # kwargs["max-nar-levels"])
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
 	parser.add_argument("--nar-temp", type=float, default=kwargs["nar-temp"])
 	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
@@ -99,7 +128,9 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		raise ValueError("No reference audio provided.")
 
 	tts = init_tts()
-	with timer() as t:
+	
+	gr.Info("Inferencing...")
+	with timer("Inferenced in") as t:
 		wav, sr = tts.inference(
 			text=args.text,
 			language=args.language,
@@ -169,6 +200,7 @@ def get_random_prompt():
 
 # setup args
 parser = argparse.ArgumentParser(allow_abbrev=False)
+parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
 parser.add_argument("--listen", default=None, help="Path for Gradio to listen on")
 parser.add_argument("--share", action="store_true")
 parser.add_argument("--render_markdown", action="store_true", default="VALLE_YAML" in os.environ)
@@ -208,7 +240,7 @@ with ui:
 			with gr.Column(scale=7):
 				with gr.Row():
 					layout["inference"]["inputs"]["max-seconds"] = gr.Slider(value=12, minimum=1, maximum=32, step=0.1, label="Maximum Seconds", info="Limits how many steps to perform in the AR pass.")
-					layout["inference"]["inputs"]["max-nar-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
+					#layout["inference"]["inputs"]["max-nar-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
 					layout["inference"]["inputs"]["input-prompt-length"] = gr.Slider(value=3.0, minimum=0.0, maximum=12.0, step=0.05, label="Input Prompt Trim Length", info="Trims the input prompt down to X seconds. Set 0 to disable.")
 				with gr.Row():
 					layout["inference"]["inputs"]["ar-temp"] = gr.Slider(value=0.95, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy sample)")
@@ -248,6 +280,19 @@ with ui:
 			outputs=[ x for x in layout["training"]["outputs"].values() if x is not None],
 		)
 	"""
+
+	with gr.Tab("Settings"):
+		with gr.Row():
+			with gr.Column(scale=7):
+				layout["settings"]["inputs"]["models"] = gr.Dropdown(choices=get_model_paths(), value=args.yaml, label="Model")
+			with gr.Column(scale=1):
+				layout["settings"]["buttons"]["load"] = gr.Button(value="Load Model")
+
+			layout["settings"]["buttons"]["load"].click(
+				fn=load_model,
+				inputs=[ x for x in layout["settings"]["inputs"].values() if x is not None],
+				outputs=[ x for x in layout["settings"]["outputs"].values() if x is not None],
+			)
 
 	if os.path.exists("README.md") and args.render_markdown:
 		md = open("README.md", "r", encoding="utf-8").read()

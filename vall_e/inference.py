@@ -8,10 +8,10 @@ from einops import rearrange
 from pathlib import Path
 
 from .emb import g2p, qnt
-from .emb.qnt import trim, trim_random
+from .emb.qnt import trim, trim_random, unload_model
 from .utils import to_device, set_seed, wrapper as ml
 
-from .config import cfg
+from .config import cfg, Config
 from .models import get_models
 from .engines import load_engines, deepspeed_available
 from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize
@@ -22,11 +22,15 @@ if deepspeed_available:
 class TTS():
 	def __init__( self, config=None, device=None, amp=None, dtype=None ):
 		self.loading = True 
-		
-		self.input_sample_rate = 24000
-		self.output_sample_rate = 24000
 
+		self.load_config( config=config, device=device, amp=amp, dtype=dtype )	
+		self.load_model()
+
+		self.loading = False 
+
+	def load_config( self, config=None, device=None, amp=None, dtype=None ):
 		if config:
+			print("Loading YAML:", config)
 			cfg.load_yaml( config )
 
 		try:
@@ -52,20 +56,20 @@ class TTS():
 		self.device = device
 		self.dtype = cfg.inference.dtype
 		self.amp = amp
+		
 
-		self.symmap = None
-
+	def load_model( self ):
+		load_engines.cache_clear()
+		unload_model()
+		
 		self.engines = load_engines(training=False)
 		for name, engine in self.engines.items():
 			if self.dtype != torch.int8:
 				engine.to(self.device, dtype=self.dtype if not self.amp else torch.float32)
 
 		self.engines.eval()
-
-		if self.symmap is None:
-			self.symmap = get_phone_symmap()
-
-		self.loading = False 
+		self.symmap = get_phone_symmap()
+		print("Loaded model")
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it

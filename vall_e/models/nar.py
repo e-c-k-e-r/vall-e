@@ -32,12 +32,6 @@ class NAR(Base):
 		return "len" in self.capabilities
 
 	@property
-	def n_prom_levels(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.prom_levels
-		return cfg.model.prom_levels
-
-	@property
 	def n_resp_levels(self) -> int:
 		if hasattr(self, "config") and self.config:
 			return self.config.resp_levels
@@ -309,7 +303,6 @@ def example_usage():
 	# mamba seems to ONLY be used as an AR (any NAR attempts lobotomizes it)
 	"""
 	if "mamba" in cfg.model.arch_type:
-		cfg.model.prom_levels = 1
 		cfg.model.resp_levels = 1
 	"""
 	# cfg.model.loss_factors = {}
@@ -319,7 +312,7 @@ def example_usage():
 
 	def _load_quants(path) -> Tensor:
 		qnt = np.load(path, allow_pickle=True)[()]
-		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.prom_levels, :].t().to(torch.int16)
+		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.resp_levels, :].t().to(torch.int16)
 
 	qnt = _load_quants(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 

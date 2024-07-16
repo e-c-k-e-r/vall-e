@@ -37,7 +37,7 @@ def load_engines(training=True):
 		optimizer = None
 		lr_scheduler = None
 
-		inferencing = cfg.mode == "inferencing" or not model.config.training
+		inferencing = cfg.mode == "inferencing" or not model.config.training or not training
 		backend = cfg.inference.backend if inferencing else cfg.trainer.backend
 		dtype = cfg.inference.dtype if inferencing else cfg.trainer.dtype
 		amp = cfg.inference.amp if inferencing else cfg.trainer.amp

@@ -961,8 +961,8 @@ class Dataset(_Dataset):
 		"""
 
 		# trim to fit to requested prom/resps levels
-		proms = proms[:, :cfg.model.prom_levels]
-		resps = resps[:, :cfg.model.prom_levels]
+		proms = proms[:, :cfg.model.resp_levels]
+		resps = resps[:, :cfg.model.resp_levels]
 
 
 		return dict(
@@ -1466,7 +1466,7 @@ if __name__ == "__main__":
 			if task not in cfg.dataset.tasks_list:
 				continue
 
-			print(text, task, cfg.model.prom_levels)
+			print(text, task, cfg.model.resp_levels)
 			print( proms.shape, resps.shape )
 
 			tokens = 0

@@ -20,7 +20,6 @@ Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install g
 
 I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
-
 ## Pre-Trained Model
 
 > [!NOTE]
@@ -196,11 +195,34 @@ And some experimental sampling flags you can use too (your mileage will ***defin
   + **!**NOTE**!**: This is incompatible with beam search sampling (for the meantime at least).
 * `--mirostat-eta`: (AR only) the "learning rate" during mirostat sampling applied to the maximum surprise.
 
+### Web UI
+
+A Gradio-based web UI is accessible by running `python3 -m vall_e.webui`. You can, optionally, pass:
+
+* `--yaml=./path/to/your/config.yaml`: will load the targeted YAML
+* `--listen 0.0.0.0:7860`: will set the web UI to listen to all IPs at port 7860. Replace the IP and Port to your preference.
+
+#### Inference
+
+Synthesizing speech is simple:
+
+* `Input Prompt`: The guiding text prompt. Each new line will be it's own generated audio to be stitched together at the end.
+* `Audio Input`: The reference audio for the synthesis. Under Gradio, you can trim your clip accordingly, but leaving it as-is works fine.
+* `Output`: The resultant audio.
+* `Inference`: Button to start generating the audio.
+
+All the additional knobs have a description that can be correlated to the above CLI flags.
+
+#### Settings
+
+So far, this only allows you to load a different model without needing to restart. The previous model should seamlessly unload, and the new one will load in place.
+
 ## To-Do
 
 * [x] train and release a serviceable model for finetuning against.
 * [ ] train and release a ***good*** zero-shot model.
   - this should, hopefully, just simply requires another epoch or two for `ar+nar-llama-8`, as the foundation seems rather robust now.
+* [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
 * [x] ~~explore alternative setups, like a NAR-only model~~
   - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
 * [x] ~~explore better sampling techniques~~
