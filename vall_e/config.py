@@ -338,6 +338,9 @@ class Model:
 		if self.arch_type == "llama":
 			include = ["self_attn", "mlp"] # target only the attention + mlp
 			exclude = ["self_attn.k_proj"] # common literature says to ignore it
+		if self.arch_type == "retnet":
+			include = ["layers."] # target the core layers of the RetNet and ignore the auxiliary stuff
+			exclude = ["retention.k_proj"] # attention-based transformers ignore the K, so might as well ignore it for the retnet
 
 		return dict(include=include, exclude=exclude)
 
@@ -585,6 +588,7 @@ class Trainer:
 	load_disabled_engines: bool = False
 
 	weight_dtype: str = "float16"
+
 	amp: bool = False
 	ddp: bool = False
 

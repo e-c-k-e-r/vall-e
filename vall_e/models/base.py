@@ -581,6 +581,18 @@ class Base(nn.Module):
 				))
 
 			self.model = RetNetDecoder(RetNetConfig(**kwargs))
+
+			# do some funny stuff for LoRA training
+			"""
+			if self.gradient_checkpointing:
+				def make_inputs_require_grads(module, input, output):
+					for i, t in enumerate(input):
+						if not isinstance(t, torch.Tensor):
+							continue
+						t.requires_grad_(True)
+
+				self.model.register_forward_hook(make_inputs_require_grads)
+			"""
 		elif self.arch_type == "retnet-hf":
 			kwargs = dict(
 				vocab_size=n_resp_tokens,
@@ -713,7 +725,7 @@ class Base(nn.Module):
 		x = inputs
 		m = mask.squeeze(-1).int()
 		aux_loss = None
-		
+
 		# HF transformer derived model
 		if self.arch_type in ["llama", "mistral", "mixtral"]:
 			kwargs = dict(

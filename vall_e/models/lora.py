@@ -148,6 +148,7 @@ class ParameterizedLoRA(nn.Module):
 def passes_policy( policy, name ):
 	if policy is None:
 		return True
+
 	if "exclude" in policy:
 		for term in policy["exclude"]:
 			if term in name:

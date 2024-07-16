@@ -10,7 +10,7 @@ elif cfg.trainer.backend == "local":
 
 from .base import Engines, TrainFeeder, default_feeder, Engine as LocalEngine
 
-from ..models import get_models
+from ..models import get_models, get_model
 from ..utils import wrapper as ml
 from ..models.lora import apply_lora
 
@@ -32,23 +32,49 @@ def load_engines(training=True):
 	engines = dict()
 
 	for name, model in models.items():
+		state = None
+		stats = None
+		lora = None
+
+		inferencing = cfg.mode == "inferencing" or not model.config.training or not training
+		loads_state_dict = cfg.trainer.load_state_dict or inferencing
+
+		checkpoint_path = cfg.ckpt_dir / name / "latest"
+		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
+		load_path = cfg.ckpt_dir / name / "fp32.pth"
+
+		# actually use the lora-specific checkpoint if available
+		if cfg.lora is not None:
+			lora = cfg.lora
+			checkpoint_path = cfg.ckpt_dir / lora.full_name / "latest"
+
+		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
+			print("Checkpoint missing, but weights found.")
+			loads_state_dict = True
+
+		# load state early
+		if loads_state_dict:
+			state = torch.load(load_path, map_location=torch.device(cfg.device))
+
+			# check if config is defined in state, and re-initialize the model
+			if "config" in state:
+				print("Model config definition in weights, re-loading...")
+				config_state = state["config"]
+				model = get_model( config=cfg.model.__class__( *config_state ), training=training )
+
 		hyper_config = model.config
 
 		optimizer = None
 		lr_scheduler = None
 
-		inferencing = cfg.mode == "inferencing" or not model.config.training or not training
 		backend = cfg.inference.backend if inferencing else cfg.trainer.backend
 		dtype = cfg.inference.dtype if inferencing else cfg.trainer.dtype
 		amp = cfg.inference.amp if inferencing else cfg.trainer.amp
-		loads_state_dict = cfg.trainer.load_state_dict or inferencing
 		ddp = cfg.trainer.ddp
 
 		engine_class = LocalEngine if backend == "local" or inferencing else Engine
 
-		if inferencing:
-			model.config.training = False
-
+		# apply model replacers
 		if cfg.optimizations.replace and cfg.optimizations.linear:
 			model.model = ml.replace_linear( model.model )
 		
@@ -57,6 +83,9 @@ def load_engines(training=True):
 
 		for lora in cfg.loras:
 			model.model = apply_lora( model.model, rank = lora.rank, alpha = lora.alpha, policy = model.config.lora_policy, use_parametrize = lora.parametrize )
+
+		if inferencing:
+			model.config.training = False
 
 		if not inferencing and (backend == "local" or (backend == "deepspeed" and cfg.hyperparameters.torch_optimizer)):
 			optimizer_class = None
@@ -116,22 +145,8 @@ def load_engines(training=True):
 			optimizer = None
 			lr_scheduler = None
 
-		checkpoint_path = cfg.ckpt_dir / name / "latest"
-		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
-		load_path = cfg.ckpt_dir / name / "fp32.pth"
-
-		# actually use the lora-specific checkpoint if available
-		if cfg.lora is not None:
-			checkpoint_path = cfg.ckpt_dir / lora.full_name / "latest"
-
-		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
-			print("Checkpoint missing, but weights found.")
-			loads_state_dict = True
-	
-		stats = None
+		# load state dict if requested / required
 		if loads_state_dict:
-			state = torch.load(load_path, map_location=torch.device(cfg.device))
-
 			# state dict is not just the module, extract the extra trainer details
 			if "stats" in state:
 				stats = state["stats"]

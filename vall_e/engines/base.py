@@ -320,11 +320,21 @@ class Engines(dict[str, Engine]):
 		for engine in self.values():
 			engine.dispatch_attribute(*args, **kwargs)
 
-	def export(self, userdata={}, callback=None):
+	def export(self, userdata={}, callback=None, dtype=None):
+		if dtype is None:
+			dtype = cfg.trainer.dtype
+
 		for name, engine in self.items():
 			module = engine.module.state_dict()
 			lora = None
 			save_path = cfg.ckpt_dir / name / "fp32.pth"
+			config = engine.module.config if hasattr(engine.module, "config") else engine.hyper_config
+			if not isinstance(config, dict):
+				config = config.__dict__
+
+			# safety
+			for k, v in module.items():
+				module[k] = v.to(dtype)
 
 			if cfg.lora is not None:				
 				lora, module = lora_get_state_dict( module, split = True )
@@ -339,7 +349,8 @@ class Engines(dict[str, Engine]):
 					"global_samples": engine.global_samples,
 					"tokens_processed": engine.tokens_processed,
 				},
-				"userdata": userdata
+				"userdata": userdata,
+				"config": config
 			}
 			if callback:
 				state_dict = callback( state_dict, config = engine.hyper_config, save_path = save_path )
