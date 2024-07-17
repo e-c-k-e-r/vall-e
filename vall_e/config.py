@@ -206,6 +206,7 @@ class ModelExperimentalSettings:
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
 	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
+	unified_position_ids: bool = True # False will generate position IDs partitioned for each section
 
 # I really need to clean this up
 @dataclass()
