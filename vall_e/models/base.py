@@ -880,7 +880,7 @@ class Base(nn.Module):
 
 			# Base-line TTS task
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
-			if task_type in ["tts", "tts-c", "ns", "sr"]:
+			if f'<{task_type}>' in get_task_symmap():
 				# insert the text prompt
 				if text_list is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
@@ -932,6 +932,9 @@ class Base(nn.Module):
 				elif resps_list is not None:
 					# yes this could be encoded better
 					inputs[i].append( ( "len", torch.Tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ]).to(device=device, dtype=torch.int16) ) )
+			else:
+
+				raise Exception(f'Unrecognized task: {task_type}')
 
 		return inputs
 
@@ -943,7 +946,7 @@ class Base(nn.Module):
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_embedding( input, quant_level ):
 			if isinstance(inputs, str):
-				return self.tasks_emb( get_task_symmap( input ) ) if self.langs_emb is None else None
+				return self.tasks_emb( get_task_symmap()[f'<{input}>'] ) if self.tasks_emb is None else None
 
 			# get RVQ level 0, or up to targetted RVQ level inference
 			if self.version <= 4:
@@ -1001,9 +1004,8 @@ class Base(nn.Module):
 				else:
 					# should probably raise an exception so things aren't processed silently
 					continue
-
 				batch.append(embedding)
-			
+
 			x_list.append( _join( batch, self.sep ) )
 
 		return x_list
@@ -1045,7 +1047,7 @@ class Base(nn.Module):
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
 			if isinstance(inputs, str):
-				return get_task_symmap( input )
+				return get_task_symmap()[f'<{input}>']
 
 			# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
 			if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):

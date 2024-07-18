@@ -544,6 +544,11 @@ class Dataset(_Dataset):
 		# grab IDs for bos, space, and eos for easy input creation later
 		self.empty_text = [ cfg.tokenizer._bos_token, cfg.tokenizer.get_vocab()[" "], cfg.tokenizer._eos_token ]
 
+		# have it fetch at training time if any is invalid, because the tokenizer obj might not have it easily fetchable ahead of itme
+		# encoding before parallelizing things causes things to whine
+		if self.empty_text[0] is None or self.empty_text[-1] is None:
+			self.empty_text = None
+
 		# assert len(self.phone_symmap) < 256, "Unique token count should be [0,255] to fit within uint8"
 		self.text_dtype = torch.uint8 if len(self.phone_symmap) < 256 else torch.int16
 
@@ -756,6 +761,9 @@ class Dataset(_Dataset):
 		return prom
 
 	def __getitem__(self, index):
+		if self.empty_text is None:
+			self.empty_text = tokenize(" ")
+		
 		bos_id, space_id, eos_id = self.empty_text
 
 		if self.sampler_type == "group":
@@ -836,7 +844,10 @@ class Dataset(_Dataset):
 		proms = proms[:, :cfg.model.resp_levels]
 		"""
 		
-		task = "tts" # random.choice(self.tasks)
+		task = random.choice(self.tasks)
+
+		if f'<{task}>' not in self.task_symmap:
+			raise Exception(f'Task not defined: {task}')
 
 		# Base TTS (text + prompt => output)
 		if task == "tts":
@@ -874,7 +885,7 @@ class Dataset(_Dataset):
 			# extend the noise to fill the target audio
 			noise = repeat_extend_audio(noise, resps.shape[0])
 			# create the input prompt by merging the target audio with the noise
-			proms = merge_audio( resps, noise, scale=[1, noise_scale], device=cfg.dataset.reencode_device )
+			proms = merge_audio( resps, noise, scale=[1, cfg.dataset.noise_scale], device=cfg.dataset.reencode_device )
 			# set the target to just be the noise if <sr>
 			if task == "sr":
 				resps = noise
@@ -956,7 +967,7 @@ class Dataset(_Dataset):
 					# extend the noise to fill the target audio
 					n = repeat_extend_audio(noise, p.shape[0])
 					# merge the noise over the utterance
-					return merge_audio(p, n, scale=[1, noise_scale], device=cfg.dataset.reencode_device)
+					return merge_audio(p, n, scale=[1, cfg.dataset.noise_scale], device=cfg.dataset.reencode_device)
 				
 				# apply noise to all pieces
 				pre_prom = noise_proms( pre_prom )
@@ -975,9 +986,9 @@ class Dataset(_Dataset):
 
 			# create new resp
 			resps = concat_audio( 
-				([ pre_prom ] if pre_prom is not None else []) +
+				*(([ pre_prom ] if pre_prom is not None else []) +
 				[ edit_prom ] +
-				([ post_prom ] if post_prom is not None else []),
+				([ post_prom ] if post_prom is not None else [])),
 				reencode=cfg.dataset.reencode_on_concat,
 				device=cfg.dataset.reencode_device,
 			)

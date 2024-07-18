@@ -165,7 +165,8 @@ class Dataset:
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
 	reencode_on_concat: bool = False # whether to concat audio by decode => concat => encode, or naively concat codes
-	reencode_device: str = "cuda" # "cpu" is slower but saves memory
+	reencode_device: str = "cpu" # "cpu" is slower but saves memory, cuda throws [rank0]: RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
+	noise_scale: float = 0.25 # scaling noise value
 	
 	_frames_per_second: int = 0 # allows setting your own hint
 
