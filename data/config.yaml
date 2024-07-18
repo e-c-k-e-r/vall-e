@@ -1,4 +1,4 @@
-sample_rate: 24_000 # 44_000 for dac
+sample_rate: 24_000 # 44_000 / 44_100 for dac
 audio_backend: "vocos" # or dac
 
 # model definitions to train
@@ -7,7 +7,7 @@ models:
   size: "full" # model dimensionality
   resp_levels: 8 # RVQ levels this model targets
   prom_levels: 8 # should always be the above
-  tasks: 8 # tasks this model can attend to, only tts is supported at the moment
+  tasks: 8 # tasks this model can attend to, only tts is guaranteed results at the moment
   langs: 2 # languages this model supports, semi-unused at the moment 
   tones: 1 # tones this model supports, currently unused
   arch_type: llama # underlying LLM arch to use, currently focusing on llama
@@ -19,7 +19,7 @@ models:
   # factors for split loss values, remove to have a unified loss calculation
   loss_factors:
     text: 0.1 # text phoneme portion of the sequence
-    prom: 0.0 # input prompt portion of the sequence
+    prom: 0.5 # input prompt portion of the sequence
     resp: 1.0 # output audio portin of the sequence
 
   # experimental settings
@@ -28,7 +28,8 @@ models:
     interleave: False # interleaves RVQ levels, only works with above for now
     audio_embedding_mode: "" # "" | "inclusive" | "exclusive", whether to utilize the audio backend's embeddings with the input embeddings
     audio_embedding_sums: False # whether the input embeddings include all prior RVQ levels (sums) or only the current one, further experimentation is needed to see if this matters
-    p_rvq_levels: "equal" # "equal" | "auto", sets probabilities of which RVQ level to select during training, auto will have the next RVQ level half as likely as the previous one
+    p_rvq_levels: "auto" # "equal" | "auto", sets probabilities of which RVQ level to select during training, auto will have the next RVQ level half as likely as the previous one
+    unified_position_ids: False # specifies whether or not position IDs should be continuous across the whole sequence (if True, naive behavior), or restart them at the next segment of the sequence (if False)
 
 # hyperparameter settings (could be relegated to trainer settings)
 hyperparameters:

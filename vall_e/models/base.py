@@ -880,6 +880,7 @@ class Base(nn.Module):
 
 			# Base-line TTS task
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
+			# prom /may/ include <task> tokens inside to help guide things, per SpeechX
 			if f'<{task_type}>' in get_task_symmap():
 				# insert the text prompt
 				if text_list is not None:
@@ -933,7 +934,6 @@ class Base(nn.Module):
 					# yes this could be encoded better
 					inputs[i].append( ( "len", torch.Tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ]).to(device=device, dtype=torch.int16) ) )
 			else:
-
 				raise Exception(f'Unrecognized task: {task_type}')
 
 		return inputs

@@ -361,7 +361,7 @@ def example_usage():
 	from einops import repeat
 	from tqdm import tqdm
 
-	from ..emb.qnt import decode_to_file, unload_model
+	from ..emb.qnt import decode_to_file, unload_model, trim_random, repeat_extend_audio, concat_audio, merge_audio
 	from ..engines import Engine
 	from ..utils import wrapper as ml
 	
@@ -385,7 +385,7 @@ def example_usage():
 		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.resp_levels, :].t().to(torch.int16)
 
 	qnt = _load_quants(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
-
+	noise = _load_quants(f"./data/noise.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 
 	text_list = [
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
@@ -403,6 +403,8 @@ def example_usage():
 	text_list = text_list[:1]
 	proms_list = proms_list[:1]
 	resps_list = resps_list[:1]
+
+	batch_size = len(text_list)
 
 	# rentet-full is the only configuration with BitNet's BitLinear that converges despite the grad_norm saying otherwise
 	kwargs = {
@@ -428,8 +430,11 @@ def example_usage():
 		pass
 	"""
 
+	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
+	tasks = cfg.dataset.tasks_list
+
 	model = AR_NAR(**kwargs).to(device)
-	steps = 150
+	steps = 150 * len(tasks)
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -497,22 +502,61 @@ def example_usage():
 
 	print(f"AR+NAR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-	@torch.inference_mode()
-	def sample( name, steps=1000 ):
-		if cfg.audio_backend == "dac" and name == "init":
-			return
+	@torch.no_grad()
+	def sample_data(task=None):
+		texts = []
+		proms = []
+		resps = []
 
+		for i in range(batch_size):
+			if task is None:
+				task = random.choice(tasks)
+
+			text = text_list[i]
+			prom = proms_list[i]
+			resp = resps_list[i]
+
+			# do nothing
+			if task == "tts":
+				...
+			elif task == "tts-c":
+				trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
+
+				prom = resp[:trim_length]
+				resp = resp[trim_length:]
+			elif task == "ns" or task == "sr":
+				# extend the noise to fill the target audio
+				noise_ext = repeat_extend_audio( noise, resp.shape[0] )
+				# create the input prompt by merging the target audio with the noise
+				prom = merge_audio( resp.cpu(), noise_ext, scale=[1, cfg.dataset.noise_scale], device=cfg.dataset.reencode_device )
+				# set the target to just be the noise if <sr>
+				if task == "sr":
+					resp = noise_ext
+
+				# set the text prompt to empty to train without a guided text prompt
+				if random.random() < 0.5:
+					text = torch.tensor([bos_id, eos_id]).to(device=device, dtype=torch.uint8)
+
+			texts.append( text.to(device) )
+			proms.append( prom.to(device) )
+			resps.append( resp.to(device) )
+
+		return texts, proms, resps
+
+	@torch.inference_mode()
+	def sample( name, steps=1000, task=None ):
 		engine.eval()
+
+		texts, proms, resps = sample_data( task )
+
 		if "ar" in cfg.model.capabilities:
-			resps_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
-		else:
-			resps_list = [ qnt[:, 0].to( device ) ]
+			resps = engine( texts, proms, max_steps=steps, sampling_temperature=0.95 )
 
 		if "nar" in cfg.model.capabilities:
-			resps_list = engine( text_list, proms_list, resps_list=resps_list, sampling_temperature=0.2 )
+			resps = engine( texts, proms, resps, sampling_temperature=0.2 )
 
-		for i, o in enumerate(resps_list):
-			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
+		for i, o in enumerate(resps):
+			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{task}.{name}.wav", device=device)
 
 		unload_model()
 
@@ -520,8 +564,10 @@ def example_usage():
 		engine.train()
 		t = trange(steps)
 		for i in t:
+			texts, proms, resps = sample_data()
+
 			stats = {"step": i}
-			stats |= engine.traverse(text_list=text_list, proms_list=proms_list, resps_list=resps_list)
+			stats |= engine.traverse(text_list=texts, proms_list=proms, resps_list=resps)
 			stats |= {"grad_norm": engine.get_global_grad_norm()}
 
 			tqdm.write(f"{stats}")
@@ -534,7 +580,9 @@ def example_usage():
 
 	#sample("init", 5)
 	train()
-	sample("final")
+	
+	for task in tasks:
+		sample("final", task=task)
 
 if __name__ == "__main__":
 	example_usage()
