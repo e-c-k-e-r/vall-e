@@ -11,7 +11,7 @@ import torch
 import itertools
 
 from .config import cfg
-from .emb.qnt import trim, trim_random, repeat_extend_audio, merge_audio, decode_to_file
+from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
 
@@ -541,12 +541,7 @@ class Dataset(_Dataset):
 		self.tone_symmap = self._get_tone_symmap()
 		self.task_symmap = self._get_task_symmap()
 
-		"""
-		self.empty_text = tokenize(" ")
-		if len(self.empty_text) == 4:
-			self.empty_text = self.empty_text[:1] + self.empty_text[1:2] + self.empty_text[-1:]
-		"""
-
+		# grab IDs for bos, space, and eos for easy input creation later
 		self.empty_text = [ cfg.tokenizer._bos_token, cfg.tokenizer.get_vocab()[" "], cfg.tokenizer._eos_token ]
 
 		# assert len(self.phone_symmap) < 256, "Unique token count should be [0,255] to fit within uint8"
@@ -743,7 +738,7 @@ class Dataset(_Dataset):
 				qnt = _load_quants(path, return_metadata=False)
 
 			if 0 < trim_length and trim_length < qnt.shape[0]:
-				qnt = trim( qnt, trim_length )
+				qnt = trim( qnt, trim_length, reencode=cfg.dataset.reencode_on_concat )
 
 			prom_list.append(qnt)
 			prom_length += qnt.shape[0]
@@ -756,7 +751,7 @@ class Dataset(_Dataset):
 		prom = torch.cat(prom_list)
 
 		if 0 < trim_length and trim_length < prom.shape[0]:
-			prom = trim( prom, trim_length )
+			prom = trim( prom, trim_length, reencode=cfg.dataset.reencode_on_concat )
 
 		return prom
 
@@ -814,15 +809,13 @@ class Dataset(_Dataset):
 		lang = torch.tensor([self.lang_symmap[lang]]).to(torch.uint8)
 		tone = torch.tensor([self.tone_symmap[tone]]).to(torch.uint8)
 
-		naive = True
+		# a bool to easily experiment with two mindsets later
+		naive = cfg.experimental
 
-		# disabled because I haven't actually needed to use it myself, and I can't be assed to validate if it still works
-		# it probably is better to pad with silence instead of just stitching utterances and ruining things
-		"""
 		# append additional prompts in an attempt to artifically increase lengths / offer new data
 		if cfg.dataset.max_resps > 1 and random.random() < cfg.dataset.p_resp_append:
 			ignore_paths = []
-			for _ in range( cfg.dataset.max_resps - 1 ):
+			for _ in range( 1, cfg.dataset.max_resps ):
 				path, txt, qnt = self.sample_utterance(spkr_name, ignore=ignore_paths)
 				ignore_paths.append(path)
 
@@ -836,15 +829,8 @@ class Dataset(_Dataset):
 
 				# might be better to decode => concat waveforms with silence in between => reencode
 				# as you technically can't just append encodec sequences together like this without issues
-				resps = torch.concat([ resps, qnt ])
-		"""
-		
-		"""
-		task = "tts"
-		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
-		proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
-		"""
-		
+				resps = concat_audio( resps, qnt, reencode=cfg.dataset.reencode_on_concat, device=cfg.dataset.reencode_device )
+
 		"""
 		resps = resps[:, :cfg.model.resp_levels]
 		proms = proms[:, :cfg.model.resp_levels]
@@ -888,7 +874,7 @@ class Dataset(_Dataset):
 			# extend the noise to fill the target audio
 			noise = repeat_extend_audio(noise, resps.shape[0])
 			# create the input prompt by merging the target audio with the noise
-			proms = merge_audio( resps, noise, scale=[1, noise_scale], device="cpu" )
+			proms = merge_audio( resps, noise, scale=[1, noise_scale], device=cfg.dataset.reencode_device )
 			# set the target to just be the noise if <sr>
 			if task == "sr":
 				resps = noise
@@ -907,10 +893,10 @@ class Dataset(_Dataset):
 			# overlay the random speaker over the target audio
 			smallest_size = min(resps.shape[0], other_proms.shape[0])
 			if other_proms.shape[0] == smallest_size:
-				noisy_proms = merge_audio( resps[:smallest_size, :], other_proms, scale=[1, random.uniform(0.5, 0.75)], device="cpu" )
+				noisy_proms = merge_audio( resps[:smallest_size, :], other_proms, scale=[1, random.uniform(0.5, 0.75)], device=cfg.dataset.reencode_device )
 				noisy_proms = torch.cat( [ noisy_proms, resps[smallest_size:, :] ] )
 			else:
-				noisy_proms = merge_audio( resps, other_proms[:smallest_size, :], scale=[1, random.uniform(0.5, 0.75)], device="cpu" )
+				noisy_proms = merge_audio( resps, other_proms[:smallest_size, :], scale=[1, random.uniform(0.5, 0.75)], device=cfg.dataset.reencode_device )
 				noisy_proms = torch.cat( [ noisy_proms, other_proms[smallest_size:, :] ] )
 
 			# stitch together the proms
@@ -970,7 +956,7 @@ class Dataset(_Dataset):
 					# extend the noise to fill the target audio
 					n = repeat_extend_audio(noise, p.shape[0])
 					# merge the noise over the utterance
-					return merge_audio(p, n, scale=[1, noise_scale], device="cpu")
+					return merge_audio(p, n, scale=[1, noise_scale], device=cfg.dataset.reencode_device)
 				
 				# apply noise to all pieces
 				pre_prom = noise_proms( pre_prom )
@@ -988,10 +974,12 @@ class Dataset(_Dataset):
 			]
 
 			# create new resp
-			resps = torch.cat( 
+			resps = concat_audio( 
 				([ pre_prom ] if pre_prom is not None else []) +
 				[ edit_prom ] +
-				([ post_prom ] if post_prom is not None else [])
+				([ post_prom ] if post_prom is not None else []),
+				reencode=cfg.dataset.reencode_on_concat,
+				device=cfg.dataset.reencode_device,
 			)
 		else:
 			raise Exception(f'Undefined task: {task}')

@@ -431,7 +431,7 @@ def encode_from_file(path, device="cuda"):
 Helper Functions
 """
 # trims from the start, up to `target`
-def trim( qnt, target ):
+def trim( qnt, target, reencode=False ):
 	length = max( qnt.shape[0], qnt.shape[1] )
 	if target > 0:
 		start = 0
@@ -446,7 +446,16 @@ def trim( qnt, target ):
 		if start < 0:
 			start = 0
 
-	return qnt[start:end] if qnt.shape[0] > qnt.shape[1] else qnt[:, start:end]
+	if not reencode:
+		return qnt[start:end] if qnt.shape[0] > qnt.shape[1] else qnt[:, start:end]
+
+	# trims on the waveform itself
+	# need to test
+	start = start / cfg.dataset.frames_per_second * cfg.sample_rate
+	end = end / cfg.dataset.frames_per_second * cfg.sample_rate
+	
+	wav = decode(qnt)[0]
+	return encode(wav[start:end], cfg.sample_rate)[0].t()
 
 # trims a random piece of audio, up to `target`
 # to-do: try and align to EnCodec window
@@ -470,18 +479,47 @@ def repeat_extend_audio( qnt, target ):
 
 	return trim(torch.cat(pieces), target)
 
+# interleaves between a list of audios
+# useful for interleaving silence
+def interleave_audio( *args, audio=None ):
+	qnts = [*args]
+	if audio is None:
+		return qnts
+
+	# interleave silence
+	# yes there's a better way
+	res = []
+	for i, qnt in enumerate(qnts):
+		res.append( qnt )
+		if i + 1 != len(qnts):
+			res.append( audio )
+
+	return res
+
+# concats two audios together
+def concat_audio( *args, reencode=False, device="cuda", levels=cfg.model.max_levels ):
+	qnts = [*args]
+	# just naively combine the codes
+	if not reencode:
+		return torch.concat( qnts )
+
+	decoded = [ decode(qnt, device=device, levels=levels)[0] for qnt in qnts ]
+	combined = torch.concat( decoded )
+	return encode(combined, cfg.sample_rate, device=device, levels=levels)[0].t()
+
 # merges two quantized audios together
-# I don't know if this works
-def merge_audio( *args, device="cpu", scale=[], levels=cfg.model.max_levels ):
+# requires re-encoding because there's no good way to combine the waveforms of two audios without relying on some embedding magic
+def merge_audio( *args, device="cuda", scale=[], levels=cfg.model.max_levels ):
 	qnts = [*args]
 	decoded = [ decode(qnt, device=device, levels=levels)[0] for qnt in qnts ]
 
+	# useful to adjust the volumes of each waveform
 	if len(scale) == len(decoded):
 		for i in range(len(scale)):
 			decoded[i] = decoded[i] * scale[i]
 
 	combined = sum(decoded) / len(decoded)
-	return encode(combined, cfg.sample_rate, device="cpu", levels=levels)[0].t()
+	return encode(combined, cfg.sample_rate, device=device, levels=levels)[0].t()
 
 """
 if __name__ == "__main__":

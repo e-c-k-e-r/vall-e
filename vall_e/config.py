@@ -137,8 +137,9 @@ class Dataset:
 	
 	hdf5_name: str = "data.h5"
 	use_hdf5: bool = False
-	use_metadata: bool = False
 	hdf5_flag: str = "a"
+	use_metadata: bool = False
+	
 	validate: bool = True
 	workers: int = 8
 	cache: bool = True
@@ -163,6 +164,8 @@ class Dataset:
 	sample_shuffle: bool = True # 
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"])
+	reencode_on_concat: bool = False # whether to concat audio by decode => concat => encode, or naively concat codes
+	reencode_device: str = "cuda" # "cpu" is slower but saves memory
 	
 	_frames_per_second: int = 0 # allows setting your own hint
 
@@ -666,7 +669,7 @@ class Optimizations:
 class Config(BaseConfig):
 	device: str = "cuda"
 	mode: str = "training" # "inferencing"
-	experimental: bool = False # So I can stop commenting out things when committing
+	experimental: bool = False # Debug flag, unused now
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: dict | list | None = field(default_factory=lambda: [])
