@@ -92,6 +92,7 @@ class NAR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
 		
+		task_list: list[Tensor] | None = None,
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,

@@ -541,6 +541,14 @@ class Dataset(_Dataset):
 		self.tone_symmap = self._get_tone_symmap()
 		self.task_symmap = self._get_task_symmap()
 
+		"""
+		self.empty_text = tokenize(" ")
+		if len(self.empty_text) == 4:
+			self.empty_text = self.empty_text[:1] + self.empty_text[1:2] + self.empty_text[-1:]
+		"""
+
+		self.empty_text = [ cfg.tokenizer._bos_token, cfg.tokenizer.get_vocab()[" "], cfg.tokenizer._eos_token ]
+
 		# assert len(self.phone_symmap) < 256, "Unique token count should be [0,255] to fit within uint8"
 		self.text_dtype = torch.uint8 if len(self.phone_symmap) < 256 else torch.int16
 
@@ -665,7 +673,45 @@ class Dataset(_Dataset):
 		choices = set(self.spkrs) - set(ignore)
 		return random.choice([*choices])
 
-	def sample_prompts(self, spkr_name, ignore):
+	def sample_utterance(self, spkr_name, ignore=[]):
+		choices = [*(set(self.paths_by_spkr_name[spkr_name]) - set(ignore))]
+
+		if len(choices) == 0:
+			return None, None, None
+		
+		path = random.choice(choices)
+			
+		if cfg.dataset.use_hdf5:
+			key = _get_hdf5_path(path)
+
+			if key not in cfg.hdf5:
+				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
+
+			metadata = cfg.hdf5[key].attrs()
+
+			text = cfg.hdf5[key]["text"][:]
+			resps = cfg.hdf5[key]["audio"][:, :]
+			
+			text = torch.from_numpy(text).to(self.text_dtype)
+			resps = torch.from_numpy(resps).to(torch.int16)
+			
+			"""
+			lang = metadata["language"] if "language" in metadata else None
+			tone = metadata["tone"] if "tone" in metadata else None
+			"""
+		else:
+			resps, metadata = _load_quants(path, return_metadata=True)
+			text = torch.tensor(tokenize( metadata["phonemes"] )).to(self.text_dtype)
+
+			"""
+			lang = metadata["language"] if "language" in metadata else None
+			tone = metadata["tone"] if "tone" in metadata else None
+			"""
+
+		return path, text, resps
+
+
+	def sample_prompts(self, spkr_name, ignore, should_trim=True):
 		prom_list = []
 
 		choices = set(self.paths_by_spkr_name[spkr_name]) - {ignore}
@@ -681,7 +727,7 @@ class Dataset(_Dataset):
 			"""
 
 		prom_length = 0
-		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
+		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second) if trim else 0
 
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
@@ -715,6 +761,8 @@ class Dataset(_Dataset):
 		return prom
 
 	def __getitem__(self, index):
+		bos_id, space_id, eos_id = self.empty_text
+
 		if self.sampler_type == "group":
 			spkr_group = self.spkr_groups[index]
 			#spkr_group_id = self.spkr_group_symmap[spkr_group]
@@ -740,82 +788,99 @@ class Dataset(_Dataset):
 			if key not in cfg.hdf5:
 				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
 
+			metadata = cfg.hdf5[key].attrs()
+
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]
 			
 			text = torch.from_numpy(text).to(self.text_dtype)
 			resps = torch.from_numpy(resps).to(torch.int16)
+			
+			lang = metadata["language"] if "language" in metadata else None
+			tone = metadata["tone"] if "tone" in metadata else None
 		else:
 			resps, metadata = _load_quants(path, return_metadata=True)
 			text = torch.tensor(tokenize( metadata["phonemes"] )).to(self.text_dtype)
 
-		lang = torch.tensor([ self.lang_symmap[ self.get_language(spkr_group) ]]).to(torch.uint8)
+			lang = metadata["language"] if "language" in metadata else None
+			tone = metadata["tone"] if "tone" in metadata else None
 
-		# append additional prompts in an attempt to artifically increase lengths / offer new data
-		"""
+		if not lang:
+			lang = self.get_language(spkr_group)
+		
+		if not tone:
+			tone = "neutral"
+
+		lang = torch.tensor([self.lang_symmap[lang]]).to(torch.uint8)
+		tone = torch.tensor([self.tone_symmap[tone]]).to(torch.uint8)
+
+		naive = True
+
 		# disabled because I haven't actually needed to use it myself, and I can't be assed to validate if it still works
 		# it probably is better to pad with silence instead of just stitching utterances and ruining things
+		"""
+		# append additional prompts in an attempt to artifically increase lengths / offer new data
 		if cfg.dataset.max_resps > 1 and random.random() < cfg.dataset.p_resp_append:
-			choices = [*(set(self.paths_by_spkr_name[spkr_name]) - {path})]
+			ignore_paths = []
+			for _ in range( cfg.dataset.max_resps - 1 ):
+				path, txt, qnt = self.sample_utterance(spkr_name, ignore=ignore_paths)
+				ignore_paths.append(path)
 
-			if len(choices) > 0:
-				for _ in range( cfg.dataset.max_resps - 1 ):
-					sampled_path = random.choice(choices)
-					choices = [*(set(choices) - {sampled_path})]
-					if cfg.dataset.use_hdf5:
-						key = _get_hdf5_path(sampled_path)
-						txt = cfg.hdf5[key]["text"][:]
-						qnt = cfg.hdf5[key]["audio"][:, :]
-
-						txt = np.array( txt )
-						
-						txt = torch.from_numpy(txt).to(self.text_dtype)
-						qnt = torch.from_numpy(qnt).to(torch.int16)
-					else:
-						#txt = torch.tensor([*map(self.phone_symmap.get, _get_phones(sampled_path))]).to(self.text_dtype)
-						#txt = torch.tensor(tokenize(_get_phones(sampled_path))).to(self.text_dtype)
-						qnt, metadata = _load_quants(sampled_path, return_metadata=True)
-						txt = torch.tensor(tokenize( metadata["phonemes"] )).to(self.text_dtype)
-
-					# <s>[original text] [new text]</s>
-					# removes the original text's </s>, includes a space, and remove the new text's <s>
+				# <s>[original text]</s><s>[new text]</s>
+				if naive:
+					text = torch.concat([ text, txt ])
+				# <s>[original text] [new text]</s>
+				# removes the original text's </s>, includes a space, and remove the new text's <s>
+				else:
 					text = torch.concat([ text[:-1], torch.tensor([self.phone_symmap[" "]]).to(torch.int16),  txt[1:] ])
 
-					# might be better to decode => concat waveforms with silence in between => reencode
-					# as you technically can't just append encodec sequences together like this without issues
-					resps = torch.concat([ resps, qnt ])
+				# might be better to decode => concat waveforms with silence in between => reencode
+				# as you technically can't just append encodec sequences together like this without issues
+				resps = torch.concat([ resps, qnt ])
 		"""
 		
+		"""
 		task = "tts"
 		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
 		proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
-
-
-		# Disabled until I swap over to a better method
 		"""
-		task = random.choice(self.tasks)
+		
+		"""
+		resps = resps[:, :cfg.model.resp_levels]
+		proms = proms[:, :cfg.model.resp_levels]
+		"""
+		
+		task = "tts" # random.choice(self.tasks)
 
-		# ensure a speaker has at least four utterances
-		# default to tts if not
-		if len(set(self.paths_by_spkr_name[spkr_name]) - {path}) < 4:
-			task = "tts"
-		noise_scale = 0.25
-		if task == "tts" or task == "tts-c":
-			trim_length = int(cfg.dataset.prompt_duration * cfg.dataset.frames_per_second)
-			# demote if the target is too short
-			if task == "tts-c" and trim_length * 2 >= resps.shape[0]:
-				task = "tts"
+		# Base TTS (text + prompt => output)
+		if task == "tts":
+			proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
+
+		# VALL-E Continuous (text + partial output => rest of output)
+		#     (this could just be sampled as <text a><text b> + <audio a> => <audio b>, but I need to experiment with it)
+		elif task == "tts-c":
+			# trim a piece of the output response
+			if naive:
+				trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
 			
-			# VALL-E continuous
-			# ignore if target utterance is shorter than prompt duration
-			# to-do: actually do this for the AR only as I don't think the paper trained the NAR for this
-			if task == "tts-c":
 				proms = resps[:trim_length, :]
 				resps = resps[trim_length:, :]
-
-				proms = torch.cat( [self.get_task_token(task), proms] )
 			else:
-				proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
+				path, txt, qnt = self.sample_utterance(spkr_name)
+
+				# <s>[original text]</s><s>[new text]</s>
+				if naive:
+					text = torch.concat([ text, txt ])
+				# <s>[original text] [new text]</s>
+				# removes the original text's </s>, includes a space, and remove the new text's <s>
+				else:
+					text = torch.concat([ text[:-1], torch.tensor([self.phone_symmap[" "]]).to(torch.int16),  txt[1:] ])
+
+				# set prompt as initial response
+				proms = resps
+				# set target as newly sampled response
+				resps = qnt
+
 		# noise suppression || speech removal
 		elif task == "ns" or task == "sr":
 			# sample random noise
@@ -827,20 +892,19 @@ class Dataset(_Dataset):
 			# set the target to just be the noise if <sr>
 			if task == "sr":
 				resps = noise
-			# prepend the task token
-			proms = torch.cat( [self.get_task_token(task), proms] )
 
 			# set the text prompt to empty to train without a guided text prompt
 			if random.random() < 0.5:
-				text = torch.tensor([1, 2]).to(self.text_dtype)
+				text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
+
 		# target speech extraction
 		elif task == "tse":
 			# sample a random, clean, utterance for the target speaker
 			clean_proms = self.sample_prompts(spkr_name, ignore=path)
 			# sample a random, clean utterance from a different speaker
 			other_proms = self.sample_prompts(self.sample_speakers(ignore=[spkr_name]), ignore="")
+			
 			# overlay the random speaker over the target audio
-
 			smallest_size = min(resps.shape[0], other_proms.shape[0])
 			if other_proms.shape[0] == smallest_size:
 				noisy_proms = merge_audio( resps[:smallest_size, :], other_proms, scale=[1, random.uniform(0.5, 0.75)], device="cpu" )
@@ -849,33 +913,30 @@ class Dataset(_Dataset):
 				noisy_proms = merge_audio( resps, other_proms[:smallest_size, :], scale=[1, random.uniform(0.5, 0.75)], device="cpu" )
 				noisy_proms = torch.cat( [ noisy_proms, other_proms[smallest_size:, :] ] )
 
-			# stitch together the promps			
-			proms = torch.cat( [clean_proms, self.get_task_token(task), noisy_proms] )
+			# stitch together the proms
+			proms = [
+				clean_proms,
+				task,
+				noisy_proms,
+			]
 
 			# set the text prompt to empty to train without a guided text prompt
 			if random.random() < 0.5:
-				text = torch.tensor([1, 2]).to(self.text_dtype) # <s></s>
+				text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
 
-		# speech editing would require higher quality transcription data (phoneme level/word level) unfortunately
-		# as I need to get a good clean point to trim into
 		# clean speech editing
 		elif task == "cse" or task == "nse":
-			choices = set(self.paths_by_spkr_name[spkr_name]) - {path}
-			sampled = random.sample([*choices], 4)
+			# speech editing would require higher quality transcription data (phoneme level/word level) unfortunately
+			# as I need to get a good clean point to trim into
+			# instead we'll just sample a bunch of utterances
 
-			if cfg.dataset.use_hdf5:
-				texts = [ torch.from_numpy(cfg.hdf5[_get_hdf5_path(path)]["text"][:]).to(self.text_dtype) for path in sampled ]
-				qnts = [ torch.from_numpy(cfg.hdf5[_get_hdf5_path(path)]["audio"][:, :]).to(torch.int16) for path in sampled ]
-			else:
-				texts = [ torch.tensor([*map(self.phone_symmap.get, _get_phones(path))]).to(self.text_dtype) for path in sampled ]
-				qnts = [ _load_quants(path) for path in sampled ]
+			samples = []
+			for _ in range( 4 ):
+				sampled = self.sample_utterance(spkr_name, ignore=[s[0] for s in samples])
+				samples.append( sampled )
 
-			# remove <s></s>
-			for i in range(len(texts)):
-				texts[i] = texts[i][1:-1]
-
-			pre_text, mid_text, post_text, edit_text = texts
-			pre_prom, mid_prom, post_prom, edit_prom = qnts
+			pre_text, mid_text, post_text, edit_text = [ s[1][1:-1] for s in samples ]
+			pre_prom, mid_prom, post_prom, edit_prom = [ s[2] for s in samples ]
 
 			# randomly drop out pre
 			if random.random() < 0.125:
@@ -888,11 +949,11 @@ class Dataset(_Dataset):
 
 			# create new text
 			text = torch.cat(
-				[ torch.Tensor( [ 1 ] ).to(dtype=self.text_dtype) ] + # <s>
-				([ pre_text, torch.Tensor( [ 3 ] ).to(dtype=self.text_dtype) ] if pre_text is not None else []) + # pre_text + space'
+				[ torch.Tensor( [ bos_id ] ).to(dtype=self.text_dtype) ] + # <s>
+				([ pre_text, torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype) ] if pre_text is not None else []) + # pre_text + space'
 				[ edit_text ] + # 'edit text'
-				([ torch.Tensor( [ 3 ] ).to(dtype=self.text_dtype), post_text ] if post_text is not None else []) + # 'space' + edit_text
-				[ torch.Tensor( [ 2 ] ).to(dtype=self.text_dtype) ] # </s>
+				([ torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype), post_text ] if post_text is not None else []) + # 'space' + edit_text
+				[ torch.Tensor( [ eos_id ] ).to(dtype=self.text_dtype) ] # </s>
 			)
 
 			if task == "nse":
@@ -916,17 +977,16 @@ class Dataset(_Dataset):
 				mid_prom = noise_proms( mid_prom )
 				post_prom = noise_proms( post_prom )
 				edit_prom = noise_proms( edit_prom )
-			else:
-				mid_prom = self.get_task_token("mask")
 
-			# create new proms
-			proms = torch.cat( 
-				([ pre_prom ] if pre_prom is not None else []) +
-				[self.get_task_token("soe")] +
-				[ mid_prom ] + # is <mask> if task is CSE
-				[self.get_task_token("eoe")] +
-				([ post_prom ] if post_prom is not None else [])
-			)
+			# create new prom
+			proms = [
+				pre_prom,
+				"<soe>",
+				"<mask>" if task == "cse" else mid_prom,
+				"<eoe>",
+				post_prom,
+			]
+
 			# create new resp
 			resps = torch.cat( 
 				([ pre_prom ] if pre_prom is not None else []) +
@@ -935,35 +995,6 @@ class Dataset(_Dataset):
 			)
 		else:
 			raise Exception(f'Undefined task: {task}')
-		"""
-
-		"""
-		# emulate SVC
-		# takes in an utterance of the target speaker, a target utterenace as a reference clip as the input prompt
-		# targets an utterance of the target speaker with the same tempo + pitch + etc as the reference clip
-
-		# NOTE: I do not have a clue how to go about this. I *could* dynamically generate clips through RVC here, but I imagine the penalty would be astronomical
-		# ahead-of-time dataset preparation of a shit ton of RVC clips might be the key.
-		# aside from that, I have no clue how to go about training this, as this is entirely a proof of concept task.
-		elif task == "svc":
-			# sample a random, clean utterance for the target speaker
-			proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
-			# sample a reference clip from a different speaker
-			ref_proms = self.sample_rvc(self.sample_speakers(ignore=[spkr_name]))
-			# 
-			resps = 
-			# stitch together the promps
-			proms = torch.cat( [proms, self.get_task_token(task), ref_proms] )
-
-			# set the text prompt to empty to train without a guided text prompt
-			if random.random() < 0.5:
-				text = torch.tensor([1, 2]).to(self.text_dtype)
-		"""
-
-		# trim to fit to requested prom/resps levels
-		proms = proms[:, :cfg.model.resp_levels]
-		resps = resps[:, :cfg.model.resp_levels]
-
 
 		return dict(
 			index=index,
@@ -972,6 +1003,7 @@ class Dataset(_Dataset):
 			spkr_id=spkr_id,
 			task=task,
 			lang=lang,
+			tone=tone,
 			text=text,
 			proms=proms,
 			resps=resps,

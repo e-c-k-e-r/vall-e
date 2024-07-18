@@ -94,6 +94,7 @@ class AR_NAR(Base):
 		proms_list: list[Tensor],
 		resps_list: list[Tensor] | None = None,
 		
+		task_list: list[Tensor] | None = None,
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
@@ -116,6 +117,10 @@ class AR_NAR(Base):
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
+		
+		# generate task list if not provided
+		if task_list is None:
+			task_list = [ "tts" for _ in range(batch_size) ]
 
 		# is training or NAR
 		if resps_list is not None:
@@ -127,15 +132,8 @@ class AR_NAR(Base):
 
 			# is training
 			if training:
-				# to-do: make this YAML configurable
-				def sample_task():
-					return "tts"
-
 				p_rvq_levels = self.config.experimental.p_rvq_levels if self.config is not None else "equal"
-
-				# generate task list to train against
-				task_list = [ sample_task() for _ in range(batch_size) ]
-
+			
 				# determines which RVQ level to target per batch
 				quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels ]
 
@@ -164,12 +162,14 @@ class AR_NAR(Base):
 				"""
 				
 				for i in range(batch_size):
-					# cap quant_level if it exceeds its corresponding resp/prom
-					if quant_levels[i] >= resps_list[i].shape[-1]:
-						quant_levels[i] = resps_list[i].shape[-1] - 1
+					# other tasks might have the prom be a list and this is just the easiest way to acknowledge that
+					if task_list[i] == "tts":
+						# cap quant_level if it exceeds its corresponding resp/prom
+						if quant_levels[i] >= resps_list[i].shape[-1]:
+							quant_levels[i] = resps_list[i].shape[-1] - 1
 
-					if quant_levels[i] >= proms_list[i].shape[-1]:
-						quant_levels[i] = proms_list[i].shape[-1] - 1
+						if quant_levels[i] >= proms_list[i].shape[-1]:
+							quant_levels[i] = proms_list[i].shape[-1] - 1
 
 					# only apply stop token for RVQ level 0
 					if quant_levels[i] > 0:
@@ -261,7 +261,7 @@ class AR_NAR(Base):
 		stopped = torch.zeros(batch_size, device=device).bool()
 		
 		stop_token = self.stop_token
-		task_list = [ "tts" for _ in range(batch_size) ]
+
 
 		state = None
 		mirostat = [

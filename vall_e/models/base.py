@@ -33,6 +33,9 @@ from ..samplers import reptition_penalize, length_penalize, ban_tokens, top_k_to
 
 from ..emb.qnt import encode_as_embedding
 
+# yuck, kind of needed
+from ..data import get_task_symmap
+
 """
 from ..utils.pattern import DelayedPatternProvider, VALLEPattern
 """
@@ -877,7 +880,7 @@ class Base(nn.Module):
 
 			# Base-line TTS task
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
-			if task_type == "tts":
+			if task_type in ["tts", "tts-c", "ns", "sr"]:
 				# insert the text prompt
 				if text_list is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
@@ -915,7 +918,6 @@ class Base(nn.Module):
 					# override to 0 (I don't know if this change propagates, I'm not familiar with when python passes by (copied) value or reference)
 					quant_levels[i] = 0
 					inputs[i].append( ( "quant_level", torch.Tensor([ 0 ]).to(device=device, dtype=torch.int16) ) )
-				
 				# insert input audio prompt
 				if proms_list is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
@@ -938,10 +940,22 @@ class Base(nn.Module):
 		inputs: list,
 		quant_levels: int | list[int] | Tensor | None = None
 	):
+		# handles tasks where the prompt has task tokens injected in the middle
+		def prompt_input_to_embedding( input, quant_level ):
+			if isinstance(inputs, str):
+				return self.tasks_emb( get_task_symmap( input ) ) if self.langs_emb is None else None
+
+			# get RVQ level 0, or up to targetted RVQ level inference
+			if self.version <= 4:
+				return self.proms_emb( input if quant_level == 0 else input[:, :quant_level] )
+				
+			return self.proms_emb( input if input.dim() == 1 else input[:, : 1 if quant_level == 0 else quant_level], offset = 0 )
+
 		x_list = []
 		for batch_index, batch_input in enumerate(inputs):
 			batch = []
 			quant_level = quant_levels[batch_index] if quant_levels is not None else 0
+			task_type = "tts"
 			for name, input in batch_input:
 				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
 				embedding = None
@@ -950,7 +964,7 @@ class Base(nn.Module):
 				if name == "task":
 					# noop
 					# *maybe* inject a token for specifying task type
-					...
+					task_type = input
 					continue
 				elif name == "text":
 					embedding = self.text_emb( input )
@@ -959,14 +973,8 @@ class Base(nn.Module):
 				elif name == "lang" and self.langs_emb is not None:
 					embedding = self.langs_emb( input )
 				elif name == "prom":
-					# get RVQ level 0, or up to targetted RVQ level inference
-					if self.version <= 4:
-						embedding = self.proms_emb( input if quant_level == 0 else input[:, :quant_level] )
-					else:
-						if quant_level == 0:
-							embedding = self.proms_emb( input if input.dim() == 1 else input[:, :1], offset = 0 )
-						else:
-							embedding = self.proms_emb( input if input.dim() == 1 else input[:, :quant_level], offset = 0 )
+					proms = [ input ] if isinstance(input, torch.Tensor) else input
+					embedding = torch.cat( [ prompt_input_to_embedding( input, quant_level ) for input in proms ] )
 				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
@@ -1034,6 +1042,17 @@ class Base(nn.Module):
 		
 		quant_levels: int | list[int] | Tensor | None = None,
 	):
+		# handles tasks where the prompt has task tokens injected in the middle
+		def prompt_input_to_token( input, quant_level ):
+			if isinstance(inputs, str):
+				return get_task_symmap( input )
+
+			# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
+			if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):
+				return torch.full_like(input[..., 0], self.ignore_index)
+				
+			return input if input.dim() == 1 else input[:, quant_level]
+
 		# old, "naive" way, no loss factoring
 		if not self.config.loss_factors:
 			target_list = []
@@ -1046,12 +1065,8 @@ class Base(nn.Module):
 					if name == "task":
 						task_list.append( input )
 					elif name == "prom":
-						# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
-						if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):
-							target.append( torch.full_like(input[..., 0], self.ignore_index) )
-						# we *CAN* directly map to proms
-						else:
-							target.append( input if input.dim() == 1 else input[:, quant_level] )
+						proms = [ input ] if isinstance(input, torch.Tensor) else input
+						target.append( torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms ] ) )
 					elif name == "resp":
 						target.append( input if input.dim() == 1 else input[:, quant_level] )
 					elif name in ["text", "quant_level", "lang", "tone", "len"]:
@@ -1119,7 +1134,8 @@ class Base(nn.Module):
 					input = input if input.dim() == 1 else input[:, quant_level]
 				# select prom level
 				elif name == "prom":
-					input = input[:, quant_level]
+					proms = [ input ] if isinstance(input, torch.Tensor) else input
+					input = torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms ] )
 				# meta-input, no corresponding token at the moment
 				elif name == "task":
 					continue

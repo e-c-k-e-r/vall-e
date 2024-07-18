@@ -64,6 +64,8 @@ def train_feeder(engine, batch):
 				proms_list=batch["proms"],
 				resps_list=batch["resps"],
 				lang_list=batch["lang"],
+				tone_list=batch["tone"],
+				task_list=batch["task"],
 
 				training=True,
 			)
