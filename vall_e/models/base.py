@@ -33,6 +33,10 @@ from ..samplers import reptition_penalize, length_penalize, ban_tokens, top_k_to
 
 from ..emb.qnt import encode_as_embedding
 
+"""
+from ..utils.pattern import DelayedPatternProvider, VALLEPattern
+"""
+
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
 	seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
@@ -330,6 +334,38 @@ class Base(nn.Module):
 		if self.config is None:
 			return 1.0
 		return self.config.loss_factors[k] if k in self.config.loss_factors else 1.0
+
+	# these probably need to live in an interleaved model, as pattern-ing is targeted for a sole AR model
+	"""
+	def codes_to_pattern(self, codes):
+		# expand if not batched
+		if codes.dim() == 2:
+			codes = codes.unsqueeze(0)
+		# [batch, timestep, rvq level] (B, T, K) =>  [batch, rvq level, timestep] (B, K, T)
+		codes = codes.permute(0, 2, 1)
+		
+		B, K, T = codes.shape
+		
+		# map codes [B, K, T] into pattern sequence [B, K, S] using special_token_id for masked tokens
+		pattern = self.pattern_provider.get_pattern(T)
+		sequence_codes, sequence_indexes, sequence_mask = pattern.build_pattern_sequence(
+			codes.contiguous(), self.stop_token, keep_only_valid_steps=False,
+		)
+
+		# (B, K, T) => (B, T, K)
+		return sequence_codes.permute(0, 2, 1)
+
+	def logits_from_pattern(self, logits, pattern):
+		logits = logits.permute(0, 3, 1, 2)  # [B, card, K, S]
+
+		logits, logits_indexes, logits_mask = pattern.revert_pattern_logits(
+			logits, float('nan'), keep_only_valid_steps=False
+		)
+		logits = logits.permute(0, 2, 3, 1)  # [B, K, T, card]
+		logits_mask = logits_mask[None, :, :].expand(B, -1, -1)  # [K, T] -> [B, K, T]
+
+		return logits, logits_mask
+	"""
 
 	def __init__(
 		self,
@@ -814,6 +850,7 @@ class Base(nn.Module):
 
 		return x, state, aux_loss
 
+	# takes a bunch of separate lists and parses them into an ordered array of tuples to guide input sequence creation
 	def inputs(
 		self,
 		text_list: list[Tensor],
@@ -835,33 +872,58 @@ class Base(nn.Module):
 			quant_level = quant_levels[i] if quant_levels is not None else 0
 			task_type = task_list[i] if task_list is not None else "tts"
 
+			# insert task type as a string
 			inputs[i].append( ( "task", task_type ) )
 
-			# <text><sep><rvq lvl><sep><prom><sep><resp>
+			# Base-line TTS task
+			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
 			if task_type == "tts":
+				# insert the text prompt
 				if text_list is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
+				# insert lang token if we're trained for it
+				if "lang" in self.capabilities and lang_list is not None:
+					inputs[i].append( ( "lang", lang_list[i] ) )
+				# insert RVQ level guidance token if the model is versioned for it
 				if self.rvq_l_emb is not None:
 					inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
+				# insert input audio prompt
 				if proms_list is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
+				# insert tone token if we're trained for it
+				if "tone" in self.capabilities and tone_list is not None:
+					inputs[i].append( ( "tone", tone_list[i] ) )
+				# insert the current output response
 				if resps_list is not None:
 					inputs[i].append( ( "resp", resps_list[i] ) )
-			# <text><sep><rvq lvl><prom><sep><len>
+		
+			# Audio length prediction task
+			# Sequence: <text><sep><rvq lvl><prom><sep><len>
 			elif task_type == "len":
 				# throw an error so we don't silently train without this
 				if self.len_emb is None:
 					raise Exception(f"Requesting task `{task_type}` but corresponding embedding is not defined.")
+
+				# insert the text prompt
 				if text_list is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
+				# insert lang token if we're trained for it
+				if "lang" in self.capabilities and lang_list is not None:
+					inputs[i].append( ( "lang", lang_list[i] ) )
 				# technically will always be level 0 but for the sake of keeing the input formatting coherent...
 				if self.rvq_l_emb is not None:
 					# override to 0 (I don't know if this change propagates, I'm not familiar with when python passes by (copied) value or reference)
 					quant_levels[i] = 0
 					inputs[i].append( ( "quant_level", torch.Tensor([ 0 ]).to(device=device, dtype=torch.int16) ) )
+				
+				# insert input audio prompt
 				if proms_list is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
+				# insert tone token if we're trained for it
+				if "tone" in self.capabilities and tone_list is not None:
+					inputs[i].append( ( "tone", tone_list[i] ) )
 
+				# insert output length tokens (if it exists)
 				if len_list is not None:
 					inputs[i].append( ( "len", len_list[i] ) )
 				# "encode" length to tokens for 0-9 + stop
@@ -917,7 +979,10 @@ class Base(nn.Module):
 					else:
 						# get RVQ level 0, or up to targetted RVQ level inference
 						if self.version <= 4:
-							embedding = self.resps_emb( input if quant_level == 0 else input[:, :quant_level], quant_level )
+							embedding = self.resps_emb(
+								input if quant_level == 0 else input[:, :quant_level],
+								quant_level
+							)
 						else:
 							embedding = self.resps_emb(
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
@@ -935,6 +1000,8 @@ class Base(nn.Module):
 
 		return x_list
 
+	# creates position ids from a given input list
+	# if not unified_position_ids, then each input segment will have its own sequence
 	def inputs_to_position_ids(
 		self,
 		inputs: list,

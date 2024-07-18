@@ -154,7 +154,14 @@ class AR_NAR(Base):
 
 					quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
 
+				# these two are techinically equivalent if the audio embeddings handle things properly
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				stop_sequence = torch.Tensor([self.stop_token]).to(device=device, dtype=torch.int16)
+
+				"""
+				resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				stop_sequence = torch.Tensor([[self.stop_token] * 1]).to(device=device, dtype=torch.int16)
+				"""
 				
 				for i in range(batch_size):
 					# cap quant_level if it exceeds its corresponding resp/prom
@@ -170,8 +177,7 @@ class AR_NAR(Base):
 
 					# append stop tokens for AR
 					# could technically do it in the .inputs call
-					resps_list[i] = torch.cat([resps_list[i], torch.Tensor([self.stop_token]).to(device=device, dtype=torch.int16) ])
-
+					resps_list[i] = torch.cat([ resps_list[i], stop_sequence ])
 
 				inputs = self.inputs(
 					text_list=text_list,
@@ -186,7 +192,7 @@ class AR_NAR(Base):
 
 				return super().forward(
 					inputs=inputs,
-					quant_levels=quant_levels,
+					quant_levels=quant_levels, # could technically just grab this from the above inputs since they're included as an RVQ level token
 				)
 			
 			# is NAR
