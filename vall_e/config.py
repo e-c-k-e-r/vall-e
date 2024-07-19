@@ -200,17 +200,19 @@ class Dataset:
 	def max_duration(self):
 		return self.duration_range[1]
 
+# collection of experimental variables that should not be tampered with unless you know what you're doing
 @dataclass()
 class ModelExperimentalSettings:
 	hf: bool = False # strictly utilizes a HF model and handles converting input IDs / outputs accordingly
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (worse performance and results due to everything being causal)
-	split_classifiers: bool = False # each RVQ level gets its own classifier / output proj / LM head
+	split_classifiers: bool = False # each RVQ level gets its own classifier / output proj / LM head rather than sharing one for all RVQ levels (to-do: also split for text/prom)
 	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
 	audio_embedding_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
 	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
-	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range
+	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range for LoRAs, isn't necesary
 	unified_position_ids: bool = True # False will generate position IDs partitioned for each section
+	tie_classifier_to_embedding: bool = False # Ties the classifier output to their respective embeddings, this does not seem to do anything good in testing
 
 # I really need to clean this up
 @dataclass()
@@ -230,7 +232,7 @@ class Model:
 	dropout: float = 0.1 # adjustable dropout value
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
-	capabilities: list = field(default_factory=lambda: ["ar", "nar"])
+	capabilities: list = field(default_factory=lambda: ["ar", "nar"]) # + ["lang", "tone"] if you have your dataset labeled for such
 	
 	experimental: dict | ModelExperimentalSettings | None = None # experimental settings
 

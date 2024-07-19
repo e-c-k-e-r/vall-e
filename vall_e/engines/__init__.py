@@ -57,7 +57,7 @@ def load_engines(training=True):
 			state = torch.load(load_path, map_location=torch.device(cfg.device))
 
 			# check if config is defined in state, and re-initialize the model
-			if "config" in state:
+			if "config" in state and False:
 				print("Model config definition in weights, re-loading...")
 				config_state = state["config"]
 				model = get_model( config=cfg.model.__class__( *config_state ), training=training )

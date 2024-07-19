@@ -245,7 +245,13 @@ class AudioClassifier(nn.Module):
 		self.proj = nn.ModuleList([nn.Linear(token_dim, n_tokens) for n_tokens in l_tokens])
 
 	def forward(self, xi: Tensor, levels: list[int] ) -> Tensor:
-		return torch.stack( [ self.proj[l]( x ) for x, l in zip(xi, levels) ] )
+		dtype = xi.dtype
+		device = xi.device
+
+		xi = [ self.proj[l]( x ) for x, l in zip(xi, levels) ]
+		# pad if needed
+		xi = [ x if l == 0 else torch.cat( [ x, torch.Tensor( [[ -float("inf") ] for _ in range(x.shape[0])] ).to(dtype=dtype, device=device) ], dim=-1 ) for x, l in zip(xi, levels) ]
+		return torch.stack( xi )
 
 class Metrics(nn.Module):
 	def __init__(
@@ -273,10 +279,10 @@ class Metrics(nn.Module):
 		) for n_tokens in l_tokens ])
 
 	def calc_accuracy( self, inputs, targets, quant_levels ):
-		return sum( [ self.accuracy[l]( input, target ) for target, input, l in zip( targets, inputs, quant_levels ) ] ) / len( inputs )
+		return sum( [ self.accuracy[l]( input[:, :self.accuracy[l].num_classes], target ) for target, input, l in zip( targets, inputs, quant_levels ) ] ) / len( inputs )
 	
 	def calc_precision( self, inputs, targets, quant_levels ):
-		return sum( [ self.precision[l]( input, target ) for target, input, l in zip( targets, inputs, quant_levels ) ] ) / len( inputs )
+		return sum( [ self.precision[l]( input[:, :self.precision[l].num_classes], target ) for target, input, l in zip( targets, inputs, quant_levels ) ] ) / len( inputs )
 
 	def __call__(self, *args, **kwargs):
 		return dict(
@@ -421,6 +427,7 @@ class Base(nn.Module):
 
 		audio_embedding_sums = self.config.experimental.audio_embedding_sums if self.config is not None else False
 		split_classifiers = self.config.experimental.split_classifiers if self.config is not None else False
+		tie_classifier_to_embedding = self.config.experimental.tie_classifier_to_embedding if self.config is not None else False
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 
@@ -757,6 +764,12 @@ class Base(nn.Module):
 			self.precision_metric = None
 			self.metrics = Metrics( l_tokens )
 
+			"""
+			if tie_classifier_to_embedding:
+				for i, proj in enumerate( self.classifiers.proj ):
+					self.classifiers.proj[i].weight = self.resps_emb.embeddings[i].weight
+			"""
+
 
 	def _forward(
 		self,
@@ -1063,7 +1076,7 @@ class Base(nn.Module):
 		quant_levels: int | list[int] | Tensor | None = None,
 	):
 		device = logits[0].device
-		
+
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
 			if isinstance(input, str):
@@ -1262,7 +1275,7 @@ class Base(nn.Module):
 		)
 
 		if self.classifiers is not None:
-			x = self.classifiers(x, levels = quant_levels)  * m
+			x = self.classifiers(x, levels = quant_levels) * m
 
 		# Remove padding
 		logits = [ hi[:li] for hi, li in zip(x, map(len, x_list)) ]

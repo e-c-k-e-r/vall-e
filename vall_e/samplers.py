@@ -42,6 +42,9 @@ def length_penalize( logits, length, factor=0.0, token=-1 ):
 # Simple way to ban tokens
 def ban_tokens( logits, tokens ):
 	for token in tokens:
+		# token not in logits
+		if logits.shape[-1] >= token:
+			continue
 		logits[:, token] = -float("inf")
 	return logits
 
