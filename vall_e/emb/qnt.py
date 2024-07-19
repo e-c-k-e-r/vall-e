@@ -482,7 +482,9 @@ def repeat_extend_audio( qnt, target ):
 # interleaves between a list of audios
 # useful for interleaving silence
 def interleave_audio( *args, audio=None ):
-	qnts = [*args]
+	qnts = [ *args ]
+	qnts = [ qnt for qnt in qnts if qnt is not None ]
+
 	if audio is None:
 		return qnts
 
@@ -498,7 +500,8 @@ def interleave_audio( *args, audio=None ):
 
 # concats two audios together
 def concat_audio( *args, reencode=False, device="cuda", levels=cfg.model.max_levels ):
-	qnts = [*args]
+	qnts = [ *args ]
+	qnts = [ qnt for qnt in qnts if qnt is not None ]
 	# just naively combine the codes
 	if not reencode:
 		return torch.concat( qnts )
@@ -510,8 +513,18 @@ def concat_audio( *args, reencode=False, device="cuda", levels=cfg.model.max_lev
 # merges two quantized audios together
 # requires re-encoding because there's no good way to combine the waveforms of two audios without relying on some embedding magic
 def merge_audio( *args, device="cuda", scale=[], levels=cfg.model.max_levels ):
-	qnts = [*args]
+	qnts = [ *args ]
+	qnts = [ qnt for qnt in qnts if qnt is not None ]
 	decoded = [ decode(qnt, device=device, levels=levels)[0] for qnt in qnts ]
+
+	# max length
+	max_length = max([ wav.shape[-1] for wav in decoded ])
+	for i, wav in enumerate(decoded):
+		delta = max_length - wav.shape[-1]
+		if delta <= 0:
+			continue
+		pad = torch.zeros( (1, delta), dtype=wav.dtype, device=wav.device )
+		decoded[i] = torch.cat( [ wav, pad ], dim=-1 )
 
 	# useful to adjust the volumes of each waveform
 	if len(scale) == len(decoded):

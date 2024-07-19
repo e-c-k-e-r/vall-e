@@ -275,6 +275,9 @@ def get_task_symmap():
 		"<soe>": 5,
 		"<mask>": 6,
 		"<eoe>": 7,
+
+		"<nse>": 6, # fake
+		"<cse>": 6, # fake
 	}
 
 def _replace_file_extension(path, suffix):
@@ -849,12 +852,12 @@ class Dataset(_Dataset):
 		if f'<{task}>' not in self.task_symmap:
 			raise Exception(f'Task not defined: {task}')
 
-		# Base TTS (text + prompt => output)
+		# Base TTS (<text><prompt> => <resp>)
 		if task == "tts":
-			proms = self.sample_prompts(spkr_name, ignore=path) if random.random() < cfg.dataset.random_utterance else resps
+			proms = self.sample_prompts(spkr_name, ignore=path)
 
-		# VALL-E Continuous (text + partial output => rest of output)
-		#     (this could just be sampled as <text a><text b> + <audio a> => <audio b>, but I need to experiment with it)
+		# VALL-E Continuous (<text><partial resp> => <remaining resp> )
+		#     (this could just be sampled as <text a><text b><audio a> => <audio b>, but I need to experiment with it)
 		elif task == "tts-c":
 			# trim a piece of the output response
 			if naive:
@@ -871,14 +874,21 @@ class Dataset(_Dataset):
 				# <s>[original text] [new text]</s>
 				# removes the original text's </s>, includes a space, and remove the new text's <s>
 				else:
-					text = torch.concat([ text[:-1], torch.tensor([self.phone_symmap[" "]]).to(torch.int16),  txt[1:] ])
+					text = torch.concat([ text[:-1], torch.tensor([space_id]).to(torch.int16), txt[1:] ])
 
 				# set prompt as initial response
 				proms = resps
 				# set target as newly sampled response
 				resps = qnt
 
-		# noise suppression || speech removal
+			# inject task token
+			proms = [
+				proms,
+				task,
+			]
+
+		# noise suppression (<text>? <resp+noise> => <resp>)
+		# speech removal (<text>?<resp+noise> => <noise>)
 		elif task == "ns" or task == "sr":
 			# sample random noise
 			noise = self.sample_noise()
@@ -886,40 +896,44 @@ class Dataset(_Dataset):
 			noise = repeat_extend_audio(noise, resps.shape[0])
 			# create the input prompt by merging the target audio with the noise
 			proms = merge_audio( resps, noise, scale=[1, cfg.dataset.noise_scale], device=cfg.dataset.reencode_device )
+			
+			# set the text prompt to empty to train without a guided text prompt
+			if random.random() < 0.5:
+				text = None
+			
+			# inject task token
+			proms = [
+				task,
+				proms
+			]
+
 			# set the target to just be the noise if <sr>
 			if task == "sr":
 				resps = noise
 
+
+		# target speech extraction ( <text><prom><resp + other resp> => <resp> )
+		elif task == "tse":
+			# sample a prompt
+			proms = self.sample_prompts(spkr_name, ignore=path)
+
+			# sample another speaker
+			_, __, other_resps = self.sample_utterance(self.sample_speakers(ignore=[spkr_name]))
+
+			# overlay the random speaker over the target audio
+			other_resps = merge_audio( resps, other_resps, scale=[1, random.uniform(0.5, 0.75)], device=cfg.dataset.reencode_device )
+
 			# set the text prompt to empty to train without a guided text prompt
 			if random.random() < 0.5:
-				text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
-
-		# target speech extraction
-		elif task == "tse":
-			# sample a random, clean, utterance for the target speaker
-			clean_proms = self.sample_prompts(spkr_name, ignore=path)
-			# sample a random, clean utterance from a different speaker
-			other_proms = self.sample_prompts(self.sample_speakers(ignore=[spkr_name]), ignore="")
-			
-			# overlay the random speaker over the target audio
-			smallest_size = min(resps.shape[0], other_proms.shape[0])
-			if other_proms.shape[0] == smallest_size:
-				noisy_proms = merge_audio( resps[:smallest_size, :], other_proms, scale=[1, random.uniform(0.5, 0.75)], device=cfg.dataset.reencode_device )
-				noisy_proms = torch.cat( [ noisy_proms, resps[smallest_size:, :] ] )
-			else:
-				noisy_proms = merge_audio( resps, other_proms[:smallest_size, :], scale=[1, random.uniform(0.5, 0.75)], device=cfg.dataset.reencode_device )
-				noisy_proms = torch.cat( [ noisy_proms, other_proms[smallest_size:, :] ] )
+				text = None
 
 			# stitch together the proms
 			proms = [
-				clean_proms,
+				proms,
 				task,
-				noisy_proms,
+				other_resps,
 			]
 
-			# set the text prompt to empty to train without a guided text prompt
-			if random.random() < 0.5:
-				text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
 
 		# clean speech editing
 		elif task == "cse" or task == "nse":
@@ -940,17 +954,21 @@ class Dataset(_Dataset):
 				pre_text = None
 				pre_prom = None
 			# randomly drop out post
-			if random.random() < 0.125:
+			elif random.random() < 0.125:
 				post_text = None
 				post_prom = None
 
 			# create new text
-			text = torch.cat(
-				[ torch.Tensor( [ bos_id ] ).to(dtype=self.text_dtype) ] + # <s>
-				([ pre_text, torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype) ] if pre_text is not None else []) + # pre_text + space'
-				[ edit_text ] + # 'edit text'
-				([ torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype), post_text ] if post_text is not None else []) + # 'space' + edit_text
-				[ torch.Tensor( [ eos_id ] ).to(dtype=self.text_dtype) ] # </s>
+			text = concat_audio(
+				torch.Tensor( [ bos_id ] ).to(dtype=self.text_dtype), # <s>
+				pre_text,
+				None if pre_text is None else torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype), # " "
+				edit_text,
+				None if post_text is None else torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype), # " "
+				post_text,
+				torch.Tensor( [ eos_id ] ).to(dtype=self.text_dtype), # </s>
+
+				reencode=False,
 			)
 
 			if task == "nse":
@@ -978,22 +996,25 @@ class Dataset(_Dataset):
 			# create new prom
 			proms = [
 				pre_prom,
-				"<soe>",
-				"<mask>" if task == "cse" else mid_prom,
-				"<eoe>",
+				"soe",
+				"mask" if task == "cse" else mid_prom,
+				"eoe",
 				post_prom,
 			]
 
 			# create new resp
 			resps = concat_audio( 
-				*(([ pre_prom ] if pre_prom is not None else []) +
-				[ edit_prom ] +
-				([ post_prom ] if post_prom is not None else [])),
+				pre_prom,
+				edit_prom,
+				post_prom,
 				reencode=cfg.dataset.reencode_on_concat,
 				device=cfg.dataset.reencode_device,
 			)
 		else:
 			raise Exception(f'Undefined task: {task}')
+
+		if text is None:
+			text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
 
 		return dict(
 			index=index,

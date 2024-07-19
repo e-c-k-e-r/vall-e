@@ -945,8 +945,8 @@ class Base(nn.Module):
 	):
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_embedding( input, quant_level ):
-			if isinstance(inputs, str):
-				return self.tasks_emb( get_task_symmap()[f'<{input}>'] ) if self.tasks_emb is None else None
+			if isinstance(input, str):
+				return self.tasks_emb( torch.Tensor( [ get_task_symmap()[f'<{input}>'] ] ).to(device=device, dtype=torch.int16) )
 
 			# get RVQ level 0, or up to targetted RVQ level inference
 			if self.version <= 4:
@@ -958,6 +958,7 @@ class Base(nn.Module):
 		for batch_index, batch_input in enumerate(inputs):
 			batch = []
 			quant_level = quant_levels[batch_index] if quant_levels is not None else 0
+			
 			task_type = "tts"
 			for name, input in batch_input:
 				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
@@ -971,13 +972,15 @@ class Base(nn.Module):
 					continue
 				elif name == "text":
 					embedding = self.text_emb( input )
+
+					device = embedding.device
 				elif name == "quant_level" and self.rvq_l_emb is not None:
 					embedding = self.rvq_l_emb( input )
 				elif name == "lang" and self.langs_emb is not None:
 					embedding = self.langs_emb( input )
 				elif name == "prom":
 					proms = [ input ] if isinstance(input, torch.Tensor) else input
-					embedding = torch.cat( [ prompt_input_to_embedding( input, quant_level ) for input in proms ] )
+					embedding = torch.cat( [ prompt_input_to_embedding( input, quant_level ) for input in proms if input is not None ] )
 				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
@@ -1024,8 +1027,23 @@ class Base(nn.Module):
 		# there's a better way
 		if not self.unified_position_ids:
 			x_list = []
+
+			def get_input_token_length( name, input ):
+				# task token
+				if isinstance(input, str):
+					return 1
+
+				# list of tokens
+				if not isinstance(input, torch.Tensor):
+					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] ) + 1
+
+				return input.shape[0] + (0 if name == "resp" else 1)
+
 			for batch_index, batch_input in enumerate(inputs):
-				batch = torch.cat( [ torch.Tensor([*range( input.shape[0] + (0 if name == "resp" else 1) )]) for name, input in batch_input if name != "task" ] )
+				batch = torch.cat( [
+					torch.Tensor([*range(get_input_token_length(name, input))])
+					for name, input in batch_input if name != "task"
+				] )
 
 				delta = ids[batch_index].shape[0] - batch.shape[0]
 				if delta > 0:
@@ -1044,10 +1062,12 @@ class Base(nn.Module):
 		
 		quant_levels: int | list[int] | Tensor | None = None,
 	):
+		device = logits[0].device
+		
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
-			if isinstance(inputs, str):
-				return get_task_symmap()[f'<{input}>']
+			if isinstance(input, str):
+				return torch.Tensor( [ get_task_symmap()[f'<{input}>'] ] ).to(dtype=torch.int16, device=device)
 
 			# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
 			if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):
@@ -1068,7 +1088,7 @@ class Base(nn.Module):
 						task_list.append( input )
 					elif name == "prom":
 						proms = [ input ] if isinstance(input, torch.Tensor) else input
-						target.append( torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms ] ) )
+						target.append( torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms if input is not None ] ) )
 					elif name == "resp":
 						target.append( input if input.dim() == 1 else input[:, quant_level] )
 					elif name in ["text", "quant_level", "lang", "tone", "len"]:
