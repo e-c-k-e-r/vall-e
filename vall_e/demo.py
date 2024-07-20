@@ -120,7 +120,7 @@ def main():
 		entries = [
 			f'<tr><td>{text}</td>'+
 			"".join( [
-				f'<td><audio controls="controls" autobuffer="autobuffer"><source src="{args.audio_path_root + audio if args.audio_path_root else encode(audio)}"/></audio></td>'
+				f'<td><audio controls="controls" autobuffer="autobuffer"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
 				for audio in audios
 			] )+
 			'</tr>'
@@ -158,13 +158,16 @@ def main():
 			reference = dir / "reference.wav"
 			out_path = dir / "out" / "ours.wav"
 
-			decode_to_file( batch["proms"].to("cuda"), prompt, device="cuda" )
-			decode_to_file( batch["resps"].to("cuda"), reference, device="cuda" )
-
 			samples.append((
 				text,
 			 	[ prompt, reference, out_path ]
 			))
+
+			if args.skip_existing and out_path.exists():
+				continue
+
+			decode_to_file( batch["proms"].to("cuda"), prompt, device="cuda" )
+			decode_to_file( batch["resps"].to("cuda"), reference, device="cuda" )
 
 			tts.inference(
 				text=text,
@@ -187,7 +190,7 @@ def main():
 		samples = [
 			f'<tr><td>{text}</td>'+
 			"".join( [
-				f'<td><audio controls="controls" autobuffer="autobuffer"><source src="{args.audio_path_root + audio if args.audio_path_root else encode(audio)}"/></audio></td>'
+				f'<td><audio controls="controls" autobuffer="autobuffer"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
 				for audio in audios
 			] )+
 			'</tr>'
