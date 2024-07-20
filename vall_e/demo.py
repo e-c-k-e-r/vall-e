@@ -120,7 +120,7 @@ def main():
 		entries = [
 			f'<tr><td>{text}</td>'+
 			"".join( [
-				f'<td><audio controls="controls" autobuffer="autobuffer"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
+				f'<td><audio controls="controls" preload="none"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
 				for audio in audios
 			] )+
 			'</tr>'
@@ -190,7 +190,7 @@ def main():
 		samples = [
 			f'<tr><td>{text}</td>'+
 			"".join( [
-				f'<td><audio controls="controls" autobuffer="autobuffer"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
+				f'<td><audio controls="controls" preload="none"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
 				for audio in audios
 			] )+
 			'</tr>'
