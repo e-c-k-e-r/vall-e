@@ -111,6 +111,8 @@ class NAR(Base):
 		sampling_beam_width: int = 0,
 		sampling_mirostat_tau: float = 0.0,
 		sampling_mirostat_eta: float = 0.1,
+
+		disable_tqdm=False,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
@@ -188,7 +190,7 @@ class NAR(Base):
 			prev_list = [ torch.Tensor([ self.stop_token for _ in range(resp_len) ]).to(device=device, dtype=torch.int16) for resp_len in len_list ]
 
 			start = True
-			for n in trange( max_levels, desc="NAR" ):
+			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):
 				level = 0 if n == 0 else prev_list[0].shape[-1]
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
@@ -243,7 +245,7 @@ class NAR(Base):
 		stop_token = 10
 		task_list = [ "len" for _ in range(batch_size) ]
 
-		for n in trange(10, desc="AR"):
+		for n in trange(10, desc="AR", disable=disable_tqdm):
 			len_list = sequence_list
 
 			inputs = self.inputs(

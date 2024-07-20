@@ -575,7 +575,9 @@ class Dataset(_Dataset):
 			self.samplers = { name: PoolSampler( paths, keep_all=True, shuffle=self.sampler_shuffle ) for name, paths in self.paths_by_spkr_name.items() }
 			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True, shuffle=self.sampler_shuffle ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
-		self.load_state_dict()
+		# loading validation state dict causes issues
+		if self.dataset_type != "validation":
+			self.load_state_dict()
 
 	@cached_property
 	def sampler_state_dict_path(self):
@@ -804,12 +806,14 @@ class Dataset(_Dataset):
 			
 			lang = metadata["language"] if "language" in metadata else None
 			tone = metadata["tone"] if "tone" in metadata else None
+			text_string = metadata["text"] if "text" in metadata else None
 		else:
 			resps, metadata = _load_quants(path, return_metadata=True)
 			text = torch.tensor(tokenize( metadata["phonemes"] )).to(self.text_dtype)
 
 			lang = metadata["language"] if "language" in metadata else None
 			tone = metadata["tone"] if "tone" in metadata else None
+			text_string = metadata["text"] if "text" in metadata else None
 
 		if not lang:
 			lang = self.get_language(spkr_group)
@@ -1027,6 +1031,7 @@ class Dataset(_Dataset):
 			text=text,
 			proms=proms,
 			resps=resps,
+			text_string=text_string,
 		)
 
 	def head_(self, n):
@@ -1080,6 +1085,31 @@ def create_datasets():
 
 	return train_dataset, val_dataset
 
+def create_train_dataloader():
+	train_dataset = Dataset( training=True )
+	train_dl = _create_dataloader(train_dataset, training=True)
+
+	_logger.info(str(train_dataset.phone_symmap))
+	_logger.info(str(train_dataset.spkr_symmap))
+	_logger.info(str(train_dataset.spkr_group_symmap))
+	
+	_logger.info(f"#samples (train): {len(train_dataset)}.")
+	_logger.info(f"#duration (train): {str(train_dataset.duration)}.")
+
+	return train_dl
+
+def create_val_dataloader():
+	val_dataset = Dataset( training=False )
+	val_dl = _create_dataloader(val_dataset, training=False)
+
+	_logger.info(str(val_dataset.phone_symmap))
+	_logger.info(str(val_dataset.spkr_symmap))
+	_logger.info(str(val_dataset.spkr_group_symmap))
+	
+	_logger.info(f"#samples (val): {len(val_dataset)}.")
+	_logger.info(f"#duration (val): {str(val_dataset.duration)}.")
+
+	return val_dl
 
 def create_train_val_dataloader():
 	train_dataset, val_dataset = create_datasets()

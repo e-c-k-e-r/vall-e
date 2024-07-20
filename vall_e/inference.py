@@ -140,7 +140,9 @@ class TTS():
 
 		seed = None,
 
-		out_path=None
+		out_path=None,
+
+		tqdm=True,
 	):
 		lines = text.split("\n")
 
@@ -194,6 +196,8 @@ class TTS():
 						sampling_beam_width=beam_width,
 						sampling_mirostat_tau=mirostat_tau,
 						sampling_mirostat_eta=mirostat_eta,
+
+						disable_tqdm=not tqdm,
 					)
 					resps_list = model_nar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
@@ -202,15 +206,19 @@ class TTS():
 						sampling_min_temperature=min_nar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+
+						disable_tqdm=not tqdm,
 					)
 				elif model_len is not None:
-					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=10 ) # don't need more than that
+					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=10, disable_tqdm=not tqdm ) # don't need more than that
 					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list,
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
 						sampling_min_temperature=min_nar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+
+						disable_tqdm=not tqdm,
 					)
 				else:
 					raise Exception("!")

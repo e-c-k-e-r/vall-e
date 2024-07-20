@@ -81,12 +81,32 @@ def extract_lora( state_dict, config = None, save_path = None, dtype = None ):
 
 	return state_dict
 
+def split_classifier_heads( state_dict, config = cfg.model, save_path = None, dtype = None):
+	levels = config.max_levels
+
+	if "classifier.weight" not in state_dict['module']:
+		return state_dict
+
+	# copy to new AudioClassifier
+	for i in range(levels):
+		tokens = 1025 if i == 0 else 1024
+
+		# trim per RVQ level (since level 0 has a stop token)
+		state_dict['module'][f'classifiers.proj.{i}.weight'] = state_dict['module']['classifier.weight'][:tokens, :]
+		state_dict['module'][f'classifiers.proj.{i}.bias'] = state_dict['module']['classifier.bias'][:tokens]
+
+	# delete old weights
+	del state_dict['module']['classifier.weight']
+	del state_dict['module']['classifier.bias']
+
+	return state_dict
 
 def main():
 	parser = argparse.ArgumentParser("Save trained model to path.")
 	parser.add_argument("--module-only", action='store_true')
 	parser.add_argument("--hf", action='store_true', default=None) # convert to HF-style
 	parser.add_argument("--lora", action='store_true', default=None) # exports LoRA
+	parser.add_argument("--split-classifiers", action='store_true', default=None) # splits classifier heads
 	parser.add_argument("--dtype", type=str, default="auto") # set target dtype to export to
 	args, unknown = parser.parse_known_args()
 
@@ -98,6 +118,8 @@ def main():
 		callback = convert_to_hf
 	elif args.lora:
 		callback = extract_lora
+	elif args.split_classifiers:
+		callback = split_classifier_heads
 
 	if args.hf and args.lora:
 		raise Exception("Requesting more than one callback")

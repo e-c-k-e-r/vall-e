@@ -114,6 +114,8 @@ class AR_NAR(Base):
 		sampling_beam_width: int = 0,
 		sampling_mirostat_tau: float = 0.0,
 		sampling_mirostat_eta: float = 0.1,
+
+		disable_tqdm=False,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
@@ -206,7 +208,7 @@ class AR_NAR(Base):
 			
 			prev_list = resps_list
 
-			for n in trange( max_levels, desc="NAR" ):				
+			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):				
 				level = prev_list[0].shape[-1]
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
@@ -271,7 +273,7 @@ class AR_NAR(Base):
 		scores = [ 1.0 ] * sampling_beam_width
 
 		# get next in sequence
-		for n in trange(max_steps // max(1, self.causal_size), desc="AR"):
+		for n in trange(max_steps // max(1, self.causal_size), desc="AR", disable=disable_tqdm):
 			resps_list = self._unsqueeze_list(sequence_list)
 
 			inputs = self.inputs(

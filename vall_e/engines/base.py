@@ -352,6 +352,10 @@ class Engines(dict[str, Engine]):
 				"userdata": userdata,
 				"config": config
 			}
+
+			if lora is None:
+				del state_dict['lora']
+
 			if callback:
 				state_dict = callback( state_dict, config = engine.hyper_config, save_path = save_path )
 
