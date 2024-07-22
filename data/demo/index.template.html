@@ -6,22 +6,31 @@
 		<h1>VALL-E Demo</h1>
 		<p>${PREAMBLE}</p>
 		<table>
-			<tr>
-				<th>Text</th>
-				<th>Prompt</th>
-				<th>Ground Truth</th>
-				<th>Our VALL-E</th>
-				<th>Original VALL-E</th>
-				<th>YourTTS</th>
-			</tr>${LIBRISPEECH_SAMPLES}
+			<thead>
+				<caption>LibriSpeech</caption>
+				<tr>
+					<th>Text</th>
+					<th>Prompt</th>
+					<th>Ground Truth</th>
+					<th>Our VALL-E</th>
+					<th>Original VALL-E</th>
+					<th>YourTTS</th>
+				</tr>
+			</thead>
+			<tbody>${LIBRISPEECH_SAMPLES}</tbody>
 		</table>
 		<table>
-			<tr>
-				<th>Text</th>
-				<th>Prompt</th>
-				<th>Ground Truth</th>
-				<th>Our VALL-E</th>
-			</tr>${DATASET_SAMPLES}
+			<thead>
+				<caption>Sampled Dataset</caption>
+				<tr>
+					<th>Text</th>
+					<th>Prompt</th>
+					<th>Ground Truth</th>
+					<th>Our VALL-E</th>
+				</tr>
+			</thead>
+			<tbody>${DATASET_SAMPLES}</tbody>
 		</table>
+		<p>Settings used: <pre>${SETTINGS}</pre></p>
 	</body>
 </html>
