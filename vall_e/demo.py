@@ -81,7 +81,6 @@ def main():
 	if not args.preamble:
 		args.preamble = "<br>".join([
 			'Below are some samples from my VALL-E implementation: <a href="https://git.ecker.tech/mrq/vall-e/">https://git.ecker.tech/mrq/vall-e/</a>.',
-			'LibriSpeech, comparing against the samples the original VALL-E demo sampled.',
 			'I do not consider these to be state of the art, as the model does not follow close to the prompt as I would like for general speakers.',
 		])
 
@@ -143,7 +142,7 @@ def main():
 		samples = []
 
 		# generate demo output
-		for dir in tqdm(speakers, desc=f"Generating demo for speaker"):
+		for dir in tqdm(speakers, desc=f"Generating demo for {k}"):
 			text = open(dir / "prompt.txt").read()
 			language = open(dir / "language.txt").read() if (dir / "language.txt").exists() else "en"
 			prompt = dir / "prompt.wav"
