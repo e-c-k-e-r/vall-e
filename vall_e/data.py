@@ -1505,7 +1505,7 @@ if __name__ == "__main__":
 		samples = {
 			"training": [ next(iter(train_dl)),  next(iter(train_dl)) ],
 			"evaluation": [ next(iter(subtrain_dl)),  next(iter(subtrain_dl)) ],
-			"validation": [ next(iter(val_dl)),  next(iter(val_dl)) ],
+			#"validation": [ next(iter(val_dl)),  next(iter(val_dl)) ],
 		}
 
 		Path("./data/sample-test/").mkdir(parents=True, exist_ok=True)
@@ -1529,6 +1529,30 @@ if __name__ == "__main__":
 		for k, v in samples.items():
 			for i in range(len(v)):
 				print(f'{k}[{i}]:', v[i])
+	elif args.action == "validate":
+		train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
+
+		missing = set()
+
+		for i in range(len( train_dl.dataset )):
+			batch = train_dl.dataset[i]
+
+			text = batch['text']
+			phonemes = batch['metadata']['phonemes']
+
+			decoded = [ cfg.tokenizer.decode(token) for token in text[1:-1] ]
+			for i, token in enumerate(decoded):
+				if token != "<unk>":
+					continue
+				
+				phone = phonemes[i]
+
+				print( batch['text'], batch['metadata']['phonemes'] )
+
+				missing |= set([phone])
+
+		print( "Missing tokens:", missing )
+
 
 	elif args.action == "tasks":
 		index = 0

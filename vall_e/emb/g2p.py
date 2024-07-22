@@ -27,23 +27,23 @@ def romanize( runes, sep="" ):
 	return sep.join([ res['hira'] for res in result ])
 
 cached_backends = {}
-def _get_backend( language="en-us", backend="espeak" ):
+def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=True, strip=True ):
 	key = f'{language}_{backend}'
 	if key in cached_backends:
 		return cached_backends[key]
 
 	if backend == 'espeak':
-		phonemizer = BACKENDS[backend]( language, preserve_punctuation=True, with_stress=True)
+		phonemizer = BACKENDS[backend]( language, preserve_punctuation=punctuation, with_stress=stress)
 	elif backend == 'espeak-mbrola':
 		phonemizer = BACKENDS[backend]( language )
 	else: 
-		phonemizer = BACKENDS[backend]( language, preserve_punctuation=True )
+		phonemizer = BACKENDS[backend]( language, preserve_punctuation=punctuation )
 
 	cached_backends[key] = phonemizer
 	return phonemizer
 
 
-def encode(text: str, language="en-us", backend="auto") -> list[str]:
+def encode(text: str, language="en-us", backend="auto", punctuation=True, stress=True, strip=True) -> list[str]:
 	if language == "en":
 		language = "en-us"
 
@@ -56,13 +56,15 @@ def encode(text: str, language="en-us", backend="auto") -> list[str]:
 
 	text = [ text ]
 
-	backend = _get_backend(language=language, backend=backend)
+	backend = _get_backend(language=language, backend=backend, stress=stress, strip=strip, punctuation=punctuation)
 	if backend is not None:
-		tokens = backend.phonemize( text, strip=True )
+		tokens = backend.phonemize( text, strip=strip )
 	else:
-		tokens = phonemize( text, language=language, strip=True, preserve_punctuation=True, with_stress=True )
+		tokens = phonemize( text, language=language, strip=strip, preserve_punctuation=punctuation, with_stress=stress )
 	
-
-	tokens = list(tokens[0])
+	if not len(tokens):
+		tokens = []
+	else:
+		tokens = list(tokens[0])
 
 	return tokens
