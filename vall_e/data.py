@@ -486,7 +486,7 @@ class Dataset(_Dataset):
 			duration = self.duration_map[path]
 			self.duration += duration
 			
-			# only calc duration if we're tot going to order by duration
+			# only calc duration if we're going to order by duration
 			if self.sampler_order != "duration":
 				continue
 
@@ -845,11 +845,6 @@ class Dataset(_Dataset):
 				# might be better to decode => concat waveforms with silence in between => reencode
 				# as you technically can't just append encodec sequences together like this without issues
 				resps = concat_audio( resps, qnt, reencode=cfg.dataset.reencode_on_concat, device=cfg.dataset.reencode_device )
-
-		"""
-		resps = resps[:, :cfg.model.resp_levels]
-		proms = proms[:, :cfg.model.resp_levels]
-		"""
 		
 		task = random.choice(self.tasks)
 
@@ -1031,7 +1026,8 @@ class Dataset(_Dataset):
 			text=text,
 			proms=proms,
 			resps=resps,
-			text_string=text_string,
+			
+			metadata=metadata,
 		)
 
 	def head_(self, n):

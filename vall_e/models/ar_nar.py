@@ -144,6 +144,7 @@ class AR_NAR(Base):
 					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
 				else: # if p_rvq_levels == "auto":
 					# makes higher levels less likely
+					"""
 					def generate( lo=0, hi=8 ):
 						index = lo
 						p = random.random()
@@ -151,8 +152,17 @@ class AR_NAR(Base):
 							if p < 1.0 / (2 ** i):
 								index = i
 						return int(index)
+					"""
 
-					quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
+					# allow passing a specific distribution of RVQ levels
+					pool = p_rvq_levels if isinstance(p_rvq_levels, list) else []
+					if not pool:
+						lo, hi = quant_level_range[0], quant_level_range[1]
+						for i in range( lo, hi ):
+							rep = hi - i 
+							pool += [i] * rep
+
+					quant_levels = [ random.choice( pool ) for i in range(batch_size) ]
 
 				# these two are techinically equivalent if the audio embeddings handle things properly
 				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]

@@ -209,7 +209,7 @@ class ModelExperimentalSettings:
 	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
 	audio_embedding_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
-	p_rvq_levels: str = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
+	p_rvq_levels: str | list = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range for LoRAs, isn't necesary
 	unified_position_ids: bool = True # False will generate position IDs partitioned for each section
 	tie_classifier_to_embedding: bool = False # Ties the classifier output to their respective embeddings, this does not seem to do anything good in testing

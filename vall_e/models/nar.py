@@ -143,15 +143,25 @@ class NAR(Base):
 				quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
 			else: # if p_rvq_levels == "auto":
 				# makes higher levels less likely
-				def generate( lo=0, hi=8 ):
-					index = lo
-					p = random.random()
-					for i in range(lo, hi):
-						if p < 1.0 / (2 ** i):
-							index = i
-					return int(index)
+					"""
+					def generate( lo=0, hi=8 ):
+						index = lo
+						p = random.random()
+						for i in range(lo, hi):
+							if p < 1.0 / (2 ** i):
+								index = i
+						return int(index)
+					"""
 
-				quant_levels = [ generate(quant_level_range[0], quant_level_range[1]) for i in range(batch_size) ]
+					# allow passing a specific distribution of RVQ levels
+					pool = p_rvq_levels if isinstance(p_rvq_levels, list) else []
+					if not pool:
+						lo, hi = quant_level_range[0], quant_level_range[1]
+						for i in range( lo, hi ):
+							rep = hi - i 
+							pool += [i] * rep
+
+					quant_levels = [ random.choice( pool ) for i in range(batch_size) ]
 			
 			# clamp quant_levels because some of my audio was saved for only 8 out of 9 RVQ levels for DAC...
 			for i in range(batch_size):
