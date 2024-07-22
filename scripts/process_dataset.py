@@ -185,7 +185,7 @@ for dataset_name in sorted(os.listdir(f'./{input_audio}/')):
 				try:
 					outpath, text, language, waveform, sample_rate = job
 
-					phones = valle_phonemize(text)
+					phones = valle_phonemize( text, language=language )
 					qnt = valle_quantize(waveform, sr=sample_rate, device=device)
 
 					if cfg.audio_backend == "dac":
