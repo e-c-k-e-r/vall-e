@@ -127,6 +127,9 @@ def main():
 	if args.dtype != "auto":
 		cfg.trainer.weight_dtype = args.dtype
 		
+	# necessary to ensure we are actually exporting the weights right
+	cfg.inference.backend = cfg.trainer.backend
+
 	engines = load_engines(training=False)
 	engines.export(userdata={"symmap": get_phone_symmap()}, callback=callback)
 
