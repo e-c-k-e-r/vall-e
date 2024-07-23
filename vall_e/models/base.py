@@ -891,27 +891,30 @@ class Base(nn.Module):
 			# insert task type as a string
 			inputs[i].append( ( "task", task_type ) )
 
+			# to-do: maybe not split the below blocks up
+			# might be beneficial in the event I need to use a difference sequence, such as STT tasks
+
 			# Base-line TTS task
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
 			# prom /may/ include <task> tokens inside to help guide things, per SpeechX
 			if f'<{task_type}>' in get_task_symmap():
 				# insert the text prompt
-				if text_list is not None:
+				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
 				# insert lang token if we're trained for it
-				if "lang" in self.capabilities and lang_list is not None:
+				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				# insert RVQ level guidance token if the model is versioned for it
 				if self.rvq_l_emb is not None:
 					inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
 				# insert input audio prompt
-				if proms_list is not None:
+				if proms_list is not None and proms_list[i] is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
 				# insert tone token if we're trained for it
-				if "tone" in self.capabilities and tone_list is not None:
+				if "tone" in self.capabilities and tone_list is not None and tone_list[i] is not None:
 					inputs[i].append( ( "tone", tone_list[i] ) )
 				# insert the current output response
-				if resps_list is not None:
+				if resps_list is not None and resps_list[i] is not None:
 					inputs[i].append( ( "resp", resps_list[i] ) )
 		
 			# Audio length prediction task
@@ -922,10 +925,10 @@ class Base(nn.Module):
 					raise Exception(f"Requesting task `{task_type}` but corresponding embedding is not defined.")
 
 				# insert the text prompt
-				if text_list is not None:
+				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
 				# insert lang token if we're trained for it
-				if "lang" in self.capabilities and lang_list is not None:
+				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				# technically will always be level 0 but for the sake of keeing the input formatting coherent...
 				if self.rvq_l_emb is not None:
@@ -933,17 +936,17 @@ class Base(nn.Module):
 					quant_levels[i] = 0
 					inputs[i].append( ( "quant_level", torch.Tensor([ 0 ]).to(device=device, dtype=torch.int16) ) )
 				# insert input audio prompt
-				if proms_list is not None:
+				if proms_list is not None and proms_list[i] is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
 				# insert tone token if we're trained for it
-				if "tone" in self.capabilities and tone_list is not None:
+				if "tone" in self.capabilities and tone_list is not None and tone_list[i] is not None:
 					inputs[i].append( ( "tone", tone_list[i] ) )
 
 				# insert output length tokens (if it exists)
-				if len_list is not None:
+				if len_list is not None and len_list[i] is not None:
 					inputs[i].append( ( "len", len_list[i] ) )
 				# "encode" length to tokens for 0-9 + stop
-				elif resps_list is not None:
+				elif resps_list is not None and resps_list[i] is not None:
 					# yes this could be encoded better
 					inputs[i].append( ( "len", torch.Tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ]).to(device=device, dtype=torch.int16) ) )
 			else:

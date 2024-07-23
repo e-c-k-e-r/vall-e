@@ -79,7 +79,9 @@ def init_tts(yaml=None, restart=False):
 	if tts is not None:
 		if not restart:
 			return tts
+		
 		del tts
+		tts = None
 	
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', yaml)) # os environ so it can be specified in a HuggingFace Space too
@@ -124,8 +126,10 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	tmp = tempfile.NamedTemporaryFile(suffix='.wav')
 
+	"""
 	if not args.references:
 		raise ValueError("No reference audio provided.")
+	"""
 
 	tts = init_tts()
 	
@@ -134,7 +138,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		wav, sr = tts.inference(
 			text=args.text,
 			language=args.language,
-			references=[args.references.split(";")],
+			references=[args.references.split(";")] if args.references is not None else [],
 			out_path=tmp.name,
 			max_ar_steps=args.max_ar_steps,
 			max_nar_levels=args.max_nar_levels,

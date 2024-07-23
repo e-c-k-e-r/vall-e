@@ -27,6 +27,8 @@ from deepspeed.accelerator import get_accelerator
 from ..utils.distributed import init_distributed, distributed_initialized
 from ..utils import wrapper as ml
 
+from ..models.lora import freeze_non_lora_weights
+
 if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
 	init_distributed(init_deepspeed_dist)
 
@@ -66,11 +68,10 @@ class Engine(DeepSpeedEngine):
 	def freeze(self, freeze_all=True):
 		# freeze non-LoRA params if requested
 		if not self.hyper_config.frozen_params and not freeze_all and cfg.lora is not None:
-			for name, param in self.module.named_parameters():
-				should = 'lora_' in name
-				param.requires_grad_(should)
-				if not should:
-					self._frozen_params.add(param)
+			frozen_params = freeze_non_lora_weights( self.module, embeddings=cfg.lora.embeddings )
+			for param in frozen_params:
+				self._frozen_params.add( param )
+
 			return
 
 		if self.hyper_config is None or not hasattr(self.hyper_config, "frozen_params"):

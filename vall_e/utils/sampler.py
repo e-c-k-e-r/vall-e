@@ -19,7 +19,7 @@ class PoolSampler():
 	def reset(self):
 		self.current_pool = [ i for i in self.global_indices ]
 		if self.shuffle:
-			random(self.current_pool)
+			random.shuffle(self.current_pool)
 
 	def sample(self, pool = None):
 		if pool is None:

@@ -81,7 +81,7 @@ class Engine():
 
 		# freeze non-LoRA params if requested
 		if not self.hyper_config.frozen_params and not freeze_all and cfg.lora is not None:
-			return freeze_non_lora_weights( self.module )
+			return freeze_non_lora_weights( self.module, embeddings=cfg.lora.embeddings )
 
 		for name, param in self.module.named_parameters():
 			if (freeze_all and param.requires_grad) or (not freeze_all and name in self.hyper_config.frozen_params):

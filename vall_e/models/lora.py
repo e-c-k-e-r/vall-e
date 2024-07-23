@@ -205,10 +205,18 @@ def enable_lora( model, mode = True ):
 def disable_lora( model ):
 	return enable_lora( model, False )
 
-def freeze_non_lora_weights( model ):
+def freeze_non_lora_weights( model, embeddings = False ):
+	frozen_params = []
+
 	for name, param in model.named_parameters():
-		param.requires_grad_('lora_' in name)
-	return model
+		should = 'lora_' in name or (embeddings and "_emb" in name)
+
+		param.requires_grad_(should)
+		
+		if not should:
+			frozen_params.append( param )
+
+	return frozen_params
 
 def lora_get_state_dict( state_dict, split = True ):
 	lora = { name: param for name, param in state_dict.items() if "lora_" in name }

@@ -167,6 +167,7 @@ class Dataset:
 	reencode_on_concat: bool = False # whether to concat audio by decode => concat => encode, or naively concat codes
 	reencode_device: str = "cpu" # "cpu" is slower but saves memory, cuda throws [rank0]: RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
 	noise_scale: float = 0.25 # scaling noise value
+	inject_noise_in_prom: bool = False
 	
 	_frames_per_second: int = 0 # allows setting your own hint
 
@@ -358,6 +359,7 @@ class LoRA:
 	rank: int = 128 # rank for the LoRA
 	alpha: int = 128 # rank for the LoRA
 	training: bool = True # 
+	embeddings: bool = False # train the embedding too
 	parametrize: bool = False # 
 	rvq_levels: list[int] = field(default_factory=lambda: []) # determines RVQ levels to activate the LoRA
 
@@ -832,8 +834,7 @@ class Config(BaseConfig):
 		if self.hyperparameters.scheduler == "":
 			self.hyperparameters.torch_scheduler = True
 
-		if self.dataset.prompt_duration != 0:
-			self.dataset.prompt_duration_range = [self.dataset.prompt_duration, self.dataset.prompt_duration]
+		self.dataset.prompt_duration_range = [self.dataset.prompt_duration, self.dataset.prompt_duration]
 
 		if self.trainer.backend == "local" and self.distributed:
 			self.trainer.ddp = True

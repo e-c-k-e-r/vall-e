@@ -11,7 +11,7 @@ import torch
 import itertools
 
 from .config import cfg
-from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file
+from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
 
@@ -717,6 +717,9 @@ class Dataset(_Dataset):
 
 
 	def sample_prompts(self, spkr_name, ignore, should_trim=True):
+		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0:
+			return None
+
 		prom_list = []
 
 		choices = set(self.paths_by_spkr_name[spkr_name]) - {ignore}
@@ -748,7 +751,7 @@ class Dataset(_Dataset):
 				qnt = _load_quants(path, return_metadata=False)
 
 			if 0 < trim_length and trim_length < qnt.shape[0]:
-				qnt = trim( qnt, trim_length, reencode=cfg.dataset.reencode_on_concat )
+				qnt = trim( qnt, trim_length, reencode=cfg.dataset.reencode_on_concat, device=cfg.dataset.reencode_device )
 
 			prom_list.append(qnt)
 			prom_length += qnt.shape[0]
@@ -758,10 +761,10 @@ class Dataset(_Dataset):
 
 		# might be better to decode => concat waveforms with silence in between => reencode
 		# as you technically can't just append encodec sequences together like this without issues
-		prom = torch.cat(prom_list)
+		prom = concat_audio( *prom_list, reencode=cfg.dataset.reencode_on_concat, device=cfg.dataset.reencode_device )
 
 		if 0 < trim_length and trim_length < prom.shape[0]:
-			prom = trim( prom, trim_length, reencode=cfg.dataset.reencode_on_concat )
+			prom = trim( prom, trim_length, reencode=cfg.dataset.reencode_on_concat, device=cfg.dataset.reencode_device )
 
 		return prom
 
@@ -854,6 +857,15 @@ class Dataset(_Dataset):
 		# Base TTS (<text><prompt> => <resp>)
 		if task == "tts":
 			proms = self.sample_prompts(spkr_name, ignore=path)
+
+			if cfg.dataset.inject_noise_in_prom:
+				# sample random noise
+				noise = self.sample_noise()
+				# extend the noise to fill the target audio
+				noise = repeat_extend_audio(noise, proms.shape[0])
+				# create the input prompt by merging the target audio with the noise
+				proms = merge_audio( proms, noise, scale=[1, cfg.dataset.noise_scale], device=cfg.dataset.reencode_device )
+
 
 		# VALL-E Continuous (<text><partial resp> => <remaining resp> )
 		#     (this could just be sampled as <text a><text b><audio a> => <audio b>, but I need to experiment with it)

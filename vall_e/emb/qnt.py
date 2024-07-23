@@ -431,7 +431,7 @@ def encode_from_file(path, device="cuda"):
 Helper Functions
 """
 # trims from the start, up to `target`
-def trim( qnt, target, reencode=False ):
+def trim( qnt, target, reencode=False, device="cuda" ):
 	length = max( qnt.shape[0], qnt.shape[1] )
 	if target > 0:
 		start = 0
@@ -454,8 +454,8 @@ def trim( qnt, target, reencode=False ):
 	start = start / cfg.dataset.frames_per_second * cfg.sample_rate
 	end = end / cfg.dataset.frames_per_second * cfg.sample_rate
 	
-	wav = decode(qnt)[0]
-	return encode(wav[start:end], cfg.sample_rate)[0].t()
+	wav = decode(qnt, device=device)[0]
+	return encode(wav[start:end], cfg.sample_rate, device=device)[0].t()
 
 # trims a random piece of audio, up to `target`
 # to-do: try and align to EnCodec window

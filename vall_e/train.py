@@ -100,7 +100,7 @@ def run_eval(engines, eval_name, dl):
 				filename = f"{filename}_{task}"
 
 			# flatten prom
-			if not isinstance(prom, torch.Tensor):
+			if not isinstance(prom, torch.Tensor) and prom is not None:
 				prom = torch.concat([ p for p in prom if isinstance(p, torch.Tensor) ])
 
 			# to-do, refine the output dir to be sane-er
@@ -114,7 +114,8 @@ def run_eval(engines, eval_name, dl):
 			
 			ref_audio, sr = qnt.decode_to_file(ref, ref_path)
 			hyp_audio, sr = qnt.decode_to_file(hyp, hyp_path)
-			prom_audio, sr = qnt.decode_to_file(prom, prom_path)
+			if prom is not None:
+				prom_audio, sr = qnt.decode_to_file(prom, prom_path)
 
 			# pseudo loss calculation since we don't get the logits during eval
 			min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )

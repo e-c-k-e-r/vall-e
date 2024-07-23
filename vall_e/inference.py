@@ -170,21 +170,18 @@ class TTS():
 					output_dir.mkdir(parents=True, exist_ok=True)
 				out_path = output_dir / f"{time.time()}.wav"
 
-			prom = self.encode_audio( references, trim_length=input_prompt_length )
+			prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
 			phns = self.encode_text( line, language=language )
 			lang = self.encode_lang( language )
 
-			prom = to_device(prom, self.device).to(torch.int16)
-			phns = to_device(phns, self.device).to(torch.uint8 if len(self.symmap) < 256 else torch.int16)
-			lang = to_device(lang, self.device).to(torch.uint8)
+			prom = to_device(prom, device=self.device, dtype=torch.int16)
+			phns = to_device(phns, device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
+			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
 			text_list = [ phns ]
 			proms_list = [ prom ]
 
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-				# AR temp: 1
-				# NAR temp: 0.05
-				# prom size: 3
 				if model_ar is not None:
 					resps_list = model_ar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps,

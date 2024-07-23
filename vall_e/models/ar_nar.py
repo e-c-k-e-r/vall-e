@@ -174,14 +174,22 @@ class AR_NAR(Base):
 				"""
 				
 				for i in range(batch_size):
-					# other tasks might have the prom be a list and this is just the easiest way to acknowledge that
-					if task_list[i] == "tts":
-						# cap quant_level if it exceeds its corresponding resp/prom
-						if quant_levels[i] >= resps_list[i].shape[-1]:
-							quant_levels[i] = resps_list[i].shape[-1] - 1
+					# cap quant_level if it exceeds its corresponding resp/prom
+					if quant_levels[i] >= resps_list[i].shape[-1]:
+						quant_levels[i] = resps_list[i].shape[-1] - 1
 
+					# proms_list[i] could be a Tensor, list[Tensor], or None
+					if isinstance( proms_list[i], torch.Tensor ):
 						if quant_levels[i] >= proms_list[i].shape[-1]:
 							quant_levels[i] = proms_list[i].shape[-1] - 1
+
+					elif isinstance( proms_list[i], list ):
+						for j, prom in enumerate( proms_list[i] ):
+							if not isinstance( prom, torch.Tensor ):
+								continue
+						
+						if quant_levels[i] >= prom.shape[-1]:
+							quant_levels[i] = prom.shape[-1] - 1
 
 					# only apply stop token for RVQ level 0
 					if quant_levels[i] > 0:
