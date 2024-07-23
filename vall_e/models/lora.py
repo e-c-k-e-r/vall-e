@@ -118,7 +118,6 @@ class ParameterizedLoRA(nn.Module):
 		nn.init.zeros_( self.lora_B ) 
 
 	def forward(self, x: torch.Tensor):
-		print( self.enabled, x.shape )
 		if self.enabled:
 			return x + torch.matmul(self.lora_B, self.dropout(self.lora_A)).view(x.shape) * self.scaling
 		return x
@@ -193,7 +192,7 @@ def apply_lora( model, register = True, merge = False, policy = None, use_parame
 		else:
 			setattr( model.get_submodule(name), k, replacement )
 
-	return model
+	return enable_lora( model )
 
 def enable_lora( model, mode = True ):
 	for name, module in model.named_modules():

@@ -164,15 +164,19 @@ class Engine():
 
 		if tag is None:
 			tag_path = load_dir / "latest"
+
 			if not tag_path.exists():
 				return
+
 			tag = open(tag_path).read()
 
 		load_path = load_dir / tag / "state.pth"
+
 		if not load_path.exists():
 			return
 
 		state = torch.load(load_path, map_location=torch.device(cfg.device))
+
 		self.global_steps = state['stats']['global_step'] if 'stats' in state else state['global_step']
 		self.micro_steps = state['stats']['micro_step'] if 'stats' in state else state['micro_step']
 		self.global_samples = state['stats']['global_samples'] if 'stats' in state else state['global_samples']
@@ -393,18 +397,19 @@ class Engines(dict[str, Engine]):
 						p.unlink()
 					d.rmdir()
 
-	def load_checkpoint(self, tag=None):
+	def load_checkpoint(self, tag=None, training=True):
 		if not tag:
 			tag = cfg.trainer.load_tag
 
 		for name, engine in self.items():
 			load_dir = cfg.ckpt_dir / name
+
 			engine.load_checkpoint(
 				tag=tag,
 				load_dir=load_dir,
 				load_module_strict=cfg.trainer.strict_loading,
-				load_optimizer_states=False if cfg.trainer.load_module_only else cfg.trainer.load_states,
-				load_lr_scheduler_states=False if cfg.trainer.load_module_only else cfg.trainer.load_states,
+				load_optimizer_states=False if cfg.trainer.load_module_only or not training else cfg.trainer.load_states,
+				load_lr_scheduler_states=False if cfg.trainer.load_module_only or not training else cfg.trainer.load_states,
 				load_module_only=cfg.trainer.load_module_only,
 			)
 			if cfg.trainer.restart_step_count:

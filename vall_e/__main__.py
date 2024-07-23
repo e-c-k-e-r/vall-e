@@ -4,12 +4,14 @@ from .inference import TTS
 from .config import cfg
 
 def path_list(arg):
+	if not arg:
+		return None
 	return [Path(p) for p in arg.split(";")]
 
 def main():
 	parser = argparse.ArgumentParser("VALL-E TTS")
 	parser.add_argument("text")
-	parser.add_argument("references", type=path_list)
+	parser.add_argument("references", type=path_list, default=None)
 	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--out-path", type=Path, default=None)
 
