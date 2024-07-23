@@ -173,8 +173,8 @@ def tree_map(fn: Callable, x):
 	return x
 
 
-def to_device(x: T | None, **kwargs) -> T:
+def to_device(x: T | None, *args, **kwargs) -> T:
 	if x is None:
 		return
 
-	return tree_map(lambda t: t.to(**kwargs), x)
+	return tree_map(lambda t: t.to(*args, **kwargs), x)
