@@ -434,7 +434,7 @@ class Dataset(_Dataset):
 		self.training = training
 		self.dataset_type = "training" if self.training else "validation"
 		self.dataset = cfg.dataset.training if self.training else cfg.dataset.validation
-		self.sampler_type = cfg.dataset.sample_type # if self.dataset_type == "training" else "group"
+		self.sampler_type = cfg.dataset.sample_type if self.dataset_type == "training" else "path"
 		self.sampler_order = cfg.dataset.sample_order
 		self.sampler_shuffle = cfg.dataset.sample_shuffle
 

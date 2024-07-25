@@ -152,7 +152,7 @@ class Dataset:
 	random_utterance: float = 1.0
 	max_prompts: int = 3
 	
-	prompt_duration: float = 0.0 # legacy
+	prompt_duration: float | None = None # legacy
 	
 	max_resps: int = 1
 	p_resp_append: float = 1.0
@@ -839,7 +839,8 @@ class Config(BaseConfig):
 		if self.hyperparameters.scheduler == "":
 			self.hyperparameters.torch_scheduler = True
 
-		self.dataset.prompt_duration_range = [self.dataset.prompt_duration, self.dataset.prompt_duration]
+		if self.dataset.prompt_duration is not None:
+			self.dataset.prompt_duration_range = [self.dataset.prompt_duration, self.dataset.prompt_duration]
 
 		if self.trainer.backend == "local" and self.distributed:
 			self.trainer.ddp = True
