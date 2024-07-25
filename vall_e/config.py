@@ -214,6 +214,11 @@ class ModelExperimentalSettings:
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range for LoRAs, isn't necesary
 	unified_position_ids: bool = True # False will generate position IDs partitioned for each section
 	tie_classifier_to_embedding: bool = False # Ties the classifier output to their respective embeddings, this does not seem to do anything good in testing
+	
+	# performs token dropout to compensate for errors
+	token_dropout_error: float = 0.0 # probability to nudge a token by ±1
+	token_dropout_rate: float = 0.0 # probability to randomly set a token to a special dropout value
+	token_dropout_rvq_levels: list = field(default_factory=lambda: [1,8]) # determines which levels to do dropout, by default do not do dropout on RVQ level 0
 
 # I really need to clean this up
 @dataclass()

@@ -12,7 +12,7 @@ Additional functionality (preparing inputs, generating full audio) should be del
 import math
 import torch
 import torch.nn.functional as F
-import traceback
+import random
 import numpy as np
 import re
 
@@ -439,6 +439,10 @@ class Base(nn.Module):
 		self.tasks_emb = None
 		self.rvq_l_emb = None
 		self.len_emb = None
+		
+		# it would be nicer for these to be a token or live inside an embedding
+		self.sep = nn.Parameter(torch.randn(d_model))
+		self.dropout_token = nn.Parameter(torch.zeros(d_model)) # zeros sounds nicer than randn for a special value
 
 		if self.version == 1: # legacy
 			n_audio_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
@@ -483,9 +487,6 @@ class Base(nn.Module):
 		
 			# experimental NAR-only mode
 			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
-
-		# this would be nicer to be a stop token or live inside an embedding
-		self.sep = nn.Parameter(torch.randn(d_model))
 
 		# ick, there has to be a better way
 		hf_attention = self.config.attention if self.config is not None else None
@@ -970,6 +971,16 @@ class Base(nn.Module):
 				
 			return self.proms_emb( input if input.dim() == 1 else input[:, : 1 if quant_level == 0 else quant_level], offset = 0 )
 
+		# yuck
+		token_dropout_rate = self.config.experimental.token_dropout_rate if self.config else 0.0
+		token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels if self.config else None
+		
+		if self.dropout_token is None or not self.training:
+			token_dropout_rate = 0.0
+
+		if not token_dropout_rvq_levels:
+			token_dropout_rvq_levels = [1, self.resp_levels]
+
 		x_list = []
 		for batch_index, batch_input in enumerate(inputs):
 			batch = []
@@ -1018,6 +1029,16 @@ class Base(nn.Module):
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
 								offset = 0 if quant_level == 0 or "len" in self.capabilities else 1
 							)
+
+						# apply token dropout
+						if token_dropout_rate > 0.0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
+							steps = embedding.shape[0] - (1 if quant_level == 0 else 0) # do not mess with stop token
+							for i in range( steps ):
+								if random.random() > token_dropout_rate:
+									continue
+								
+								embedding[i] = self.dropout_token
+
 				elif name == "len" and self.len_emb is not None:
 					embedding = self.len_emb( input )
 				else:
