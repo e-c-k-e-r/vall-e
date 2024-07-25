@@ -19,8 +19,10 @@ from tqdm import tqdm
 from typing import Protocol
 
 from ..config import cfg
-from .distributed import init_distributed, distributed_initialized, world_size
 from .distributed import (
+	init_distributed,
+	distributed_initialized,
+	world_size,
 	global_leader_only,
 	global_rank,
 	is_global_leader,
@@ -116,7 +118,6 @@ def seed(seed):
 	np.random.seed(seed + global_rank())
 	torch.manual_seed(seed + global_rank())
 
-
 def train(
 	train_dl: DataLoader,
 	train_feeder: TrainFeeder = default_feeder,
@@ -141,6 +142,7 @@ def train(
 		eval_fn(engines=engines)
 
 	if command in ["quit", "eval_quit"]:
+		engines.quit()
 		return
 
 	last_save_step = engines.global_step
@@ -250,4 +252,5 @@ def train(
 					eval_fn(engines=engines)
 
 			if command in ["quit"]:
+				engines.quit()
 				return

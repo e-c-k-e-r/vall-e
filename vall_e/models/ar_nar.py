@@ -400,7 +400,7 @@ def example_usage():
 	from tqdm import tqdm
 
 	from ..emb.qnt import decode_to_file, unload_model, trim_random, repeat_extend_audio, concat_audio, merge_audio
-	from ..engines import Engine
+	from ..engines import Engine, Engines
 	from ..utils import wrapper as ml
 	
 	import numpy as np
@@ -532,6 +532,9 @@ def example_usage():
 	
 	engine = Engine(model=model, optimizer=optimizer)
 
+	engines = Engines({"ar+nar": engine})
+	engines.setup()
+
 	"""
 	torch.save( {
 		'module': model.state_dict()
@@ -621,6 +624,8 @@ def example_usage():
 	
 	for task in tasks:
 		sample("final", task=task)
+
+	engines.quit()
 
 if __name__ == "__main__":
 	example_usage()

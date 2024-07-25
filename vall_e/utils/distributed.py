@@ -28,6 +28,12 @@ def init_distributed( fn, *args, **kwargs ):
 def distributed_initialized():
 	return _distributed_initialized
 
+def cleanup_distributed():
+	#if not _distributed_initialized:
+	#	return
+	dist.barrier()
+	dist.destroy_process_group()
+
 @cache
 def fix_unset_envs():
 	envs = dict(

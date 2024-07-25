@@ -28,7 +28,7 @@ def default_feeder(engine, batch):
 
 from ..config import cfg
 from ..utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
-from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader, world_size
+from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader, world_size, cleanup_distributed
 from ..models.lora import freeze_non_lora_weights, lora_get_state_dict, lora_load_state_dict
 
 import logging
@@ -451,6 +451,9 @@ class Engines(dict[str, Engine]):
 			stat = engine.traverse()
 			stats.update(flatten_dict({ name.split("-")[0]: stat }))
 		return stats
+
+	def quit(self):
+		cleanup_distributed()
 
 	def step(self, batch, feeder: TrainFeeder = default_feeder):
 		total_elapsed_time = 0
