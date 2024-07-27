@@ -57,7 +57,30 @@ class Model(LlmArchClass):
 		hf_attention = config.attention if config is not None else None
 		gradient_checkpointing = config.gradient_checkpointing if config is not None else True
 		# text_tokens + rvq levels + [audio tokens * codebooks] (prom) + [audio tokens * codebooks] (resp) + stop
-		vocab_size = n_text_tokens + cfg.model.max_levels + (n_audio_tokens * cfg.model.max_levels) + (n_audio_tokens * cfg.model.max_levels) + 1
+		# vocab_size = n_text_tokens + cfg.model.max_levels + (n_audio_tokens * cfg.model.max_levels) + (n_audio_tokens * cfg.model.max_levels) + 1
+
+		text_start = 0
+		text_end = text_start + config.text_tokens
+
+		lang_start = text_end
+		lang_end = lang_start + config.langs
+
+		rvq_start = lang_end
+		rvq_end = rvq_start + config.resp_levels
+
+		prom_start = rvq_end
+		prom_end = prom_start + config.audio_tokens * config.resp_levels
+
+		task_start = prom_end
+		task_end = task_start + config.tasks
+
+		tone_start = task_end
+		tone_end = tone_start + config.tones
+		
+		resp_start = tone_end
+		resp_end = resp_start + config.audio_tokens * config.resp_levels
+
+		vocab_size = resp_end
 
 		if cfg.model.arch_type == "llama":
 			super().__init__(config=LlamaConfig(
@@ -148,11 +171,94 @@ class Model(LlmArchClass):
 		*args,
 		**kwargs,
 	):
-		if cfg.model.arch_type in ["mamba","mamba2"]:
+		config = self.hyper_config
+
+		if "text_list" in kwargs:
+			text_list = kwargs.pop("text_list", None)
+			proms_list = kwargs.pop("proms_list", None)
+			resps_list = kwargs.pop("resps_list", None)
+			lang_list = kwargs.pop("lang_list", None)
+			tone_list = kwargs.pop("tone_list", None)
+			
+			training = kwargs.pop("training", False)
+			steps = kwargs.pop("steps", 500)
+			
+			batch_size = len(text_list)
+
+			if training:
+				quant_levels = None if config.experimental.interleave else [ random.randint( 0 if "ar" in config.capabilities else 1, config.max_levels - 1) for _ in range(batch_size) ]
+
+				input_ids, attention_mask = fold_inputs(
+					text_list=text_list,
+					prom_list=proms_list,
+					resp_list=resps_list,
+					targ_list=resps_list,
+					quant_levels=quant_levels,
+				)
+				target_ids, target_attention_mask = fold_inputs(
+					text_list=text_list,
+					prom_list=proms_list,
+					resp_list=resps_list,
+					targ_list=resps_list,
+					quant_levels=quant_levels,
+					ignore_index=-100
+				)
+				return self.forward(
+					input_ids=input_ids,
+					labels=target_ids,
+				)
+	
+			if config.experimental.interleave:
+				input_ids, attention_mask = fold_inputs( text_list=text_list, prom_list=proms_list )
+				output = self.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=steps*config.max_levels, eos_token_id=3, do_sample=False)
+				return unfold_outputs( output )["resp_list"]
+
+			resps_list = [ [] for _ in range(batch_size) ]
+			for l in range(config.max_levels):
+				quant_levels = [ l for _ in range(batch_size) ]
+
+				input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=proms_list, resp_list=resps_list, quant_levels=quant_levels)
+				min_length = 1 
+				for batch in input_ids:
+					min_length = max( min_length, batch.shape[0] + 1 )
+
+				output = self.generate(
+					input_ids=input_ids,
+					attention_mask=attention_mask,
+					min_length=min_length,
+					max_length=min_length+steps*2,
+					eos_token_id=3,
+					do_sample=False
+				)
+				
+				unfolded = unfold_outputs( output, quant_levels=quant_levels )
+
+				if l == 0:
+					steps = 0
+
+				for batch, resp in enumerate(unfolded["resp_list"]):
+					length = resp.shape[-1]
+
+					# store length
+					if l == 0:
+						steps = max( steps, length )
+					# pad
+					else:
+						resp = resp[:steps]
+						if length < steps:
+							resp = torch.cat([ resp, torch.Tensor([ 0 for _ in range(steps-length) ]).to(resp) ])
+					resps_list[batch].append( resp )
+
+			for i, resp in enumerate( resps_list ):
+				resps_list[i] = torch.stack( resp ).t()
+
+			return resps_list
+
+		if config.arch_type in ["mamba","mamba2"]:
 			if "attention_mask" in kwargs:
 				kwargs.pop("attention_mask")
 
-		labels = kwargs.pop("labels") if "labels" in kwargs else None
+		labels = kwargs.pop("labels", None)
 
 		output = super().forward(*args, **kwargs)
 		logits = output.logits
@@ -322,53 +428,8 @@ def example_usage():
 	@torch.inference_mode()
 	def sample( name, steps=cfg.model.max_levels*cfg.dataset.frames_per_second*6 ):
 		engine.eval()
-		batch_size = len(text_list)
-		resp_list = None
-		if cfg.model.experimental.interleave:
-			input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list)
-			output = model.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=steps, eos_token_id=3, do_sample=False)
-			
-			unfolded = unfold_outputs( output )
-			resp_list = unfolded["resp_list"]
-		else:
-			resp_list = [ [] for _ in range(batch_size) ]
-			for l in range(cfg.model.max_levels):
-				quant_levels = [ l for _ in range(batch_size) ]
-
-				input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resp_list, quant_levels=quant_levels)
-				min_length = 1 
-				for batch in input_ids:
-					min_length = max( min_length, batch.shape[0] + 1 )
-
-				output = model.generate(
-					input_ids=input_ids,
-					attention_mask=attention_mask,
-					min_length=min_length,
-					max_length=min_length+steps*2,
-					eos_token_id=3,
-					do_sample=False
-				)
-				
-				unfolded = unfold_outputs( output, quant_levels=quant_levels )
-
-				if l == 0:
-					steps = 0
-
-				for batch, resp in enumerate(unfolded["resp_list"]):
-					length = resp.shape[-1]
-
-					# store length
-					if l == 0:
-						steps = max( steps, length )
-					# pad
-					else:
-						resp = resp[:steps]
-						if length < steps:
-							resp = torch.cat([ resp, torch.Tensor([ 0 for _ in range(steps-length) ]).to(resp) ])
-					resp_list[batch].append( resp )
-
-			for i, resp in enumerate( resp_list ):
-				resp_list[i] = torch.stack( resp ).t()
+		
+		resp_list = model( text_list=text_list, proms_list=prom_list )
 
 		for i, batch in enumerate(resp_list):
 			_ = decode_to_file(batch.to(device=device), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
@@ -380,19 +441,8 @@ def example_usage():
 		t = trange(steps)
 		for i in t:
 			stats = {"step": i}
-			
-			batch_size = len(text_list)
-			quant_levels = None if cfg.model.experimental.interleave else torch.randint(0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels, (batch_size,))
-			if quant_levels is not None:
-				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
-			else:
-				resps_list = [ resp for resp in resp_list ]
 
-
-			input_ids, attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resps_list, targ_list=resp_list, quant_levels=quant_levels)
-			target_ids, target_attention_mask = fold_inputs(text_list=text_list, prom_list=prom_list, resp_list=resp_list, targ_list=resp_list, ignore_index=-100, quant_levels=quant_levels)
-			
-			stats |= engine.traverse(input_ids=input_ids, labels=target_ids, attention_mask=attention_mask)
+			stats |= engine.traverse(text_list=text_list, proms_list=prom_list, resps_list=resp_list, training=True)
 			stats |= engine.gather_attribute("stats")
 			stats |= {"grad_norm": engine.get_global_grad_norm()}
 

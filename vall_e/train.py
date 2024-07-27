@@ -31,44 +31,16 @@ def train_feeder(engine, batch):
 		batch_size = len(batch["text"])
 		engine.current_batch_size = batch_size
 
-		if engine.hyper_config.experimental.hf:
-			if engine.hyper_config.experimental.interleave:
-				quant_levels = 0	
-				resps_list = [ resp for resp in batch["resps"] ]
-			else:
-				quant_levels = [ random.randint( 0 if "ar" in cfg.model.capabilities else 1, cfg.model.max_levels) for _ in range(batch_size) ]
-				resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, batch["resps"]) ]
+		engine(
+			text_list=batch["text"],
+			proms_list=batch["proms"],
+			resps_list=batch["resps"],
+			lang_list=batch["lang"],
+			tone_list=batch["tone"],
+			task_list=batch["task"],
 
-			input_ids, attention_mask = fold_inputs(
-				text_list=batch["text"],
-				prom_list=batch["proms"],
-				resp_list=resps_list,
-				targ_list=batch["resps"],
-				quant_levels=quant_levels,
-			)
-			target_ids, target_attention_mask = fold_inputs(
-				text_list=batch["text"],
-				prom_list=batch["proms"],
-				resp_list=resps_list,
-				targ_list=batch["resps"],
-				quant_levels=quant_levels,
-				ignore_index=-100
-			)
-			engine(
-				input_ids=input_ids,
-				labels=target_ids,
-			)
-		else:
-			engine(
-				text_list=batch["text"],
-				proms_list=batch["proms"],
-				resps_list=batch["resps"],
-				lang_list=batch["lang"],
-				tone_list=batch["tone"],
-				task_list=batch["task"],
-
-				training=True,
-			)
+			training=True,
+		)
 
 		losses = engine.gather_attribute("loss")
 		stat = engine.gather_attribute("stats")
@@ -137,66 +109,18 @@ def run_eval(engines, eval_name, dl):
 			engine = engines[name]
 
 			if engine.hyper_config.experimental.hf:
-				if engine.hyper_config.experimental.interleave:
-					input_ids, attention_mask = fold_inputs(
-						text_list=batch["text"],
-						prom_list=batch["proms"],
-					)
-					output = engine.module.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=cfg.evaluation.steps, eos_token_id=3, do_sample=False)
-					resps_list = unfold_outputs( output )["resp_list"]
-				else:
-					steps = cfg.evaluation.steps
-					resps_list = [ [] for _ in range(len(text_list)) ]
-					for l in range(cfg.model.max_levels):
-						quant_levels = [ [ l ] for _ in range(len(text_list)) ]
-
-						input_ids, attention_mask = fold_inputs(text_list=batch["text"], prom_list=batch["proms"], resp_list=resps_list, quant_levels=quant_levels, experimental=True)
-						min_length = 1 
-						for batch in input_ids:
-							min_length = max( min_length, batch.shape[0] + 1 )
-
-						output = model.generate(
-							input_ids=input_ids,
-							attention_mask=attention_mask,
-							min_length=min_length,
-							max_length=min_length+steps*(2 if l > 0 else 1),
-							eos_token_id=3,
-							do_sample=False
-						)
-						
-						unfolded = unfold_outputs( output, quant_levels=quant_levels )
-
-						if l == 0:
-							steps = 0
-
-						for batch, resp in enumerate(unfolded["resp_list"]):
-							length = resp.shape[-1]
-
-							# store length
-							if l == 0:
-								steps = max( steps, length )
-							# pad
-							else:
-								resp = resp[:steps]
-								if length < steps:
-									resp = torch.cat([ resp, torch.Tensor([ 0 for _ in range(steps-length) ]).to(resp) ])
-
-							resps_list[batch].append( resp )
-
-					for i, resp in enumerate( resps_list ):
-						resps_list[i] = torch.stack( resp ).t()
+				resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"] )
+			elif "len" in engine.hyper_config.capabilities:
+				len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=10 ) # don't need more than that
+				resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list, max_levels=cfg.evaluation.nar_levels )
 			else:
-				if "len" in engine.hyper_config.capabilities:
-					len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=10 ) # don't need more than that
-					resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list, max_levels=cfg.evaluation.nar_levels )
+				if "ar" in engine.hyper_config.capabilities:
+					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
 				else:
-					if "ar" in engine.hyper_config.capabilities:
-						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
-					else:
-						resps_list = [ resp[:, 0] for resp in batch["resps"] ]
+					resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
-					if "nar" in engine.hyper_config.capabilities:
-						resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature, max_levels=cfg.evaluation.nar_levels )
+				if "nar" in engine.hyper_config.capabilities:
+					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature, max_levels=cfg.evaluation.nar_levels )
 
 			process( name, batch, resps_list )
 

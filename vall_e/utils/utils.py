@@ -178,3 +178,6 @@ def to_device(x: T | None, *args, **kwargs) -> T:
 		return
 
 	return tree_map(lambda t: t.to(*args, **kwargs), x)
+
+def coalese( *arg, return_last=True ):
+	return [ x for x in arg if x is not None ][-1 if return_last else 0]

@@ -34,6 +34,9 @@ _logger = logging.getLogger(__name__)
 # fold into a typical LLM sequence (one embedding rather than split embeddings)
 def fold_inputs(
 	text_list = [],
+	lang_list = [],
+	task_list = [],
+	tone_list = [],
 	prom_list = [],
 	resp_list = [],
 	targ_list = [],
@@ -42,12 +45,13 @@ def fold_inputs(
 
 	sep = 3,
 	stop = 3,
+	config = None,
 	
-	text_tokens = 256,
-	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.max_levels,
 	quant_levels = None,
 ):
+	if config is None:
+		config = cfg.model
+
 	def _create_mask(l, device):
 		seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
 		stop = torch.tensor(l, device=device).unsqueeze(1)  # (b 1)
@@ -61,108 +65,176 @@ def fold_inputs(
 		m = m.to(x)
 		return x, m
 
+	def process_prom_or_task(i, prom):
+		if prom is None:
+			return
+
+		if isinstance(prom, str):
+			task = get_task_symmap()[f'<{input}>']
+			seq = torch.Tensor([task_start + task]).to(device=device, dtype=dtype)
+
+			input_ids[i].append( seq )
+			input_ids[i].append( sep )
+			return
+
+		# deinterleaved
+		if quant_levels is not None:
+			quant_level = quant_levels[i]
+			if ignore_index is not None:
+				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] ) ] ).to(device=device, dtype=dtype)
+			else:
+				seq = prom[:, quant_level].to(device=device, dtype=dtype).clone()
+				for idx, token in enumerate( seq ):
+					token += prom_start + ( config.audio_tokens * quant_level )
+		# interleaved
+		else:
+			if ignore_index is not None:
+				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to(device=device, dtype=dtype)
+			else:
+				seq = prom.flatten().to(device=device, dtype=dtype)
+				for idx, token in enumerate( seq ):
+					token += prom_start + ( config.audio_tokens * ( idx % config.resp_levels ) )
+
+		input_ids[i].append( seq )
+		input_ids[i].append( sep )
+
+	"""
+	if quant_levels is not None:
+		resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
+	"""
+
 	device = text_list[0].device
+	dtype = torch.int64
+
 	batch_size = len(text_list)
 	input_ids = [ [] for _ in range(batch_size) ]
 
 	offset = 0
 	
-	sep = torch.Tensor([ sep ])
-	stop = torch.Tensor([ stop ])
+	sep = torch.Tensor([ sep ]).to(device=device, dtype=dtype)
+	stop = torch.Tensor([ stop ]).to(device=device, dtype=dtype)
 
+	text_start = 0
+	text_end = text_start + config.text_tokens
+
+	lang_start = text_end
+	lang_end = lang_start + config.langs
+
+	rvq_start = lang_end
+	rvq_end = rvq_start + config.resp_levels
+
+	prom_start = rvq_end
+	prom_end = prom_start + config.audio_tokens * config.resp_levels
+
+	task_start = prom_end
+	task_end = task_start + config.tasks
+
+	tone_start = task_end
+	tone_end = tone_start + config.tones
+	
+	resp_start = tone_end
+	resp_end = resp_start + config.audio_tokens * config.resp_levels
+
+	# text tokens
 	for i, text in enumerate(text_list):
-		seq = text.to("cpu", dtype=torch.int64)
+		if isinstance(text, torch.Tensor):
+			seq = text + text_start
+		else:
+			seq = torch.Tensor([text_start + text]).to(device=device, dtype=dtype)
+		input_ids[i].append( seq )
+		input_ids[i].append( sep )
+
+	# lang tokens
+	for i, lang in enumerate(lang_list):
+		if isinstance(lang, torch.Tensor):
+			seq = lang + lang_start
+		else:
+			seq = torch.Tensor([lang_start + lang]).to(device=device, dtype=dtype)
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 	
-	offset = text_tokens
 	# inject target quant_level
 	if quant_levels is not None:
 		for i, rvq in enumerate( quant_levels ):
-			seq = torch.Tensor([offset + rvq]).to("cpu", dtype=torch.int64)
+			if isinstance(rvq, torch.Tensor):
+				seq = rvq + rvq_start
+			else:
+				seq = torch.Tensor([rvq_start + rvq]).to(device=device, dtype=dtype)
 			input_ids[i].append( seq )
 			input_ids[i].append( sep )
 
-	offset = text_tokens + audio_rvq_levels
+	# prom / task tokens
 	for i, prom in enumerate(prom_list):
-		# deinterleaved
-		if quant_levels is not None:
-			quant_level = quant_levels[i]
-			if ignore_index is not None:
-				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] ) ] ).to("cpu", dtype=torch.int64)
-			else:
-				seq = prom[:, quant_level].to("cpu", dtype=torch.int64)
-				for idx, token in enumerate( seq ):
-					token += offset + ( audio_tokens * quant_level )
-		# interleaved
+		# list of proms with a possible task token
+		if isinstance(prom, list):
+			for p in prom:
+				process_prom_or_task(i, p)
+		# raw tensor
 		else:
-			if ignore_index is not None:
-				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to("cpu", dtype=torch.int64)
-			else:
-				seq = prom.flatten().to("cpu", dtype=torch.int64)
-				for idx, token in enumerate( seq ):
-					token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
+			process_prom_or_task(i, prom)
 
+	# tone tokens
+	for i, tone in enumerate(tone_list):
+		if isinstance(tone, torch.Tensor):
+			seq = tone + tone_start
+		else:
+			seq = torch.Tensor([tone_start + tone]).to(device=device, dtype=dtype)
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
-	
-	offset = text_tokens + audio_rvq_levels + (audio_tokens * audio_rvq_levels)
 
+	# resp tokens
 	for i, resp in enumerate(resp_list):
 		# deinterleaved
 		if quant_levels is not None:
 			# grab the previous rvq level
 			quant_level = quant_levels[i] - 1
 			# way to signal we want to inference for rvq level 0
-			# without it, it's a random chance for any level to be selected again
-			
+			# without it, it's a random chance for any level to be selected again	
 			if quant_level < 0:
 				continue
-
-				seq = sep
 			else:
 				# my shitcode keeps things as lists of tensors for each level, so this handles it because lists can't index by tuples
 				if isinstance(resp, list):
-					seq = resp[quant_level].to("cpu", dtype=torch.int64)
+					seq = resp[quant_level].to(device=device, dtype=dtype).clone()
 				else:
-					seq = resp[:, quant_level].to("cpu", dtype=torch.int64)
+					seq = resp[:, quant_level].to(device=device, dtype=dtype).clone()
 
 				for idx, token in enumerate( seq ):
-					token += offset + ( audio_tokens * quant_level )
-			
+					token += resp_start + ( config.audio_tokens * quant_level )
 
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
 		# interleaved
 		else:
-			seq = resp.flatten().to("cpu", dtype=torch.int64)
+			seq = resp.flatten().to(device=device, dtype=dtype)
 			for idx, token in enumerate( seq ):
-				token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
+				token += resp_start + ( config.audio_tokens * ( idx % config.resp_levels ) )
 		
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
 
+	# targ list
 	for i, resp in enumerate(targ_list):
 		# deinterleaved
 		if quant_levels is not None:
 			quant_level = quant_levels[i]
-			seq = resp[:, quant_level].to("cpu", dtype=torch.int64)
+			seq = resp[:, quant_level].to(device=device, dtype=dtype)
 			for idx, token in enumerate( seq ):
-				token += offset + ( audio_tokens * quant_level )
+				token += resp_start + ( config.audio_tokens * quant_level )
 			
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
 		# interleaved
 		else:
-			seq = resp.flatten().to("cpu", dtype=torch.int64)
+			seq = resp.flatten().to(device=device, dtype=dtype)
 			for idx, token in enumerate( seq ):
-				token += offset + ( audio_tokens * ( idx % audio_rvq_levels ) )
+				token += resp_start + ( config.audio_tokens * ( idx % config.resp_levels ) )
 		
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
 
 	for i, batch in enumerate(input_ids):
-		input_ids[i] = torch.concat(input_ids[i], dim=-1).to(device=device, dtype=torch.int64)
+		input_ids[i] = torch.concat(input_ids[i], dim=-1).to(device=device, dtype=dtype)
 
 	return list_to_tensor(input_ids)
 
@@ -174,20 +246,62 @@ def unfold_outputs(
 	sep = 3,
 	stop = 3,
 	
-	text_tokens = 256,
-	audio_tokens = 1024,
-	audio_rvq_levels = cfg.model.max_levels,
+	config = None,
 	quant_levels = None,
 ):
+	def bin_to_rvqs( tokens ):
+		length = len(tokens)
+		"""
+		if length % config.resp_levels == 0:
+			tokens = torch.Tensor(tokens).reshape( config.resp_levels, length // config.resp_levels ).t()
+		"""
+		bins = [ [] for _ in range(config.resp_levels) ]
+		for pos in range( length ):
+			rvq = pos % config.resp_levels
+			bins[rvq].append( tokens[pos] )
+		nearest = ( len(bins) // config.resp_levels ) * config.resp_levels
+		bins = bins[:nearest]
+		return torch.Tensor(bins).t().to(device=device, dtype=dtype)
+
+	if config is None:
+		config = cfg.model
+
 	device = output_ids.device
+	dtype = torch.int64
+
 	batch_size = output_ids.shape[0]
 
 	text_list = [ [] for _ in range(batch_size) ]
+	rvq_list  = [ [] for _ in range(batch_size) ]
+	lang_list  = [ [] for _ in range(batch_size) ]
+	task_list  = [ [] for _ in range(batch_size) ]
+	tone_list  = [ [] for _ in range(batch_size) ]
 	prom_list = [ [] for _ in range(batch_size) ]
 	resp_list = [ [] for _ in range(batch_size) ]
 
+	text_start = 0
+	text_end = text_start + config.text_tokens
+
+	lang_start = text_end
+	lang_end = lang_start + config.langs
+
+	rvq_start = lang_end
+	rvq_end = rvq_start + config.resp_levels
+
+	prom_start = rvq_end
+	prom_end = prom_start + config.audio_tokens * config.resp_levels
+
+	task_start = prom_end
+	task_end = task_start + config.tasks
+
+	tone_start = task_end
+	tone_end = tone_start + config.tones
+	
+	resp_start = tone_end
+	resp_end = resp_start + config.audio_tokens * config.resp_levels
+
 	for i, batch in enumerate( output_ids ):
-		# crigne logic to handle prefix resp for rvq levels > 0
+		# cringe logic to handle prefix resp for rvq levels > 0
 		# a better way is to observe if the rvq level increased
 		should_flush = False
 		flushed = False
@@ -201,49 +315,51 @@ def unfold_outputs(
 
 				continue
 
-			if 0 <= id and id < text_tokens:
-				text_list[i].append( id )
-			elif text_tokens + audio_rvq_levels <= id and id < text_tokens + audio_rvq_levels + (audio_tokens * audio_rvq_levels):
-				prom_list[i].append( (id - text_tokens - audio_rvq_levels) % audio_tokens )
-			elif text_tokens + audio_rvq_levels + (audio_tokens * audio_rvq_levels) <= id:
-				resp_list[i].append( (id - text_tokens - audio_rvq_levels) % audio_tokens )
+			# text tokens
+			if text_start <= id and id < text_end:
+				text_list[i].append( (id - text_start) % config.text_tokens )
+			# lang tokens
+			elif lang_start <= id and id < lang_end:
+				lang_list[i].append( (id - lang_start) % config.langs )
+			# rvq levels
+			elif rvq_start <= id and id < rvq_end:
+				rvq_list[i].append( (id - rvq_start) % config.resp_levels )
+			# prom tokens
+			elif prom_start <= id and id < prom_end:
+				prom_list[i].append( (id - prom_start) % config.audio_tokens )
+			# task tokens
+			elif task_start <= id and id < task_end:
+				task_list[i].append( (id - task_start) % config.tasks )
+			# lang tokens
+			elif tone_start <= id and id < tone_end:
+				tone_list[i].append( (id - tone_start) % config.tones )
+			# resp tokens
+			elif resp_start <= id and id < resp_end:
+				resp_list[i].append( (id - resp_start) % config.audio_tokens )
+
 				if not flushed:
 					should_flush = True
 
 		if quant_levels is not None:
-			prom_list[i] = torch.Tensor(prom_list[i]).t().to(device=device, dtype=torch.int64)
-			resp_list[i] = torch.Tensor(resp_list[i]).t().to(device=device, dtype=torch.int64)
+			prom_list[i] = torch.Tensor(prom_list[i]).t().to(device=device, dtype=dtype)
+			resp_list[i] = torch.Tensor(resp_list[i]).t().to(device=device, dtype=dtype)
 		else:
-			prom_len = len(prom_list[i])
-			if prom_len % audio_rvq_levels == 0 and False:
-				prom_list[i] = torch.Tensor(prom_list[i]).reshape( audio_rvq_levels, prom_len // audio_rvq_levels ).t()
-			else:
-				bins = [ [] for _ in range(audio_rvq_levels) ]
-				for pos in range( prom_len ):
-					rvq = pos % audio_rvq_levels
-					bins[rvq].append( prom_list[i][pos] )
-				nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
-				bins = bins[:nearest]
-				prom_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
+			prom_list[i] = bin_to_rvqs( prom_list[i] )
+			resp_list[i] = bin_to_rvqs( resp_list[i] )
 
-			resp_len = len(resp_list[i])
-			if len(resp_list[i]) % audio_rvq_levels == 0 and False:
-				resp_list[i] = torch.Tensor(resp_list[i]).reshape( audio_rvq_levels, resp_len // audio_rvq_levels ).t()
-			else:
-				bins = [ [] for _ in range(audio_rvq_levels) ]
-				for pos in range( resp_len ):
-					rvq = pos % audio_rvq_levels
-					bins[rvq].append( resp_list[i][pos] )
-				nearest = ( len(bins) // audio_rvq_levels ) * audio_rvq_levels
-				bins = bins[:nearest]
-				resp_list[i] = torch.Tensor(bins).t().to(device=device, dtype=torch.int64)
-		
-		text_list[i] = torch.Tensor( text_list[i] ).to(device=device, dtype=torch.int64)
+		text_list[i] = torch.Tensor( text_list[i] ).to(device=device, dtype=dtype)
+		task_list[i] = torch.Tensor( task_list[i] ).to(device=device, dtype=dtype)
+		lang_list[i] = torch.Tensor( lang_list[i] ).to(device=device, dtype=dtype)
+		tone_list[i] = torch.Tensor( tone_list[i] ).to(device=device, dtype=dtype)
 
 	return dict(
 		text_list=text_list,
 		prom_list=prom_list,
-		resp_list=resp_list
+		resp_list=resp_list,
+		
+		task_list=task_list,
+		lang_list=lang_list,
+		tone_list=tone_list,
 	)
 
 # to-do: clean up this symmap mess
@@ -1072,7 +1188,7 @@ def _create_dataloader(dataset, training):
 		shuffle=False,
 		batch_size=cfg.hyperparameters.batch_size if training else cfg.evaluation.batch_size,
 		drop_last=training,
-		sampler=dataset.sampler,
+		sampler=dataset.sampler if training else None,
 	) if not isinstance(dataset.sampler, BatchedOrderedSampler) else dict(
 		batch_sampler=dataset.sampler,
 	)

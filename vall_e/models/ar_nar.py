@@ -137,50 +137,35 @@ class AR_NAR(Base):
 
 			# is training
 			if training:
+				# specifies how to sample probabilities of which RVQ levels to train against
 				p_rvq_levels = self.config.experimental.p_rvq_levels if self.config is not None else "equal"
-			
 				# determines which RVQ level to target per batch
-				quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels ]
-
+				quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels - 1 ]
+				# rate to perform token dropout errors
 				token_dropout_error = self.config.experimental.token_dropout_error
+				# RVQ levels to apply token dropout on
 				token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
+				# implicitly set it to all levels
 				if not token_dropout_rvq_levels:
-					token_dropout_rvq_levels = [0, self.resp_levels]
-
-				if p_rvq_levels == "equal":
+					token_dropout_rvq_levels = [0, self.resp_levels - 1]
+				# allow passing a specific distribution of RVQ levels
+				p_rvq_levels = p_rvq_levels if isinstance(p_rvq_levels, list) else []
+				if not p_rvq_levels:
+					lo, hi = quant_level_range[0], quant_level_range[1] + 1
 					# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-					quant_levels = [ random.randint(quant_level_range[0], quant_level_range[1] - 1) for i in range(batch_size) ]
-				else: # if p_rvq_levels == "auto":
-					# makes higher levels less likely
-					"""
-					def generate( lo=0, hi=8 ):
-						index = lo
-						p = random.random()
-						for i in range(lo, hi):
-							if p < 1.0 / (2 ** i):
-								index = i
-						return int(index)
-					"""
+					if p_rvq_levels == "equal":
+						p_rvq_levels = [ i for i in range( lo, hi ) ]
+					else:
+						# yuck
+						p_rvq_levels = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
 
-					# allow passing a specific distribution of RVQ levels
-					pool = p_rvq_levels if isinstance(p_rvq_levels, list) else []
-					if not pool:
-						lo, hi = quant_level_range[0], quant_level_range[1]
-						for i in range( lo, hi ):
-							rep = hi - i 
-							pool += [i] * rep
-
-					quant_levels = [ random.choice( pool ) for i in range(batch_size) ]
-
-				# these two are techinically equivalent if the audio embeddings handle things properly
-				"""
-				resps_list = [r[..., 0] if l == 0 else r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
-				stop_sequence = torch.Tensor([self.stop_token]).to(device=device, dtype=torch.int16)
-				"""
-
+				# input RVQ levels
+				quant_levels = [ random.choice( p_rvq_levels ) for i in range(batch_size) ]
+				# trim resps to only contain all levels below the target level
 				resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				# tensor to cat for RVQ level 0
 				stop_sequence = torch.Tensor([[self.stop_token] * 1]).to(device=device, dtype=torch.int16)
-
+				# I hate python's value/reference semantics so much
 				for i, quant_level, resps, proms in zip(range(batch_size), quant_levels, resps_list, proms_list):
 					# cap quant_level if it exceeds its corresponding resp/prom
 					if quant_level >= resps.shape[-1]:
@@ -213,7 +198,6 @@ class AR_NAR(Base):
 					# only apply stop token for RVQ level 0
 					if quant_level <= 0:
 						# append stop tokens for AR
-						# could technically do it in the .inputs call
 						resps_list[i] = torch.cat([ resps, stop_sequence ])
 					
 
