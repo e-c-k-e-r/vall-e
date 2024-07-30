@@ -16,6 +16,9 @@ Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`
 
 ## Install
 
+> [!NOTE]
+> There seems to be some form of regression in fancier attention mechanisms in some environments where you might need to explicitly set `attention` to `flash_attention_2` or `sdpa`.
+
 Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install git+https://github.com/e-c-k-e-r/vall-e`.
 
 I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.

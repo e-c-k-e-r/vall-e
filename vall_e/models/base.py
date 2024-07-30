@@ -489,15 +489,15 @@ class Base(nn.Module):
 			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
 
 		# ick, there has to be a better way
-		hf_attention = self.config.attention if self.config is not None else None
-
 		if self.config.attention == "auto":
 			if "flash" in AVAILABLE_ATTENTIONS:
 				self.config.attention = "flash"
 			elif "xformers" in AVAILABLE_ATTENTIONS:
 				self.config.attention = "xformers"
 			else:
-				self.config.attention = "mem_efficient"
+				self.config.attention = "sdpa"
+
+		hf_attention = self.config.attention if self.config is not None else None
 
 		if self.config.attention in ["xformers", "mem_efficient", "math", "flash"]:
 			hf_attention = None
