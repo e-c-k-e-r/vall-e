@@ -36,6 +36,10 @@ def main():
 	parser.add_argument("--mirostat-tau", type=float, default=0)
 	parser.add_argument("--mirostat-eta", type=float, default=0)
 	
+	parser.add_argument("--dry-multiplier", type=float, default=0)
+	parser.add_argument("--dry-base", type=float, default=1.75)
+	parser.add_argument("--dry-allowed-length", type=int, default=2)
+	
 	parser.add_argument("--seed", type=int, default=None)
 
 	parser.add_argument("--device", type=str, default=None)
@@ -58,6 +62,7 @@ def main():
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
+		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_multiplier,
 		seed=args.seed,
 	)
 

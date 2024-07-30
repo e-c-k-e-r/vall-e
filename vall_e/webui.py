@@ -122,6 +122,9 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--beam-width", type=int, default=kwargs["beam-width"])
 	parser.add_argument("--mirostat-tau", type=float, default=kwargs["mirostat-tau"])
 	parser.add_argument("--mirostat-eta", type=float, default=kwargs["mirostat-eta"])
+	parser.add_argument("--dry-multiplier", type=float, default=kwargs["dry-multiplier"])
+	parser.add_argument("--dry-base", type=float, default=kwargs["dry-base"])
+	parser.add_argument("--dry-allowed-length", type=int, default=kwargs["dry-allowed-length"])
 	args, unknown = parser.parse_known_args()
 
 	tmp = tempfile.NamedTemporaryFile(suffix='.wav')
@@ -154,6 +157,9 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			length_penalty=args.length_penalty,
 			mirostat_tau=args.mirostat_tau,
 			mirostat_eta=args.mirostat_eta,
+			dry_multiplier=args.dry_multiplier,
+			dry_base=args.dry_base,
+			dry_allowed_length=args.dry_allowed_length,
 		)
 	
 	wav = wav.squeeze(0).cpu().numpy()
@@ -263,6 +269,10 @@ with ui:
 				with gr.Row():
 					layout["inference"]["inputs"]["mirostat-tau"] = gr.Slider(value=0.0, minimum=0.0, maximum=8.0, step=0.05, label="Mirostat τ (Tau)", info="The \"surprise\" value when performing mirostat sampling. 0 to disable.")
 					layout["inference"]["inputs"]["mirostat-eta"] = gr.Slider(value=0.0, minimum=0.0, maximum=2.0, step=0.05, label="Mirostat η (Eta)", info="The \"learning rate\" during mirostat sampling applied to the maximum surprise.")
+				with gr.Row():
+					layout["inference"]["inputs"]["dry-multiplier"] = gr.Slider(value=0.0, minimum=0.0, maximum=8.0, step=0.05, label="DRY Multiplier", info="The multiplying factor for the DRY score penalty (0 to disable DRY sampling).")
+					layout["inference"]["inputs"]["dry-base"] = gr.Slider(value=0.0, minimum=0.0, maximum=8.0, step=0.05, label="DRY Base", info="The base of the exponent in the DRY score penalty")
+					layout["inference"]["inputs"]["dry-allowed-length"] = gr.Slider(value=2, minimum=0, maximum=75, step=1, label="Allowed Length", info="The maximimum length a token can be to perform DRY penalty with.")
 
 		layout["inference"]["buttons"]["inference"].click(
 			fn=do_inference,

@@ -29,7 +29,7 @@ from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, Mult
 
 from .arch import *
 from ..utils import wrapper as ml
-from ..samplers import reptition_penalize, length_penalize, ban_tokens, top_k_top_p_filtering, dynamic_temperature, top_k_logits_list, mirostat_sample
+from ..samplers import *
 
 from ..emb.qnt import encode_as_embedding
 
@@ -163,7 +163,7 @@ class AudioEmbedding(nn.Module):
 		# array of embeddings
 		#   proms are [0, resp_levels]
 		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
-		#     + resps cannot share the AR and NAR embeddings, since they do encode whether to predict the same level but in the next token or predict in place but the next level
+		#	 + resps cannot share the AR and NAR embeddings, since they do encode whether to predict the same level but in the next token or predict in place but the next level
 		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
 		# further experimentation is needed to see if this actually is useful
 		self.sums = sums
@@ -1139,7 +1139,7 @@ class Base(nn.Module):
 				if "len" in self.capabilities:
 					if task_list[i] != "len":
 						continue
-				else:
+				else: # elif "nar" in self.capabilities: # for when I stop coping and drop the NAR entirely
 					if quant_levels is not None and quant_levels[i] > 0:
 						continue
 
@@ -1173,9 +1173,9 @@ class Base(nn.Module):
 		# considerations:
 		# * split losses does not maintain the entire sequence
 		# * the first token is ignored for all pieces, rather than just the first text token (which is always provided)
-		#     + the other way at least should keep it intact this way
-		#     + extra logic might be required to instead offset from the end for the resp, rather than fit snuggly
-		#     + this might just be a spook since the odds the very first token of the AR mattering is slim (although I swear I hear a very brief audio pop sometimes)
+		#	 + the other way at least should keep it intact this way
+		#	 + extra logic might be required to instead offset from the end for the resp, rather than fit snuggly
+		#	 + this might just be a spook since the odds the very first token of the AR mattering is slim (although I swear I hear a very brief audio pop sometimes)
 		"""
 		self.loss = dict()
 		self.stats = dict(acc = dict())
@@ -1205,8 +1205,8 @@ class Base(nn.Module):
 				it += seq_len + 1 # +1 to incorporate the separator
 				
 				# for the AR, shift sequence so that it predicts the next token
-				#     (the NAR predicts the next token in place, so it's not necessary to do any modifications for it)
-				if quant_level == 0 and seq_len > 1:
+				#	 (the NAR predicts the next token in place, so it's not necessary to do any modifications for it)
+				if (quant_level == 0 or "nar" not in self.capabilities) and seq_len > 1:
 					l = self.causal_size
 					logit = logit[..., :-l, :]
 					input = input[..., l:] # shift sequence to the right by one (or causal chunk size)
@@ -1316,30 +1316,34 @@ class Base(nn.Module):
 
 	def sample(
 		self,
-		logits: list[Tensor],
-		resps_list: list[Tensor],
+		logits: list[Tensor], # logit scores
+		resps_list: list[Tensor], # previous tokens
 		quant_levels: int | list[int] | Tensor | None = None,
-
+		# base sampling parameters
 		temperature: float = 1.0,
-		min_temperature: float = -1.0,
+		min_temperature: float = -1.0, # activates dynamic temperature sampling
 		top_k: int = -100,
 		top_p: float = 1.0,
-
+		# repetition penalty parameters
 		repetition_penalty: float = 1.0,
 		repetition_penalty_decay: float = 0.0,
-		
+		# length penalty parameters
 		length_penalty: float = 0.0,
-		
+		# beam sampling parameters
 		beam_width: int = 0,
-
+		# mirostat sampling parameters
 		mirostat: list[dict] | None = None,
+		# DRY sampling parameters
+		dry_multiplier=0.0,
+		dry_base=1.75,
+		dry_allowed_length=2,
 	):
 		if min_temperature < 0:
 			min_temperature = temperature
 
 		# (NAR) return the entire generated response
-		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)
-		if quant_levels is not None:
+		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)		
+		if quant_levels is not None: #  and "nar" in self.capabilities: # for when I get around to coping about dropping the NAR entirely
 			logits = [ logit[-l:] for logit, l in zip(logits, map(len, resps_list)) ]
 		# (AR chunkwise) return the last chunkwise piece
 		elif self.causal:
@@ -1373,6 +1377,10 @@ class Base(nn.Module):
 			logits = [ dynamic_temperature(logit, temperature=temperature, min_temperature=min_temperature) for logit in logits ]
 		else:
 			logits = [ logit / temperature for logit in logits ]
+
+		# do DRY sampling
+		if dry_multiplier > 0.0:
+			logits = [ dry_sampling(logit, previous=resps[:, -1], factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, resps in zip( logits, resps_list ) ]
 
 		# do mirostat sampling
 		# currently incompatible with beam searching with the way the two are implemented, perhaps a night of brain bashing can make the two work

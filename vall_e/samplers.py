@@ -165,3 +165,45 @@ def mirostat_sample( logits, state = None ):
 	state["token"] = sorted_indices[prev_i]
 
 	return state
+
+# Credits to: https://github.com/oobabooga/text-generation-webui/pull/5677
+# performs DRY sampling
+# * (honestly it looks close to rep pen anyways but what do I know)
+# `logits` are the scores used to sample against
+# `previous` are the prior tokens to penalize with
+# `factor` is the scalar multiplier
+# `base` is the base number to raise to the (length - allowed_length)th power
+# `allowed_length` limits the range to apply DRY to
+def dry_sampling( logits, previous=None, factor=0.0, base=1.75, allowed_length=2 ):
+	if factor == 0.0 or previous is None:
+		return logits
+
+	lengths = {}
+	for i, token in enumerate( previous ):
+		length = 1
+		while True:
+			j = i - length
+			
+			# Start of input reached.
+			if j < 0:
+				break
+
+			previous_token = previous[-length-1].item()
+			
+			# Start of match reached.
+			if previous[j] != previous_token:
+				break
+
+			length += 1
+
+		if token in lengths:
+			lengths[token] = max(length, lengths[token])
+		else:
+			lengths[token] = length
+
+	for token, length in lengths.items():
+		if length < allowed_length:
+			break
+		logits[:, token] -= factor * base ** (length - allowed_length)
+
+	return logits

@@ -122,21 +122,33 @@ class TTS():
 		text,
 		references,
 		language="en",
+		#
 		max_ar_steps=6 * cfg.dataset.frames_per_second,
 		max_nar_levels=7,
+		#
 		input_prompt_length=0.0,
+		#
 		ar_temp=0.95,
 		nar_temp=0.5,
+		#
 		min_ar_temp=0.95,
 		min_nar_temp=0.5,
+		#
 		top_p=1.0,
 		top_k=0,
+		#
 		repetition_penalty=1.0,
 		repetition_penalty_decay=0.0,
 		length_penalty=0.0,
+		#
 		beam_width=0,
+		#
 		mirostat_tau=0,
 		mirostat_eta=0.1,
+		#
+		dry_multiplier=0.0,
+		dry_base=1.75,
+		dry_allowed_length=2,
 
 		seed = None,
 
@@ -193,6 +205,9 @@ class TTS():
 						sampling_beam_width=beam_width,
 						sampling_mirostat_tau=mirostat_tau,
 						sampling_mirostat_eta=mirostat_eta,
+						sampling_dry_multiplier=dry_multiplier,
+						sampling_dry_base=dry_base,
+						sampling_dry_allowed_length=dry_allowed_length,
 
 						disable_tqdm=not tqdm,
 					)

@@ -117,6 +117,9 @@ class AR_NAR(Base):
 		sampling_beam_width: int = 0,
 		sampling_mirostat_tau: float = 0.0,
 		sampling_mirostat_eta: float = 0.1,
+		sampling_dry_multiplier=0.0,
+		sampling_dry_base=1.75,
+		sampling_dry_allowed_length=2,
 
 		disable_tqdm=False,
 	):
@@ -261,8 +264,8 @@ class AR_NAR(Base):
 					min_temperature=sampling_min_temperature,
 					top_p=sampling_top_p,
 					top_k=sampling_top_k,
-					repetition_penalty=sampling_repetition_penalty,
-					repetition_penalty_decay=sampling_repetition_penalty_decay,
+					#repetition_penalty=sampling_repetition_penalty,
+					#repetition_penalty_decay=sampling_repetition_penalty_decay,
 					#length_penalty=sampling_length_penalty,
 					#beam_width=sampling_beam_width,
 					#mirostat=mirostat,
@@ -332,6 +335,10 @@ class AR_NAR(Base):
 				beam_width=sampling_beam_width,
 
 				mirostat=mirostat,
+
+				dry_multiplier=sampling_dry_multiplier,
+				dry_base=sampling_dry_base,
+				dry_allowed_length=sampling_dry_allowed_length,
 			)
 
 			if mirostat is not None:

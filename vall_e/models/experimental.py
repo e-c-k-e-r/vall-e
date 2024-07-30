@@ -206,11 +206,19 @@ class Model(LlmArchClass):
 				return self.forward(
 					input_ids=input_ids,
 					labels=target_ids,
+
+					quant_levels=quant_levels,
 				)
 	
 			if config.experimental.interleave:
 				input_ids, attention_mask = fold_inputs( text_list=text_list, prom_list=proms_list )
-				output = self.generate(input_ids=input_ids, attention_mask=attention_mask, max_length=steps*config.max_levels, eos_token_id=3, do_sample=False)
+				output = self.generate(
+					input_ids=input_ids,
+					attention_mask=attention_mask,
+					eos_token_id=3,
+					do_sample=True,
+					max_new_tokens=steps*config.max_levels,
+				)
 				return unfold_outputs( output )["resp_list"]
 
 			resps_list = [ [] for _ in range(batch_size) ]
@@ -222,13 +230,13 @@ class Model(LlmArchClass):
 				for batch in input_ids:
 					min_length = max( min_length, batch.shape[0] + 1 )
 
+				# to-do: figure out a way to do one forward pass but sample N tokens to replicate the NAR sample pass
 				output = self.generate(
 					input_ids=input_ids,
 					attention_mask=attention_mask,
-					min_length=min_length,
-					max_length=min_length+steps*2,
 					eos_token_id=3,
-					do_sample=False
+					do_sample=True,
+					max_new_tokens=steps,
 				)
 				
 				unfolded = unfold_outputs( output, quant_levels=quant_levels )
@@ -255,34 +263,40 @@ class Model(LlmArchClass):
 			return resps_list
 
 		if config.arch_type in ["mamba","mamba2"]:
-			if "attention_mask" in kwargs:
-				kwargs.pop("attention_mask")
+			kwargs.pop("attention_mask", None)
 
 		labels = kwargs.pop("labels", None)
+		quant_levels = kwargs.pop("quant_levels", None)
 
 		output = super().forward(*args, **kwargs)
 		logits = output.logits
 
 		# i HATE the correct way
 		if labels is not None:
-			if self.hyper_config is None or not self.hyper_config.loss_factors:
-				loss = sum([ F.cross_entropy( logit[:-1, :], label[1:], ignore_index=-100 ) for logit, label in zip( logits, labels ) ])
-				self.loss = dict(
-					nll = loss,
+			# predict the next token for AR, else predict in place
+			loss = sum([ F.cross_entropy(
+				logit[:-1, :] if quant_level == 0 or "nar" not in config.capabilities else logit,
+				label[1:] if quant_level == 0 or "nar" not in config.capabilities else label,
+				ignore_index=-100
+			) for logit, label, quant_level in zip( logits, labels, quant_levels ) ])
+
+			self.loss = dict(
+				nll = loss,
+			)
+
+			if self.accuracy_metric is not None:
+				self.stats = dict(
+					acc = (sum([ self.accuracy_metric( logit, target ) for logit, target in zip( logits, labels ) ] ) / len( logits )).item()
 				)
 
-				if self.accuracy_metric is not None:
-					self.stats = dict(
-						acc = (sum([ self.accuracy_metric( logit, target ) for logit, target in zip( logits, labels ) ] ) / len( logits )).item()
-					)
-
-			else:
+			"""
+			if config.loss_factors:
 				sep = 3
 				# determine specific sections to focus on
 				indices = [ [ idx for idx, token in enumerate( batch ) if token == sep ] for i, batch in enumerate( labels ) ]
 
 				text_index = 0
-				resp_index = 1 # 1 indluces everything non text, -3 includes pre_resp + resp (ignores prom, probably better to include prom here)
+				resp_index = 1 # 1 includes everything non text, -3 includes pre_resp + resp (ignores prom, probably better to include prom here)
 
 				labels_text = [ batch[:indices[i][text_index] + 1 ] for i, batch in enumerate( labels ) ]
 				labels_resp = [ batch[indices[i][resp_index] + 1:] for i, batch in enumerate( labels ) ]
@@ -305,6 +319,7 @@ class Model(LlmArchClass):
 							resp = (sum([ self.accuracy_metric( logit, target ) for logit, target in zip( logits_resp, labels_resp ) ] ) / len( logits_resp )).item(),
 						)
 					)
+			"""
 
 		return output
 
