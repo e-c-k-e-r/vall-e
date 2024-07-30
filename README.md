@@ -223,6 +223,7 @@ So far, this only allows you to load a different model without needing to restar
 ## To-Do
 
 * [x] train and release a serviceable model for finetuning against.
+  - LoRA tests shows it's already very capable, although there's room for higher quality (possibly in better NAR training).
 * [ ] train and release a ***good*** zero-shot model.
   - this should, hopefully, just simply requires another epoch or two for `ar+nar-llama-8`, as the foundation seems rather robust now.
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
@@ -234,6 +235,8 @@ So far, this only allows you to load a different model without needing to restar
 * [ ] clean up the README, and document, document, document onto the wiki.
 * [ ] extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - this requires a good foundational model before extending it to transfer tasks onto.
+* [ ] extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)
+  - desu these don't seem to be worthwhile improvements, as inferencing is already rather fast, and RAS is just a fancy sampler.
 * [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.

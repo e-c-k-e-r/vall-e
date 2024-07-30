@@ -13,7 +13,7 @@ def reptition_penalize( logits, previous, factor=1.0, decay=0.0, one_time=True )
 		return logits
 
 	unique = set()
-	priors = reversed(previous.tolist())
+	priors = reversed(previous)
 	for distance, token in enumerate(priors):
 		# skip if we're only applying the decay once
 		if one_time and token in unique:
@@ -181,25 +181,20 @@ def dry_sampling( logits, previous=None, factor=0.0, base=1.75, allowed_length=2
 	lengths = {}
 	for i, token in enumerate( previous ):
 		length = 1
-		while True:
+		while length < max(allowed_length, 50):
 			j = i - length
 			
 			# Start of input reached.
 			if j < 0:
 				break
 
-			previous_token = previous[-length-1].item()
-			
 			# Start of match reached.
-			if previous[j] != previous_token:
+			if previous[j] != previous[-length-1]:
 				break
 
 			length += 1
 
-		if token in lengths:
-			lengths[token] = max(length, lengths[token])
-		else:
-			lengths[token] = length
+		lengths[token] = max(length, lengths[token]) if token in lengths else length
 
 	for token, length in lengths.items():
 		if length < allowed_length:
