@@ -593,7 +593,7 @@ class Trainer:
 
 	load_state_dict: bool = False
 	load_states: bool = True
-	strict_loading: bool = True
+	strict_loading: bool = False
 	load_module_only: bool = False
 	restart_step_count: bool = False
 
