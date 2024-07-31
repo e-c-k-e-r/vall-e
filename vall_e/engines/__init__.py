@@ -48,10 +48,10 @@ def load_engines(training=True):
 		if cfg.lora is not None:			
 			checkpoint_path = cfg.ckpt_dir / cfg.lora.full_name / "latest"
 
-			# to handle the issue of training with deepspeed, but inferencing with local
-			if checkpoint_path.exists() and backend == "local":
-				tag = open(checkpoint_path).read()
-				checkpoint_path = cfg.ckpt_dir / cfg.lora.full_name / tag / "state.pth"
+		# to handle the issue of training with deepspeed, but inferencing with local
+		if checkpoint_path.exists() and backend == "local":
+			tag = open(checkpoint_path).read()
+			checkpoint_path = checkpoint_path.parent / tag / "state.pth"
 
 		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
 			print("Checkpoint missing, but weights found.")

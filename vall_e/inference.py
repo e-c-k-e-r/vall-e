@@ -190,9 +190,7 @@ class TTS():
 			phns = to_device(phns, device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
-			text_list = [ phns ]
-			proms_list = [ prom ]
-
+			# to-do: add in case for experimental.hf model
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_ar is not None:
 					resps_list = model_ar(

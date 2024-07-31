@@ -52,6 +52,7 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 
 	state_dict['module']['model.embed_tokens.weight'] = embedding.state_dict()
 	state_dict['module']['lm_head.weight'] = out_proj
+	
 	del state_dict['module']['classifier.bias']
 
 	return state_dict
@@ -130,7 +131,7 @@ def main():
 	# necessary to ensure we are actually exporting the weights right
 	cfg.inference.backend = cfg.trainer.backend
 
-	engines = load_engines(training=False)
+	engines = load_engines(training=False) # to ignore loading optimizer state
 	engines.export(userdata={"symmap": get_phone_symmap()}, callback=callback)
 
 if __name__ == "__main__":
