@@ -220,6 +220,10 @@ class ModelExperimentalSettings:
 	token_dropout_rate: float = 0.0 # probability to randomly set a token to a special dropout value
 	token_dropout_rvq_levels: list = field(default_factory=lambda: [1,8]) # determines which levels to do dropout, by default do not do dropout on RVQ level 0
 
+	causal_size: int = 1 # experimental setting to see if I can just do parallel decoding in chunks instead of one-at-a-time without resorting to exotic solutions
+	# VALL-E 2's approach of "combining token embeddings to group them" sounds terribad for a shared AR/NAR model
+	# however, introducing partial parallel decoding for the AR maybe maybe MAYBE might help try and unify the AR/NAR tasks better, MAYBE
+
 # I really need to clean this up
 @dataclass()
 class Model:

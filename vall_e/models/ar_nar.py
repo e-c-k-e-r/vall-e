@@ -71,7 +71,9 @@ class AR_NAR(Base):
 		# 1 for the stop token
 		# governs how much to shift the logits by
 		# could *technically* make it work to where it can also predict *ALL* RVQ levels in one step, but experimental.py is the better way to go about it
-		return 1 # if self.causal else 0
+		if hasattr(self, "config") and self.config:
+			return self.config.experimental.causal_size
+		return cfg.model.experimental.causal_size
 
 	@property
 	def version(self) -> int:
@@ -463,7 +465,7 @@ def example_usage():
 	tasks = cfg.dataset.tasks_list
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 150 * len(tasks)
+	steps = 150 * len(tasks) * cfg.model.experimental.causal_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""

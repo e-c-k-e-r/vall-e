@@ -419,7 +419,7 @@ class Base(nn.Module):
 
 		if "len" not in self.capabilities:
 			# +1 to include the stop token
-			n_resp_tokens = n_audio_tokens + self.causal_size
+			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
 			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 		else:
 			n_resp_tokens = n_audio_tokens
@@ -1352,13 +1352,13 @@ class Base(nn.Module):
 		devices = [ logit.device for logit in logits ]
 		logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 
-		# perform repetition penalizing	
-		if "len" not in self.capabilities:
-			logits = [ reptition_penalize(logit, previous=resps[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
-
 		# argmax instead
 		if temperature <= 0.0:
 			return [ logit.argmax(dim=1) for logit in logits ]
+
+		# perform repetition penalizing	
+		if "len" not in self.capabilities:
+			logits = [ reptition_penalize(logit, previous=resps[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:
