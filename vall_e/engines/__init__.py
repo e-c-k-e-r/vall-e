@@ -178,11 +178,19 @@ def load_engines(training=True):
 			for k in erase:
 				del state[k]
 
-			# resize embeddings
-			if "text_emb.weight" in state:
-				state["text_emb.weight"] = ml.resize_weight( state["text_emb.weight"], model.config.text_tokens )
-			if "rvq_l_emb.weight" in state:
-				state["rvq_l_emb.weight"] = ml.resize_weight( state["rvq_l_emb.weight"], model.config.resp_levels )
+			# resize modules if I'm doing experiments and can't be assed to manually trim things
+			if cfg.trainer.resize_modules:
+				uses_stop_token = 1 if "len" not in model.capabilities and model.causal_size > 0 else 0
+				keys = [
+					("text_emb.weight", model.config.text_tokens ),
+					("rvq_l_emb.weight", model.config.resp_levels ),
+					("resps_emb.embeddings.0.weight", model.config.audio_tokens + uses_stop_token ),
+					("model.embed_tokens.weight", model.config.audio_tokens + uses_stop_token ),
+					("classifiers.proj.0.weight", model.config.audio_tokens + uses_stop_token ),
+					("classifiers.proj.0.bias", model.config.audio_tokens + uses_stop_token ),
+				]
+				for k, tokens in keys:
+					state[k] = ml.resize_weight( state[k], tokens )
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 

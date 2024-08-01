@@ -250,7 +250,13 @@ class AudioClassifier(nn.Module):
 
 		xi = [ self.proj[l]( x ) for x, l in zip(xi, levels) ]
 		# pad if needed
-		xi = [ x if l == 0 else torch.cat( [ x, torch.Tensor( [[ -float("inf") ] for _ in range(x.shape[0])] ).to(dtype=dtype, device=device) ], dim=-1 ) for x, l in zip(xi, levels) ]
+		max_size = max([ x.shape[-1] for x in xi ])
+		xi = [
+			#x if l == 0 else
+			x if x.shape[-1] == max_size else
+			torch.cat( [ x, torch.Tensor( [[ -float("inf") ] for _ in range(x.shape[0])] ).to(dtype=dtype, device=device) ] * (max_size - x.shape[-1]), dim=-1 )
+			for x, l in zip(xi, levels)
+		]
 		return torch.stack( xi )
 
 class Metrics(nn.Module):
@@ -1060,7 +1066,7 @@ class Base(nn.Module):
 		# shamelessly grabbed from modeling_llama.py
 		ids = mask.long().cumsum(-1) - 1
 		ids.masked_fill_( mask == 0, 1 )
-		
+
 		# there's a better way
 		if not self.unified_position_ids:
 			x_list = []
@@ -1074,7 +1080,7 @@ class Base(nn.Module):
 				if not isinstance(input, torch.Tensor):
 					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] ) + 1
 
-				return input.shape[0] + (0 if name == "resp" else 1)
+				return input.shape[0] + (0 if name in ["resp", "len"] else 1)
 
 			for batch_index, batch_input in enumerate(inputs):
 				batch = torch.cat( [

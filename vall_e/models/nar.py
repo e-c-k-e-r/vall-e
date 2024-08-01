@@ -97,6 +97,8 @@ class NAR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 
+		training: bool | None = None,
+
 		max_steps: int = 1000,
 		max_levels: int = 0,
 		max_resp_context: int = -1,
