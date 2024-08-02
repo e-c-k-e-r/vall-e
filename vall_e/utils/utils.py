@@ -455,7 +455,7 @@ def get_model_offload_policy(module, policy=None):
 				# check if within budget
 				if buffered_size - size >= 0:
 					# add to buffer
-					buffered_modules.append( name )
+					buffered_modules.append( (name, size) )
 					buffered_size -= size
 				# budget exceeded, flush buffer
 				else:
@@ -465,7 +465,7 @@ def get_model_offload_policy(module, policy=None):
 					break
 
 			if buffered_modules and buffered_size:
-				device["modules"] += buffered_modules
+				device["modules"] += [ name for name, size in buffered_modules ]
 				device["free"] = buffered_size
 
 		modules = discarded
