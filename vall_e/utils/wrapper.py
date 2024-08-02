@@ -99,18 +99,17 @@ except Exception as e:
 # backwards compat
 from .utils import (
 	autocast_forward,
-	auto_to_forward,
-	replace_linear,
+	replace_linear as replace_linear_old,
 	replace_embedding as replace_embedding_old,
-	replace_attention as replace_attention_old,
+	replace_attention,
 	resize_weight,
 	offload_model,
 )
 
 # wrapped here so we can maintain default args
 def replace_linear( model, klass=Linear, target=torch.nn.Linear, verbose=False ):
-	return replace_embedding_old( model, klass, target, verbose )
+	return replace_linear_old( model, klass, target, verbose )
 def replace_embedding( model, klass=Embedding, target=torch.nn.Embedding, verbose=False ):
-	return replace_attention_old( model, klass, target, verbose )
+	return replace_embedding_old( model, klass, target, verbose )
 
 Embedding.forward = autocast_forward(Embedding.forward)

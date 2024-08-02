@@ -527,8 +527,8 @@ def example_usage():
 	cfg.optimizations.model_offloading = {
 		"devices": ["cuda:0", "cpu"],
 	#	"limits": [ 0.9, -1 ],
-		"assign": [[ f'layers.{i}.' for i in range(0,6) ], [ f'layers.{i}.' for i in range(6,12) ]],
-		"limits": [ 256 * (1024 ** 2), -1 ]
+		"assign": [[ f'layers.{i}.' for i in range(0,10) ], [ f'layers.{i}.' for i in range(11,12) ] + [ "model.norm" ]],
+	#	"limits": [ 256 * (1024 ** 2), -1 ]
 	}
 	"""
 	
