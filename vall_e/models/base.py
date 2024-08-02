@@ -250,6 +250,7 @@ class AudioClassifier(nn.Module):
 
 		xi = [ self.proj[l]( x ) for x, l in zip(xi, levels) ]
 		# pad if needed
+		# to-do: validate that this causes ZERO issues
 		max_size = max([ x.shape[-1] for x in xi ])
 		xi = [
 			#x if l == 0 else

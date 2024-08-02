@@ -522,6 +522,16 @@ def example_usage():
 		
 	if cfg.optimizations.replace and cfg.optimizations.embedding:
 		model = ml.replace_embedding( model )
+
+	"""
+	cfg.optimizations.model_offloading = {
+		"devices": ["cuda:0", "cpu"],
+		"limits": [ 0.5, -1 ]
+	#	"limits": [ 256 * (1024 ** 2), -1 ]
+	}
+	"""
+	if cfg.optimizations.model_offloading:
+		model = ml.offload_model( model, policy=cfg.optimizations.model_offloading )
 	
 	engine = Engine(model=model, optimizer=optimizer)
 

@@ -680,6 +680,10 @@ class Optimizations:
 	bitnet: bool = False # use bitnet
 	fp8: bool = False # use fp8
 
+	model_offloading: dict | None = None # automatically splits the model over a list of devices
+	# example: {"include":["model"], "limits": [ (6 * 1024) * (1024 ** 2), -1 ]} will have the GPU capped to 6GiB, and offload the remaining layers to CPU
+	# example: {"include":["model"], "device": ["cuda:0", "cuda:1"], "limits": [ 0.5, 0.5 ]} will have the GPU 1 try and use 50% of the model, and GPU 2 try and use the other 50%
+
 @dataclass()
 class Config(BaseConfig):
 	device: str = "cuda" # target device

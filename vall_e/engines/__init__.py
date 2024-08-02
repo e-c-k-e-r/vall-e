@@ -235,4 +235,8 @@ def load_engines(training=True):
 	for name, engine in engines.items():
 		engine.freeze(freeze_all=False)
 
+		# split models over requested devices
+		if cfg.optimizations.model_offloading:
+			engine.module = ml.offload_model( engine.module, policy=cfg.optimizations.model_offloading )
+
 	return engines

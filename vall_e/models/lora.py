@@ -11,6 +11,8 @@ from torch import Tensor, nn
 import math
 from typing import Optional, List
 
+from ..utils import passes_policy
+
 # LoRA Linear for replacement
 # Pros: simple, just needs to reuse the replace_linear and copy weights
 # Cons: does not work with other Linears (bnb, bitnet, te's fp8, etc), cannot apply multiple LoRAs (although for audio why would you)
@@ -143,22 +145,6 @@ class ParameterizedLoRA(nn.Module):
 		# swap because we're feeding the output as our input
 		# M$'s LoRA class arranges things to where this isn't necessary
 		return cls( in_features = out_channels, out_features = in_channels, bias = layer.bias is not None, **kwargs ).to(device=device, dtype=dtype)
-
-def passes_policy( policy, name ):
-	if policy is None:
-		return True
-
-	if "exclude" in policy:
-		for term in policy["exclude"]:
-			if term in name:
-				return False
-
-	if "include" in policy:
-		for term in policy["include"]:
-			if term in name:
-				return True
-
-	return False
 
 def apply_lora( model, register = True, merge = False, policy = None, use_parametrize = False, **kwargs ):
 	device =  next(model.parameters()).device
