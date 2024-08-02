@@ -394,11 +394,17 @@ def get_model_offload_policy(module, policy=None):
 	# default to only include the core model, and not the other modules (embeddings) in the splitting policy
 	if "include" not in policy:
 		policy["include"] = ["model"]
+	
 	if "limits" not in policy:
 		policy["limits"] = []
 
+	if "assign" not in policy:
+		policy["assign"] = []
+
 	if "devices" not in policy:
 		policy["devices"]  = [f'{"cuda"}:{i}' for i in range(torch.cuda.device_count())] + ['cpu'] # + cpu to spill the remainder on CPU if overbudget
+
+	print( policy )
 
 	# create initial device info
 	devices = [ get_device_properties(device) | {"modules": []} for device in policy["devices"] ]
@@ -422,8 +428,42 @@ def get_model_offload_policy(module, policy=None):
 		# cap to requested size
 		devices[i]["free"] = cap
 
+	# assign if specific parts of the model are requested for assignment
+	if policy["assign"]:
+		discarded = []
+		# yuck, there has to be a better way
+		for device_index, includes in enumerate( policy["assign"] ):
+			device = devices[device_index]
+
+			buffered_modules = []
+			buffered_size = device["free"]
+
+			# iterate through list of modules to compare against includes
+			for name, size in modules:
+				# doesn't pass policy
+				if not passes_policy( {"include": includes}, name ):
+					continue
+				# check if within budget
+				if buffered_size - size >= 0:
+					# add to buffer
+					buffered_modules.append( name )
+					buffered_size -= size
+				# budget exceeded, flush buffer
+				else:
+					discarded += buffered_modules
+					buffered_modules = []
+					buffered_size = 0
+					break
+
+			if buffered_modules and buffered_size:
+				device["modules"] += buffered_modules
+				device["free"] = buffered_size
+
+		modules = discarded
+
 	device_index = 0
 	module_index = 0
+	# assign modules to each device
 	while module_index < len(modules) and device_index < len(devices):
 		device = devices[device_index]
 		name, size = modules[module_index]

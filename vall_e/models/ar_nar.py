@@ -526,17 +526,18 @@ def example_usage():
 	"""
 	cfg.optimizations.model_offloading = {
 		"devices": ["cuda:0", "cpu"],
-		"limits": [ 0.5, -1 ]
-	#	"limits": [ 256 * (1024 ** 2), -1 ]
+	#	"limits": [ 0.9, -1 ],
+		"assign": [[ f'layers.{i}.' for i in range(0,6) ], [ f'layers.{i}.' for i in range(6,12) ]],
+		"limits": [ 256 * (1024 ** 2), -1 ]
 	}
 	"""
-	if cfg.optimizations.model_offloading:
-		model = ml.offload_model( model, policy=cfg.optimizations.model_offloading )
 	
 	engine = Engine(model=model, optimizer=optimizer)
-
 	engines = Engines({"ar+nar": engine})
 	engines.setup()
+	
+	if cfg.optimizations.model_offloading:
+		model = ml.offload_model( model, policy=cfg.optimizations.model_offloading )
 
 	"""
 	torch.save( {
