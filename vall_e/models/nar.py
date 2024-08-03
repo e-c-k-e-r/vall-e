@@ -295,7 +295,7 @@ class NAR(Base):
 			# sanitize
 			for i, token in enumerate(r):
 				if token > 10:
-					r[i] = 0
+					r[i][0] = stop_token
 
 			# append tokens
 			for i, ri in enumerate(r):

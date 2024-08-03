@@ -183,7 +183,7 @@ def load_engines(training=True):
 				uses_stop_token = 1 if "len" not in model.capabilities and model.causal_size > 0 else 0
 				keys = [
 					("text_emb.weight", model.config.text_tokens ),
-					("rvq_l_emb.weight", model.config.resp_levels ),
+					("rvq_l_emb.weight", model.config.resp_levels + (1 if "len" in model.config.capabilities else 0) ),
 					("resps_emb.embeddings.0.weight", model.config.audio_tokens + uses_stop_token ),
 					("model.embed_tokens.weight", model.config.audio_tokens + uses_stop_token ),
 					("classifiers.proj.0.weight" if model.config.experimental.split_classifiers else 'classifier.weight', model.config.audio_tokens + uses_stop_token ),
