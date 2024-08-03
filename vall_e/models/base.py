@@ -500,6 +500,8 @@ class Base(nn.Module):
 			# experimental NAR-only mode
 			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
 
+		# there seems to have been a regression where anything touching the wrapped LlamaAttention class breaks
+		"""
 		# ick, there has to be a better way
 		if self.config.attention == "auto":
 			if "flash" in AVAILABLE_ATTENTIONS:
@@ -515,6 +517,15 @@ class Base(nn.Module):
 			hf_attention = None
 			if self.config.attention not in AVAILABLE_ATTENTIONS:
 				raise ValueError(f"Requesting attention `{self.config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
+		"""
+
+		if self.config.attention == "auto":
+			if "flash" in AVAILABLE_ATTENTIONS:
+				self.config.attention = "flash_attention_2"
+			else:
+				self.config.attention = "sdpa"
+		
+		hf_attention = self.config.attention if self.config is not None else None
 
 		if self.arch_type == "transformer":
 			self.sin_emb = SinusoidalEmbedding(d_model)
@@ -746,8 +757,10 @@ class Base(nn.Module):
 		if hasattr( self.model, "embeddings" ):
 			del self.model.embeddings
 
+		"""
 		if self.config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
 			self.model = ml.replace_attention( self.model, klass=LlamaAttention, target=LlamaAttention_Base, mode=self.config.attention )
+		"""
 
 		if not split_classifiers:
 			self.classifier = nn.Linear(d_model, n_resp_tokens)
