@@ -396,6 +396,9 @@ def get_module_size( module ):
     buffer_size = sum([b.nelement() * b.element_size() for b in module.buffers()])
     return param_size + buffer_size
 
+# to-do: rewrite all this shit, I don't know what I was thinking when implementing it this way
+# it'd be better to just attach to layers itself rather than every single module
+
 # assigns modules to requested devices for a given policy
 def get_model_offload_policy(module, policy=None):
 	# handle any other weird values this is set to

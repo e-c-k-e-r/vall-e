@@ -186,8 +186,8 @@ def load_engines(training=True):
 					("rvq_l_emb.weight", model.config.resp_levels ),
 					("resps_emb.embeddings.0.weight", model.config.audio_tokens + uses_stop_token ),
 					("model.embed_tokens.weight", model.config.audio_tokens + uses_stop_token ),
-					("classifiers.proj.0.weight", model.config.audio_tokens + uses_stop_token ),
-					("classifiers.proj.0.bias", model.config.audio_tokens + uses_stop_token ),
+					("classifiers.proj.0.weight" if model.config.experimental.split_classifiers else 'classifier.weight', model.config.audio_tokens + uses_stop_token ),
+					("classifiers.proj.0.bias" if model.config.experimental.split_classifiers else 'classifier.bias', model.config.audio_tokens + uses_stop_token ),
 				]
 				for k, tokens in keys:
 					state[k] = ml.resize_weight( state[k], tokens )
