@@ -808,7 +808,8 @@ class Dataset(_Dataset):
 			if key not in cfg.hdf5:
 				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
 
-			metadata = cfg.hdf5[key].attrs
+			#metadata = cfg.hdf5[key].attrs
+			metadata = { f'{k}': f'{v}' for k, v in cfg.hdf5[key].attrs.items() }
 
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]
@@ -915,7 +916,8 @@ class Dataset(_Dataset):
 			if key not in cfg.hdf5:
 				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
 
-			metadata = cfg.hdf5[key].attrs
+			# I need to do some weird coersion to a normal dict because it'll bitch about Hdf5 objects not being pickleable in worker processes
+			metadata = { f'{k}': f'{v}' for k, v in cfg.hdf5[key].attrs.items() }
 
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]

@@ -536,8 +536,10 @@ def example_usage():
 	engines = Engines({"ar+nar": engine})
 	engines.setup()
 	
+	"""
 	if cfg.optimizations.model_offloading:
 		model = ml.offload_model( model, policy=cfg.optimizations.model_offloading )
+	"""
 
 	"""
 	torch.save( {

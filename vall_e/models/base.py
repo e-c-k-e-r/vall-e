@@ -438,6 +438,10 @@ class Base(nn.Module):
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 
+		# there seems to be a problem with the NAR-only model with non-unified position IDs.............
+		if "len" in self.capabilities and not unified_position_ids:
+			raise Exception("ERROR: model instability for NAR-only model when not using unified position IDs.")
+
 		self.unified_position_ids = unified_position_ids
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
@@ -1081,11 +1085,12 @@ class Base(nn.Module):
 				if not isinstance(input, torch.Tensor):
 					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] ) + 1
 
+				# ending input will not have a separator later
 				return input.shape[0] + (0 if name in ["resp", "len"] else 1)
 
 			for batch_index, batch_input in enumerate(inputs):
 				batch = torch.cat( [
-					torch.Tensor([*range(get_input_token_length(name, input))])
+					torch.Tensor([*range(get_input_token_length(name, input))]).to(dtype=torch.int32)
 					for name, input in batch_input if name != "task"
 				] )
 
