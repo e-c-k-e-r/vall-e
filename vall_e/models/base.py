@@ -438,8 +438,10 @@ class Base(nn.Module):
 			l_tokens = [n_resp_tokens] * (self.n_resp_levels + (1 if split_classifiers else 0))
 
 		# there seems to be a problem with the NAR-only model with non-unified position IDs.............
+		"""
 		if "len" in self.capabilities and not unified_position_ids:
 			raise Exception("ERROR: model instability for NAR-only model when not using unified position IDs.")
+		"""
 
 		self.unified_position_ids = unified_position_ids
 
