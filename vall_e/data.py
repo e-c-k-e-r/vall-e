@@ -808,7 +808,7 @@ class Dataset(_Dataset):
 			if key not in cfg.hdf5:
 				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
 
-			metadata = cfg.hdf5[key].attrs()
+			metadata = cfg.hdf5[key].attrs
 
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]
@@ -915,7 +915,7 @@ class Dataset(_Dataset):
 			if key not in cfg.hdf5:
 				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
 
-			metadata = cfg.hdf5[key].attrs()
+			metadata = cfg.hdf5[key].attrs
 
 			text = cfg.hdf5[key]["text"][:]
 			resps = cfg.hdf5[key]["audio"][:, :]
