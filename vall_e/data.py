@@ -14,6 +14,7 @@ from .config import cfg
 from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
+from .utils.io import torch_save, torch_load
 
 from collections import defaultdict
 from functools import cache, cached_property
@@ -739,7 +740,7 @@ class Dataset(_Dataset):
 				"samplers": { name: sampler.get_state() for name, sampler in self.samplers.items() },
 				"spkr_samplers": { name: sampler.get_state() for name, sampler in self.spkr_samplers.items() },
 			}
-		torch.save(state_dict, path)
+		torch_save(state_dict, path)
 
 	def load_state_dict(self, path = None):
 		if path is None:
@@ -748,7 +749,7 @@ class Dataset(_Dataset):
 		if not path.exists():
 			return
 
-		state_dict = torch.load(path)
+		state_dict = torch_load(path)
 		if self.sampler_type == "path":
 			state_dict = self.sampler.set_state(state_dict)
 		else:

@@ -53,6 +53,7 @@ setup(
         # HF bloat
         "tokenizers",
         "transformers",
+        "safetensors",
 
         # training bloat
         "auraloss[all]", # [all] is needed for MelSTFTLoss

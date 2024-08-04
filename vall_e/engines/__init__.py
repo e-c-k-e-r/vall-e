@@ -12,6 +12,7 @@ from .base import Engines, TrainFeeder, default_feeder, Engine as LocalEngine
 
 from ..models import get_models, get_model
 from ..utils import wrapper as ml
+from ..utils.io import torch_save, torch_load
 from ..models.lora import apply_lora, lora_load_state_dict
 
 import torch
@@ -42,7 +43,7 @@ def load_engines(training=True):
 
 		checkpoint_path = cfg.ckpt_dir / name / "latest"
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
-		load_path = cfg.ckpt_dir / name / "fp32.pth"
+		load_path = cfg.ckpt_dir / name / f"fp32.{cfg.weights_format}"
 
 		# actually use the lora-specific checkpoint if available
 		if cfg.lora is not None:			
@@ -51,15 +52,15 @@ def load_engines(training=True):
 		# to handle the issue of training with deepspeed, but inferencing with local
 		if checkpoint_path.exists() and backend == "local":
 			tag = open(checkpoint_path).read()
-			checkpoint_path = checkpoint_path.parent / tag / "state.pth"
+			checkpoint_path = checkpoint_path.parent / tag / f"state.{cfg.weights_format}"
 
 		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
-			print("Checkpoint missing, but weights found.")
+			print("Checkpoint missing, but weights found:", load_path)
 			loads_state_dict = True
 
 		# load state early
 		if loads_state_dict:
-			state = torch.load(load_path, map_location=torch.device(cfg.device))
+			state = torch_load(load_path, device=cfg.device)
 
 			# check if config is defined in state, and re-initialize the model
 			if "config" in state and False:
@@ -196,11 +197,11 @@ def load_engines(training=True):
 
 			# load lora weights if exists
 			if cfg.lora is not None:
-				lora_path = cfg.ckpt_dir / cfg.lora.full_name / "lora.pth"
+				lora_path = cfg.ckpt_dir / cfg.lora.full_name / f"lora.{cfg.weights_format}"
 				if lora_path.exists():
 					print( "Loaded LoRA state dict:", lora_path )
 
-					state = torch.load(lora_path, map_location=torch.device(cfg.device))
+					state = torch_load(lora_path, device=cfg.device)
 					state = state['lora' if 'lora' in state else 'module']
 					lora_load_state_dict( model, state )
 

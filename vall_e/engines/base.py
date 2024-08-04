@@ -29,6 +29,7 @@ def default_feeder(engine, batch):
 from ..config import cfg
 from ..utils import dispatch_attribute, flatten_dict, gather_attribute, do_gc, to_device
 from ..utils.distributed import init_distributed, distributed_initialized, is_global_leader, world_size, cleanup_distributed
+from ..utils.io import torch_save, torch_load
 from ..models.lora import freeze_non_lora_weights, lora_get_state_dict, lora_load_state_dict
 
 import logging
@@ -136,10 +137,10 @@ class Engine():
 				lora, module = lora_get_state_dict( module, split = True )
 				save_dir = cfg.ckpt_dir / cfg.lora.full_name
 
-			save_path = save_dir / tag / "state.pth"
+			save_path = save_dir / tag / f"state.{cfg.weights_format}"
 			save_path.parent.mkdir(parents=True, exist_ok=True)
 
-			torch.save({
+			torch_save({
 				"module": module,
 				"lora": lora,
 				"optimizer": self.optimizer.state_dict() if self.optimizer is not None else None,
@@ -170,12 +171,12 @@ class Engine():
 
 			tag = open(tag_path).read()
 
-		load_path = load_dir / tag / "state.pth"
+		load_path = load_dir / tag / f"state.{cfg.weights_format}"
 
 		if not load_path.exists():
 			return
 
-		state = torch.load(load_path, map_location=torch.device(cfg.device))
+		state = torch_load(load_path, device=cfg.device)
 
 		self.global_steps = state['stats']['global_step'] if 'stats' in state else state['global_step']
 		self.micro_steps = state['stats']['micro_step'] if 'stats' in state else state['micro_step']
@@ -187,10 +188,10 @@ class Engine():
 		load_lr_scheduler_states = load_lr_scheduler_states and self.lr_scheduler is not None and 'lr_scheduler' in state
 		
 		if load_optimizer_states:
-			self.optimizer.load_state_dict(state['optimizer']) #, map_location=torch.device(cfg.device))
+			self.optimizer.load_state_dict(state['optimizer']) #, device=cfg.device)
 		
 		if load_lr_scheduler_states:
-			self.lr_scheduler.load_state_dict(state['lr_scheduler']) #, map_location=torch.device(cfg.device))
+			self.lr_scheduler.load_state_dict(state['lr_scheduler']) #, device=cfg.device)
 
 		if 'lora' in state:
 			lora_load_state_dict( self.module, state['lora'] )
@@ -324,17 +325,25 @@ class Engines(dict[str, Engine]):
 		for engine in self.values():
 			engine.dispatch_attribute(*args, **kwargs)
 
-	def export(self, userdata={}, callback=None, dtype=None):
+	def export(self, userdata={}, callback=None, dtype=None, format=None):
+		if not format:
+			format = cfg.weights_format
+		format = format.lower()
+
 		if dtype is None:
 			dtype = cfg.trainer.dtype
 
 		for name, engine in self.items():
 			module = engine.module.state_dict()
 			lora = None
-			save_path = cfg.ckpt_dir / name / "fp32.pth"
+			save_path = cfg.ckpt_dir / name / f"fp32.{format}"
 			config = engine.module.config if hasattr(engine.module, "config") else engine.hyper_config
+			
+			# coerce
 			if not isinstance(config, dict):
 				config = config.__dict__
+			if not isinstance(config['experimental'], dict):
+				config['experimental'] = config['experimental'].__dict__
 
 			# safety
 			for k, v in module.items():
@@ -342,7 +351,7 @@ class Engines(dict[str, Engine]):
 
 			if cfg.lora is not None:				
 				lora, module = lora_get_state_dict( module, split = True )
-				save_path = cfg.ckpt_dir / cfg.lora.full_name / "fp32.pth"
+				save_path = cfg.ckpt_dir / cfg.lora.full_name / f"fp32.{format}"
 
 			state_dict = {
 				'module': module,
@@ -363,7 +372,7 @@ class Engines(dict[str, Engine]):
 			if callback:
 				state_dict = callback( state_dict, config = engine.hyper_config, save_path = save_path )
 
-			torch.save(state_dict, save_path)
+			torch_save(state_dict, save_path)
 			print(f"Exported {name} to {save_path}")
 
 	def save_checkpoint(self, tag=None):

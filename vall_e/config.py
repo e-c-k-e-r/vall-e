@@ -716,6 +716,8 @@ class Config(BaseConfig):
 
 	audio_backend: str = "vocos" # audio backend to use "encodec" | "vocos" | "dac""
 
+	weights_format: str = "pth" # "pth" | "sft"
+
 	@property
 	def model(self):
 		for i, model in enumerate(self.models):
@@ -882,10 +884,14 @@ class Config(BaseConfig):
 			try:
 				from transformers import PreTrainedTokenizerFast
 
-				tokenizer_path = cfg.rel_path / cfg.tokenizer_path
-				if not tokenizer_path.exists():
+				tokenizer_path = cfg.rel_path / cfg.tokenizer_path if cfg.yaml_path is not None else None
+				if tokenizer_path and not tokenizer_path.exists():
 					tokenizer_path = Path("./data/") / cfg.tokenizer_path
-				cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
+				
+				if tokenizer_path and tokenizer_path.exists():
+					cfg.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
+				else:
+					cfg.tokenizer = NaiveTokenizer()
 			except Exception as e:
 				cfg.tokenizer = NaiveTokenizer()
 				print("Error while parsing tokenizer:", e)
