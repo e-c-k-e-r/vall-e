@@ -12,7 +12,7 @@ from .base import Engines, TrainFeeder, default_feeder, Engine as LocalEngine
 
 from ..models import get_models, get_model
 from ..utils import wrapper as ml
-from ..utils.io import torch_save, torch_load
+from ..utils.io import torch_save, torch_load, pick_path
 from ..models.lora import apply_lora, lora_load_state_dict
 
 import torch
@@ -43,7 +43,7 @@ def load_engines(training=True):
 
 		checkpoint_path = cfg.ckpt_dir / name / "latest"
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
-		load_path = cfg.ckpt_dir / name / f"fp32.{cfg.weights_format}"
+		load_path = pick_path( cfg.ckpt_dir / name / f"fp32.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
 		# actually use the lora-specific checkpoint if available
 		if cfg.lora is not None:			
@@ -52,7 +52,7 @@ def load_engines(training=True):
 		# to handle the issue of training with deepspeed, but inferencing with local
 		if checkpoint_path.exists() and backend == "local":
 			tag = open(checkpoint_path).read()
-			checkpoint_path = checkpoint_path.parent / tag / f"state.{cfg.weights_format}"
+			checkpoint_path = pick_path( checkpoint_path.parent / tag / f"state.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
 		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
 			print("Checkpoint missing, but weights found:", load_path)
@@ -197,7 +197,7 @@ def load_engines(training=True):
 
 			# load lora weights if exists
 			if cfg.lora is not None:
-				lora_path = cfg.ckpt_dir / cfg.lora.full_name / f"lora.{cfg.weights_format}"
+				lora_path = pick_path( cfg.ckpt_dir / cfg.lora.full_name / f"lora.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 				if lora_path.exists():
 					print( "Loaded LoRA state dict:", lora_path )
 

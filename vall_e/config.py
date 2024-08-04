@@ -718,6 +718,8 @@ class Config(BaseConfig):
 
 	weights_format: str = "pth" # "pth" | "sft"
 
+	supported_weights_formats: list[str] = field(default_factory=lambda: ["sft", "safetensors", "pt", "pth"])
+
 	@property
 	def model(self):
 		for i, model in enumerate(self.models):

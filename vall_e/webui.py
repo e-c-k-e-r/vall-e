@@ -33,7 +33,10 @@ def gradio_wrapper(inputs):
 		def wrapped_function(*args, **kwargs):
 			for i, key in enumerate(inputs):
 				kwargs[key] = args[i]
-			return fun(**kwargs)
+			try:
+				return fun(**kwargs)
+			except Exception as e:
+				raise gr.Error(str(e))
 		return wrapped_function
 	return decorated
 
@@ -95,6 +98,9 @@ def init_tts(yaml=None, restart=False):
 
 @gradio_wrapper(inputs=layout["inference"]["inputs"].keys())
 def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
+	if not cfg.yaml_path:
+		raise Exception("No YAML loaded.")
+
 	if kwargs.pop("dynamic-sampling", False):
 		kwargs['min-ar-temp'] = 0.85 if kwargs['ar-temp'] > 0.85 else 0.0
 		kwargs['min-nar-temp'] = 0.85 if kwargs['nar-temp'] > 0.85 else 0.0 # should probably disable it for the NAR
@@ -131,7 +137,7 @@ def do_inference( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	"""
 	if not args.references:
-		raise ValueError("No reference audio provided.")
+		raise Exception("No reference audio provided.")
 	"""
 
 	tts = init_tts()

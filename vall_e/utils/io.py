@@ -8,6 +8,16 @@ from safetensors.torch import save_file as sft_save
 def coerce_path( path ):
 	return path if isinstance( path, Path ) else Path(path)
 
+def pick_path( path, *suffixes ):
+	suffixes = [*suffixes]
+
+	for suffix in suffixes:
+		p = path.with_suffix( suffix )
+		if p.exists():
+			return p
+
+	return path
+
 def is_dict_of( d, t ):
 	if not isinstance( d, dict ):
 		return False
