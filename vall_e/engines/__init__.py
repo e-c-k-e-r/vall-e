@@ -191,6 +191,8 @@ def load_engines(training=True):
 					("classifiers.proj.0.bias" if model.config.experimental.split_classifiers else 'classifier.bias', model.config.audio_tokens + uses_stop_token ),
 				]
 				for k, tokens in keys:
+					if k not in state:
+						continue
 					state[k] = ml.resize_weight( state[k], tokens )
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)

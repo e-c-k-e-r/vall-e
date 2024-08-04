@@ -27,7 +27,7 @@ I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 
-A script to setup a proper environment and download the weights can be invoked with `./scripts/setup.sh`. This will automatically create a `venv`, and download the weights and config file to the right place.
+A script to setup a proper environment and download the weights can be invoked with `./scripts/setup.sh`. This will automatically create a `venv`, and download the `ar+nar-llama-8` weights and config file to the right place.
 
 ## Train
 
@@ -155,10 +155,10 @@ For audio backends:
 * `math`: torch's SDPA's `math` implementation
 * `mem_efficient`: torch's SDPA's memory efficient (`xformers` adjacent) implementation
 * `flash`: torch's SDPA's flash attention implementation
-* `xformers`: [facebookresearch/xformers](https://github.com/facebookresearch/xformers/)'s memory efficient attention
-* `auto`: determine the best fit from the above
+* `xformers`: ~~[facebookresearch/xformers](https://github.com/facebookresearch/xformers/)'s memory efficient attention~~ Aliased to `mem_efficient`
 * `sdpa`: integrated `LlamaSdpaAttention` attention model
 * `flash_attention_2`: integrated `LlamaFlashAttetion2` attention model
+* `auto`: determine the best fit from the above
 
 The wide support for various backends is solely while I try and figure out which is the "best" for a core foundation model.
 
@@ -167,6 +167,10 @@ The wide support for various backends is solely while I try and figure out which
 To export the models, run: `python -m vall_e.export --yaml=./training/config.yaml`.
 
 This will export the latest checkpoints, for example, under `./training/ckpt/ar+nar-retnet-8/fp32.pth`, to be loaded on any system with PyTorch, and will include additional metadata, such as the symmap used, and training stats.
+
+Desite being called `fp32.pth`, you can export it to a different precision type with `--dtype=float16|bfloat16|float32`.
+
+You can also export to `safetensors` with `--format=sft`, and `fp32.sft` will be exported instead.
 
 ## Synthesis
 
@@ -194,6 +198,9 @@ And some experimental sampling flags you can use too (your mileage will ***defin
   + This simply uplifts the [original implementation](https://github.com/basusourya/mirostat/blob/master/mirostat.py) to perform it.
   + **!**NOTE**!**: This is incompatible with beam search sampling (for the meantime at least).
 * `--mirostat-eta`: (AR only) the "learning rate" during mirostat sampling applied to the maximum surprise.
+* `--dry-multiplier`: (AR only) performs DRY sampling, the scalar factor.
+* `--dry-base`: (AR only) for DRY sampling, the base of the exponent factor.
+* `--dry-allowed-length`: (AR only) for DRY sampling, the window to perform DRY sampling within.
 
 ### Web UI
 
@@ -208,6 +215,7 @@ Synthesizing speech is simple:
 
 * `Input Prompt`: The guiding text prompt. Each new line will be it's own generated audio to be stitched together at the end.
 * `Audio Input`: The reference audio for the synthesis. Under Gradio, you can trim your clip accordingly, but leaving it as-is works fine.
+  - A properly trained model can inference without a prompt to generate a random voice (without even needing to generate a random prompt itself).
 * `Output`: The resultant audio.
 * `Inference`: Button to start generating the audio.
 
@@ -231,12 +239,15 @@ So far, this only allows you to load a different model without needing to restar
   - the NAR benefits from greedy sampling, and anything else just harms output quality.
 * [ ] clean up the README, and document, document, document onto the wiki.
 * [ ] extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
-  - this requires a good foundational model before extending it to transfer tasks onto.
+  - this requires a good foundational model before extending it to transfer tasks onto, and a large corpus of the other language (I imagine it gets easier the more languages it's trained against).
 * [ ] extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)
   - desu these don't seem to be worthwhile improvements, as inferencing is already rather fast, and RAS is just a fancy sampler.
 * [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
+* [ ] replace the phonemizer with something that doesn't depend on espeak
+  - espeak is nice, but I can only really put my whole trust with phonemizing English.
+  - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
 
 ## Notices and Citations
 

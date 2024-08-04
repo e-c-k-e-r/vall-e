@@ -70,10 +70,13 @@ def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
 
 	return yamls
 
-#
+#@gradio_wrapper(inputs=layout["settings"]["inputs"].keys())
 def load_model( yaml ):
 	gr.Info(f"Loading: {yaml}")
-	init_tts( yaml=Path(yaml), restart=True )
+	try:
+		init_tts( yaml=Path(yaml), restart=True )
+	except Exception as e:
+		raise gr.Error(e)
 	gr.Info(f"Loaded model")
 
 def init_tts(yaml=None, restart=False):
