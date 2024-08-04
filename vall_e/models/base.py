@@ -134,7 +134,7 @@ class AudioEmbedding_Old(nn.Module):
 		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
 		self.embeddings = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for n_tokens in l_tokens])
 		# weight influencer for the influence for each level (desu this should be really useless because the weights in the embedding themselves should factor this)
-		self.weight = nn.ParameterList([nn.Parameter( torch.Tensor([1]) ) for i in range(levels)]) if levels is not None else None
+		self.weight = nn.ParameterList([nn.Parameter( torch.tensor([1]) ) for i in range(levels)]) if levels is not None else None
 
 	def forward(self, xi: Tensor, quant_level: Tensor | None = None ) -> Tensor:
 		# prom
@@ -208,7 +208,7 @@ class AudioEmbedding(nn.Module):
 
 		# reintroduce stop token
 		if has_stop_token:
-			stop_token = self.internal_forward( torch.Tensor([stop_token]).to(device=input.device, dtype=torch.int16), 0 )
+			stop_token = self.internal_forward( torch.tensor([stop_token]).to(device=input.device, dtype=torch.int16), 0 )
 			embedding = torch.concat( [ embedding, stop_token ] )
 
 		return embedding
@@ -257,7 +257,7 @@ class AudioClassifier(nn.Module):
 		xi = [
 			#x if l == 0 else
 			x if x.shape[-1] == max_size else
-			torch.cat( [ x, torch.Tensor( [[ -float("inf") ] for _ in range(x.shape[0])] ).to(dtype=dtype, device=device) ] * (max_size - x.shape[-1]), dim=-1 )
+			torch.cat( [ x, torch.tensor( [[ -float("inf") ] for _ in range(x.shape[0])] ).to(dtype=dtype, device=device) ] * (max_size - x.shape[-1]), dim=-1 )
 			for x, l in zip(xi, levels)
 		]
 		return torch.stack( xi )
@@ -894,7 +894,7 @@ class Base(nn.Module):
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				# insert RVQ level guidance token if the model is versioned for it
 				if self.rvq_l_emb is not None:
-					inputs[i].append( ( "quant_level", torch.Tensor([ quant_level ]).to(device=device, dtype=torch.int16) ) )
+					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert input audio prompt
 				if proms_list is not None and proms_list[i] is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
@@ -922,7 +922,7 @@ class Base(nn.Module):
 				if self.rvq_l_emb is not None:
 					# override to 0 (I don't know if this change propagates, I'm not familiar with when python passes by (copied) value or reference)
 					quant_levels[i] = 0
-					inputs[i].append( ( "quant_level", torch.Tensor([ self.n_resp_levels ]).to(device=device, dtype=torch.int16) ) )
+					inputs[i].append( ( "quant_level", torch.tensor([ self.n_resp_levels ], device=device, dtype=torch.int16) ) )
 				# insert input audio prompt
 				if proms_list is not None and proms_list[i] is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
@@ -936,7 +936,7 @@ class Base(nn.Module):
 				# "encode" length to tokens for 0-9 + stop
 				elif resps_list is not None and resps_list[i] is not None:
 					# yes this could be encoded better
-					inputs[i].append( ( "len", torch.Tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ]).to(device=device, dtype=torch.int16) ) )
+					inputs[i].append( ( "len", torch.tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ], device=device, dtype=torch.int16) ) )
 			else:
 				raise Exception(f'Unrecognized task: {task_type}')
 
@@ -950,7 +950,7 @@ class Base(nn.Module):
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_embedding( input, quant_level ):
 			if isinstance(input, str):
-				return self.tasks_emb( torch.Tensor( [ get_task_symmap()[f'<{input}>'] ] ).to(device=device, dtype=torch.int16) )
+				return self.tasks_emb( torch.tensor( [ get_task_symmap()[f'<{input}>'] ], device=device, dtype=torch.int16) )
 
 			# get RVQ level 0, or up to targetted RVQ level inference
 			if self.version <= 4:
@@ -1068,6 +1068,8 @@ class Base(nn.Module):
 		inputs: list,
 		mask: Tensor,
 	):
+		device = mask.device
+
 		# shamelessly grabbed from modeling_llama.py
 		ids = mask.long().cumsum(-1) - 1
 		ids.masked_fill_( mask == 0, 1 )
@@ -1083,26 +1085,26 @@ class Base(nn.Module):
 
 				# list of tokens
 				if not isinstance(input, torch.Tensor):
-					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] ) + 1
+					return sum( [ i.shape[0] for i in input if isinstance(i, torch.tensor) ] ) + 1
 
 				# ending input will not have a separator later
 				return input.shape[0] + (0 if name in ["resp", "len"] else 1)
 
 			for batch_index, batch_input in enumerate(inputs):
 				batch = torch.cat( [
-					torch.Tensor([*range(get_input_token_length(name, input))]).to(dtype=torch.int32)
+					torch.tensor([*range(get_input_token_length(name, input))], device=device, dtype=torch.int32)
 					for name, input in batch_input if name != "task"
 				] )
 
 				delta = ids[batch_index].shape[0] - batch.shape[0]
 				if delta > 0:
-					batch = torch.cat( [ batch, torch.Tensor([1] * delta) ] )
+					batch = torch.cat( [ batch, torch.tensor([1] * delta) ] )
 
 				x_list.append( batch )
 
 			ids = torch.stack( x_list )
 
-		return ids.to(device=mask.device, dtype=torch.int32)
+		return ids.to(device=device, dtype=torch.int32)
 
 	def calc_loss(
 		self,
@@ -1117,7 +1119,7 @@ class Base(nn.Module):
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
 			if isinstance(input, str):
-				return torch.Tensor( [ get_task_symmap()[f'<{input}>'] ] ).to(dtype=torch.int16, device=device)
+				return torch.tensor( [ get_task_symmap()[f'<{input}>'] ] ).to(dtype=torch.int16, device=device)
 
 			# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
 			if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):

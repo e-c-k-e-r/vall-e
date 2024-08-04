@@ -674,6 +674,7 @@ class Inference:
 class Optimizations:
 	injects: bool = False # overwrites default torch classes (not recommended)
 	replace: bool = False # replaces modules in place with the optimized version (recommended)
+	compile: bool | str = False # runs torch.compile on the model
 
 	linear: bool = True # inject/replace linear for BnB
 	embedding: bool = True # inject/replace embedding for BnB
@@ -688,6 +689,8 @@ class Optimizations:
 	# example: {"include":["model"], "limits": [ (6 * 1024) * (1024 ** 2), -1 ]} will have the GPU capped to 6GiB, and offload the remaining layers to CPU
 	# example: {"include":["model"], "device": ["cuda:0", "cuda:1"], "limits": [ 0.5, 0.5 ]} will have the GPU 1 try and use 50% of the model, and GPU 2 try and use the other 50%
 	# | {"assign": [[ f'layers.{i}.' for i in range(0,6) ], [ f'layers.{i}.' for i in range(6,12) ]]} will assign layers 0-5 to device 1, and 6-12 to device 2
+
+	tensorrt: bool = False
 
 @dataclass()
 class Config(BaseConfig):

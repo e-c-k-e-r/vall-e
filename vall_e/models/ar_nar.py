@@ -102,7 +102,7 @@ class AR_NAR(Base):
 				# trim resps to only contain all levels below the target level
 				resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 				# tensor to cat for RVQ level 0
-				stop_sequence = torch.Tensor([[self.stop_token] * 1]).to(device=device, dtype=torch.int16)
+				stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
 				# I hate python's value/reference semantics so much
 				for i, quant_level, resps, proms in zip(range(batch_size), quant_levels, resps_list, proms_list):
 					# cap quant_level if it exceeds its corresponding resp/prom
@@ -206,7 +206,7 @@ class AR_NAR(Base):
 					#mirostat=mirostat,
 				)
 
-				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
+				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 			if cfg.lora is not None:
 				enable_lora( self )
@@ -515,7 +515,7 @@ def example_usage():
 
 				# set the text prompt to empty to train without a guided text prompt
 				if random.random() < 0.5:
-					text = torch.tensor([bos_id, eos_id]).to(device=device, dtype=torch.uint8)
+					text = torch.tensor([bos_id, eos_id], device=device, dtype=torch.uint8)
 
 			texts.append( text.to(device) )
 			proms.append( prom.to(device) )
@@ -560,6 +560,11 @@ def example_usage():
 
 	#sample("init", 5)
 	train()
+
+	"""
+	if cfg.optimizations.compile:
+		model = ml.compile_model(model, backend=cfg.optimizations.compile)
+	"""
 	
 	for task in tasks:
 		sample("final", task=task)

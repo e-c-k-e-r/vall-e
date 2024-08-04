@@ -207,7 +207,9 @@ def load_engines(training=True):
 		# wrap if DDP is requested
 		if ddp:
 			model = ddp_model(model)
-
+		# wrap optimization class
+		elif cfg.optimizations.compile:
+			model = ml.compile_model(model, backend=cfg.optimizations.compile)
 		# deepspeed inferencing
 		elif backend == "local" and inferencing and deepspeed_available and cfg.trainer.deepspeed.inferencing: #and sys.platform.startswith("win"):
 			engine_class = LocalEngine

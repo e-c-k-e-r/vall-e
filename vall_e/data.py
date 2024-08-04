@@ -71,7 +71,7 @@ def fold_inputs(
 
 		if isinstance(prom, str):
 			task = get_task_symmap()[f'<{input}>']
-			seq = torch.Tensor([task_start + task]).to(device=device, dtype=dtype)
+			seq = torch.tensor([task_start + task], device=device, dtype=dtype)
 
 			input_ids[i].append( seq )
 			input_ids[i].append( sep )
@@ -81,7 +81,7 @@ def fold_inputs(
 		if quant_levels is not None:
 			quant_level = quant_levels[i]
 			if ignore_index is not None:
-				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] ) ] ).to(device=device, dtype=dtype)
+				seq = torch.tensor( [ ignore_index for _ in range( prom.shape[0] ) ], device=device, dtype=dtype)
 			else:
 				seq = prom[:, quant_level].to(device=device, dtype=dtype).clone()
 				for idx, token in enumerate( seq ):
@@ -89,7 +89,7 @@ def fold_inputs(
 		# interleaved
 		else:
 			if ignore_index is not None:
-				seq = torch.Tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ] ).to(device=device, dtype=dtype)
+				seq = torch.tensor( [ ignore_index for _ in range( prom.shape[0] * prom.shape[1] ) ], device=device, dtype=dtype)
 			else:
 				seq = prom.flatten().to(device=device, dtype=dtype)
 				for idx, token in enumerate( seq ):
@@ -111,8 +111,8 @@ def fold_inputs(
 
 	offset = 0
 	
-	sep = torch.Tensor([ sep ]).to(device=device, dtype=dtype)
-	stop = torch.Tensor([ stop ]).to(device=device, dtype=dtype)
+	sep = torch.tensor([ sep ], device=device, dtype=dtype)
+	stop = torch.tensor([ stop ], device=device, dtype=dtype)
 
 	text_start = 0
 	text_end = text_start + config.text_tokens
@@ -140,7 +140,7 @@ def fold_inputs(
 		if isinstance(text, torch.Tensor):
 			seq = text + text_start
 		else:
-			seq = torch.Tensor([text_start + text]).to(device=device, dtype=dtype)
+			seq = torch.tensor([text_start + text], device=device, dtype=dtype)
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 
@@ -149,7 +149,7 @@ def fold_inputs(
 		if isinstance(lang, torch.Tensor):
 			seq = lang + lang_start
 		else:
-			seq = torch.Tensor([lang_start + lang]).to(device=device, dtype=dtype)
+			seq = torch.tensor([lang_start + lang], device=device, dtype=dtype)
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 	
@@ -159,7 +159,7 @@ def fold_inputs(
 			if isinstance(rvq, torch.Tensor):
 				seq = rvq + rvq_start
 			else:
-				seq = torch.Tensor([rvq_start + rvq]).to(device=device, dtype=dtype)
+				seq = torch.tensor([rvq_start + rvq], device=device, dtype=dtype)
 			input_ids[i].append( seq )
 			input_ids[i].append( sep )
 
@@ -178,7 +178,7 @@ def fold_inputs(
 		if isinstance(tone, torch.Tensor):
 			seq = tone + tone_start
 		else:
-			seq = torch.Tensor([tone_start + tone]).to(device=device, dtype=dtype)
+			seq = torch.tensor([tone_start + tone], device=device, dtype=dtype)
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 
@@ -253,7 +253,7 @@ def unfold_outputs(
 		length = len(tokens)
 		"""
 		if length % config.resp_levels == 0:
-			tokens = torch.Tensor(tokens).reshape( config.resp_levels, length // config.resp_levels ).t()
+			tokens = torch.tensor(tokens).reshape( config.resp_levels, length // config.resp_levels ).t()
 		"""
 		bins = [ [] for _ in range(config.resp_levels) ]
 		for pos in range( length ):
@@ -261,7 +261,7 @@ def unfold_outputs(
 			bins[rvq].append( tokens[pos] )
 		nearest = ( len(bins) // config.resp_levels ) * config.resp_levels
 		bins = bins[:nearest]
-		return torch.Tensor(bins).t().to(device=device, dtype=dtype)
+		return torch.tensor(bins, device=device, dtype=dtype).t()
 
 	if config is None:
 		config = cfg.model
@@ -341,16 +341,16 @@ def unfold_outputs(
 					should_flush = True
 
 		if quant_levels is not None:
-			prom_list[i] = torch.Tensor(prom_list[i]).t().to(device=device, dtype=dtype)
-			resp_list[i] = torch.Tensor(resp_list[i]).t().to(device=device, dtype=dtype)
+			prom_list[i] = torch.tensor(prom_list[i], device=device, dtype=dtype).t()
+			resp_list[i] = torch.tensor(resp_list[i], device=device, dtype=dtype).t()
 		else:
 			prom_list[i] = bin_to_rvqs( prom_list[i] )
 			resp_list[i] = bin_to_rvqs( resp_list[i] )
 
-		text_list[i] = torch.Tensor( text_list[i] ).to(device=device, dtype=dtype)
-		task_list[i] = torch.Tensor( task_list[i] ).to(device=device, dtype=dtype)
-		lang_list[i] = torch.Tensor( lang_list[i] ).to(device=device, dtype=dtype)
-		tone_list[i] = torch.Tensor( tone_list[i] ).to(device=device, dtype=dtype)
+		text_list[i] = torch.tensor( text_list[i], device=device, dtype=dtype )
+		task_list[i] = torch.tensor( task_list[i], device=device, dtype=dtype )
+		lang_list[i] = torch.tensor( lang_list[i], device=device, dtype=dtype )
+		tone_list[i] = torch.tensor( tone_list[i], device=device, dtype=dtype )
 
 	return dict(
 		text_list=text_list,
@@ -1089,13 +1089,13 @@ class Dataset(_Dataset):
 
 			# create new text
 			text = concat_audio(
-				torch.Tensor( [ bos_id ] ).to(dtype=self.text_dtype), # <s>
+				torch.tensor( [ bos_id ] ).to(dtype=self.text_dtype), # <s>
 				pre_text,
-				None if pre_text is None else torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype), # " "
+				None if pre_text is None else torch.tensor( [ space_id ] ).to(dtype=self.text_dtype), # " "
 				edit_text,
-				None if post_text is None else torch.Tensor( [ space_id ] ).to(dtype=self.text_dtype), # " "
+				None if post_text is None else torch.tensor( [ space_id ] ).to(dtype=self.text_dtype), # " "
 				post_text,
-				torch.Tensor( [ eos_id ] ).to(dtype=self.text_dtype), # </s>
+				torch.tensor( [ eos_id ] ).to(dtype=self.text_dtype), # </s>
 
 				reencode=False,
 			)

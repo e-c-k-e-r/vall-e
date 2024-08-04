@@ -150,7 +150,7 @@ class NAR(Base):
 				max_levels = self.n_resp_levels
 			
 			# fill with mock tokens
-			prev_list = [ torch.Tensor([ self.stop_token for _ in range(resp_len) ]).to(device=device, dtype=torch.int16) for resp_len in len_list ]
+			prev_list = [ torch.tensor([ self.stop_token for _ in range(resp_len) ], device=device, dtype=torch.int16) for resp_len in len_list ]
 
 			start = True
 			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):
@@ -202,7 +202,7 @@ class NAR(Base):
 			return prev_list
 		
 		# is AR
-		sequence_list = [ torch.Tensor([0]).to(device=device,dtype=torch.int16) for _ in range(batch_size) ]
+		sequence_list = [ torch.tensor([0], device=device,dtype=torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 		
 		stop_token = 10
