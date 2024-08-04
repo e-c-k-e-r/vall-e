@@ -112,6 +112,7 @@ def run_eval(engines, eval_name, dl):
 				resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"] )
 			elif "len" in engine.hyper_config.capabilities:
 				len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=10 ) # don't need more than that
+				len_list = [ min( l, cfg.evaluation.steps ) for l in len_list ]
 				resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list, max_levels=cfg.evaluation.nar_levels )
 			else:
 				if "ar" in engine.hyper_config.capabilities:

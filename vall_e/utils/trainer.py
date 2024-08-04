@@ -127,14 +127,13 @@ def train(
 	engines = load_engines()
 
 	# validate if there's at least one model to train
-	if training:
-		found = False
-		for name, engine in engines.items():
-			if engine.training:
-				found = True
-				break
-		if not found:
-			raise Exception('Training, but no model loaded set to train...')
+	found = False
+	for name, engine in engines.items():
+		if engine.training:
+			found = True
+			break
+	if not found:
+		raise Exception('Training, but no model loaded set to train...')
 
 	"""
 	if is_local_leader():
