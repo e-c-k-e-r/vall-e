@@ -21,71 +21,6 @@ from tqdm import trange
 from ..emb.qnt import trim
 
 class NAR(Base):
-	@property
-	def capabilities(self) -> list[str]:
-		if hasattr(self, "config") and self.config:
-			return self.config.capabilities
-		return cfg.model.capabilities
-
-	@property
-	def causal(self):
-		return "len" in self.capabilities
-
-	@property
-	def n_resp_levels(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.resp_levels
-		return cfg.model.resp_levels
-
-	@property
-	def n_max_levels(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.max_levels
-		return cfg.model.max_levels
-
-	@property
-	def n_tasks(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.tasks
-		return cfg.model.tasks
-
-	@property
-	def n_langs(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.langs
-		return cfg.model.langs
-
-	@property
-	def n_tones(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.tones
-		return cfg.model.tones
-
-	@property
-	def causal_size(self) -> int:
-		# 1 for the stop token
-		# governs how much to shift the logits by
-		# could *technically* make it work to where it can also predict *ALL* RVQ levels in one step, but experimental.py is the better way to go about it
-		return 1 # if self.causal else 0
-
-	@property
-	def version(self) -> int:
-		if hasattr(self, "config") and self.config:
-			return self.config.version
-		return cfg.model.version
-
-	def _prune(self, l: Tensor, stop = None):
-		if stop is None:
-			stop = self.stop_token
-		indices = (l == stop).nonzero()
-		if len(indices) == 0:
-			return l
-		return l[: indices.min().item()]
-
-	@staticmethod
-	def _unsqueeze_list(x_list, axis=-1):
-		return [x.unsqueeze(dim=axis) for x in x_list]
-
 	def forward(
 		self,
 		text_list: list[Tensor],
@@ -121,7 +56,7 @@ class NAR(Base):
 
 		# is training
 		if resps_list is not None:
-			p_len_task = 0.25
+			p_len_task = self.config.experimental.p_len_train if self.config is not None else 0.05
 
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))

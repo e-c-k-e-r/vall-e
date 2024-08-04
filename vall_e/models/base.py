@@ -297,59 +297,21 @@ class Metrics(nn.Module):
 		)
 
 class Base(nn.Module):
-	# to-do: clean up this property mess
-	@property
-	def causal(self) -> bool:
-		raise NotImplementedError
-
-	@property
-	def n_resp_levels(self) -> int:
-		raise NotImplementedError
-
-	@property
-	def n_max_levels(self) -> int:
-		raise NotImplementedError
-	
-	@property
-	def n_langs(self) -> int:
-		raise NotImplementedError
-	
-	@property
-	def n_tasks(self) -> int:
-		raise NotImplementedError
-
-	@property
-	def n_tones(self) -> int:
-		raise NotImplementedError
-
-	@property
-	def causal_size(self) -> int:
-		raise NotImplementedError
-
-	@property
-	def version(self) -> int:
-		return 2
-
-	@property
-	def capabilities(self) -> list[str]:
-		raise NotImplementedError
-
-	@property
-	def stop_token(self):
-		if "len" in self.capabilities:
-			return 0
-		if not self.causal:
-			raise ValueError("Not using stop token!")
-		return self.n_audio_tokens
-
-	@property
-	def ignore_index(self):
-		return -100
-
 	def loss_factor(self, k):
 		if self.config is None:
 			return 1.0
 		return self.config.loss_factors[k] if k in self.config.loss_factors else 1.0
+
+	def _prune(self, l: Tensor, stop = None):
+		if stop is None:
+			stop = self.stop_token
+
+		indices = (l == stop).nonzero()
+
+		if len(indices) == 0:
+			return l
+
+		return l[: indices.min().item()]
 
 	# these probably need to live in an interleaved model, as pattern-ing is targeted for a sole AR model
 	"""
@@ -404,7 +366,6 @@ class Base(nn.Module):
 		super().__init__()
 		self.training = training
 		self.config = config
-		self.gradient_checkpointing = self.config.gradient_checkpointing if self.config is not None else True
 
 		self.n_text_tokens = n_text_tokens
 		self.n_audio_tokens = n_audio_tokens
@@ -416,18 +377,34 @@ class Base(nn.Module):
 		
 		self.l_padding = l_padding
 
-		arch_type = self.config.arch_type if self.config is not None else "llama"
+		self.ignore_index = -100
 
-		self.arch_type = arch_type
+		self.n_resp_levels = self.config.resp_levels if self.config else n_resp_levels
+		self.n_max_levels = self.config.max_levels if self.config else n_resp_levels
+		self.capabilities = self.config.capabilities if self.config else ["ar", "nar"]
+		self.gradient_checkpointing = self.config.gradient_checkpointing if self.config is not None else True
+
+		self.stop_token = self.n_audio_tokens # id 1024
+		self.causal = "ar" in self.capabilities or "len" in self.capabilities
+		self.version = self.config.version if self.config is not None else 5
+		self.causal_size = self.config.experimental.causal_size if self.config is not None else (1 if "ar" in self.capabilities else 0)
+
+		self.arch_type = self.config.arch_type if self.config is not None else "llama"
 
 		# check if requested arch is unavailable
 		if self.arch_type in ERROR_ARCHES:
 			raise ERROR_ARCHES[self.arch_type]
+		
+		attention_backend = self.config.attention if self.config is not None else "auto"
 		audio_embedding_sums = self.config.experimental.audio_embedding_sums if self.config is not None else False
 		split_classifiers = self.config.experimental.split_classifiers if self.config is not None else False
 		tie_classifier_to_embedding = self.config.experimental.tie_classifier_to_embedding if self.config is not None else False
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
+
+		n_tasks = self.config.tasks if self.config is not None else 8
+		n_langs = self.config.langs if self.config is not None else 2
+		n_tones = self.config.tones if self.config is not None else 1
 
 		if "len" not in self.capabilities:
 			# +1 to include the stop token
@@ -457,7 +434,7 @@ class Base(nn.Module):
 		self.dropout_token = nn.Parameter(torch.zeros(d_model)) # zeros sounds nicer than randn for a special value
 
 		if self.version == 1: # legacy
-			n_audio_tokens += (self.n_tasks - 1) # old models have the task tokens in the prom
+			n_audio_tokens += (n_tasks - 1) # old models have the task tokens in the prom
 			self.proms_emb = MultiEmbedding(self.n_resp_levels, n_audio_tokens, d_model)
 			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model, monolithic=self.monolithic)
 		elif self.version < 5:
@@ -485,11 +462,11 @@ class Base(nn.Module):
 
 		# useless since I actually removed using these with the input processing overhaul...
 		if self.version >= 3:
-			self.langs_emb = Embedding(self.n_langs, d_model) if self.n_langs > 0 else None
-			self.tasks_emb = Embedding(self.n_tasks, d_model) if self.n_tasks > 0 else None
+			self.langs_emb = Embedding(n_langs, d_model) if n_langs > 0 else None
+			self.tasks_emb = Embedding(n_tasks, d_model) if n_tasks > 0 else None
 		# never actually got added... I kept forgetting to classify all my audio for speaker's tone
 		if self.version >= 4:
-			self.tones_emb = Embedding(self.n_tones, d_model) if self.n_tones > 0 else None
+			self.tones_emb = Embedding(n_tones, d_model) if n_tones > 0 else None
 
 		# mamba requires this if a model does both AR and NAR tasks
 		# this *might* help for AR and NAR tasks since we explicitly specify the current RVQ level for a sequence, rather than having it "encoded" in the embeddings
@@ -501,31 +478,28 @@ class Base(nn.Module):
 			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
 
 		# there seems to have been a regression where anything touching the wrapped LlamaAttention class breaks
-		"""
-		# ick, there has to be a better way
-		if self.config.attention == "auto":
-			if "flash" in AVAILABLE_ATTENTIONS:
-				self.config.attention = "flash"
-			elif "xformers" in AVAILABLE_ATTENTIONS:
-				self.config.attention = "xformers"
+
+		if attention_backend == "auto":
+			if "flash_attention_2" in AVAILABLE_ATTENTIONS:
+				attention_backend = "flash_attention_2"
+			elif "flash" in AVAILABLE_ATTENTIONS:
+				attention_backend = "flash"
+			elif "mem_efficient" in AVAILABLE_ATTENTIONS:
+				attention_backend = "mem_efficient"
+			elif "math" in AVAILABLE_ATTENTIONS:
+				attention_backend = "math"
 			else:
-				self.config.attention = "sdpa"
+				attention_backend = "sdpa"
 
-		hf_attention = self.config.attention if self.config is not None else None
-
-		if self.config.attention in ["xformers", "mem_efficient", "math", "flash"]:
-			hf_attention = None
-			if self.config.attention not in AVAILABLE_ATTENTIONS:
-				raise ValueError(f"Requesting attention `{self.config.attention}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
-		"""
-
-		if self.config.attention == "auto":
-			if "flash" in AVAILABLE_ATTENTIONS:
-				self.config.attention = "flash_attention_2"
-			else:
-				self.config.attention = "sdpa"
+		if attention_backend == "xformers":
+			attention_backend = "mem_efficient"
 		
-		hf_attention = self.config.attention if self.config is not None else None
+		hf_attention = attention_backend
+
+		if attention_backend in ["xformers", "mem_efficient", "math", "flash", "cudnn"]:
+			hf_attention = None
+			if attention_backend not in AVAILABLE_ATTENTIONS:
+				raise ValueError(f"Requesting attention `{attention_backend}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
 
 		if self.arch_type == "transformer":
 			self.sin_emb = SinusoidalEmbedding(d_model)
@@ -654,18 +628,6 @@ class Base(nn.Module):
 				))
 
 			self.model = RetNetDecoder(RetNetConfig(**kwargs))
-
-			# do some funny stuff for LoRA training
-			"""
-			if self.gradient_checkpointing:
-				def make_inputs_require_grads(module, input, output):
-					for i, t in enumerate(input):
-						if not isinstance(t, torch.Tensor):
-							continue
-						t.requires_grad_(True)
-
-				self.model.register_forward_hook(make_inputs_require_grads)
-			"""
 		elif self.arch_type == "retnet-hf":
 			kwargs = dict(
 				vocab_size=n_resp_tokens,
@@ -757,10 +719,8 @@ class Base(nn.Module):
 		if hasattr( self.model, "embeddings" ):
 			del self.model.embeddings
 
-		"""
-		if self.config.attention in ["xformers", "auto", "mem_efficient", "math", "flash"]:
-			self.model = ml.replace_attention( self.model, klass=LlamaAttention, target=LlamaAttention_Base, mode=self.config.attention )
-		"""
+		if attention_backend in ["mem_efficient", "math", "flash", "cudnn", "auto"]:
+			self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
 
 		if not split_classifiers:
 			self.classifier = nn.Linear(d_model, n_resp_tokens)

@@ -223,6 +223,10 @@ class ModelExperimentalSettings:
 	causal_size: int = 1 # experimental setting to see if I can just do parallel decoding in chunks instead of one-at-a-time without resorting to exotic solutions
 	# VALL-E 2's approach of "combining token embeddings to group them" sounds terribad for a shared AR/NAR model
 	# however, introducing partial parallel decoding for the AR maybe maybe MAYBE might help try and unify the AR/NAR tasks better, MAYBE
+	# it just seems like a bitch to try and train something worthwhile with it, since there's crackles every other token
+
+	p_len_train: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
+	# to-to: just incorporate this as a task instead
 
 # I really need to clean this up
 @dataclass()

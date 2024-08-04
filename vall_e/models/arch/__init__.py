@@ -30,7 +30,7 @@ except Exception as e:
 	pass
 
 try:
-	from .llama import LlamaModel, LlamaConfig, AVAILABLE_ATTENTIONS, LlamaAttention, LlamaAttention_Base, LlamaForCausalLM
+	from .llama import LlamaModel, LlamaConfig, AVAILABLE_ATTENTIONS, LlamaAttention, LlamaAttention_Adapted, LlamaForCausalLM
 	AVAILABLE_ARCHES.append("llama")
 except Exception as e:
 	ERROR_ARCHES["llama"] = e
@@ -62,10 +62,3 @@ try:
 	AVAILABLE_ARCHES.append("mamba2-hf")
 except Exception as e:
 	ERROR_ARCHES["mamba2-hf"] = e
-
-# desu should remove, perf was very lacking in comparison to regular bitnet
-try:
-	from .mmfreelm import *
-	AVAILABLE_ARCHES.append("mmfreelm")
-except Exception as e:
-	ERROR_ARCHES["mmfreelm"] = e
