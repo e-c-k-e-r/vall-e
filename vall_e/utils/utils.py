@@ -379,6 +379,9 @@ def resize_weight( weight, target, dim=0, random=True ):
 
 	return weight
 
+def get_devices():
+	return [f'{"cuda"}:{i}' for i in range(torch.cuda.device_count())] + ['cpu']
+
 # grabs the memory properties of a given device
 def get_device_properties( device ):
 	if 'cuda' in device:
@@ -416,7 +419,7 @@ def get_model_offload_policy(module, policy=None):
 		policy["assign"] = []
 
 	if "devices" not in policy:
-		policy["devices"]  = [f'{"cuda"}:{i}' for i in range(torch.cuda.device_count())] + ['cpu'] # + cpu to spill the remainder on CPU if overbudget
+		policy["devices"]  = get_devices() # + cpu to spill the remainder on CPU if overbudget
 
 	# create initial device info
 	devices = [ get_device_properties(device) | {"modules": []} for device in policy["devices"] ]

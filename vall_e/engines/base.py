@@ -338,12 +338,6 @@ class Engines(dict[str, Engine]):
 			lora = None
 			save_path = cfg.ckpt_dir / name / f"fp32.{format}"
 			config = engine.module.config if hasattr(engine.module, "config") else engine.hyper_config
-			
-			# coerce
-			if not isinstance(config, dict):
-				config = config.__dict__
-			if not isinstance(config['experimental'], dict):
-				config['experimental'] = config['experimental'].__dict__
 
 			# safety
 			for k, v in module.items():
@@ -363,7 +357,7 @@ class Engines(dict[str, Engine]):
 					"tokens_processed": engine.tokens_processed,
 				},
 				"userdata": userdata,
-				"config": config
+				"config": config.__dict__ | {"experimental": config.experimental.__dict__} # i hate implicit aliasing rules
 			}
 
 			if lora is None:

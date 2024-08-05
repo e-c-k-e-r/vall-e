@@ -1,10 +1,8 @@
 """
-# an AR + NAR model that handles:
-* inferencing the primary RVQ level in an autoregressive manner (AR)
-* inferencing the remaining RVQ levels in parallel (NAR)
+# an AR model that (should) handle:
+* handling all RVQ levels, but does it in an autoregressive manner
 
-This model can fully handle being trained as a unified model (AR + NAR) or separate models (AR | NAR).
-It's recommended to train as a unified model, then "distill" knowledge of each tasks separately, just in case.
+It's in a mess of a state, because I want this to be an interleaved model, but it just seems better to use the vall_e.models.experimental model.
 """
 from .base import Base, list_to_tensor, Categorical
 from ..config import cfg
@@ -25,7 +23,7 @@ from .lora import enable_lora
 def clamp(n, lo, hi):
 	return max(lo, min(n, hi))
 
-class AR_NAR(Base):
+class AR(Base):
 	def forward(
 		self,
 		text_list: list[Tensor],
@@ -98,11 +96,14 @@ class AR_NAR(Base):
 						p_rvq_levels = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
 
 				# input RVQ levels
-				quant_levels = [ random.choice( p_rvq_levels ) for i in range(batch_size) ]
-				# trim resps to only contain all levels below the target level
-				resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				if not self.interleave:
+					quant_levels = [ random.choice( p_rvq_levels ) for i in range(batch_size) ]
+					# trim resps to only contain all levels below the target level
+					resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				else:
+					quant_levels = [ 0 for i in range(batch_size) ]
+
 				# tensor to cat for RVQ level 0
-				stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
 				# I hate python's value/reference semantics so much
 				for i, quant_level, resps, proms in zip(range(batch_size), quant_levels, resps_list, proms_list):
 					# cap quant_level if it exceeds its corresponding resp/prom
@@ -134,9 +135,8 @@ class AR_NAR(Base):
 									resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 					# only apply stop token for RVQ level 0
-					if quant_level <= 0:
-						# append stop tokens for AR
-						resps_list[i] = torch.cat([ resps, stop_sequence ])
+					stop_sequence = torch.tensor([[self.stop_token] * resps.shape[-1]], device=device, dtype=torch.int16)
+					resps_list[i] = torch.cat([ resps, stop_sequence ])
 					
 
 				inputs = self.inputs(
@@ -146,72 +146,11 @@ class AR_NAR(Base):
 					lang_list=lang_list,
 					tone_list=tone_list,
 					task_list=task_list,
-
-					quant_levels=quant_levels,
 				)
 
 				return super().forward(
 					inputs=inputs,
-					quant_levels=quant_levels, # could technically just grab this from the above inputs since they're included as an RVQ level token
 				)
-			
-			# is NAR
-			if max_levels == 0:
-				max_levels = self.n_max_levels - 1
-
-			# expand if given a raw 1D tensor
-			for i, resp in enumerate(resps_list):
-				if resp.dim() == 1:
-					resps_list[i] = resp.unsqueeze(-1)
-			
-			prev_list = resps_list
-
-			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):				
-				level = prev_list[0].shape[-1]
-				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
-					break
-
-				if cfg.lora is not None:
-					enable_lora( self, cfg.lora.active_level( level ) )
-
-				quant_levels = [ level for _ in range(batch_size) ] # torch.full((len(text_list),), level)
-
-				inputs = self.inputs(
-					text_list=text_list,
-					proms_list=proms_list,
-					resps_list=prev_list,
-					lang_list=lang_list,
-					tone_list=tone_list,
-					quant_levels=quant_levels,
-				)
-
-				logits = super().forward(
-					inputs=inputs,
-					quant_levels=quant_levels,
-				)
-
-				resps_list = super().sample(
-					logits=logits,
-					resps_list=prev_list,
-					quant_levels=quant_levels,
-
-					temperature=sampling_temperature,
-					min_temperature=sampling_min_temperature,
-					top_p=sampling_top_p,
-					top_k=sampling_top_k,
-					#repetition_penalty=sampling_repetition_penalty,
-					#repetition_penalty_decay=sampling_repetition_penalty_decay,
-					#length_penalty=sampling_length_penalty,
-					#beam_width=sampling_beam_width,
-					#mirostat=mirostat,
-				)
-
-				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
-
-			if cfg.lora is not None:
-				enable_lora( self )
-
-			return prev_list
 		
 		# is AR
 		if cfg.lora is not None:
@@ -312,6 +251,12 @@ class AR_NAR(Base):
 			sequence_list = [ sequence_list[0] ]
 
 		sequence_list = [self._prune(r, stop_token) for r in sequence_list]
+
+		for i, seq in enumerate( sequence_list ):
+			steps = seq.shape[0] // self.n_resp_levels
+			nearest_steps = steps * self.n_resp_levels
+			sequence_list[i] = seq[:nearest_steps].view(( steps, self.n_resp_levels ))
+
 		return sequence_list
 
 
@@ -397,8 +342,8 @@ def example_usage():
 	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
 	tasks = cfg.dataset.tasks_list
 
-	model = AR_NAR(**kwargs).to(device)
-	steps = 150 * len(tasks) * cfg.model.experimental.causal_size
+	model = AR(**kwargs).to(device)
+	steps = 75 * len(tasks) * cfg.model.experimental.causal_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -466,7 +411,7 @@ def example_usage():
 	"""
 	
 	engine = Engine(model=model, optimizer=optimizer)
-	engines = Engines({"ar+nar": engine})
+	engines = Engines({"ar": engine})
 	engines.setup()
 	
 	"""
@@ -480,7 +425,7 @@ def example_usage():
 	}, f"./data/{cfg.model.arch_type}.pth" )
 	"""
 
-	print(f"AR+NAR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+	print(f"AR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.no_grad()
 	def sample_data(task=None):
@@ -529,13 +474,7 @@ def example_usage():
 
 		texts, proms, resps = sample_data( task )
 
-		if "ar" in cfg.model.capabilities:
-			resps = engine( texts, proms, max_steps=steps, sampling_temperature=0.95 )
-		else:
-			resps = [ resp[:, 0] for resp in resps ]
-
-		if "nar" in cfg.model.capabilities:
-			resps = engine( texts, proms, resps, sampling_temperature=0.2 )
+		resps = engine( texts, proms, max_steps=steps, sampling_temperature=0.95 )
 
 		for i, o in enumerate(resps):
 			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{task}.{name}.wav", device=device)

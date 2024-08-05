@@ -73,6 +73,13 @@ def list_to_tensor(x_list: list[Tensor], pattern="t b c -> b t c"):
 	m = m.to(x)
 	return x, m
 
+def _interleave_sequence_reshape( input: list[torch.Tensor], dim=-1 ):
+	shape = (input[0].shape[0] * len(input), input[0].shape[dim] )
+	return torch.concat( [ i.t() for i in input ] ).t().reshape( shape )
+
+def _interleave_sequence_flatten( input: list[torch.Tensor] ):
+	return torch.concat( [ i.t() for i in input ] ).t().flatten()
+
 # automagically parses a batch-list and returns it as a list
 """
 class Embedding(nn.Embedding):
@@ -158,6 +165,8 @@ class AudioEmbedding(nn.Module):
 		token_dim: int, # dimensionality of the embedding
 		sums: bool = True, # whether to sum all previous layers of embeddings to factor in other RVQ bin levels (I do not know which way is better)
 		external_mode: str | None = None, # "exclusive" | "inclusive", whether to include the original audio backend's embeddings
+
+		capabilities: list[str] | None = None, # helper shit
 	):
 		super().__init__()
 		# array of embeddings
@@ -169,6 +178,7 @@ class AudioEmbedding(nn.Module):
 		self.sums = sums
 
 		self.external_mode = external_mode
+		self.capabilities = capabilities
 
 		# set initial weights to zero
 		if self.external_mode == "inclusive":
@@ -213,7 +223,19 @@ class AudioEmbedding(nn.Module):
 
 		return embedding
 
-	def internal_forward(self, xi: Tensor, offset: int = 0, quant_level: int | None = None ) -> Tensor:
+	def internal_forward(self, xi: Tensor, offset: int | None = None, quant_level: int | None = None ) -> Tensor:
+		if offset is None:
+			# prom
+			if self.capabilities is None:
+				offset = 0
+			# resp
+			elif "len" in self.capabilities:
+				offset = 1
+			elif "nar" not in self.capabilities:
+				offset = 0
+			elif quant_level > 0:
+				offset = 1
+
 		if quant_level is None:
 			quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
 		
@@ -225,7 +247,7 @@ class AudioEmbedding(nn.Module):
 
 		return x
 
-	def forward(self, xi: Tensor, offset: int = 0, quant_level: int | None = None ) -> Tensor:
+	def forward(self, xi: Tensor, offset: int | None = None, quant_level: int | None = None ) -> Tensor:
 		x = self.internal_forward( xi, offset = offset, quant_level = quant_level ) if self.external_mode != "exclusive" or xi.shape[0] == 0 else None
 
 		if self.external_mode and xi.shape[0] > 0:
@@ -403,15 +425,22 @@ class Base(nn.Module):
 		tie_classifier_to_embedding = self.config.experimental.tie_classifier_to_embedding if self.config is not None else False
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
+		interleave = self.config.experimental.interleave if self.config is not None else False
 
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
 		n_tones = self.config.tones if self.config is not None else 1
 
-		if "len" not in self.capabilities:
+		# pure AR
+		if "nar" not in self.capabilities:
+			n_resp_tokens = n_audio_tokens + 1
+			l_tokens = [n_resp_tokens] * self.n_resp_levels
+		# NAR-len model
+		elif "len" not in self.capabilities:
 			# +1 to include the stop token
 			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
 			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+		# AR+NAR model
 		else:
 			n_resp_tokens = n_audio_tokens
 			l_tokens = [n_resp_tokens] * (self.n_resp_levels + (1 if split_classifiers else 0))
@@ -423,6 +452,7 @@ class Base(nn.Module):
 		"""
 
 		self.unified_position_ids = unified_position_ids
+		self.interleave = interleave
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -455,11 +485,13 @@ class Base(nn.Module):
 				[n_audio_tokens] * self.n_resp_levels, d_model,
 				sums=audio_embedding_sums,
 				external_mode=audio_embedding_mode,
+				capabilities=None,
 			)
 			self.resps_emb = AudioEmbedding(
 				l_tokens, d_model,
 				sums=audio_embedding_sums,
 				external_mode=audio_embedding_mode,
+				capabilities=self.capabilities,
 			)
 
 		# useless since I actually removed using these with the input processing overhaul...
@@ -893,7 +925,7 @@ class Base(nn.Module):
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				# insert RVQ level guidance token if the model is versioned for it
-				if self.rvq_l_emb is not None:
+				if self.rvq_l_emb is not None and not self.interleave:
 					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert input audio prompt
 				if proms_list is not None and proms_list[i] is not None:
@@ -1007,7 +1039,15 @@ class Base(nn.Module):
 				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
-					if "len" in self.capabilities and quant_level == 0:
+					if self.interleave:
+						embeddings = [ self.resps_emb(
+							input[:, :l+1],
+							offset = 0,
+							quant_level = l
+						) for l in range( input.shape[-1] ) ]
+
+						embedding = _interleave_sequence_reshape( embeddings )
+					elif "len" in self.capabilities and quant_level == 0:
 						if input_prom is not None:
 							# fill with the prom as the initial condition
 							repeat = (input.shape[0] // input_prom.shape[0]) + 1
@@ -1020,9 +1060,10 @@ class Base(nn.Module):
 							)
 						else:
 							# fill with "stop" token from the len layer for the NAR-only model
+							filler_token = 12
 							embedding = self.resps_emb(
 								# self.dropout_token.repeat((input.shape[0], 1)),
-								torch.full_like(input if input.dim() == 1 else input[..., 0], 12),
+								torch.full_like(input if input.dim() == 1 else input[..., 0], filler_token),
 								offset = 0,
 								quant_level = 0,
 							)
@@ -1035,9 +1076,17 @@ class Base(nn.Module):
 								quant_level
 							)
 						else:
+							offset = 0
+							if "len" in self.capabilities:
+								offset = 1
+							elif "nar" not in self.capabilities:
+								offset = 0
+							elif quant_level > 0:
+								offset = 1
+
 							embedding = self.resps_emb(
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
-								offset = 1 if "len" in self.capabilities else (0 if quant_level == 0 else 1),
+								offset = offset,
 								quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
 							)
 
@@ -1086,6 +1135,10 @@ class Base(nn.Module):
 				# list of tokens
 				if not isinstance(input, torch.Tensor):
 					return sum( [ i.shape[0] for i in input if isinstance(i, torch.tensor) ] ) + 1
+
+				# interleaved model
+				if self.interleave and name == "resp":
+					return input.shape[0] * input.shape[1]
 
 				# ending input will not have a separator later
 				return input.shape[0] + (0 if name in ["resp", "len"] else 1)
@@ -1142,7 +1195,10 @@ class Base(nn.Module):
 						proms = [ input ] if isinstance(input, torch.Tensor) else input
 						target.append( torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms if input is not None ] ) )
 					elif name == "resp":
-						target.append( input if input.dim() == 1 else input[:, quant_level] )
+						if self.interleave:
+							target.append( _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] ) )
+						else:
+							target.append( input if input.dim() == 1 else input[:, quant_level] )
 					elif name in ["text", "quant_level", "lang", "tone", "len"]:
 						target.append( input )
 

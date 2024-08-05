@@ -8,5 +8,6 @@ from .utils import (
     tree_map,
     do_gc,
     set_seed,
-    passes_policy
+    passes_policy,
+    get_devices
 )

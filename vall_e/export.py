@@ -98,8 +98,8 @@ def split_classifier_heads( state_dict, config = cfg.model, save_path = None, dt
 		tokens = 1025 if i == 0 else 1024
 
 		# trim per RVQ level (since level 0 has a stop token)
-		state_dict['module'][f'classifiers.proj.{i}.weight'] = state_dict['module']['classifier.weight'][:tokens, :]
-		state_dict['module'][f'classifiers.proj.{i}.bias'] = state_dict['module']['classifier.bias'][:tokens]
+		state_dict['module'][f'classifiers.proj.{i}.weight'] = state_dict['module']['classifier.weight'][:tokens, :].clone()
+		state_dict['module'][f'classifiers.proj.{i}.bias'] = state_dict['module']['classifier.bias'][:tokens].clone()
 
 	# delete old weights
 	del state_dict['module']['classifier.weight']

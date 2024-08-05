@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .inference import TTS, cfg
 from .train import train
+from .utils import get_devices
 
 tts = None
 
@@ -70,8 +71,11 @@ def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
 
 	return yamls
 
+def get_dtypes():
+	return ["float32", "float16", "bfloat16", "float8_e5m2", "float8_e4m3fn", "auto"]
+
 #@gradio_wrapper(inputs=layout["settings"]["inputs"].keys())
-def load_model( yaml ):
+def load_model( yaml, device, dtype ):
 	gr.Info(f"Loading: {yaml}")
 	try:
 		init_tts( yaml=Path(yaml), restart=True )
@@ -79,7 +83,7 @@ def load_model( yaml ):
 		raise gr.Error(e)
 	gr.Info(f"Loaded model")
 
-def init_tts(yaml=None, restart=False):
+def init_tts(yaml=None, restart=False, device="cuda", dtype="auto"):
 	global tts
 
 	if tts is not None:
@@ -91,9 +95,9 @@ def init_tts(yaml=None, restart=False):
 	
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', yaml)) # os environ so it can be specified in a HuggingFace Space too
-	parser.add_argument("--device", type=str, default="cuda")
+	parser.add_argument("--device", type=str, default=device)
 	parser.add_argument("--amp", action="store_true")
-	parser.add_argument("--dtype", type=str, default="auto")
+	parser.add_argument("--dtype", type=str, default=dtype)
 	args, unknown = parser.parse_known_args()
 
 	tts = TTS( config=args.yaml if yaml is None else yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
@@ -307,7 +311,10 @@ with ui:
 	with gr.Tab("Settings"):
 		with gr.Row():
 			with gr.Column(scale=7):
-				layout["settings"]["inputs"]["models"] = gr.Dropdown(choices=get_model_paths(), value=args.yaml, label="Model")
+				with gr.Row():
+					layout["settings"]["inputs"]["models"] = gr.Dropdown(choices=get_model_paths(), value=args.yaml, label="Model")
+					layout["settings"]["inputs"]["device"] = gr.Dropdown(choices=get_devices(), value="cuda", label="Device")
+					layout["settings"]["inputs"]["dtype"] = gr.Dropdown(choices=get_dtypes(), value="auto", label="Precision")
 			with gr.Column(scale=1):
 				layout["settings"]["buttons"]["load"] = gr.Button(value="Load Model")
 
