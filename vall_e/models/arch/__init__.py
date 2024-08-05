@@ -44,7 +44,7 @@ except Exception as e:
 	pass
 
 try:
-	from .mixtral import MixtralModel, MixtralConfig
+	from .mixtral import MixtralModel, MixtralConfig, load_balancing_loss_func
 	AVAILABLE_ARCHES.append("mixtral")
 except Exception as e:
 	ERROR_ARCHES["mixtral"] = e

@@ -375,10 +375,10 @@ def example_usage():
 		'n_text_tokens': 256,
 		'n_audio_tokens': 1024,
 
-		'd_model': 1024, # 256, # 1024, # 1536
+		'd_model': 256, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
-		'n_experts': 1,
+		'n_experts': 1 if not cfg.model else cfg.model.experts,
 
 		'p_dropout': 0.1,
 
@@ -468,6 +468,8 @@ def example_usage():
 	engine = Engine(model=model, optimizer=optimizer)
 	engines = Engines({"ar+nar": engine})
 	engines.setup()
+
+	print( model.state_dict().keys() )
 	
 	"""
 	if cfg.optimizations.model_offloading:
