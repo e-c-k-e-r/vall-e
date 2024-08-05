@@ -813,7 +813,7 @@ class Base(nn.Module):
 				inputs_embeds=x,
 				past_key_values=state,
 				position_ids=position_ids,
-				use_cache=True,
+				use_cache=not self.training,
 			#	return_dict=True,
 			)
 			if self.n_experts > 1 and self.training:
@@ -1350,15 +1350,6 @@ class Base(nn.Module):
 		x, m = list_to_tensor(x_list)
 
 		training = self.training
-		# yes, there's a better way.
-		"""
-		training = False
-		for batch_index, batch in enumerate(inputs):
-			for name, input in batch:
-				if name == "targ":
-					training = True
-		"""
-
 		device = x.device
 		batch_size = len(x_list)
 
