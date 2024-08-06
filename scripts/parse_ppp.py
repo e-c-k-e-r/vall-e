@@ -1,3 +1,7 @@
+"""
+# Helper script to parse PPP dataset into a friendlier hierarchy
+"""
+
 import os
 import json
 import torch
@@ -6,8 +10,6 @@ from tqdm.auto import tqdm
 from pathlib import Path
 from vall_e.emb.g2p import encode as valle_phonemize
 from vall_e.emb.qnt import encode_from_file as valle_quantize, _replace_file_extension
-
-device = "cuda"
 
 target = "in"
 
@@ -86,6 +88,10 @@ for key, entry in audio_map.items():
 for name in data.keys():
 	open(f"./training/{name}/whisper.json", "w", encoding="utf-8").write( json.dumps( data[name], indent='\t' ) )
 
+# to-do: update to "The Proper Way"
+# for now it can just be fed back into "The Proper Way""
+"""
+device = "cuda"
 for key, text in tqdm(txts.items(), desc="Phonemizing..."):
 	path = Path(key)
 	phones = valle_phonemize(text)
@@ -94,3 +100,4 @@ for key, text in tqdm(txts.items(), desc="Phonemizing..."):
 for path in tqdm(wavs, desc="Quantizing..."):
 	qnt = valle_quantize(path, device=device)
 	torch.save(qnt.cpu(), _replace_file_extension(path, ".qnt.pt"))
+"""

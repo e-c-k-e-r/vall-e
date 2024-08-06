@@ -1,3 +1,7 @@
+"""
+# Helper script to grab all phonemes through parsed dataset metadata to find the "best" tokenizer dict
+"""
+
 import os
 import json
 import torch

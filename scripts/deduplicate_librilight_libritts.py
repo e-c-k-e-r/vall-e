@@ -1,3 +1,7 @@
+"""
+# Helper script to try and detect any duplications between LibriLight and LibriTTS (I don't think there were any)
+"""
+
 import os
 import json
 

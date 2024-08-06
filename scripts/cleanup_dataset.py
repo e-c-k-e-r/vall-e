@@ -1,3 +1,7 @@
+"""
+# Helper script to clean up transcription metadata, whatever that entailed.
+"""
+
 import os
 import json
 import torch

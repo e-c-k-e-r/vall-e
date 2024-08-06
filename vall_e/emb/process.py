@@ -59,6 +59,7 @@ def process(
 	cfg.inference.amp = amp # False
 
 	# import after because we've overriden the config above
+	# need to validate if this is even necessary anymore
 	from .g2p import encode as phonemize
 	from .qnt import encode as quantize, _replace_file_extension
 
@@ -275,8 +276,8 @@ def process(
 							raise e
 						continue
 
-	open("./missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
-	open("./dataset_list.json", 'w', encoding='utf-8').write(json.dumps(dataset))
+	open(f"./{output_dataset}/missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
+	open(f"./{output_dataset}/dataset.json", 'w', encoding='utf-8').write(json.dumps(dataset))
 
 def main():
 	parser = argparse.ArgumentParser()
