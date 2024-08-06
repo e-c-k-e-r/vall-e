@@ -109,12 +109,15 @@ def process(
 			txts = []
 			wavs = []
 
-			for book_id in os.listdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
+			for book_id in os.listdir(f'./{input_audio}/{group_name}/{speaker_id}'):
 				if not os.path.isdir(f'./{input_audio}/{group_name}/{speaker_id}/{book_id}'):
 					print("Is not dir:", f'./{input_audio}/{group_name}/{speaker_id}/{book_id}')
 					continue
 
-				for filename in os.listdir(f'./{input_audio}/{dataset_name}/{speaker_id}/{book_id}'):
+				for filename in os.listdir(f'./{input_audio}/{group_name}/{speaker_id}/{book_id}'):
+					if ".wav" not in filename:
+						continue
+
 					inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{book_id}/{filename}')
 					if not inpath.exists():
 						missing["audio"].append(str(inpath))
