@@ -15,6 +15,10 @@ from pathlib import Path
 
 from ..config import cfg
 
+# need to validate if this is safe to import before modifying the config
+from .g2p import encode as phonemize
+from .qnt import encode as quantize, _replace_file_extension
+
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
 
@@ -57,11 +61,6 @@ def process(
 	cfg.audio_backend = audio_backend # "encodec"
 	cfg.inference.weight_dtype = dtype # "bfloat16"
 	cfg.inference.amp = amp # False
-
-	# import after because we've overriden the config above
-	# need to validate if this is even necessary anymore
-	from .g2p import encode as phonemize
-	from .qnt import encode as quantize, _replace_file_extension
 
 	output_dataset = f"{output_dataset}/{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
 
@@ -272,6 +271,7 @@ def process(
 							})
 					except Exception as e:
 						print(f"Failed to quantize: {outpath}:", e)
+						torchaudio.save( waveform.cpu )
 						if raise_exceptions:
 							raise e
 						continue
@@ -283,18 +283,26 @@ def main():
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument("--audio-backend", type=str, default="encodec")
-	parser.add_argument("--dtype", type=str, default="bfloat16")
-	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--input-audio", type=str, default="voices")
 	parser.add_argument("--input-metadata", type=str, default="training/metadata")
 	parser.add_argument("--output-dataset", type=str, default="training/dataset")
-	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--raise-exceptions", action="store_true")
 	parser.add_argument("--stride", type=int, default=0)
 	parser.add_argument("--stride-offset", type=int, default=0)
 	parser.add_argument("--slice", type=str, default="auto")
 	
+	parser.add_argument("--device", type=str, default="cuda")
+	parser.add_argument("--dtype", type=str, default="bfloat16")
+	parser.add_argument("--amp", action="store_true")
+	
 	args = parser.parse_args()
+
+	# do some assumption magic
+	# to-do: find a nice way to spawn multiple processes where tqdm plays nicely
+	if args.device.isnumeric():
+		args.stride = torch.cuda.device_count()
+		args.stride_offset = int(args.device)
+		args.device = f'cuda:{args.device}'
 
 	process(
 		audio_backend=args.audio_backend,

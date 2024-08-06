@@ -119,8 +119,10 @@ def process(
 						continue
 
 					inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{book_id}/{filename}')
-					if not inpath.exists():
+					textpath = _replace_file_extension(inpath, ".original.txt")
+					if not inpath.exists() or not textpath.exists():
 						missing["audio"].append(str(inpath))
+						continue
 				
 					extension = os.path.splitext(filename)[-1][1:]
 					fname = filename.replace(f'.{extension}', "")
@@ -129,7 +131,7 @@ def process(
 					language = "en"
 
 					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
-					text = open(_replace_file_extension(inpath, ".original.txt"), "r", encoding="utf-8").read()
+					text = open(textpath, "r", encoding="utf-8").read()
 
 					if len(text) == 0:
 						continue
@@ -213,6 +215,13 @@ def main():
 	parser.add_argument("--slice", type=str, default="auto")
 	
 	args = parser.parse_args()
+
+	# do some assumption magic
+	# to-do: find a nice way to spawn multiple processes where tqdm plays nicely
+	if args.device.isnumeric():
+		args.stride = torch.cuda.device_count()
+		args.stride_offset = int(args.device)
+		args.device = f'cuda:{args.device}'
 
 	process(
 		audio_backend=args.audio_backend,

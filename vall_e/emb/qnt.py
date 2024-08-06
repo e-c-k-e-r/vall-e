@@ -252,18 +252,12 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 				dac_version='1.0.0',
 			)
 			dummy = True
+		elif hasattr( metadata, "__dict__" ):
+			metadata = metadata.__dict__
+			metadata.pop("codes")
+
 		# generate object with copied metadata
-		artifact = DACFile(
-			codes = codes,
-			# yes I can **kwargs from a dict but what if I want to pass the actual DACFile.metadata from elsewhere
-			chunk_length = metadata["chunk_length"] if isinstance(metadata, dict) else metadata.chunk_length,
-			original_length = metadata["original_length"] if isinstance(metadata, dict) else metadata.original_length,
-			input_db = metadata["input_db"] if isinstance(metadata, dict) else metadata.input_db,
-			channels = metadata["channels"] if isinstance(metadata, dict) else metadata.channels,
-			sample_rate = metadata["sample_rate"] if isinstance(metadata, dict) else metadata.sample_rate,
-			padding = metadata["padding"] if isinstance(metadata, dict) else metadata.padding,
-			dac_version = metadata["dac_version"] if isinstance(metadata, dict) else metadata.dac_version,
-		)
+		artifact = DACFile( codes = codes, **metadata )
 		artifact.dummy = dummy
 
 		# to-do: inject the sample rate encoded at, because we can actually decouple		
@@ -368,7 +362,9 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.mod
 			levels = 8 if model.model_type == "24khz" else None
 
 		with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
-			artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
+			# I guess it's safe to not encode in one chunk
+			#artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
+			artifact = model.compress(signal, verbose=False, n_quantizers=levels)
 		return artifact.codes if not return_metadata else artifact
 
 	# AudioDec uses a different pathway

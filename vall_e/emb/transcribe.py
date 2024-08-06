@@ -17,6 +17,10 @@ from pathlib import Path
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
 
+def process_items( items, stride=0, stride_offset=0 ):
+	items = sorted( items )
+	return items if stride == 0 else [ item for i, item in enumerate( items ) if (i+stride_offset) % stride == 0 ]
+
 def transcribe(
 	input_audio = "voices",
 	output_metadata = "training/metadata",
@@ -24,6 +28,9 @@ def transcribe(
 	
 	skip_existing = True,
 	diarize = False,
+
+	stride = 0,
+	stride_offset = ,
 
 	batch_size = 16,
 	device = "cuda",
@@ -42,7 +49,7 @@ def transcribe(
 		if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
 			continue
 
-		for speaker_id in tqdm(os.listdir(f'./{input_audio}/{dataset_name}/'), desc="Processing speaker"):
+		for speaker_id in tqdm(process_items(os.listdir(f'./{input_audio}/{dataset_name}/')), desc="Processing speaker"):
 			if not os.path.isdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
 				continue
 
@@ -55,7 +62,6 @@ def transcribe(
 				metadata = {}
 
 			for filename in tqdm(os.listdir(f'./{input_audio}/{dataset_name}/{speaker_id}/'), desc=f"Processing speaker: {speaker_id}"):
-
 				if skip_existing and filename in metadata:
 					continue
 
@@ -122,6 +128,8 @@ def main():
 	parser.add_argument("--skip-existing", action="store_true")
 	parser.add_argument("--diarize", action="store_true")
 	parser.add_argument("--batch-size", type=int, default=16)
+	parser.add_argument("--stride", type=int, default=0)
+	parser.add_argument("--stride-offset", type=int, default=0)
 
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--dtype", type=str, default="bfloat16")
@@ -129,6 +137,13 @@ def main():
 	# parser.add_argument("--raise-exceptions", action="store_true")
 
 	args = parser.parse_args()
+	
+	# do some assumption magic
+	# to-do: find a nice way to spawn multiple processes where tqdm plays nicely
+	if args.device.isnumeric():
+		args.stride = torch.cuda.device_count()
+		args.stride_offset = int(args.device)
+		args.device = f'cuda:{args.device}'
 
 	transcribe(
 		input_audio = args.input_audio,
@@ -137,6 +152,9 @@ def main():
 
 		skip_existing = args.skip_existing,
 		diarize = args.diarize,
+
+		stride = args.stride,
+		stride_offset = args.stride_offset,
 
 		batch_size = args.batch_size,
 		device = args.device,
