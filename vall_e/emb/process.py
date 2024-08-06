@@ -1,3 +1,8 @@
+"""
+# Handles processing audio provided through --input-audio of adequately annotated transcriptions provided through --input-metadata (through transcribe.py)
+# Outputs NumPy objects containing quantized audio and adequate metadata for use of loading in the trainer through --output-dataset
+"""
+
 import os
 import json
 import argparse
@@ -7,8 +12,8 @@ import numpy as np
 
 from tqdm.auto import tqdm
 from pathlib import Path
-from vall_e.config import cfg
 
+from ..config import cfg
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
@@ -17,14 +22,26 @@ def process_items( items, stride=0 ):
 	items = sorted( items )
 	return items if stride == 0 else [ item for i, item in enumerate( items ) if i % stride == 0 ]
 
-def process_dataset( args ):
+def process(
+		audio_backend="encodec",
+		input_audio="voices",
+		input_metadata="metadata",
+		output_dataset="training",
+		raise_exceptions=False,
+		stride=0,
+		slice="auto",
+
+		device="cuda",
+		dtype="float16",
+		amp=False,
+	):
 	# encodec / vocos
 
-	if args.audio_backend in ["encodec", "vocos"]:
+	if audio_backend in ["encodec", "vocos"]:
 		audio_extension = ".enc"
 		cfg.sample_rate = 24_000
 		cfg.model.resp_levels = 8
-	elif args.audio_backend == "dac":
+	elif audio_backend == "dac":
 		audio_extension = ".dac"
 		cfg.sample_rate = 44_100
 		cfg.model.resp_levels = 9
@@ -33,24 +50,18 @@ def process_dataset( args ):
 		audio_extension = ".dec"
 		cfg.model.resp_levels = 8 # ?
 	else:
-		raise Exception(f"Unknown audio backend: {args.audio_backend}")
+		raise Exception(f"Unknown audio backend: {audio_backend}")
 
 	# prepare from args
-	cfg.audio_backend = args.audio_backend # "encodec"
-	cfg.inference.weight_dtype = args.dtype # "bfloat16"
-	cfg.inference.amp = args.amp # False
+	cfg.audio_backend = audio_backend # "encodec"
+	cfg.inference.weight_dtype = dtype # "bfloat16"
+	cfg.inference.amp = amp # False
 
 	# import after because we've overriden the config above
-	from vall_e.emb.g2p import encode as valle_phonemize
-	from vall_e.emb.qnt import encode as valle_quantize, _replace_file_extension
+	from .g2p import encode as phonemize
+	from .qnt import encode as quantize, _replace_file_extension
 
-	input_audio = args.input_audio # "voice""
-	input_metadata = args.input_metadata # "metadata"
-	output_group = f"{args.output_group}-{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
-	device = args.device # "cuda"
-	raise_exceptions = args.raise_exceptions # False
-	stride = args.stride # 0
-	slice = args.slice # "auto"
+	output_dataset = f"{output_dataset}/{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
 
 	language_map = {} # k = group, v = language
 
@@ -88,18 +99,18 @@ def process_dataset( args ):
 			if only_speakers and speaker_id not in only_speakers:
 				continue
 
-			os.makedirs(f'./{output_group}/{group_name}/{speaker_id}/', exist_ok=True)
+			os.makedirs(f'./{output_dataset}/{group_name}/{speaker_id}/', exist_ok=True)
 
 			if speaker_id == "Noise":
 				for filename in sorted(os.listdir(f'./{input_audio}/{group_name}/{speaker_id}/')):
 					inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{filename}')
-					outpath = Path(f'./{output_group}/{group_name}/{speaker_id}/{filename}')
+					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{filename}')
 
 					if _replace_file_extension(outpath, audio_extension).exists():
 						continue
 
 					waveform, sample_rate = torchaudio.load(inpath)
-					qnt = valle_quantize(waveform, sr=sample_rate, device=device)
+					qnt = quantize(waveform, sr=sample_rate, device=device)
 
 					if cfg.audio_backend == "dac":
 						np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
@@ -158,7 +169,7 @@ def process_dataset( args ):
 				language = language_map[group_name] if group_name in language_map else (metadata[filename]["language"] if "language" in metadata[filename] else "en")
 
 				if len(metadata[filename]["segments"]) == 0 or not use_slices:
-					outpath = Path(f'./{output_group}/{group_name}/{speaker_id}/{fname}.{extension}')
+					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
 					text = metadata[filename]["text"]
 
 					if len(text) == 0:
@@ -185,7 +196,7 @@ def process_dataset( args ):
 						id = pad(i, 4)
 						i = i + 1
 
-						outpath = Path(f'./{output_group}/{group_name}/{speaker_id}/{fname}_{id}.{extension}')
+						outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}_{id}.{extension}')
 						text = segment["text"]
 
 						if len(text) == 0:
@@ -223,8 +234,8 @@ def process_dataset( args ):
 					try:
 						outpath, text, language, waveform, sample_rate = job
 
-						phones = valle_phonemize(text, language=language)
-						qnt = valle_quantize(waveform, sr=sample_rate, device=device)
+						phones = phonemize(text, language=language)
+						qnt = quantize(waveform, sr=sample_rate, device=device)
 
 
 						if cfg.audio_backend == "dac":
@@ -273,8 +284,8 @@ def main():
 	parser.add_argument("--dtype", type=str, default="bfloat16")
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--input-audio", type=str, default="voices")
-	parser.add_argument("--input-metadata", type=str, default="metadata")
-	parser.add_argument("--output_group", type=str, default="training")
+	parser.add_argument("--input-metadata", type=str, default="training/metadata")
+	parser.add_argument("--output-dataset", type=str, default="training/dataset")
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--raise-exceptions", action="store_true")
 	parser.add_argument("--stride", type=int, default=0)
@@ -282,7 +293,19 @@ def main():
 	
 	args = parser.parse_args()
 
-	process_dataset( args )
+	process(
+		audio_backend=args.audio_backend,
+		input_audio=args.input_audio,
+		input_metadata=args.input_metadata,
+		output_dataset=args.output_dataset,
+		raise_exceptions=args.raise_exceptions,
+		stride=args.stride,
+		slice=args.slice,
+
+		device=args.device,
+		dtype=args.dtype,
+		amp=args.amp,
+	)
 
 if __name__ == "__main__":
 	main()
