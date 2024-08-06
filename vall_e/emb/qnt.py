@@ -254,10 +254,17 @@ def decode(codes: Tensor, device="cuda", levels=cfg.model.max_levels, metadata=N
 			dummy = True
 		elif hasattr( metadata, "__dict__" ):
 			metadata = metadata.__dict__
-			metadata.pop("codes")
-
 		# generate object with copied metadata
-		artifact = DACFile( codes = codes, **metadata )
+		artifact = DACFile(
+			codes = codes,
+			chunk_length = metadata["chunk_length"],
+			original_length = metadata["original_length"],
+			input_db = metadata["input_db"],
+			channels = metadata["channels"],
+			sample_rate = metadata["sample_rate"],
+			padding = metadata["padding"],
+			dac_version = metadata["dac_version"],
+		)
 		artifact.dummy = dummy
 
 		# to-do: inject the sample rate encoded at, because we can actually decouple		
@@ -362,9 +369,8 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", levels=cfg.mod
 			levels = 8 if model.model_type == "24khz" else None
 
 		with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
-			# I guess it's safe to not encode in one chunk
-			#artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
-			artifact = model.compress(signal, verbose=False, n_quantizers=levels)
+			artifact = model.compress(signal, win_duration=None, verbose=False, n_quantizers=levels)
+			#artifact = model.compress(signal, n_quantizers=levels)
 		return artifact.codes if not return_metadata else artifact
 
 	# AudioDec uses a different pathway
