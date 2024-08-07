@@ -54,17 +54,29 @@ def encode(text: str, language="en-us", backend="auto", punctuation=True, stress
 	if not backend or backend == "auto":
 		backend = "espeak" # if language[:2] != "en" else "festival"
 
-	text = [ text ]
-
 	backend = _get_backend(language=language, backend=backend, stress=stress, strip=strip, punctuation=punctuation)
 	if backend is not None:
-		tokens = backend.phonemize( text, strip=strip )
+		tokens = backend.phonemize( [ text ], strip=strip )
 	else:
-		tokens = phonemize( text, language=language, strip=strip, preserve_punctuation=punctuation, with_stress=stress )
+		tokens = phonemize( [ text ], language=language, strip=strip, preserve_punctuation=punctuation, with_stress=stress )
 	
 	if not len(tokens):
-		tokens = []
-	else:
-		tokens = list(tokens[0])
+		raise Exception(f"Failed to phonemize, received empty string: {text}")
 
-	return tokens
+	return tokens[0]
+
+# Helper function to debug phonemizer
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+
+	parser.add_argument("string", type=str)
+	parser.add_argument("--language", type=str, default="en-us")
+	parser.add_argument("--backend", type=str, default="auto")
+	parser.add_argument("--no-punctuation", action="store_true")
+	parser.add_argument("--no-stress", action="store_true")
+	parser.add_argument("--no-strip", action="store_true")
+
+	args = parser.parse_args()
+
+	phonemes = encode( args.string, language=args.language, backend=args.backend, punctuation=not args.no_punctuation, stress=not args.no_stress, strip=not args.no_strip )
+	print( phonemes )

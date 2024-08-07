@@ -58,13 +58,13 @@ If you already have a dataset you want, for example, your own large corpus or fo
 
 1. Populate your source voices under `./voices/{group name}/{speaker name}/`.
 
-2. Run `python3 ./scripts/transcribe_dataset.py`. This will generate a transcription with timestamps for your dataset.
+2. Run `python3 -m vall_e.emb.transcribe`. This will generate a transcription with timestamps for your dataset.
   + If you're interested in using a different model, edit the script's `model_name` and `batch_size` variables.
 
-3. Run `python3 ./scripts/process_dataset.py`. This will phonemize the transcriptions and quantize the audio.
+3. Run `python3 -m vall_e.emb.process`. This will phonemize the transcriptions and quantize the audio.
   + If you're using a Descript-Audio-Codec based model, ensure to set the sample rate and audio backend accordingly.
 
-4. Copy `./data/config.yaml` to `./training/config.yaml`. Customize the training configuration and populate your `dataset.training` list with the values stored under `./training/dataset_list.json`.
+4. Copy `./data/config.yaml` to `./training/config.yaml`. Customize the training configuration and populate your `dataset.training` list with the values stored under `./training/dataset/list.json`.
   + Refer to `./vall_e/config.py` for additional configuration details.
 
 ### Dataset Formats

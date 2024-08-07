@@ -17,7 +17,7 @@ from ..config import cfg
 
 # need to validate if this is safe to import before modifying the config
 from .g2p import encode as phonemize
-from .qnt import encode as quantize, _replace_file_extension
+from .qnt import encode as quantize
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
@@ -33,12 +33,11 @@ def process_items( items, stride=0, stride_offset=0 ):
 	items = sorted( items )
 	return items if stride == 0 else [ item for i, item in enumerate( items ) if (i+stride_offset) % stride == 0 ]
 
-def process_job( outpath, text, language, waveform, sample_rate ):
-	phones = phonemize(text, language=language)
+def process_job( outpath, waveform, sample_rate, text=None, language="en" ):
 	qnt = quantize(waveform, sr=sample_rate, device=waveform.device)
 
 	if cfg.audio_backend == "dac":
-		np.save(open(outpath, "wb"), {
+		state_dict = {
 			"codes": qnt.codes.cpu().numpy().astype(np.uint16),
 			"metadata": {
 				"original_length": qnt.original_length,
@@ -49,33 +48,35 @@ def process_job( outpath, text, language, waveform, sample_rate ):
 				"channels": qnt.channels,
 				"padding": qnt.padding,
 				"dac_version": "1.0.0",
-
-				"text": text.strip(),
-				"phonemes": "".join(phones),
-				"language": language,
 			},
-		})
+		}
 	else:						
-		np.save(open(outpath, "wb"), {
+		state_dict = {
 			"codes": qnt.cpu().numpy().astype(np.uint16),
 			"metadata": {
 				"original_length": waveform.shape[-1],
 				"sample_rate": sample_rate,
-
-				"text": text.strip(),
-				"phonemes": "".join(phones),
-				"language": language,
 			},
-		})
+		}
+
+	if text:
+		text = text.strip()
+		state_dict['metadata'] |= {
+			"text": text,
+			"phonemes": phonemize(text, language=language),
+			"language": language,
+		}
+	
+	np.save(open(outpath, "wb"), state_dict)
 
 def process_jobs( jobs, speaker_id="", raise_exceptions=True ):
 	if not jobs:
 		return
 	
 	for job in tqdm(jobs, desc=f"Quantizing: {speaker_id}"):
-		outpath, text, language, waveform, sample_rate = job
+		outpath, waveform, sample_rate, text, language = job
 		try:
-			process_job( outpath, text, language, waveform, sample_rate  )
+			process_job( outpath, waveform, sample_rate, text, language  )
 		except Exception as e:
 			print(f"Failed to quantize: {outpath}:", e)
 			if raise_exceptions:
@@ -98,30 +99,16 @@ def process(
 		dtype="float16",
 		amp=False,
 	):
-	# encodec / vocos
-
-	if audio_backend in ["encodec", "vocos"]:
-		audio_extension = ".enc"
-		cfg.sample_rate = 24_000
-		cfg.model.resp_levels = 8
-	elif audio_backend == "dac":
-		audio_extension = ".dac"
-		cfg.sample_rate = 44_100
-		cfg.model.resp_levels = 9
-	elif cfg.audio_backend == "audiodec":
-		sample_rate = 48_000
-		audio_extension = ".dec"
-		cfg.model.resp_levels = 8 # ?
-	else:
-		raise Exception(f"Unknown audio backend: {audio_backend}")
-
 	# prepare from args
-	cfg.audio_backend = audio_backend # "encodec"
+	cfg.set_audio_backend(args.audio_backend)
+	audio_extension = cfg.audio_backend_extension
+
 	cfg.inference.weight_dtype = dtype # "bfloat16"
 	cfg.inference.amp = amp # False
 
 	output_dataset = f"{output_dataset}/{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
 
+	# to-do: make this also prepared from args
 	language_map = {} # k = group, v = language
 
 	ignore_groups = [] # skip these groups
@@ -164,8 +151,7 @@ def process(
 			if speaker_id in audio_only:
 				for filename in sorted(os.listdir(f'./{input_audio}/{group_name}/{speaker_id}/')):
 					inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{filename}')
-					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{filename}')
-					outpath = _replace_file_extension(outpath, audio_extension)
+					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{filename}').with_suffix(audio_extension)
 
 					if outpath.exists():
 						continue
@@ -173,28 +159,7 @@ def process(
 					waveform, sample_rate = load_audio( inpath, device )
 					qnt = quantize(waveform, sr=sample_rate, device=device)
 
-					if cfg.audio_backend == "dac":
-						np.save(open(outpath, "wb"), {
-							"codes": qnt.codes.cpu().numpy().astype(np.uint16),
-							"metadata": {
-								"original_length": qnt.original_length,
-								"sample_rate": qnt.sample_rate,
-								
-								"input_db": qnt.input_db.cpu().numpy().astype(np.float32),
-								"chunk_length": qnt.chunk_length,
-								"channels": qnt.channels,
-								"padding": qnt.padding,
-								"dac_version": "1.0.0",
-							},
-						})
-					else:
-						np.save(open(outpath, "wb"), {
-							"codes": qnt.cpu().numpy().astype(np.uint16),
-							"metadata": {
-								"original_length": waveform.shape[-1],
-								"sample_rate": sample_rate,
-							},
-						})
+					process_job(outpath, waveform, sample_rate)
 
 				continue
 			
@@ -229,8 +194,7 @@ def process(
 				language = language_map[group_name] if group_name in language_map else (metadata[filename]["language"] if "language" in metadata[filename] else "en")
 
 				if len(metadata[filename]["segments"]) == 0 or not use_slices:
-					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
-					outpath = _replace_file_extension(outpath, audio_extension)
+					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}').with_suffix(audio_extension)
 					text = metadata[filename]["text"]
 
 					if len(text) == 0 or outpath.exists():
@@ -240,15 +204,14 @@ def process(
 					if waveform is None:
 						waveform, sample_rate = load_audio( inpath, device )
 
-					jobs.append(( outpath, text, language, waveform, sample_rate ))
+					jobs.append(( outpath, waveform, sample_rate, text, language ))
 				else:
 					i = 0
 					for segment in metadata[filename]["segments"]:
 						id = pad(i, 4)
 						i = i + 1
 
-						outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}_{id}.{extension}')
-						outpath = _replace_file_extension(outpath, audio_extension)
+						outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}_{id}.{extension}').with_suffix(audio_extension)
 						text = segment["text"]
 
 						if len(text) == 0 or outpath.exists():
@@ -269,7 +232,7 @@ def process(
 						if end - start < 0:
 							continue
 
-						jobs.append(( outpath, text, language, waveform[:, start:end], sample_rate ))
+						jobs.append(( outpath, waveform[:, start:end], sample_rate, text, language ))
 
 				# processes audio files one at a time
 				if low_memory:

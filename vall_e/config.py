@@ -157,6 +157,8 @@ class Dataset:
 	max_resps: int = 1 # number of samples to target for training
 	p_resp_append: float = 1.0 # probability to append another sample to the training target
 
+	p_resp_pad_silence: float = 0.0 # probability to pad resp with silence to fit within the next window
+
 	sample_type: str = "path" # path | speaker
 	sample_order: str = "interleaved" # duration
 	sample_max_duration_batch: float = 0.0 # total number of seconds of utterances per batched, 0 to disable
@@ -177,11 +179,8 @@ class Dataset:
 			return self._frames_per_second
 
 		if cfg.audio_backend == "dac":
-			# using the 44KHz model with 24KHz sources has a frame rate of 41Hz
-			if cfg.variable_sample_rate and cfg.sample_rate == 24_000:
-				return 41
-			if cfg.sample_rate == 44_000 or cfg.sample_rate == 44_100: # to-do: find the actual value for 44.1K
-				return 86
+			if cfg.sample_rate == 44_100:
+				return 87
 			if cfg.sample_rate == 16_000:
 				return 50
 		
@@ -712,13 +711,39 @@ class Config(BaseConfig):
 	tokenizer_path: str = "./tokenizer.json" # tokenizer path
 
 	sample_rate: int = 24_000 # sample rate the model expects
-	variable_sample_rate: bool = False # NOT recommended, as running directly 24Khz audio in the 44Khz DAC model will have detrimental quality loss
-
 	audio_backend: str = "vocos" # audio backend to use "encodec" | "vocos" | "dac""
 
 	weights_format: str = "pth" # "pth" | "sft"
-
 	supported_weights_formats: list[str] = field(default_factory=lambda: ["sft", "safetensors", "pt", "pth"])
+
+	def set_audio_backend(self, audio_backend):
+		cfg.audio_backend = audio_backend
+		audio_extension = None
+		if audio_backend in ["encodec", "vocos"]:
+			audio_extension = ".enc"
+			cfg.sample_rate = 24_000
+			cfg.model.resp_levels = 8
+		elif audio_backend == "dac":
+			audio_extension = ".dac"
+			cfg.sample_rate = 44_100
+			cfg.model.resp_levels = 9
+		elif cfg.audio_backend == "audiodec":
+			audio_extension = ".dec"
+			sample_rate = 48_000
+			cfg.model.resp_levels = 8 # ?
+		else:
+			raise Exception(f"Unknown audio backend: {audio_backend}")
+
+	@property
+	def audio_backend_extension(self):
+		audio_extension = None
+		if self.audio_backend in ["encodec", "vocos"]:
+			audio_extension = ".enc"
+		elif self.audio_backend == "dac":
+			audio_extension = ".dac"
+		elif self.audio_backend == "audiodec":
+			audio_extension = ".dec"
+		return audio_extension
 
 	@property
 	def model(self):

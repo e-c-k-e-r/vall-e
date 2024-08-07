@@ -11,7 +11,7 @@ import torch
 import itertools
 
 from .config import cfg
-from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt
+from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt, pad_codes_with_silence
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
 from .utils.io import torch_save, torch_load
@@ -368,7 +368,9 @@ def get_phone_symmap():
 	return cfg.tokenizer.get_vocab()
 
 def tokenize( phones ):
-	return cfg.tokenizer.encode( "".join(phones) )
+	if isinstance( phones, list ):
+		phones = "".join( phones )
+	return cfg.tokenizer.encode( phones )
 
 def get_lang_symmap():
 	return {
@@ -1145,6 +1147,10 @@ class Dataset(_Dataset):
 
 		if text is None:
 			text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
+
+		# pad the target with silence
+		if p_resp_pad_silence < random.random():
+			resps = pad_codes_with_silence( resps )
 
 		return dict(
 			index=index,
