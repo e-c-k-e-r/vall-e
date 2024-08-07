@@ -522,8 +522,10 @@ class Base(nn.Module):
 				attention_backend = "mem_efficient"
 			elif "math" in AVAILABLE_ATTENTIONS:
 				attention_backend = "math"
-			else:
+			elif "sdpa" in AVAILABLE_ATTENTIONS:
 				attention_backend = "sdpa"
+			else:
+				attention_backend = "eager"
 
 		if attention_backend == "xformers":
 			attention_backend = "mem_efficient"

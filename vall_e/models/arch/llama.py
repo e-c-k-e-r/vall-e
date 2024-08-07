@@ -9,7 +9,7 @@ from transformers.cache_utils import Cache
 from transformers import LlamaModel, LlamaConfig, LlamaForCausalLM
 from transformers.models.llama.modeling_llama import LlamaAttention, apply_rotary_pos_emb, repeat_kv
 
-AVAILABLE_ATTENTIONS = ["sdpa"]
+AVAILABLE_ATTENTIONS = []
 
 if torch.backends.cuda.flash_sdp_enabled():
 	AVAILABLE_ATTENTIONS.append("flash")	
@@ -19,6 +19,12 @@ if torch.backends.cuda.mem_efficient_sdp_enabled():
 
 if torch.backends.cuda.math_sdp_enabled():
 	AVAILABLE_ATTENTIONS.append("math")	
+
+if torch.backends.cuda.cudnn_sdp_enabled():
+	AVAILABLE_ATTENTIONS.append("cudnn")	
+
+if AVAILABLE_ATTENTIONS:
+	AVAILABLE_ATTENTIONS.append("sdpa")	
 
 try:
 	from xformers.ops import LowerTriangularMask
