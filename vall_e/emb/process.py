@@ -100,7 +100,7 @@ def process(
 		amp=False,
 	):
 	# prepare from args
-	cfg.set_audio_backend(args.audio_backend)
+	cfg.set_audio_backend(audio_backend)
 	audio_extension = cfg.audio_backend_extension
 
 	cfg.inference.weight_dtype = dtype # "bfloat16"
@@ -117,7 +117,7 @@ def process(
 	only_groups = [] # only process these groups
 	only_speakers = [] # only process these speakers
 
-	always_slice_groups = [] # always slice from this group
+	always_slice_groups = ["Audiobooks", "LibriVox"] # always slice from this group
 	audio_only = ["Noise"] # special pathway for processing audio only (without a transcription)
 
 	missing = {
