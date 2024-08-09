@@ -1473,11 +1473,8 @@ def create_dataset_hdf5( skip_existing=True ):
 			except Exception as e:
 				tqdm.write(f'Error while processing {id}: {e}')
 
-		"""
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
 			f.write( json.dumps( metadata ) )
-		"""
-
 
 	# training
 	for data_dir in tqdm(cfg.dataset.training, desc="Processing Training"):
