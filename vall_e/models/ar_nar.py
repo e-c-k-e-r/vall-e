@@ -316,7 +316,7 @@ class AR_NAR(Base):
 
 
 def example_usage():
-	cfg.trainer.backend = "local"
+	# cfg.trainer.backend = "local"
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 	if cfg.audio_backend == "dac":
 		cfg.sample_rate = 44_100
