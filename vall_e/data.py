@@ -1149,7 +1149,7 @@ class Dataset(_Dataset):
 			text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
 
 		# pad the target with silence
-		if p_resp_pad_silence < random.random():
+		if random.random() < cfg.dataset.p_resp_pad_silence:
 			resps = pad_codes_with_silence( resps )
 
 		return dict(

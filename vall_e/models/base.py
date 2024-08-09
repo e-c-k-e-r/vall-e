@@ -514,16 +514,8 @@ class Base(nn.Module):
 		# there seems to have been a regression where anything touching the wrapped LlamaAttention class breaks
 
 		if attention_backend == "auto":
-			if "flash_attention_2" in AVAILABLE_ATTENTIONS:
-				attention_backend = "flash_attention_2"
-			elif "flash" in AVAILABLE_ATTENTIONS:
-				attention_backend = "flash"
-			elif "mem_efficient" in AVAILABLE_ATTENTIONS:
-				attention_backend = "mem_efficient"
-			elif "math" in AVAILABLE_ATTENTIONS:
-				attention_backend = "math"
-			elif "sdpa" in AVAILABLE_ATTENTIONS:
-				attention_backend = "sdpa"
+			if AVAILABLE_ATTENTIONS:
+				attention_backend = AVAILABLE_ATTENTIONS[0]
 			else:
 				attention_backend = "eager"
 

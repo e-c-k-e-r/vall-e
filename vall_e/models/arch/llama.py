@@ -11,6 +11,24 @@ from transformers.models.llama.modeling_llama import LlamaAttention, apply_rotar
 
 AVAILABLE_ATTENTIONS = []
 
+try:
+	from transformers.utils import is_flash_attn_2_available
+
+	if is_flash_attn_2_available():
+		AVAILABLE_ATTENTIONS.append("flash_attention_2")
+except Exception as e:
+	print("Error while querying for `flash_attn_2` support", e)
+
+"""
+try:
+	from xformers.ops import LowerTriangularMask
+	from xformers.ops.fmha import memory_efficient_attention
+
+	AVAILABLE_ATTENTIONS.append("xformers")
+except Exception as e:
+	print("Error while importing `xformers`", e)
+"""
+
 if torch.backends.cuda.flash_sdp_enabled():
 	AVAILABLE_ATTENTIONS.append("flash")	
 
@@ -25,22 +43,6 @@ if torch.backends.cuda.cudnn_sdp_enabled():
 
 if AVAILABLE_ATTENTIONS:
 	AVAILABLE_ATTENTIONS.append("sdpa")	
-
-try:
-	from xformers.ops import LowerTriangularMask
-	from xformers.ops.fmha import memory_efficient_attention
-
-	AVAILABLE_ATTENTIONS.append("xformers")
-except Exception as e:
-	print("Error while importing `xformers`", e)
-
-try:
-	from transformers.utils import is_flash_attn_2_available
-
-	if is_flash_attn_2_available():
-		AVAILABLE_ATTENTIONS.append("flash_attention_2")
-except Exception as e:
-	print("Error while querying for `flash_attn_2` support", e)
 
 class LlamaAttention_Adapted(LlamaAttention):
 	def __init__(self, *args, **kwargs):
@@ -136,8 +138,6 @@ class LlamaAttention_Adapted(LlamaAttention):
 				dropout_p=self.attention_dropout if self.training else 0.0,
 				is_causal=is_causal,
 			)
-
-		print("attention")
 
 		attn_output = attn_output.transpose(1, 2).contiguous()
 		attn_output = attn_output.view(bsz, q_len, -1)
