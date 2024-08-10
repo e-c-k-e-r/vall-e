@@ -316,7 +316,7 @@ class AR_NAR(Base):
 
 
 def example_usage():
-	# cfg.trainer.backend = "local"
+	cfg.trainer.backend = "local"
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 	if cfg.audio_backend == "dac":
 		cfg.sample_rate = 44_100
@@ -398,7 +398,7 @@ def example_usage():
 	tasks = cfg.dataset.tasks_list
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 150 * len(tasks) * cfg.model.experimental.causal_size
+	steps = 150 * len(tasks) # * cfg.model.experimental.causal_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""

@@ -58,9 +58,11 @@ def fold_inputs(
 		stop = torch.tensor(l, device=device).unsqueeze(1)  # (b 1)
 		return (seq < stop).float()  # (b t)
 
-	def list_to_tensor(x_list: list[Tensor]):
+	def list_to_tensor(x_list: list[Tensor], mask=True):
 		l = list(map(len, x_list))
 		x = pad_sequence(x_list).t()
+		if not mask:
+			return x
 
 		m = _create_mask(l, x_list[0].device)
 		m = m.to(x)
@@ -68,7 +70,7 @@ def fold_inputs(
 
 	def process_prom_or_task(i, prom):
 		if prom is None:
-			return
+			return 0
 
 		if isinstance(prom, str):
 			task = get_task_symmap()[f'<{input}>']
@@ -76,7 +78,8 @@ def fold_inputs(
 
 			input_ids[i].append( seq )
 			input_ids[i].append( sep )
-			return
+			
+			return seq.shape[0] + 1
 
 		# deinterleaved
 		if quant_levels is not None:
@@ -99,6 +102,11 @@ def fold_inputs(
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
 
+		return seq.shape[0] + 1
+
+	def generate_position_ids( length, sep=True ):
+		return [ i for i in range( length + (1 if sep else 0) ) ]
+
 	"""
 	if quant_levels is not None:
 		resps_list = [ [] if l == 0 else resp for l, resp in zip(quant_levels, resp_list) ]
@@ -109,6 +117,7 @@ def fold_inputs(
 
 	batch_size = len(text_list)
 	input_ids = [ [] for _ in range(batch_size) ]
+	position_ids = [ [] for _ in range(batch_size) ]
 
 	offset = 0
 	
@@ -142,8 +151,11 @@ def fold_inputs(
 			seq = text + text_start
 		else:
 			seq = torch.tensor([text_start + text], device=device, dtype=dtype)
+		
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
+
+		position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 
 	# lang tokens
 	for i, lang in enumerate(lang_list):
@@ -151,8 +163,11 @@ def fold_inputs(
 			seq = lang + lang_start
 		else:
 			seq = torch.tensor([lang_start + lang], device=device, dtype=dtype)
+		
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
+
+		position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 	
 	# inject target quant_level
 	if quant_levels is not None:
@@ -164,15 +179,20 @@ def fold_inputs(
 			input_ids[i].append( seq )
 			input_ids[i].append( sep )
 
+			position_ids[i].append( generate_position_ids( seq.shape[0] ) )
+
 	# prom / task tokens
 	for i, prom in enumerate(prom_list):
 		# list of proms with a possible task token
+		length = 0
 		if isinstance(prom, list):
 			for p in prom:
-				process_prom_or_task(i, p)
+				length += process_prom_or_task(i, p)
 		# raw tensor
 		else:
-			process_prom_or_task(i, prom)
+			length += process_prom_or_task(i, prom)
+
+		position_ids[i].append( generate_position_ids( length, sep=False ) )
 
 	# tone tokens
 	for i, tone in enumerate(tone_list):
@@ -182,6 +202,8 @@ def fold_inputs(
 			seq = torch.tensor([tone_start + tone], device=device, dtype=dtype)
 		input_ids[i].append( seq )
 		input_ids[i].append( sep )
+
+		position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 
 	# resp tokens
 	for i, resp in enumerate(resp_list):
@@ -205,6 +227,8 @@ def fold_inputs(
 
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
+
+			position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 		# interleaved
 		else:
 			seq = resp.flatten().to(device=device, dtype=dtype)
@@ -213,6 +237,8 @@ def fold_inputs(
 		
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
+			
+			position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 
 	# targ list
 	for i, resp in enumerate(targ_list):
@@ -225,6 +251,8 @@ def fold_inputs(
 			
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
+
+			position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 		# interleaved
 		else:
 			seq = resp.flatten().to(device=device, dtype=dtype)
@@ -233,11 +261,17 @@ def fold_inputs(
 		
 			input_ids[i].append( seq )
 			input_ids[i].append( stop )
+			
+			position_ids[i].append( generate_position_ids( seq.shape[0] ) )
 
 	for i, batch in enumerate(input_ids):
 		input_ids[i] = torch.concat(input_ids[i], dim=-1).to(device=device, dtype=dtype)
+		position_ids[i] = torch.concat([ torch.tensor(ids, device=device, dtype=dtype) for ids in position_ids[i] ], dim=-1)
 
-	return list_to_tensor(input_ids)
+	input_ids, attention_mask = list_to_tensor(input_ids)
+	position_ids = list_to_tensor(position_ids, mask=False)
+
+	return input_ids, attention_mask, position_ids
 
 # unfold from one unified token ID space to separate token spaces
 # to-do: unfold at a specific RVQ level instead if requested

@@ -9,9 +9,9 @@ def MambaMixelModel_forward(self, input_ids=None, hidden_states=None, inference_
 	residual = None
 	for layer in self.layers:
 		if self.gradient_checkpointing and hidden_states.requires_grad:
-			hidden_states, residual = checkpoint( layer, hidden_states, residual, inference_params=inference_params, use_reentrant=False )
+			hidden_states, residual = checkpoint( layer, hidden_states, residual, inference_params=inference_params, **mixer_kwargs, use_reentrant=False )
 		else:
-			hidden_states, residual = layer( hidden_states, residual, inference_params=inference_params )
+			hidden_states, residual = layer( hidden_states, residual, inference_params=inference_params, **mixer_kwargs )
 	if not self.fused_add_norm:
 		residual = (hidden_states + residual) if residual is not None else hidden_states
 		hidden_states = self.norm_f(residual.to(dtype=self.norm_f.weight.dtype))
