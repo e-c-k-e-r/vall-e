@@ -682,7 +682,7 @@ def pad_codes_with_silence( codes, size=1 ):
 	duration = codes.shape[0] * get_framerate()
 	difference = math.ceil( duration + size ) - duration
 
-	silence = get_silence( difference, device=codes.device )
+	silence = get_silence( difference, device=codes.device )[:, :codes.shape[-1]]
 
 	half = math.floor(difference / 2 * get_framerate())
 
