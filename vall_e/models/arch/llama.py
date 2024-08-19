@@ -17,7 +17,56 @@ try:
 	if is_flash_attn_2_available():
 		AVAILABLE_ATTENTIONS.append("flash_attention_2")
 except Exception as e:
-	print("Error while querying for `flash_attn_2` support", e)
+	print("Error while querying for `flash_attention_2` support", e)
+
+# Borrowed from https://github.com/turboderp/exllamav2/blob/master/exllamav2/attn.py#L32
+# Adapted to provide flash_attn_v1 support
+try:
+	import flash_attn
+	flash_attn_ver = [int(t) for t in flash_attn.__version__.split(".") if t.isdigit()]
+	is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
+
+	if [1, 0, 9] == flash_attn_ver:
+		AVAILABLE_ATTENTIONS.append("flash_attn")
+		from flash_attn.flash_attn_interface import flash_attn_unpadded_func
+		from einops import rearrange
+
+		# converts the flash_attn_2 calling convention to flash_attn_1's
+		def flash_attn_func(q, k, v, dropout_p=0.0, softmax_scale=None, causal=False, return_attn_probs=False, deterministic=False, *args, **kwargs):
+			batch_size, seqlen_q = q.shape[0], q.shape[1]
+			seqlen_k = k.shape[1]
+			q, k, v = [rearrange(x, 'b s ... -> (b s) ...').contiguous() for x in [q, k, v]]
+
+			cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32, device=q.device)
+			cu_seqlens_k = cu_seqlens_q
+
+			return flash_attn_unpadded_func(
+				q, k, v,
+				cu_seqlens_q, cu_seqlens_k, seqlen_q, seqlen_k,
+				dropout_p, softmax_scale, causal, return_attn_probs, deterministic
+			)
+		
+		has_flash_attn = True
+	elif [2, 2, 1] <= flash_attn_ver < [2, 5, 7]:
+		AVAILABLE_ATTENTIONS.append("flash_attn")
+		from flash_attn import flash_attn_func
+		has_flash_attn = True
+	elif [2, 5, 7] <= flash_attn_ver:
+		AVAILABLE_ATTENTIONS.append("flash_attn")
+		from flash_attn import flash_attn_func, flash_attn_with_kvcache
+
+		signature = list(inspect.signature(flash_attn_func).parameters)
+		has_flash_attn_with_window = "window_size" in signature
+		has_flash_attn_with_softcap = "softcap" in signature
+
+		import flash_attn_2_cuda as flash_attn_cuda
+
+		has_flash_attn = True
+		has_flash_attn_with_paged = True
+
+
+except Exception as e:
+	print("Error while querying for `flash_attn` | support", e)
 
 """
 try:
@@ -128,16 +177,25 @@ class LlamaAttention_Adapted(LlamaAttention):
 		# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
 		is_causal = True if causal_mask is None and q_len > 1 else False
 
-		#with torch.backends.cuda.sdp_kernel(enable_flash=self.mode == "flash", enable_math=self.mode == "math", enable_mem_efficient=self.mode == "mem_efficient"):
-		with torch.nn.attention.sdpa_kernel(self.mode):
-			attn_output = torch.nn.functional.scaled_dot_product_attention(
+		if self.mode == "flash_attn":
+			attn_output = flash_attn_func(
 				query_states,
 				key_states,
 				value_states,
-				attn_mask=causal_mask,
+				causal=True,
+				softmax_scale=None, # 1, / math.sqrt(cfg.head_dim),
 				dropout_p=self.attention_dropout if self.training else 0.0,
-				is_causal=is_causal,
 			)
+		else:
+			with torch.nn.attention.sdpa_kernel(self.mode):
+				attn_output = torch.nn.functional.scaled_dot_product_attention(
+					query_states,
+					key_states,
+					value_states,
+					attn_mask=causal_mask,
+					dropout_p=self.attention_dropout if self.training else 0.0,
+					is_causal=is_causal,
+				)
 
 		attn_output = attn_output.transpose(1, 2).contiguous()
 		attn_output = attn_output.view(bsz, q_len, -1)

@@ -159,6 +159,8 @@ For audio backends:
 * `sdpa`: integrated `LlamaSdpaAttention` attention model
 * `flash_attention_2`: integrated `LlamaFlashAttetion2` attention model
 * `auto`: determine the best fit from the above
+* `eager`: default `LlamaAttention`
+* `flash_attn`: uses the available `flash_attn` package (including `flash_attn==1.0.9` through a funny wrapper)
 
 The wide support for various backends is solely while I try and figure out which is the "best" for a core foundation model.
 

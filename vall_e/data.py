@@ -1332,24 +1332,28 @@ def create_dataset_metadata( skip_existing=True ):
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return
+
 		# tqdm.write(f'{root}/{name}')
 		files = os.listdir(f'{root}/{name}/')
 
 		# grab IDs for every file
 		ids = { file.replace(_get_quant_extension(), "").replace(_get_phone_extension(), "") for file in files }
 
+		wrote = False
+
 		for id in tqdm(ids, desc=f"Processing {name}"):
 			try:
-				quant_exists = os.path.exists(f'{root}/{name}/{id}{_get_quant_extension()}') if audios else True
-				text_exists = os.path.exists(f'{root}/{name}/{id}{_get_phone_extension()}') if texts else True
+				quant_path = Path(f'{root}/{name}/{id}{_get_quant_extension()}')
 
-				if not quant_exists:
+				if audios and not quant_path.exists():
 					continue
 
 				key = f'{type}/{speaker_name}/{id}'
 
 				if skip_existing and id in metadata:
 					continue
+				
+				wrote = True
 
 				if id not in metadata:
 					metadata[id] = {}
@@ -1357,7 +1361,7 @@ def create_dataset_metadata( skip_existing=True ):
 				utterance_metadata = {}
 				if audios:
 					# ideally we'll encode Encodec-based audio in a similar manner because np has smaller files than pt
-					dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
+					dac = np.load(quant_path, allow_pickle=True)[()]
 					qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
 
 					if "text" in dac["metadata"]:
@@ -1368,9 +1372,6 @@ def create_dataset_metadata( skip_existing=True ):
 						utterance_metadata["language"] = dac["metadata"]["language"]
 					if "original_length" in dac["metadata"] and "sample_rate" in dac["metadata"]:
 						utterance_metadata["duration"] = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
-				# text
-				if texts and text_exists and not utterance_metadata:
-					utterance_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
 
 				for k, v in utterance_metadata.items():
 					metadata[id][k] = v
@@ -1378,8 +1379,9 @@ def create_dataset_metadata( skip_existing=True ):
 			except Exception as e:
 				tqdm.write(f'Error while processing {id}: {e}')
 
-		with open(str(metadata_path), "w", encoding="utf-8") as f:
-			f.write( json.dumps( metadata ) )
+		if wrote:
+			with open(str(metadata_path), "w", encoding="utf-8") as f:
+				f.write( json.dumps( metadata ) )
 
 	# training
 	for data_dir in tqdm(sorted(cfg.dataset.training), desc="Processing Training"):

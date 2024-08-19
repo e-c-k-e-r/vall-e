@@ -8,6 +8,11 @@ from transformers.cache_utils import Cache
 from transformers import MixtralModel, MixtralConfig
 from transformers.models.mixtral.modeling_mixtral import load_balancing_loss_func, MixtralSparseMoeBlock, MixtralAttention, apply_rotary_pos_emb, repeat_kv
 
+try:
+	from .llama import flash_attn_func
+except Exception as e:
+	pass
+
 # This is required because batch sizes > 1 throws errors
 def MixtralSparseMoeBlock_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
 	""" """
@@ -139,15 +144,25 @@ class MixtralAttention_Adapted(MixtralAttention):
 		is_causal = True if causal_mask is None and q_len > 1 else False
 
 		#with torch.backends.cuda.sdp_kernel(enable_flash=self.mode == "flash", enable_math=self.mode == "math", enable_mem_efficient=self.mode == "mem_efficient"):
-		with torch.nn.attention.sdpa_kernel(self.mode):
-			attn_output = torch.nn.functional.scaled_dot_product_attention(
+		if self.mode == "flash_attn":
+			attn_output = flash_attn_func(
 				query_states,
 				key_states,
 				value_states,
-				attn_mask=causal_mask,
+				causal=True,
+				softmax_scale=None, # 1, / math.sqrt(cfg.head_dim),
 				dropout_p=self.attention_dropout if self.training else 0.0,
-				is_causal=is_causal,
 			)
+		else:
+			with torch.nn.attention.sdpa_kernel(self.mode):
+				attn_output = torch.nn.functional.scaled_dot_product_attention(
+					query_states,
+					key_states,
+					value_states,
+					attn_mask=causal_mask,
+					dropout_p=self.attention_dropout if self.training else 0.0,
+					is_causal=is_causal,
+				)
 
 		attn_output = attn_output.transpose(1, 2).contiguous()
 		attn_output = attn_output.view(bsz, q_len, self.hidden_size)
