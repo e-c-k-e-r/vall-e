@@ -401,6 +401,9 @@ class Base(nn.Module):
 		
 		self.l_padding = l_padding
 
+		if "flash_attn_v100" in AVAILABLE_ATTENTIONS:
+			self.l_padding = 32
+
 		self.ignore_index = -100
 
 		self.n_resp_levels = self.config.resp_levels if self.config else n_resp_levels
@@ -623,7 +626,7 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
-				if attention_backend in ["mem_efficient", "math", "flash", "cudnn", "auto"]:
+				if attention_backend in ["mem_efficient", "math", "flash", "cudnn", "auto", "flash_attn"]:
 					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
 
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
