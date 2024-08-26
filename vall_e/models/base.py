@@ -514,8 +514,6 @@ class Base(nn.Module):
 			# experimental NAR-only mode
 			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
 
-		# there seems to have been a regression where anything touching the wrapped LlamaAttention class breaks
-
 		if attention_backend == "auto":
 			if AVAILABLE_ATTENTIONS:
 				attention_backend = AVAILABLE_ATTENTIONS[0]
