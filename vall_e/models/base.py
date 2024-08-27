@@ -385,6 +385,7 @@ class Base(nn.Module):
 		l_padding: int = 0,
 
 		training = True, 
+		attention = None,
 		config = None, 
 	):
 		super().__init__()
@@ -419,7 +420,10 @@ class Base(nn.Module):
 		if self.arch_type in ERROR_ARCHES:
 			raise ERROR_ARCHES[self.arch_type]
 		
-		attention_backend = self.config.attention if self.config is not None else "auto"
+		if not attention:
+			attention = self.config.attention if self.config is not None else "auto"
+
+		attention_backend = attention
 		audio_embedding_sums = self.config.experimental.audio_embedding_sums if self.config is not None else False
 		split_classifiers = self.config.experimental.split_classifiers if self.config is not None else False
 		tie_classifier_to_embedding = self.config.experimental.tie_classifier_to_embedding if self.config is not None else False

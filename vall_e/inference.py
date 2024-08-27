@@ -20,15 +20,16 @@ if deepspeed_available:
 	import deepspeed
 
 class TTS():
-	def __init__( self, config=None, device=None, amp=None, dtype=None ):
+	def __init__( self, config=None, device=None, amp=None, dtype=None, attention=None ):
 		self.loading = True 
 
-		self.load_config( config=config, device=device, amp=amp, dtype=dtype )	
+		# yes I can just grab **kwargs and forward them here
+		self.load_config( config=config, device=device, amp=amp, dtype=dtype, attention=attention )	
 		self.load_model()
 
 		self.loading = False 
 
-	def load_config( self, config=None, device=None, amp=None, dtype=None ):
+	def load_config( self, config=None, device=None, amp=None, dtype=None, attention=None ):
 		if config:
 			print("Loading YAML:", config)
 			cfg.load_yaml( config )
@@ -57,12 +58,15 @@ class TTS():
 		self.dtype = cfg.inference.dtype
 		self.amp = amp
 		
+		self.model_kwargs = {}
+		if attention:
+			self.model_kwargs["attention"] = attention
 
 	def load_model( self ):
 		load_engines.cache_clear()
 		unload_model()
 		
-		self.engines = load_engines(training=False)
+		self.engines = load_engines(training=False, **self.model_kwargs)
 		for name, engine in self.engines.items():
 			if self.dtype != torch.int8:
 				engine.to(self.device, dtype=self.dtype if not self.amp else torch.float32)

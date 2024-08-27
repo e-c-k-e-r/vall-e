@@ -28,8 +28,8 @@ except Exception as e:
 from functools import cache
 
 @cache
-def load_engines(training=True):
-	models = get_models(cfg.models, training=training)
+def load_engines(training=True, **model_kwargs):
+	models = get_models(cfg.models, training=training, **model_kwargs)
 	engines = dict()
 
 	for name, model in models.items():

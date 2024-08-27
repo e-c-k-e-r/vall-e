@@ -1,5 +1,5 @@
 
-def get_model(config, training=True):
+def get_model(config, training=True, **model_kwargs):
 	name = config.name
 
 	if "len" in config.capabilities:
@@ -18,6 +18,7 @@ def get_model(config, training=True):
 			
 			training = training,
 			config = config,
+			**model_kwargs
 		)
 	elif config.experimental.hf:
 		from .experimental import Model as Experimental
@@ -31,6 +32,7 @@ def get_model(config, training=True):
 			p_dropout=config.dropout,
 
 			config = config,
+			**model_kwargs
 		)
 	else:
 		from .ar_nar import AR_NAR
@@ -48,11 +50,12 @@ def get_model(config, training=True):
 			
 			training = training,
 			config = config,
+			**model_kwargs
 		)
 
 	print(f"{name} ({next(model.parameters()).dtype}): {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
 
 	return model
 
-def get_models(models, training=True):
-	return { model.full_name: get_model(model, training=training) for model in models }
+def get_models(models, training=True, **model_kwargs):
+	return { model.full_name: get_model(model, training=training, **model_kwargs) for model in models }

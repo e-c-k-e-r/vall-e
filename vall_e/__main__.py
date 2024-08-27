@@ -45,9 +45,10 @@ def main():
 	parser.add_argument("--device", type=str, default=None)
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=None)
+	parser.add_argument("--attention", type=str, default=None)
 	args = parser.parse_args()
 
-	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype, amp=args.amp )
+	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
 	tts.inference(
 		text=args.text,
 		references=args.references,

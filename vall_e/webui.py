@@ -74,16 +74,20 @@ def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
 def get_dtypes():
 	return ["float32", "float16", "bfloat16", "float8_e5m2", "float8_e4m3fn", "auto"]
 
+from .models.arch import AVAILABLE_ATTENTIONS
+def get_attentions():
+	return AVAILABLE_ATTENTIONS + ["auto"]
+
 #@gradio_wrapper(inputs=layout["settings"]["inputs"].keys())
-def load_model( yaml, device, dtype ):
+def load_model( yaml, device, dtype, attention ):
 	gr.Info(f"Loading: {yaml}")
 	try:
-		init_tts( yaml=Path(yaml), restart=True )
+		init_tts( yaml=Path(yaml), restart=True, device=device, dtype=dtype, attention=attention )
 	except Exception as e:
 		raise gr.Error(e)
 	gr.Info(f"Loaded model")
 
-def init_tts(yaml=None, restart=False, device="cuda", dtype="auto"):
+def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention="auto"):
 	global tts
 
 	if tts is not None:
@@ -98,9 +102,10 @@ def init_tts(yaml=None, restart=False, device="cuda", dtype="auto"):
 	parser.add_argument("--device", type=str, default=device)
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=dtype)
+	parser.add_argument("--attention", type=str, default=attention)
 	args, unknown = parser.parse_known_args()
 
-	tts = TTS( config=args.yaml if yaml is None else yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp )
+	tts = TTS( config=args.yaml if yaml is None else yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp, attention=args.attention )
 	return tts
 
 @gradio_wrapper(inputs=layout["inference"]["inputs"].keys())
@@ -313,8 +318,9 @@ with ui:
 			with gr.Column(scale=7):
 				with gr.Row():
 					layout["settings"]["inputs"]["models"] = gr.Dropdown(choices=get_model_paths(), value=args.yaml, label="Model")
-					layout["settings"]["inputs"]["device"] = gr.Dropdown(choices=get_devices(), value="cuda", label="Device")
+					layout["settings"]["inputs"]["device"] = gr.Dropdown(choices=get_devices(), value="cuda:0", label="Device")
 					layout["settings"]["inputs"]["dtype"] = gr.Dropdown(choices=get_dtypes(), value="auto", label="Precision")
+					layout["settings"]["inputs"]["attentions"] = gr.Dropdown(choices=get_attentions(), value="auto", label="Attentions")
 			with gr.Column(scale=1):
 				layout["settings"]["buttons"]["load"] = gr.Button(value="Load Model")
 
