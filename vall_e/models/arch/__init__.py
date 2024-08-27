@@ -34,7 +34,7 @@ try:
 	AVAILABLE_ARCHES.append("llama")
 except Exception as e:
 	ERROR_ARCHES["llama"] = e
-	AVAILABLE_ARCHES = []
+	AVAILABLE_ATTENTIONS = []
 	pass
 
 try:

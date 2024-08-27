@@ -401,9 +401,6 @@ class Base(nn.Module):
 		
 		self.l_padding = l_padding
 
-		if "flash_attn_v100" in AVAILABLE_ATTENTIONS:
-			self.l_padding = 32
-
 		self.ignore_index = -100
 
 		self.n_resp_levels = self.config.resp_levels if self.config else n_resp_levels
@@ -521,11 +518,18 @@ class Base(nn.Module):
 				attention_backend = "eager"
 
 		hf_attention = attention_backend
+		HF_ATTENTIONS = ["eager", "sdpa", "flash_attention_2"]
 
-		if attention_backend in ["xformers", "mem_efficient", "math", "flash", "cudnn", "flash_attn"]:
+		if attention_backend not in HF_ATTENTIONS:
 			hf_attention = None
 			if attention_backend not in AVAILABLE_ATTENTIONS:
 				raise ValueError(f"Requesting attention `{attention_backend}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
+
+		if attention_backend == "flash_attn_v100":
+			self.l_padding = 32
+		
+		if attention_backend == "fused_attn":
+			self.l_padding = 128
 
 		if self.arch_type == "transformer":
 			self.sin_emb = SinusoidalEmbedding(d_model)
@@ -574,7 +578,7 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
-				if attention_backend in ["xformers", "mem_efficient", "math", "flash", "cudnn", "auto", "flash_attn"]:
+				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
 
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
@@ -599,7 +603,7 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
-				if attention_backend in ["xformers", "mem_efficient", "math", "flash", "cudnn", "auto", "flash_attn"]:
+				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
 			else:
 				self.model = MixtralModel(MixtralConfig(
@@ -621,7 +625,7 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
-				if attention_backend in ["xformers", "mem_efficient", "math", "flash", "cudnn", "auto", "flash_attn"]:
+				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
 
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:

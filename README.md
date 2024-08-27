@@ -147,22 +147,42 @@ For audio backends:
 * [`encodec`](https://github.com/facebookresearch/encodec): a tried-and-tested EnCodec to encode/decode audio.
 * [`vocos`](https://huggingface.co/charactr/vocos-encodec-24khz): a higher quality EnCodec decoder.
   - encoding audio will use the `encodec` backend automagically, as there's no EnCodec encoder under `vocos`
-* [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality
+* [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality, but has issues with model convergence.
   - models at 24KHz + 8kbps will NOT converge in any manner.
   - models at 44KHz + 8kbps seems harder to model its "language", and the NAR side of the model suffers greatly.
 
 `llama`-based models also support different attention backends:
-* `math`: torch's SDPA's `math` implementation
-* `mem_efficient`: torch's SDPA's memory efficient (`xformers` adjacent) implementation
-* `flash`: torch's SDPA's flash attention implementation
-* `xformers`: ~~[facebookresearch/xformers](https://github.com/facebookresearch/xformers/)'s memory efficient attention~~ Aliased to `mem_efficient`
-* `sdpa`: integrated `LlamaSdpaAttention` attention model
-* `flash_attention_2`: integrated `LlamaFlashAttetion2` attention model
+* `torch.nn.functional.scaled_dot_product_attention`-based attention:
+  * `math`: torch's SDPA's `math` kernel
+  * `mem_efficient`: torch's SDPA's memory efficient (`xformers` adjacent) kernel
+  * `cudnn`: torch's SDPA's `cudnn` kernel
+  * `flash`: torch's SDPA's flash attention kernel
+* internal implementations of external attention backends:
+  * `xformers`: [facebookresearch/xformers](https://github.com/facebookresearch/xformers/)'s memory efficient attention
+  * `flash_attn`: uses the available `flash_attn` package (including `flash_attn==1.0.9` through a funny wrapper)
+  * `flash_attn_v100`: uses [ZRayZzz/flash-attention-v100](https://github.com/ZRayZzz/flash-attention-v100/)'s Flash Attention for Volta (but doesn't work currently)
+  * `fused_attn`: uses an implementation using `triton` (only tested on my 7900XTX / Navi3 / gfx1100)
+* `transformers` Llama\*Attention implementations:
+  * `eager`: default `LlamaAttention`
+  * `sdpa`: integrated `LlamaSdpaAttention` attention model
+  * `flash_attention_2`: integrated `LlamaFlashAttetion2` attention model
 * `auto`: determine the best fit from the above
-* `eager`: default `LlamaAttention`
-* `flash_attn`: uses the available `flash_attn` package (including `flash_attn==1.0.9` through a funny wrapper)
 
 The wide support for various backends is solely while I try and figure out which is the "best" for a core foundation model.
+
+##### ROCm Flash Attention
+
+[ROCm/flash-attention](https://github.com/ROCm/flash-attention) currently does not support Navi3 cards (gfx11xx), so first-class support for Flash Attention is a bit of a mess on Navi3. Using the `howiejay/navi_support` branch can get inference support, but not training support (due to some error being thrown during the backwards pass) by:
+* edit `/opt/rocm/include/hip/amd_detail/amd_hip_bf16.h`:
+```
+  #if defined(__HIPCC_RTC__)
+  #define __HOST_DEVICE__ __device__ static
+  #else
+  #include <climits>
+  #define __HOST_DEVICE__ __host__ __device__ static inline
+  #endif
+```
+* install with `pip install -U git+https://github.com/ROCm/flash-attention@howiejay/navi_support --no-build-isolation`
 
 ## Export
 

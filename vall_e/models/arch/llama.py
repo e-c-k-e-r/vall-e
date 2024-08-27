@@ -20,40 +20,25 @@ try:
 except Exception as e:
 	print("Error while querying for `flash_attention_2` support", e)
 
+try:
+	from .attention.fused import attention as _fused_attention
+	def fused_attn_func(q, k, v, softmax_scale=None, causal=False, *args, **kwargs):
+		return _fused_attention( q, k, v, causal, softmax_scale )
+	
+	AVAILABLE_ATTENTIONS.append("fused_attn")
+except Exception as e:
+	print("Error while querying for `fused_attn` support", e)
+
+
 is_rocm = any("AMD" in torch.cuda.get_device_properties(i).name for i in range(torch.cuda.device_count()))
 is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))
 
 try:
-	if is_rocm and False:
-		# try to use triton flash attention / fused attention
-		# currently only forward works, backwards throws an assert
-		# even then it's extremely slow on my 7900XTX so the provided code is probably botched since it's a benchmark sample
-		from einops import rearrange
-		from .triton_flash_attention import triton_attention, MetaData
-
-		def flash_attn_func(q, k, v, softmax_scale=None, causal=False, *args, **kwargs):
-			metadata = MetaData(sm_scale=softmax_scale)
-			batch_size, seqlen_q, seqlen_k = q.shape[0], q.shape[1], k.shape[1]
-			
-			metadata.max_seqlens_q = seqlen_q
-			metadata.max_seqlens_k = seqlen_k
-
-			# varlen but doesn't seem necessary
-			if False:
-				q, k, v = [rearrange(x, 'b s ... -> (b s) ...').contiguous() for x in [q, k, v]]
-		
-				cu_seqlens_q = torch.arange(0, (batch_size + 1) * seqlen_q, step=seqlen_q, dtype=torch.int32, device=q.device)
-				cu_seqlens_k = cu_seqlens_q
-
-				metadata.set_varlen_params(cu_seqlens_q, cu_seqlens_k)
-
-			if causal:
-				metadata.need_causal()
-
-			return triton_attention( q, k, v, None, metadata )[0]
-
+	if is_rocm:
+		# requires pain to set up on Navi3, and for no backwards (training) support
+		from flash_attn import flash_attn_func
 		AVAILABLE_ATTENTIONS.append("flash_attn")
-		AVAILABLE_ATTENTIONS.append("flash_attn_rocm")
+
 	elif not is_ampere_or_newer_gpu:
 		# Uses https://github.com/ZRayZzz/flash-attention-v100/
 		# Currently doesn't work because it's hard-coded to use a head dim of 128, will throw NaNs otherwise...
@@ -113,6 +98,7 @@ try:
 			has_flash_attn = True
 			has_flash_attn_with_paged = True
 except Exception as e:
+	raise e
 	print("Error while querying for `flash_attn` support", e)
 
 try:
@@ -278,15 +264,25 @@ class LlamaAttention_Adapted(LlamaAttention):
 		# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
 		is_causal = True if causal_mask is None and q_len > 1 else False
 		
-		with torch.nn.attention.sdpa_kernel(self.mode):
-			attn_output = torch.nn.functional.scaled_dot_product_attention(
+		if self.mode in ["fused_attn"]:
+			attn_output = fused_attn_func(
 				query_states,
 				key_states,
 				value_states,
-				attn_mask=causal_mask,
+				causal=True,
+				softmax_scale=1.0 / math.sqrt(self.head_dim),
 				dropout_p=dropout_rate,
-				is_causal=is_causal,
 			)
+		else:
+			with torch.nn.attention.sdpa_kernel(self.mode):
+				attn_output = torch.nn.functional.scaled_dot_product_attention(
+					query_states,
+					key_states,
+					value_states,
+					attn_mask=causal_mask,
+					dropout_p=dropout_rate,
+					is_causal=is_causal,
+				)
 
 		attn_output = attn_output.transpose(1, 2).contiguous()
 		attn_output = attn_output.view(bsz, q_len, -1)
