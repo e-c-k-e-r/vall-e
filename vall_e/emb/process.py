@@ -9,6 +9,9 @@ import argparse
 import torch
 import torchaudio
 import numpy as np
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from tqdm.auto import tqdm
 from pathlib import Path
@@ -78,7 +81,7 @@ def process_jobs( jobs, speaker_id="", raise_exceptions=True ):
 		try:
 			process_job( outpath, waveform, sample_rate, text, language  )
 		except Exception as e:
-			print(f"Failed to quantize: {outpath}:", e)
+			_logger.error(f"Failed to quantize: {outpath}: {str(e)}")
 			if raise_exceptions:
 				raise e
 			continue
@@ -128,7 +131,7 @@ def process(
 
 	for group_name in sorted(os.listdir(f'./{input_audio}/')):
 		if not os.path.isdir(f'./{input_audio}/{group_name}/'):
-			print("Is not dir:", f'./{input_audio}/{group_name}/')
+			_logger.warning(f'Is not dir:" /{input_audio}/{group_name}/')
 			continue
 
 		if group_name in ignore_groups:
@@ -138,7 +141,7 @@ def process(
 
 		for speaker_id in tqdm(process_items(os.listdir(f'./{input_audio}/{group_name}/'), stride=stride, stride_offset=stride_offset), desc=f"Processing speaker in {group_name}"):
 			if not os.path.isdir(f'./{input_audio}/{group_name}/{speaker_id}'):
-				print("Is not dir:", f'./{input_audio}/{group_name}/{speaker_id}')
+				_logger.warning(f'Is not dir: ./{input_audio}/{group_name}/{speaker_id}')
 				continue
 			
 			if speaker_id in ignore_speakers:

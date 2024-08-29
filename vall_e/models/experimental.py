@@ -20,6 +20,9 @@ from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, Mult
 
 import random
 import math
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from einops import rearrange
 from tqdm import trange
@@ -502,7 +505,7 @@ def example_usage():
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 
-	print("Optimizer:", optimizer, "\tLearning rate:", learning_rate)
+	_logger.info(f"Optimizer: {optimizer}\tLearning rate: {learning_rate}")
 
 	optimizer = optimizer(model.parameters(), lr=learning_rate)
 
@@ -515,7 +518,7 @@ def example_usage():
 			scheduler = None
 
 		if scheduler is not None:
-			print("Scheduler:", scheduler)
+			_logger.info(f"Scheduler: {scheduler}")
 			optimizer = scheduler( model.parameters(), lr = learning_rate )
 
 	if cfg.optimizations.replace and cfg.optimizations.linear:
@@ -532,7 +535,7 @@ def example_usage():
 	}, f"./data/{cfg.model.arch_type}.pth" )
 	"""
 
-	print(f"{LlmArchClass} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+	_logger.info(f"{LlmArchClass} parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.inference_mode()
 	def sample( name, steps=cfg.model.max_levels*cfg.dataset.frames_per_second*6 ):

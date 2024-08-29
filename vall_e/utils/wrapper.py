@@ -3,8 +3,11 @@ from contextlib import contextmanager
 import math
 import torch
 import torch.nn.functional as F
+import logging
 
 from ..config import cfg
+
+_logger = logging.getLogger(__name__)
 
 Embedding = torch.nn.Embedding
 Linear = torch.nn.Linear
@@ -95,7 +98,7 @@ if cfg.optimizations.tensorrt:
 		import torch_tensorrt
 		AVAILABLE_COMPILE_BACKENDS.append("tensorrt")
 	except Exception as e:
-		print('Error while importing TensorRT:', str(e))
+		_logger.warning(f'Error while importing TensorRT: {str(e)}')
 		pass
 
 def compile_model(model, backend="auto"):
@@ -111,14 +114,14 @@ def compile_model(model, backend="auto"):
 try:
 	from prodigyopt import Prodigy
 except Exception as e:
-	print('Error while importing Prodigyopt:', str(e))
+	_logger.warning(f'Error while importing Prodigyopt: {str(e)}')
 	pass
 
 # https://github.com/facebookresearch/schedule_free/
 try:
 	import schedulefree
 except Exception as e:
-	print('Error while importing Schedule_Free:', str(e))
+	_logger.warning(f'Error while importing Schedule_Free: {str(e)}')
 	pass
 
 # backwards compat

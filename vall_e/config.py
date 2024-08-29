@@ -9,6 +9,7 @@ import time
 import argparse
 import yaml
 import random
+import logging
 
 import torch
 import numpy as np
@@ -163,7 +164,8 @@ class Dataset:
 	sample_order: str = "interleaved" # duration
 	sample_max_duration_batch: float = 0.0 # total number of seconds of utterances per batched, 0 to disable
 	# for a full sized model with 12GiB of VRAM for Encodec, 120 seconds is just enough
-	sample_shuffle: bool = True # 
+	# for a full sized model with 24GiB of VRAM for Encodec, 380 seconds is 80% VRAM consumed (but it might be limited by batch size)
+	sample_shuffle: bool = True # i swear this is spiking the loss when sample_order = duration + sample_max_duration_batch > 0
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"]) # list of tasks to train against
 	reencode_on_concat: bool = False # whether to concat audio by decode => concat => encode, or naively concat codes
@@ -364,6 +366,7 @@ class Model:
 
 		return dict(include=include, exclude=exclude)
 
+# should be renamed to Adapters
 @dataclass()
 class LoRA:
 	name: str = "lora" # vanity name
@@ -638,9 +641,6 @@ class Trainer:
 	def scale_loss(self):
 		# currently cannot feasibly apply loss scaling with DeepSpeed backend (it can handle it itself anyways)
 		return self.dtype == torch.float16
-	"""
-	"""
-
 
 @dataclass()
 class Inference:
@@ -670,7 +670,6 @@ class Inference:
 			return torch.float8_e4m3fn
 		return torch.float32
 
-# should be renamed to optimizations
 @dataclass()
 class Optimizations:
 	injects: bool = False # overwrites default torch classes (not recommended)
@@ -755,6 +754,7 @@ class Config(BaseConfig):
 
 		return self.models[0] if len(self.models) > 0 else None
 
+	# should be renamed to adapters
 	@property
 	def lora(self):
 		for i, lora in enumerate(self.loras):
@@ -795,7 +795,7 @@ class Config(BaseConfig):
 		try:
 			self.hdf5 = h5py.File(f'{self.rel_path}/{self.dataset.hdf5_name}', 'a' if write else self.dataset.hdf5_flag) # to-do, have an easy to set flag that determines if training or creating the dataset
 		except Exception as e:
-			print("Error while opening HDF5 file:", f'{self.rel_path}/{self.dataset.hdf5_name}', str(e))
+			_logger.warning(f"Error while opening HDF5 file: {self.rel_path}/{self.dataset.hdf5_name}: {str(e)}")
 			self.dataset.use_hdf5 = False
 
 	# to-do: prune unused keys
@@ -923,7 +923,7 @@ class Config(BaseConfig):
 					cfg.tokenizer = NaiveTokenizer()
 			except Exception as e:
 				cfg.tokenizer = NaiveTokenizer()
-				print("Error while parsing tokenizer:", e)
+				_logger.warning(f"Error while parsing tokenizer: {str(e)}")
 				pass
 
 
@@ -960,6 +960,7 @@ class NaiveTokenizer:
 		# tokenize
 		return [*map(symmap.get, phones)]
 
+_logger = logging.getLogger(__name__)
 
 cfg = Config.from_cli()
 
@@ -967,7 +968,7 @@ cfg = Config.from_cli()
 try:
 	cfg.format()
 except Exception as e:
-	print("Error while parsing config YAML:")
+	_logger.error(f"Error while parsing config YAML: {str(e)}")
 	raise e # throw an error because I'm tired of silent errors messing things up for me
 
 if __name__ == "__main__":

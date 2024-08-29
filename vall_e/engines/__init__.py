@@ -17,6 +17,9 @@ from ..models.lora import apply_lora, lora_load_state_dict
 
 import torch
 import re
+import logging
+
+_logger = logging.getLogger(__name__)
 
 deepspeed_available = False
 try:
@@ -55,7 +58,7 @@ def load_engines(training=True, **model_kwargs):
 			checkpoint_path = pick_path( checkpoint_path.parent / tag / f"state.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
 		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
-			print("Checkpoint missing, but weights found:", load_path)
+			_logger.warning("Checkpoint missing, but weights found:", load_path)
 			loads_state_dict = True
 
 		# load state early
@@ -64,7 +67,7 @@ def load_engines(training=True, **model_kwargs):
 
 			# check if config is defined in state, and re-initialize the model
 			if "config" in state and False:
-				print("Model config definition in weights, re-loading...")
+				_logger.warning("Model config definition in weights, re-loading...")
 				config_state = state["config"]
 				model = get_model( config=cfg.model.__class__( *config_state ), training=training )
 
@@ -201,7 +204,7 @@ def load_engines(training=True, **model_kwargs):
 			if cfg.lora is not None:
 				lora_path = pick_path( cfg.ckpt_dir / cfg.lora.full_name / f"lora.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 				if lora_path.exists():
-					print( "Loaded LoRA state dict:", lora_path )
+					_logger.info( "Loaded LoRA state dict:", lora_path )
 
 					state = torch_load(lora_path, device=cfg.device)
 					state = state['lora' if 'lora' in state else 'module']

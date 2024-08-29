@@ -18,6 +18,9 @@ Will also generate samples from a provided datset, if requested.
 import argparse
 import base64
 import random
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from pathlib import Path
 
@@ -117,9 +120,9 @@ def main():
 
 		samples_dirs["dataset"] = args.demo_dir / "dataset"
 
-		print("Loading dataloader...")
+		_logger.info("Loading dataloader...")
 		dataloader = create_train_dataloader()
-		print("Loaded dataloader.")
+		_logger.info("Loaded dataloader.")
 
 		num = args.dataset_samples if args.dataset_samples else cfg.evaluation.size
 

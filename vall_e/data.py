@@ -495,7 +495,6 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 
 def _get_hdf5_path(path):
 	# to-do: better validation
-	#print(path)
 	return str(path)
 
 def _get_hdf5_paths( data_dir, type="training", validate=False ):
@@ -1543,12 +1542,6 @@ if __name__ == "__main__":
 
 	cfg.dataset.workers = 1
 
-	class LoggerOveride:
-		def info(self, *args):
-			print(*args)
-	
-	_logger = LoggerOveride()
-
 	if args.action == "hdf5":
 		create_dataset_hdf5()
 	elif args.action == "list-dataset":
@@ -1559,7 +1552,7 @@ if __name__ == "__main__":
 					continue
 				dataset.append(f'{group}/{name}')
 
-		print(json.dumps(dataset))
+		_logger.info(json.dumps(dataset))
 	elif args.action == "metadata":
 		create_dataset_metadata()
 	elif args.action == "sample":
@@ -1581,17 +1574,17 @@ if __name__ == "__main__":
 					try:
 						decode_to_file( v[i]['proms'][j], f"./data/sample-test/{k}.{i}.{j}.proms.wav", device="cpu" )
 					except Exception as e:
-						print(f"Error while decoding prom {k}.{i}.{j}.wav:", str(e))
+						_logger.info(f"Error while decoding prom {k}.{i}.{j}.wav: {str(e)}")
 					try:
 						decode_to_file( v[i]['resps'][j], f"./data/sample-test/{k}.{i}.{j}.resps.wav", device="cpu" )
 					except Exception as e:
-						print(f"Error while decoding resp {k}.{i}.{j}.wav:", str(e))
+						_logger.info(f"Error while decoding resp {k}.{i}.{j}.wav: {str(e)}")
 					v[i]['proms'][j] = v[i]['proms'][j].shape
 					v[i]['resps'][j] = v[i]['resps'][j].shape
 		
 		for k, v in samples.items():
 			for i in range(len(v)):
-				print(f'{k}[{i}]:', v[i])
+				_logger.info(f'{k}[{i}]: {v[i]}')
 	elif args.action == "validate":
 		train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 
@@ -1610,11 +1603,11 @@ if __name__ == "__main__":
 				
 				phone = phonemes[i]
 
-				print( batch['text'], batch['metadata']['phonemes'] )
+				_logger.info( f"{batch['text']}: {batch['metadata']['phonemes']}" )
 
 				missing |= set([phone])
 
-		print( "Missing tokens:", missing )
+		_logger.info( f"Missing tokens: {missing}" )
 
 
 	elif args.action == "tasks":
@@ -1628,13 +1621,13 @@ if __name__ == "__main__":
 			if task not in cfg.dataset.tasks_list:
 				continue
 
-			print(text, task, cfg.model.resp_levels)
-			print( proms.shape, resps.shape )
+			_logger.info( f'{text} {task} {cfg.model.resp_levels}')
+			_logger.info( f'{proms.shape} {resps.shape}' )
 
 			tokens = 0
 			tokens += sum([ text.shape[0] for text in batch["text"] ])
 			tokens += sum([ resps.shape[0] for resps in batch["resps"] ])
-			print( tokens )
+			_logger.info( f'{tokens}' )
 
 			decode_to_file( proms, f"./data/{task}.proms.wav", device="cpu" )
 			decode_to_file( resps, f"./data/{task}.resps.wav", device="cpu" )

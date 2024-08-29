@@ -2,6 +2,8 @@
 
 import math
 import torch
+import logging
+
 from typing import Literal, overload, Optional, Tuple
 
 from torch import Tensor, nn
@@ -9,6 +11,8 @@ from transformers.cache_utils import Cache
 
 from transformers import LlamaModel, LlamaConfig, LlamaForCausalLM
 from transformers.models.llama.modeling_llama import LlamaAttention, apply_rotary_pos_emb, repeat_kv
+
+_logger = logging.getLogger(__name__)
 
 AVAILABLE_ATTENTIONS = []
 
@@ -18,7 +22,7 @@ try:
 	if is_flash_attn_2_available():
 		AVAILABLE_ATTENTIONS.append("flash_attention_2")
 except Exception as e:
-	print("Error while querying for `flash_attention_2` support", e)
+	_logger.warning(f"Error while querying for `flash_attention_2` support: {str(e)}")
 
 try:
 	from .attention.fused import attention as _fused_attention
@@ -27,7 +31,7 @@ try:
 	
 	AVAILABLE_ATTENTIONS.append("fused_attn")
 except Exception as e:
-	print("Error while querying for `fused_attn` support", e)
+	_logger.warning(f"Error while querying for `fused_attn` support: {str(e)}")
 
 
 is_rocm = any("AMD" in torch.cuda.get_device_properties(i).name for i in range(torch.cuda.device_count()))
@@ -99,7 +103,7 @@ try:
 			has_flash_attn_with_paged = True
 except Exception as e:
 	raise e
-	print("Error while querying for `flash_attn` support", e)
+	_logger.warning(f"Error while querying for `flash_attn` support: {str(e)}")
 
 try:
 	from xformers.ops.fmha import memory_efficient_attention
@@ -107,7 +111,7 @@ try:
 
 	AVAILABLE_ATTENTIONS.append("xformers")
 except Exception as e:
-	print("Error while importing `xformers`", e)
+	_logger.warning(f"Error while importing `xformers`: {str(e)}")
 
 # to-do: find a better way to query for if there's available kernels since these return true regardless
 if torch.backends.cuda.flash_sdp_enabled():

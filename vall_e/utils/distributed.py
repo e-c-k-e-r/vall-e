@@ -20,7 +20,6 @@ def get_free_port():
 
 _distributed_initialized = False
 def init_distributed( fn, *args, **kwargs ):
-	#print("Initializing distributed...")
 	torch.cuda.set_device(local_rank())
 	fn(*args, **kwargs)
 	_distributed_initialized = True
@@ -29,8 +28,6 @@ def distributed_initialized():
 	return _distributed_initialized
 
 def cleanup_distributed():
-	#if not _distributed_initialized:
-	#	return
 	dist.barrier()
 	dist.destroy_process_group()
 

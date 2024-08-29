@@ -1,3 +1,6 @@
+import logging
+
+_logger = logging.getLogger(__name__)
 
 def get_model(config, training=True, **model_kwargs):
 	name = config.name
@@ -53,7 +56,7 @@ def get_model(config, training=True, **model_kwargs):
 			**model_kwargs
 		)
 
-	print(f"{name} ({next(model.parameters()).dtype}): {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
+	_logger.info(f"{name} ({next(model.parameters()).dtype}): {sum(p.numel() for p in model.parameters() if p.requires_grad)} parameters")
 
 	return model
 

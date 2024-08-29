@@ -117,7 +117,7 @@ class Engine(DeepSpeedEngine):
 			else:
 				self.optimizer.set_lr(lr)
 		except Exception as e:
-			print(str(e))
+			_logger.warning(str(e))
 
 	# we'll just have to live with the LoRA weights living within our main weights
 	# they're easy to extract anyways

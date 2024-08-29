@@ -2,6 +2,9 @@ import torch
 import torchaudio
 import soundfile
 import time
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from torch import Tensor
 from einops import rearrange
@@ -31,14 +34,13 @@ class TTS():
 
 	def load_config( self, config=None, device=None, amp=None, dtype=None, attention=None ):
 		if config:
-			print("Loading YAML:", config)
+			_logger.info(f"Loading YAML: {config}")
 			cfg.load_yaml( config )
 
 		try:
 			cfg.format( training=False )
 			cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 		except Exception as e:
-			print("Error while parsing config YAML:")
 			raise e # throw an error because I'm tired of silent errors messing things up for me
 
 		if amp is None:
@@ -73,7 +75,7 @@ class TTS():
 
 		self.engines.eval()
 		self.symmap = get_phone_symmap()
-		print("Loaded model")
+		_logger.info("Loaded model")
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it

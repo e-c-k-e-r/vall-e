@@ -6,6 +6,9 @@ import math
 import torch
 import torchaudio
 import numpy as np
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from functools import cache
 from pathlib import Path
@@ -203,7 +206,7 @@ try:
 
 except Exception as e:
 	cfg.inference.use_dac = False
-	print(str(e))
+	_logger.warning(str(e))
 
 # uses https://github.com/facebookresearch/AudioDec/
 # I have set up a pip-ify'd version with the caveat of having to manually handle downloading the checkpoints with a wget + unzip
@@ -213,7 +216,7 @@ try:
 	from audiodec.utils.audiodec import AudioDec, assign_model as _audiodec_assign_model
 except Exception as e:
 	cfg.inference.use_audiodec = False
-	print(str(e))
+	_logger.warning(str(e))
 """
 
 @cache
@@ -747,8 +750,8 @@ if __name__ == "__main__":
 		if args.print:
 			torch.set_printoptions(profile="full")
 
-			print( "Metadata:", artifact['metadata'] )
-			print( "Codes:", codes.shape, codes )
+			_logger.info(f"Metadata: {artifact['metadata']}" )
+			_logger.info(f"Codes: {codes.shape}, {codes}" )
 	# encode
 	else:
 		args.output = args.input.with_suffix(audio_extension) if not args.output else args.output.with_suffix(audio_extension)

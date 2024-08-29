@@ -17,6 +17,9 @@ import math
 from einops import rearrange
 from torch import Tensor
 from tqdm import trange
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from ..emb.qnt import trim, encode_as_embedding
 
@@ -434,7 +437,7 @@ def example_usage():
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 
-	print("Optimizer:", optimizer, "\tLearning rate:", learning_rate)
+	_logger.info(f"Optimizer: {optimizer}\tLearning rate: {learning_rate}")
 
 	optimizer = optimizer(model.parameters(), lr=learning_rate)
 
@@ -447,7 +450,7 @@ def example_usage():
 			scheduler = None
 
 		if scheduler is not None:
-			print("Scheduler:", scheduler)
+			_logger.info(f"Scheduler: {scheduler}")
 			optimizer = scheduler( model.parameters(), lr = learning_rate )
 
 	if cfg.optimizations.replace and cfg.optimizations.linear:
@@ -480,7 +483,7 @@ def example_usage():
 	}, f"./data/{cfg.model.arch_type}.pth" )
 	"""
 
-	print(f"AR+NAR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+	_logger.info(f"AR+NAR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.no_grad()
 	def sample_data(task=None):

@@ -14,6 +14,9 @@ import random
 import time
 import psutil
 import math
+import logging
+
+_logger = logging.getLogger(__name__)
 
 from coloredlogs import ColoredFormatter
 from logging import StreamHandler
@@ -296,7 +299,7 @@ def replace_linear( model, klass, target=torch.nn.Linear, verbose=False ):
 		)
 		
 		if verbose:
-			print(f"Replacing {name}.{k} to", klass)
+			_logger.info(f"Replacing {name}.{k} to: {klass}")
 
 	return model
 
@@ -330,7 +333,7 @@ def replace_embedding( model, klass, target=torch.nn.Embedding, verbose=False ):
 		)
 		
 		if verbose:
-			print(f"Replacing {name}.{k} to", klass)
+			_logger.info(f"Replacing {name}.{k} to: {klass}")
 
 	return model
 
@@ -360,7 +363,7 @@ def replace_attention( model, klass, target, mode="math", verbose=False ):
 		)
 		
 		if verbose:
-			print(f"Replacing {name}.{k} to", klass)
+			_logger.info(f"Replacing {name}.{k} to: {klass}")
 
 	return model
 
@@ -491,7 +494,7 @@ def get_model_offload_policy(module, policy=None):
 		# does not fit in budget, increase device index
 		else:
 			device_index += 1
-			print(f"Over budget for device: {device['name']}, shifting to next device: {name}, {size / (1024 ** 2)}MiB")
+			_logger.info(f"Over budget for device: {device['name']}, shifting to next device: {name}, {size / (1024 ** 2)}MiB")
 
 	# to-do: check that all modules are exhausted
 	assert module_index >= len(modules)
@@ -528,9 +531,9 @@ def offload_model( model, policy=None ):
 		if not not [*module.named_children()]:
 			continue
 		try:
-			print( name, next(module.parameters()).device )
+			_logger.info( name, next(module.parameters()).device )
 		except Exception as e:
-			print( name, "?" )
+			_logger.info( name, "?" )
 			pass
 	"""
 

@@ -177,10 +177,7 @@ def train(
 		except Exception as e:
 			metrics = str(stats)
 
-		if cfg.trainer.no_logger:
-			tqdm.write(f"Training Metrics: {truncate_json(metrics)}.")
-		else:
-			_logger.info(f"Training Metrics: {truncate_json(metrics)}.")
+		_logger.info(f"Training Metrics: {truncate_json(metrics)}.")
 
 		command = _non_blocking_input()
 
@@ -220,9 +217,9 @@ def train(
 				rate = float(command.split(" ")[-1])
 				try:
 					engines.set_lr(rate)
-					print("Updating LR to:", rate)
+					_logger.info(f"Updating LR to: {rate}")
 				except Exception as e:
-					print("Failed to set LR rate to:", rate, str(e))
+					_logger.warning(f"Failed to set LR rate to: {rate}, {str(e)}")
 
 			if "export" in command:
 				train_dl.dataset.save_state_dict()

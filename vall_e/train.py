@@ -133,10 +133,7 @@ def run_eval(engines, eval_name, dl):
 	}
 	#engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
 
-	if cfg.trainer.no_logger:
-		tqdm.write(f"Validation Metrics: {json.dumps(engines_stats)}.")
-	else:
-		_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
+	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
 
 
 def train():
@@ -160,8 +157,8 @@ def train():
 			run_eval(engines, "subtrain", subtrain_dl)
 			run_eval(engines, "val", val_dl)
 		except Exception as e:
-			print("Error occurred while performing eval:", str(e))
-			print(traceback.format_exc())
+			_logger.warning(f"Error occurred while performing eval: {str(e)}")
+			_logger.warning(traceback.format_exc())
 
 		engines.train()
 		qnt.unload_model()
