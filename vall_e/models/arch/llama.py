@@ -102,7 +102,6 @@ try:
 			has_flash_attn = True
 			has_flash_attn_with_paged = True
 except Exception as e:
-	raise e
 	_logger.warning(f"Error while querying for `flash_attn` support: {str(e)}")
 
 try:
