@@ -14,7 +14,6 @@ Extra Credits:
 
 """
 
-import pytest
 import torch
 
 import triton
