@@ -385,7 +385,7 @@ class Engines(dict[str, Engine]):
 			try:
 				engine.save_checkpoint(save_dir, tag=tag)
 			except Exception as e:
-				_logger.warning(f'Failed to save checkpoint for engine {name}:', str(e))
+				_logger.warning(f'Failed to save checkpoint for engine {name}: {str(e)}')
 
 			# might be better to prune before saving for safety, but [:0] returns an empty list, but I could do [:-cfg.trainer.keep_last_checkpoints - 1 if cfg.trainer.keep_last_checkpoints > 1 else None]
 			if cfg.trainer.keep_last_checkpoints > 0 and is_global_leader():
@@ -395,7 +395,7 @@ class Engines(dict[str, Engine]):
 				for d in checkpoints:
 					if not d.is_dir() or not d.exists():									
 						continue
-					_logger.info("Removing", d)
+					_logger.info(f"Removing {d}")
 					for p in d.iterdir():
 						p.unlink()
 					d.rmdir()
@@ -490,7 +490,7 @@ class Engines(dict[str, Engine]):
 						res = feeder( engine=engine, batch=batch )
 						break
 					except RuntimeError as e:
-						_logger.error("Forward", str(e))
+						_logger.error(f"Forward: {str(e)}")
 
 						if "out of memory" not in str(e):
 							self.save_checkpoint()
@@ -532,7 +532,7 @@ class Engines(dict[str, Engine]):
 				try:
 					engine.backward(loss)
 				except RuntimeError as e:
-					_logger.error("Backwards:", str(e))
+					_logger.error(f"Backwards: {str(e)}")
 
 					if "out of memory" not in str(e):
 						self.save_checkpoint()
