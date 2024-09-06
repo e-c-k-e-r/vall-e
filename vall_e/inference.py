@@ -210,7 +210,7 @@ class TTS():
 				else:
 					raise Exception("!")
 				
-				text_list = [ cfg.tokenizer.decode( text ) for text in text_list ]
+				text_list = [ cfg.tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
 				print( text_list )
 
 			return text_list[0]

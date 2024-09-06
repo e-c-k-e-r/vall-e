@@ -124,7 +124,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--text", type=str, default=kwargs["text"])
-	parser.add_argument("--task", type=str, default=kwargs["task"])
+	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
