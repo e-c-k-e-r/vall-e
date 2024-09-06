@@ -259,7 +259,8 @@ class AudioEmbedding(nn.Module):
 		return x
 
 # per-level classification
-class AudioClassifier(nn.Module):
+# it might actually be "better" in the long run to only have one output head like a traditional LM, and just de-stitch it here instead of doing modulus math and whatever like the HF/experimental impl
+class Classifiers(nn.Module):
 	def __init__(
 		self,
 		l_tokens: list[int], # list of number of tokens (needed because AR resps includes stop token)
@@ -783,10 +784,10 @@ class Base(nn.Module):
 			self.metrics = None
 		else:
 			self.classifier = None
-			self.classifiers = AudioClassifier( l_tokens, d_model )
+			self.classifiers = Classifiers( l_tokens + [ n_text_tokens ], d_model )
 			self.accuracy_metric = None
 			self.precision_metric = None
-			self.metrics = Metrics( l_tokens )
+			self.metrics = Metrics( l_tokens + [ n_text_tokens ] )
 
 			"""
 			if tie_classifier_to_embedding:
@@ -907,6 +908,8 @@ class Base(nn.Module):
 		device = text_list[0].device
 		batch_size = len(text_list)
 
+		special_tasks = ["stt", "len"]
+
 		inputs = [ [] for _ in range(batch_size) ]
 		for i in range(batch_size):
 			quant_level = quant_levels[i] if quant_levels is not None else 0
@@ -921,7 +924,7 @@ class Base(nn.Module):
 			# Base-line TTS task
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
 			# prom /may/ include <task> tokens inside to help guide things, per SpeechX
-			if f'<{task_type}>' in get_task_symmap():
+			if f'<{task_type}>' in get_task_symmap() and task_type not in special_tasks:
 				# insert the text prompt
 				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
@@ -973,6 +976,21 @@ class Base(nn.Module):
 				elif resps_list is not None and resps_list[i] is not None:
 					# yes this could be encoded better
 					inputs[i].append( ( "len", torch.tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ], device=device, dtype=torch.int16) ) )
+			# Speech-to-Text prediction task
+			# Sequence: <resp><sep><rvq lvl><sep><text>
+			elif task_type == "stt":
+				# insert the input response
+				if resps_list is not None and resps_list[i] is not None:
+					inputs[i].append( ( "resp", resps_list[i] ) )
+				# insert lang token if we're trained for it
+				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
+					inputs[i].append( ( "lang", lang_list[i] ) )
+				# insert RVQ level guidance token if the model is versioned for it
+				if self.rvq_l_emb is not None and not self.interleave:
+					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
+				# insert the output text prompt
+				if text_list is not None and text_list[i] is not None:
+					inputs[i].append( ( "text", text_list[i] ) )
 			else:
 				raise Exception(f'Unrecognized task: {task_type}')
 
@@ -1009,6 +1027,8 @@ class Base(nn.Module):
 
 		if not token_dropout_rvq_levels:
 			token_dropout_rvq_levels = [1, self.resp_levels]
+
+		summed_embeddings_task = [ "stt" ]
 
 		x_list = []
 		for batch_index, batch_input in enumerate(inputs):
@@ -1071,7 +1091,13 @@ class Base(nn.Module):
 								offset = 0,
 								quant_level = 0,
 							)
-
+					# cheat-y way to handle performing STT across all levels
+					elif task_type in summed_embeddings_task:
+						embedding = sum([ self.resps_emb(
+							input[:, :l+1],
+							offset = 0 if l == 0 else 1, # or maybe set to 1
+							quant_level = l
+						) for l in range( input.shape[-1] - 1 ) ])
 					else:
 						# get RVQ level 0, or up to targetted RVQ level inference
 						if self.version <= 4:
@@ -1171,7 +1197,9 @@ class Base(nn.Module):
 		quant_levels: int | list[int] | Tensor | None = None,
 	):
 		device = logits[0].device
-		classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if inputs[i][0][-1] == "len" else l for i, l in enumerate( quant_levels ) ] 
+		special_tasks = [ "len", "stt" ]
+		summed_embeddings_task = [ "stt" ]
+		classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if inputs[i][0][-1] in special_tasks else l for i, l in enumerate( quant_levels ) ] 
 
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
@@ -1192,8 +1220,10 @@ class Base(nn.Module):
 			for batch_index, batch in enumerate(inputs):
 				quant_level = quant_levels[batch_index]
 				target = []
+				task_type = "tts"
 				for name, input in batch:
 					if name == "task":
+						task_type = input
 						task_list.append( input )
 					elif name == "prom":
 						proms = [ input ] if isinstance(input, torch.Tensor) else input
@@ -1201,6 +1231,8 @@ class Base(nn.Module):
 					elif name == "resp":
 						if self.interleave:
 							target.append( _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] ) )
+						elif task_type in summed_embeddings_task:
+							target.append( torch.full_like(input[..., 0], self.ignore_index) )
 						else:
 							target.append( input if input.dim() == 1 else input[:, quant_level] )
 					elif name in ["text", "quant_level", "lang", "tone", "len"]:
@@ -1273,7 +1305,12 @@ class Base(nn.Module):
 			for name, input in batch:
 				# do not use resp
 				if name == "resp":
-					input = input if input.dim() == 1 else input[:, quant_level]
+					if self.interleave:
+						input = _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] )
+					elif task_type in summed_embeddings_task:
+						input = torch.full_like(input[..., 0], self.ignore_index)
+					else:
+						input = input if input.dim() == 1 else input[:, quant_level]
 				# select prom level
 				elif name == "prom":
 					proms = [ input ] if isinstance(input, torch.Tensor) else input
@@ -1383,7 +1420,8 @@ class Base(nn.Module):
 		)
 
 		if self.classifiers is not None:
-			classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if inputs[i][0][-1] == "len" else l for i, l in enumerate( quant_levels ) ] 
+			special_tasks = [ "len", "stt" ]
+			classifier_quant_levels = [ -1 if inputs[i][0][-1] in special_tasks else l for i, l in enumerate( quant_levels ) ] 
 			x = self.classifiers(x, levels = classifier_quant_levels) * m
 
 		# Remove padding
@@ -1402,7 +1440,7 @@ class Base(nn.Module):
 	def sample(
 		self,
 		logits: list[Tensor], # logit scores
-		resps_list: list[Tensor], # previous tokens
+		prev_list: list[Tensor], # previous tokens
 		quant_levels: int | list[int] | Tensor | None = None,
 		# base sampling parameters
 		temperature: float = 1.0,
@@ -1429,7 +1467,7 @@ class Base(nn.Module):
 		# (NAR) return the entire generated response
 		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)		
 		if quant_levels is not None: #  and "nar" in self.capabilities: # for when I get around to coping about dropping the NAR entirely
-			logits = [ logit[-l:] for logit, l in zip(logits, map(len, resps_list)) ]
+			logits = [ logit[-l:] for logit, l in zip(logits, map(len, prev_list)) ]
 		# (AR chunkwise) return the last chunkwise piece
 		elif self.causal:
 			logits = [ logit[-self.causal_size:] for logit in logits ]
@@ -1439,22 +1477,22 @@ class Base(nn.Module):
 		
 		# (NAR) disable stop token
 		if quant_levels is not None and "ar" in self.capabilities:
-			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, resps_list) ) ]
+			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, prev_list) ) ]
 		# (AR-len) disable extraneous tokens
 		if quant_levels is None and "len" in self.capabilities:
-			logits = [ ban_tokens(logit, tokens=[*range(11, logit.shape[-1])]) for logit, l in zip( logits, map(len, resps_list) ) ]
+			logits = [ ban_tokens(logit, tokens=[*range(11, logit.shape[-1])]) for logit, l in zip( logits, map(len, prev_list) ) ]
 
 		# argmax instead
 		if temperature <= 0.0:
 			return [ logit.argmax(dim=1) for logit in logits ]
 
 		# perform repetition penalizing	
-		if "len" not in self.capabilities:
-			logits = [ reptition_penalize(logit, previous=resps[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, resps_list ) ]
+		if "len" not in self.capabilities and repetition_penalty != 1.0:
+			logits = [ reptition_penalize(logit, previous=resps[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:
-			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, resps_list) ) ]
+			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
 
 		# perform top_k/top_p filtering of our logits
 		if top_k > 0 or top_p < 1.0:
@@ -1469,7 +1507,7 @@ class Base(nn.Module):
 
 		# do DRY sampling
 		if dry_multiplier > 0.0:
-			logits = [ dry_sampling(logit, previous=resps[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, resps in zip( logits, resps_list ) ]
+			logits = [ dry_sampling(logit, previous=resps[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, resps in zip( logits, prev_list ) ]
 
 		# do mirostat sampling
 		# currently incompatible with beam searching with the way the two are implemented, perhaps a night of brain bashing can make the two work

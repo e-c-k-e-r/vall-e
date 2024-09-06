@@ -960,6 +960,19 @@ class NaiveTokenizer:
 		# tokenize
 		return [*map(symmap.get, phones)]
 
+	def decode( self, t ):
+		s = ""
+		symmap = self.get_vocab()
+		reverse_symmap = {}
+		for k, v in symmap.items():
+			reverse_symmap[v] = k
+
+		for i, token in enumerate( t ):
+			s += reverse_symmap[token]
+
+		return s
+
+
 _logger = logging.getLogger(__name__)
 
 cfg = Config.from_cli()

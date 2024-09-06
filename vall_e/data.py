@@ -428,6 +428,7 @@ def get_task_symmap():
 		"<soe>": 5,
 		"<mask>": 6,
 		"<eoe>": 7,
+		"<stt>": 8,
 
 		"<nse>": 6, # fake
 		"<cse>": 6, # fake
@@ -1051,6 +1052,12 @@ class Dataset(_Dataset):
 				proms,
 				task,
 			]
+
+		# Base TTS (<resp> => <text>)
+		elif task == "stt":
+			# easier to just keep it instead of wrangling around trying to remove it
+			# it might also help to provide a guidance prompt but who knows right now
+			proms = self.sample_prompts(spkr_name, ignore=path)
 
 		# noise suppression (<text>? <resp+noise> => <resp>)
 		# speech removal (<text>?<resp+noise> => <noise>)

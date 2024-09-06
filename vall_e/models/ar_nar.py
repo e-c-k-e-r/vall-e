@@ -61,15 +61,23 @@ class AR_NAR(Base):
 
 		disable_tqdm=False,
 	):
-		device = text_list[0].device
-		batch_size = len(text_list)
-		
+		text_task = [ "stt" ]
+
+		if text_list is not None:
+			default_task = "tts"
+			device = text_list[0].device
+			batch_size = len(text_list)
+		else:
+			default_task = "stt"
+			device = resps_list[0].device
+			batch_size = len(resps_list)
+
 		# generate task list if not provided
 		if task_list is None:
-			task_list = [ "tts" for _ in range(batch_size) ]
+			task_list = [ default_task for _ in range(batch_size) ]
 
 		# is training or NAR
-		if resps_list is not None:
+		if resps_list is not None and text_list is not None:
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
 
@@ -102,12 +110,18 @@ class AR_NAR(Base):
 
 				# input RVQ levels
 				quant_levels = [ random.choice( p_rvq_levels ) for i in range(batch_size) ]
+				for i, task in enumerate( task_list ):
+					if task in text_task:
+						quant_levels[i] = 0 # self.n_resp_levels - 1
+				
 				# trim resps to only contain all levels below the target level
-				resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
+
 				# tensor to cat for RVQ level 0
-				stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
+				text_stop_sequence = torch.tensor([[2] * 1], device=device, dtype=torch.int16)
+				audio_stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
 				# I hate python's value/reference semantics so much
-				for i, quant_level, resps, proms in zip(range(batch_size), quant_levels, resps_list, proms_list):
+				for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
 					# cap quant_level if it exceeds its corresponding resp/prom
 					if quant_level >= resps.shape[-1]:
 						quant_levels[i] = resps.shape[-1] - 1
@@ -139,7 +153,11 @@ class AR_NAR(Base):
 					# only apply stop token for RVQ level 0
 					if quant_level <= 0:
 						# append stop tokens for AR
-						resps_list[i] = torch.cat([ resps, stop_sequence ])
+						if task in text_task:
+							#text_list[i] = torch.cat([ resps, text_stop_sequence ])
+							...
+						else:
+							resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
 					
 
 				inputs = self.inputs(
@@ -195,7 +213,7 @@ class AR_NAR(Base):
 
 				resps_list = super().sample(
 					logits=logits,
-					resps_list=prev_list,
+					prev_list=prev_list,
 					quant_levels=quant_levels,
 
 					temperature=sampling_temperature,
@@ -220,11 +238,11 @@ class AR_NAR(Base):
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( 0 ) )
 
+		# STT
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 		
-		stop_token = self.stop_token
-
+		stop_token = self.stop_token if task_list[0] != "stt" else 2 # to-do: derive from tokenizer
 
 		state = None
 		mirostat = [
@@ -233,9 +251,17 @@ class AR_NAR(Base):
 
 		scores = [ 1.0 ] * sampling_beam_width
 
+		# add <bos> to text for STT
+		for i, sequence in enumerate( sequence_list ):
+			if task_list[i] in text_task:
+				sequence_list[i] = torch.cat([sequence_list[i], torch.tensor([1], dtype=torch.int16, device=device)])
+
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.causal_size), desc="AR", disable=disable_tqdm):
-			resps_list = [x.unsqueeze(dim=-1) for x in sequence_list]
+			if task_list[0] in text_task:
+				text_list = [x for x in sequence_list]
+			else:
+				resps_list = [x.unsqueeze(dim=-1) for x in sequence_list]
 
 			inputs = self.inputs(
 				text_list=text_list,
@@ -261,7 +287,7 @@ class AR_NAR(Base):
 
 			r = super().sample(
 				logits=logits,
-				resps_list=resps_list,
+				prev_list=resps_list,
 
 				temperature=sampling_temperature,
 				min_temperature=sampling_min_temperature,
@@ -398,10 +424,10 @@ def example_usage():
 	"""
 
 	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
-	tasks = cfg.dataset.tasks_list
+	available_tasks = ["tts", "stt"] # cfg.dataset.tasks_list
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 150 * len(tasks) # * cfg.model.experimental.causal_size
+	steps = 150 * len(available_tasks) # * cfg.model.experimental.causal_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -486,14 +512,14 @@ def example_usage():
 	_logger.info(f"AR+NAR ({cfg.model.arch_type}, {cfg.audio_backend}) parameter count: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
 	@torch.no_grad()
-	def sample_data(task=None):
+	def sample_data(t=None):
 		texts = []
 		proms = []
 		resps = []
+		tasks = []
 
 		for i in range(batch_size):
-			if task is None:
-				task = random.choice(tasks)
+			task = random.choice(available_tasks) if t is None else t
 
 			text = text_list[i]
 			prom = proms_list[i]
@@ -501,6 +527,8 @@ def example_usage():
 
 			# do nothing
 			if task == "tts":
+				...
+			elif task == "stt":
 				...
 			elif task == "tts-c":
 				trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
@@ -523,25 +551,35 @@ def example_usage():
 			texts.append( text.to(device) )
 			proms.append( prom.to(device) )
 			resps.append( resp.to(device) )
+			tasks.append( task )
 
-		return texts, proms, resps
+		return texts, proms, resps, tasks
 
 	@torch.inference_mode()
-	def sample( name, steps=1000, task=None ):
+	def sample( name, steps=500, task=None ):
 		engine.eval()
 
-		texts, proms, resps = sample_data( task )
+		texts, proms, resps, tasks = sample_data( task )
 
-		if "ar" in cfg.model.capabilities:
-			resps = engine( texts, proms, max_steps=steps, sampling_temperature=0.95 )
+		if tasks[0] == "stt":
+			text = engine( None, proms, resps, task_list=tasks, max_steps=steps, sampling_temperature=0.95 )
+			"""
+			# to-do: STT for NAR
+			text = engine( text, proms, resps, task_list=tasks, max_steps=steps, sampling_temperature=0.95 )
+			"""
+			text = [ cfg.tokenizer.decode( t ) for t in text ]
+
+			print( text )
 		else:
-			resps = [ resp[:, 0] for resp in resps ]
+			if "ar" in cfg.model.capabilities:
+				resps = engine( texts, proms, max_steps=steps, sampling_temperature=0.95 )
+			else:
+				resps = [ resp[:, 0] for resp in resps ]
 
-		if "nar" in cfg.model.capabilities:
-			resps = engine( texts, proms, resps, sampling_temperature=0.2 )
-
-		for i, o in enumerate(resps):
-			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{task}.{name}.wav", device=device)
+			if "nar" in cfg.model.capabilities:
+				resps = engine( texts, proms, resps, sampling_temperature=0.2 )
+			for i, o in enumerate(resps):
+				_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{task}.{name}.wav", device=device)
 
 		unload_model()
 
@@ -549,10 +587,10 @@ def example_usage():
 		engine.train()
 		t = trange(steps)
 		for i in t:
-			texts, proms, resps = sample_data()
+			texts, proms, resps, tasks = sample_data()
 
 			stats = {"step": i}
-			stats |= engine.traverse(text_list=texts, proms_list=proms, resps_list=resps)
+			stats |= engine.traverse(text_list=texts, proms_list=proms, resps_list=resps, task_list=tasks)
 			stats |= {"grad_norm": engine.get_global_grad_norm()}
 
 			tqdm.write(f"{stats}")
@@ -571,7 +609,7 @@ def example_usage():
 		model = ml.compile_model(model, backend=cfg.optimizations.compile)
 	"""
 	
-	for task in tasks:
+	for task in available_tasks:
 		sample("final", task=task)
 
 	engines.quit()

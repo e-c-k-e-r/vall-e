@@ -183,7 +183,7 @@ class NAR(Base):
 
 				resps_list = super().sample(
 					logits=logits,
-					resps_list=prev_list,
+					prev_list=prev_list,
 					quant_levels=quant_levels,
 
 					temperature=1.0 if n == 0 else sampling_temperature,

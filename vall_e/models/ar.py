@@ -200,7 +200,7 @@ class AR(Base):
 
 			r = super().sample(
 				logits=logits,
-				resps_list=resps_list,
+				prev_list=resps_list,
 
 				temperature=sampling_temperature,
 				min_temperature=sampling_min_temperature,
