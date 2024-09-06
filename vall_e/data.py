@@ -1053,11 +1053,13 @@ class Dataset(_Dataset):
 				task,
 			]
 
-		# Base TTS (<resp> => <text>)
+		# Base STT (<resp> => <text>)
 		elif task == "stt":
 			# easier to just keep it instead of wrangling around trying to remove it
 			# it might also help to provide a guidance prompt but who knows right now
-			proms = self.sample_prompts(spkr_name, ignore=path)
+			proms = [
+				task
+			]
 
 		# noise suppression (<text>? <resp+noise> => <resp>)
 		# speech removal (<text>?<resp+noise> => <noise>)

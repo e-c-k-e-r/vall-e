@@ -357,11 +357,14 @@ def example_usage():
 	from ..emb.qnt import decode_to_file, unload_model, trim_random, repeat_extend_audio, concat_audio, merge_audio
 	from ..engines import Engine, Engines
 	from ..utils import wrapper as ml
+	from ..utils import setup_logging
 	
 	import numpy as np
 	import re
 
+	setup_logging()
 	device = "cuda"
+
 	
 	# mamba seems to ONLY be used as an AR (any NAR attempts lobotomizes it)
 	"""

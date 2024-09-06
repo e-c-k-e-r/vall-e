@@ -128,6 +128,7 @@ class TTS():
 		text,
 		references,
 		language="en",
+		task="tts",
 		#
 		max_ar_steps=6 * cfg.dataset.frames_per_second,
 		max_nar_levels=7,
@@ -180,6 +181,40 @@ class TTS():
 				model_nar = engine.module
 		
 		set_seed(seed)
+
+		if task == "stt":
+			resp = self.encode_audio( references )
+			lang = self.encode_lang( language )
+			
+			reps = to_device(reps, device=self.device, dtype=torch.int16)
+			lang = to_device(lang, device=self.device, dtype=torch.uint8)
+
+			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
+				if model_ar is not None:
+					text_list = model_ar(
+						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], max_steps=max_ar_steps,
+						sampling_temperature=ar_temp,
+						sampling_min_temperature=min_ar_temp,
+						sampling_top_p=top_p, sampling_top_k=top_k,
+						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+						sampling_length_penalty=length_penalty,
+						sampling_beam_width=beam_width,
+						sampling_mirostat_tau=mirostat_tau,
+						sampling_mirostat_eta=mirostat_eta,
+						sampling_dry_multiplier=dry_multiplier,
+						sampling_dry_base=dry_base,
+						sampling_dry_allowed_length=dry_allowed_length,
+
+						disable_tqdm=not tqdm,
+					)
+				else:
+					raise Exception("!")
+				
+				text_list = [ cfg.tokenizer.decode( text ) for text in text_list ]
+				print( text_list )
+
+			return text_list[0]
+
 
 		for line in lines:
 			if out_path is None:

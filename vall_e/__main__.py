@@ -13,6 +13,7 @@ def main():
 	parser.add_argument("text")
 	parser.add_argument("references", type=path_list, default=None)
 	parser.add_argument("--language", type=str, default="en")
+	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--yaml", type=Path, default=None)
@@ -53,6 +54,7 @@ def main():
 		text=args.text,
 		references=args.references,
 		language=args.language,
+		task=args.task,
 		out_path=args.out_path,
 		input_prompt_length=args.input_prompt_length,
 		max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,

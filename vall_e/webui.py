@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .inference import TTS, cfg
 from .train import train
-from .utils import get_devices
+from .utils import get_devices, setup_logging
 
 tts = None
 
@@ -338,6 +338,8 @@ with ui:
 		gr.Markdown(md)
 
 def start( lock=True ):
+	setup_logging()
+	
 	ui.queue(max_size=8)
 	ui.launch(share=args.share, server_name=args.listen_host, server_port=args.listen_port, prevent_thread_lock=not lock)
 

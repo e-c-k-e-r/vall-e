@@ -120,7 +120,7 @@ class TqdmLoggingHandler(logging.Handler):
 			self.handleError(record) 
 
 @global_leader_only
-def setup_logging(log_dir: str | Path | None = "log", log_level="info"):
+def setup_logging(log_dir: str | Path | None = None, log_level="info"):
 	handlers = []
 
 	#stdout_handler = StreamHandler()
