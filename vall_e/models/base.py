@@ -280,7 +280,7 @@ class Classifiers(nn.Module):
 		xi = [
 			#x if l == 0 else
 			x if x.shape[-1] == max_size else
-			torch.cat( [ x, torch.tensor( [[ -float("inf") ] for _ in range(x.shape[0])], device=device, dtype=dtype) ] * (max_size - x.shape[-1]), dim=-1 )
+			torch.cat( [ x, torch.full( (x.shape[0], max_size - x.shape[-1]), -float("inf"), device=device, dtype=dtype) ], dim=-1 )
 			for x, l in zip(xi, levels)
 		]
 		return torch.stack( xi )

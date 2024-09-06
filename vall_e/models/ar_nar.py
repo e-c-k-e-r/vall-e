@@ -424,7 +424,7 @@ def example_usage():
 	"""
 
 	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
-	available_tasks = ["tts", "stt"] # cfg.dataset.tasks_list
+	available_tasks = cfg.dataset.tasks_list
 
 	model = AR_NAR(**kwargs).to(device)
 	steps = 150 * len(available_tasks) # * cfg.model.experimental.causal_size
