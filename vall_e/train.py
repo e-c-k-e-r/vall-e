@@ -108,23 +108,34 @@ def run_eval(engines, eval_name, dl):
 		for name in engines:
 			engine = engines[name]
 
+			# to-do: eval for text tasks
+			for i, task in batch["task"]:
+				if task == "stt":
+					batch["task"][i] = "tts"
+
+			kwargs = dict(
+				text_list=batch["text"],
+				prom_list=batch["proms"],
+				lang_list=batch["lang"],
+				task_list=batch["task"],
+			)
+
 			if engine.hyper_config.experimental.hf:
-				resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"] )
+				resps_list = engine( **kwargs )
 			elif "len" in engine.hyper_config.capabilities:
-				len_list = engine(text_list=batch["text"], proms_list=batch["proms"], max_steps=10 ) # don't need more than that
+				len_list = engine( **kwargs, max_steps=10 ) # don't need more than that
 				len_list = [ min( l, cfg.evaluation.steps ) for l in len_list ]
-				resps_list = engine( text_list=batch["text"], proms_list=batch["proms"], len_list=len_list, max_levels=cfg.evaluation.nar_levels )
+				resps_list = engine( **kwargs, len_list=len_list, max_levels=cfg.evaluation.nar_levels )
 			else:
 				if "ar" in engine.hyper_config.capabilities:
-					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
+					resps_list = engine( **kwargs, max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
 				else:
 					resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
 				if "nar" in engine.hyper_config.capabilities:
-					resps_list = engine(text_list=batch["text"], proms_list=batch["proms"], lang_list=batch["lang"], resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature, max_levels=cfg.evaluation.nar_levels )
+					resps_list = engine( **kwargs, resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature, max_levels=cfg.evaluation.nar_levels )
 
 			process( name, batch, resps_list )
-
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items()}
 	engines_stats = {
