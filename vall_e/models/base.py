@@ -1419,6 +1419,8 @@ class Base(nn.Module):
 			position_ids=position_ids,
 		)
 
+		# to-do: piece-wise classification, now that there's a head for text
+		# although again, one single monolithic head would be preferable instead......
 		if self.classifiers is not None:
 			special_tasks = [ "len", "stt" ]
 			classifier_quant_levels = [ -1 if inputs[i][0][-1] in special_tasks else l for i, l in enumerate( quant_levels ) ] 

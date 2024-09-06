@@ -186,7 +186,7 @@ class TTS():
 			resp = self.encode_audio( references )
 			lang = self.encode_lang( language )
 			
-			reps = to_device(reps, device=self.device, dtype=torch.int16)
+			resp = to_device(resp, device=self.device, dtype=torch.int16)
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
