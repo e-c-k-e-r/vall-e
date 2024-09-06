@@ -280,7 +280,7 @@ class Classifiers(nn.Module):
 		xi = [
 			#x if l == 0 else
 			x if x.shape[-1] == max_size else
-			torch.cat( [ x, torch.full( (x.shape[0], max_size - x.shape[-1]), -float("inf"), device=device, dtype=dtype) ], dim=-1 )
+			torch.cat( [x, torch.full( (x.shape[0], max_size - x.shape[-1]), -float("inf"), device=device, dtype=dtype) ], dim=-1 )
 			for x, l in zip(xi, levels)
 		]
 		return torch.stack( xi )
@@ -1057,7 +1057,7 @@ class Base(nn.Module):
 					embedding = self.langs_emb( input )
 				elif name == "prom":
 					proms = [ input ] if isinstance(input, torch.Tensor) else input
-					input_prom = torch.cat([ prom for prom in proms if isinstance(input, torch.Tensor) ])
+					input_prom = torch.cat([ prom for prom in proms if isinstance(prom, torch.Tensor) ])
 
 					embedding = torch.cat( [ prompt_input_to_embedding( input, quant_level ) for input in proms if input is not None ] )
 				elif name == "tone" and self.tones_emb is not None:
@@ -1164,7 +1164,7 @@ class Base(nn.Module):
 
 				# list of tokens
 				if not isinstance(input, torch.Tensor):
-					return sum( [ i.shape[0] for i in input if isinstance(i, torch.tensor) ] ) + 1
+					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] ) + 1
 
 				# interleaved model
 				if self.interleave and name == "resp":

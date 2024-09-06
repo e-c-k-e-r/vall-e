@@ -1055,8 +1055,6 @@ class Dataset(_Dataset):
 
 		# Base STT (<resp> => <text>)
 		elif task == "stt":
-			# easier to just keep it instead of wrangling around trying to remove it
-			# it might also help to provide a guidance prompt but who knows right now
 			proms = [
 				task
 			]

@@ -135,9 +135,8 @@ class AR_NAR(Base):
 						for j, prom in enumerate( proms ):
 							if not isinstance( prom, torch.Tensor ):
 								continue
-						
-						if quant_level >= prom.shape[-1]:
-							quant_levels[i] = prom.shape[-1] - 1
+							if quant_level >= prom.shape[-1]:
+								quant_levels[i] = prom.shape[-1] - 1
 
 					# apply token dropout error compensation
 					if token_dropout_error > 0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
