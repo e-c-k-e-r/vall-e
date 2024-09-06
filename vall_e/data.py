@@ -734,7 +734,7 @@ class Dataset(_Dataset):
 
 	@cached_property
 	def sampler_state_dict_path(self):
-		return cfg.rel_path / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
+		return cfg.ckpt_dir / cfg.model.full_name / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
 		
 	def get_speaker(self, path):
 		if isinstance(path, str):
