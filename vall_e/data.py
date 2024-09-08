@@ -734,7 +734,7 @@ class Dataset(_Dataset):
 
 	@cached_property
 	def sampler_state_dict_path(self):
-		return cfg.ckpt_dir / cfg.model.full_name / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
+		return cfg.ckpt_dir / (cfg.lora.full_name if cfg.lora is not None else cfg.model.full_name) / f"sampler.{self.sampler_type}.rank{global_rank()}.pt"
 		
 	def get_speaker(self, path):
 		if isinstance(path, str):
@@ -768,6 +768,9 @@ class Dataset(_Dataset):
 	def save_state_dict(self, path = None):
 		if path is None:
 			path = self.sampler_state_dict_path
+
+		if not path.parent.exists():
+			path.parent.mkdir(parents=True, exist_ok=True)
 
 		if self.sampler_type == "path":
 			state_dict = self.sampler.get_state()

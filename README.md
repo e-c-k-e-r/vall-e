@@ -264,7 +264,8 @@ So far, this only allows you to load a different model without needing to restar
 * [x] train and release a serviceable model for finetuning against.
   - LoRA tests shows it's already very capable, although there's room for higher quality (possibly in better NAR training).
 * [ ] train and release a ***good*** zero-shot model.
-  - this should, hopefully, just simply requires another epoch or two for `ar+nar-llama-8`, as the foundation seems rather robust now.
+  - ~~this should, hopefully, just simply requires another epoch or two for `ar+nar-llama-8`, as the foundation seems rather robust now.~~
+  - this might need a better training paradigm with providing similar enough input prompts to a given output response.
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
 * [x] ~~explore alternative setups, like a NAR-only model~~
   - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
@@ -272,7 +273,9 @@ So far, this only allows you to load a different model without needing to restar
   - the AR doesn't *need* exotic sampling techniques, as they're bandaids for a bad AR.
   - the NAR benefits from greedy sampling, and anything else just harms output quality.
 * [ ] clean up the README, and document, document, document onto the wiki.
-* [ ] extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
+* [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
+  - [ ] extend the reference model to include at least one other model
+* [ ] extend to addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - `stt` (Speech-to-Text) seems to be working fine for the most part.
   - other tasks seem to require a ton of VRAM......
 * [ ] extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)
@@ -283,6 +286,16 @@ So far, this only allows you to load a different model without needing to restar
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   - espeak is nice, but I can only really put my whole trust with phonemizing English.
   - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
+
+## Caveats
+
+Despite how lightweight it is in comparison to other TTS's I've meddled with, there are still some caveats, be it with the implementation or model weights:
+* the audio embeddings have some quirks to having the AR's RVQ level 0 separate from the NAR's RVQ level 0 (sharing them caused some problems in testing)
+* the trainer / dataloader assumes there are zero variations between a speaker's utterances, and thus it can extract the basics of a speaker's features rather than deeper features (like prosidy, tone, etc.) when performing inferences.
+  + however, trying to work around this would require training under `tts-c` (VALL-E continuous) mode or modifying an input prompt enough to where its quantized representation differs enough from the output response the prompt derives from.
+* the trainer's default RVQ level distribution prioritizes lower RVQ levels over higher RVQ levels, as the lower levels contribute to the final waveform more; however, this leaves some minor artifacting that rises in the higher RVQ levels due to inaccuracy issues.
+* speakers that aren't similar to an audiobook narrator voice has similarity issues due to the majority of training used `path`-based dataloader sampling instead of `speaker`-based (or `group`-based) dataloader sampling.
+  + although LoRAs help a ton for fixing results for a single voice.
 
 ## Notices and Citations
 

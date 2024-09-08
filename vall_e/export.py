@@ -65,7 +65,7 @@ def extract_lora( state_dict, config = None, save_path = None, dtype = None ):
 	if dtype is None:
 		dtype = cfg.inference.dtype
 
-	format = save_path.stem[1:]
+	format = save_path.suffix[1:]
 
 	lora = state_dict["lora"] if "lora" in state_dict else None
 	# should always be included, but just in case
@@ -136,7 +136,7 @@ def main():
 	parser.add_argument("--moe-ify", action='store_true', default=None) # splits classifier heads
 	parser.add_argument("--experts", type=int, default=8) # set target dtype to export to
 	parser.add_argument("--dtype", type=str, default="auto") # set target dtype to export to
-	parser.add_argument("--format", type=str, default="pth") # set target format to export weights under
+	parser.add_argument("--format", type=str, default=cfg.weights_format) # set target format to export weights under
 	args, unknown = parser.parse_known_args()
 
 	if args.format.lower() not in ["sft", "safetensors", "pt", "pth"]:

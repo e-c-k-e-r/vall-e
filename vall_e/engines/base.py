@@ -382,6 +382,9 @@ class Engines(dict[str, Engine]):
 				continue
 
 			save_dir = cfg.ckpt_dir / name
+			if cfg.lora is not None:
+				save_dir = cfg.ckpt_dir / cfg.lora.full_name
+
 			try:
 				engine.save_checkpoint(save_dir, tag=tag)
 			except Exception as e:
