@@ -714,7 +714,7 @@ class Config(BaseConfig):
 	sample_rate: int = 24_000 # sample rate the model expects
 	audio_backend: str = "vocos" # audio backend to use "encodec" | "vocos" | "dac""
 
-	weights_format: str = "pth" # "pth" | "sft"
+	weights_format: str = "sft" # "pth" | "sft"
 	supported_weights_formats: list[str] = field(default_factory=lambda: ["sft", "safetensors", "pt", "pth"])
 
 	def set_audio_backend(self, audio_backend):

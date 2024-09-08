@@ -200,6 +200,7 @@ To synthesize speech: `python -m vall_e <text> <ref_path> <out_path> --yaml=<yam
 
 Some additional flags you can pass are:
 * `--language`: specifies the language for phonemizing the text, and helps guide inferencing when the model is trained against that language.
+* `--task`: task to perform. Defaults to `tts`, but accepts `stt` for transcriptions.
 * `--max-ar-steps`: maximum steps for inferencing through the AR model. Each second is 75 steps.
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
 * `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output, but values close to it works fine.
@@ -224,6 +225,13 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--dry-base`: (AR only) for DRY sampling, the base of the exponent factor.
 * `--dry-allowed-length`: (AR only) for DRY sampling, the window to perform DRY sampling within.
 
+### Speech-to-Text
+
+The `ar+nar-tts+stt-llama-8` model has received additional training for a speech-to-text task against EnCodec-encoded audio.
+
+Currently, the model only transcribes back into the IPA phonemes it was trained against, as an additional model or external program is required to translate the IPA phonemes back into text.
+* this does make a model that can phonemize text, and unphonemize text, more desirable in the future to replace espeak (having an additional task to handle this requires additional embeddings, output heads, and possible harm to the model as actual text is not a modality the model is trained on).
+
 ### Web UI
 
 A Gradio-based web UI is accessible by running `python3 -m vall_e.webui`. You can, optionally, pass:
@@ -240,8 +248,12 @@ Synthesizing speech is simple:
   - A properly trained model can inference without a prompt to generate a random voice (without even needing to generate a random prompt itself).
 * `Output`: The resultant audio.
 * `Inference`: Button to start generating the audio.
+* `Basic Settings`: Basic sampler settings for most uses.
+* `Sampler Settings`: Advanced sampler settings that are common for most text LLMs, but needs experimentation.
 
 All the additional knobs have a description that can be correlated to the above CLI flags.
+
+Speech-To-Text phoneme transcriptions for models that support it can be done using the `Speech-to-Text` tab.
 
 #### Settings
 
@@ -261,7 +273,8 @@ So far, this only allows you to load a different model without needing to restar
   - the NAR benefits from greedy sampling, and anything else just harms output quality.
 * [ ] clean up the README, and document, document, document onto the wiki.
 * [ ] extend to ~~multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)) and~~ addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
-  - this requires a good foundational model before extending it to transfer tasks onto, and a large corpus of the other language (I imagine it gets easier the more languages it's trained against).
+  - `stt` (Speech-to-Text) seems to be working fine for the most part.
+  - other tasks seem to require a ton of VRAM......
 * [ ] extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)
   - desu these don't seem to be worthwhile improvements, as inferencing is already rather fast, and RAS is just a fancy sampler.
 * [ ] audio streaming
