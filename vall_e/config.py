@@ -209,6 +209,9 @@ class ModelExperimentalSettings:
 	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (worse performance and results due to everything being causal)
 	split_classifiers: bool = False # each RVQ level gets its own classifier / output proj / LM head rather than sharing one for all RVQ levels (to-do: also split for text/prom)
 	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
+	# a model trained not summing audio embeddings *can* have this enabled without any apparent issues
+	# a model trained to sum *cannot* have this disabled without any apparent issues, or at least the ar+nar-retnet-8 can't.
+	# in theory a model that is trained to sum embeddings can peform better due to "seeing" previous levles (due to the R in RVQ standing for residuals...), but in practice it seems fine to not do so
 	audio_embedding_mode: str | None = None # None | "exclusive" | "inclusive", subjugates the audio backend's encoding/decoding model for embeddings
 	kv_heads: int = 0 # MHA or GQA (for supported backends)
 	p_rvq_levels: str | list = "auto" # determines odds of selecting RVQ levels when training, "equal" will make each level equally likely
@@ -225,6 +228,7 @@ class ModelExperimentalSettings:
 	# VALL-E 2's approach of "combining token embeddings to group them" sounds terribad for a shared AR/NAR model
 	# however, introducing partial parallel decoding for the AR maybe maybe MAYBE might help try and unify the AR/NAR tasks better, MAYBE
 	# it just seems like a bitch to try and train something worthwhile with it, since there's crackles every other token
+	# RetNet's chunked inferencing might be a better place for this
 
 	p_len_train: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
 	# to-to: just incorporate this as a task instead

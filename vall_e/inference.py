@@ -211,7 +211,6 @@ class TTS():
 					raise Exception("!")
 				
 				text_list = [ cfg.tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
-				print( text_list )
 
 			return text_list[0]
 

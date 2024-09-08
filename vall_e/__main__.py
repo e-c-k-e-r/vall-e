@@ -50,7 +50,7 @@ def main():
 	args = parser.parse_args()
 
 	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
-	tts.inference(
+	output = tts.inference(
 		text=args.text,
 		references=args.references,
 		language=args.language,
@@ -68,6 +68,9 @@ def main():
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
 		seed=args.seed,
 	)
+	
+	if isinstance( output, str ):
+		print( output )
 
 if __name__ == "__main__":
 	main()

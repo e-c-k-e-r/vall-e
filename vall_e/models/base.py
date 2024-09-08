@@ -1494,8 +1494,8 @@ class Base(nn.Module):
 			return [ logit.argmax(dim=1) for logit in logits ]
 
 		# perform repetition penalizing	
-		if "len" not in self.capabilities and repetition_penalty != 1.0:
-			logits = [ reptition_penalize(logit, previous=resps[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, resps in zip( logits, prev_list ) ]
+		if "len" not in self.capabilities:
+			logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal:
