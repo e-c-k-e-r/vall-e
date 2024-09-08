@@ -226,12 +226,10 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	args.references = args.references.split(";") if args.references is not None else []
 	if args.max_ar_steps == 0:
 		for i, path in enumerate( args.references ):
-			print(i, path)
 			metadata = torchaudio.info(path)
 			duration = metadata.num_frames / metadata.sample_rate
 			args.max_ar_steps += duration
 		args.max_ar_steps = math.floor( args.max_ar_steps * 20 ) # assume 20 tokens per second
-
 
 	tts = init_tts()
 	
