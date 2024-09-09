@@ -12,6 +12,7 @@ import itertools
 
 from .config import cfg
 from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt, pad_codes_with_silence
+from .emb.g2p import encode as encode_phns
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
 from .utils.io import torch_save, torch_load
@@ -1316,6 +1317,32 @@ def create_train_val_dataloader():
 
 	return train_dl, subtrain_dl, val_dl
 
+def process_artifact_metadata( artifact ):
+	metadata = {}
+
+	if "text" in artifact["metadata"]:
+		metadata["text"] = artifact["metadata"]["text"]
+	if "phonemes" in artifact["metadata"]:
+		metadata["phonemes"] = artifact["metadata"]["phonemes"]
+	if "language" in artifact["metadata"]:
+		metadata["language"] = artifact["metadata"]["language"]
+	if "original_length" in artifact["metadata"] and "sample_rate" in artifact["metadata"]:
+		metadata["duration"] = artifact["metadata"]["original_length"] / artifact["metadata"]["sample_rate"]
+
+	# rephonemize if required
+	if "phonemes" not in metadata and "text" in metadata:
+		metadata["phonemes"] = encode_phns( metadata["text"], language=metadata["language"] if "language" in metadata["language"] else "en" )
+
+	# clean up phonemes from espeak
+	#     for example: Sonnenküste Update => zˈɔnənkˌystə (en)ˈʌpdeɪt(de)
+	# to-do: regex replace /([a-z]{2})/ to ""
+	if "phonemes" in metadata:
+		metadata["phonemes"] = metadata["phonemes"].replace("(en)", "")
+	if "phonemes" in metadata and "language" in metadata:
+		metadata["phonemes"] = metadata["phonemes"].replace(f"({metadata['language']})", "")
+
+	return metadata
+
 # parse dataset into better to sample metadata
 def create_dataset_metadata( skip_existing=True ):
 	symmap = get_phone_symmap()
@@ -1369,18 +1396,10 @@ def create_dataset_metadata( skip_existing=True ):
 
 				utterance_metadata = {}
 				if audios:
-					# ideally we'll encode Encodec-based audio in a similar manner because np has smaller files than pt
-					dac = np.load(quant_path, allow_pickle=True)[()]
-					qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
+					artifact = np.load(quant_path, allow_pickle=True)[()]
+					qnt = torch.from_numpy(artifact["codes"].astype(int))[0].t().to(dtype=torch.int16)
 
-					if "text" in dac["metadata"]:
-						utterance_metadata["text"] = dac["metadata"]["text"]
-					if "phonemes" in dac["metadata"]:
-						utterance_metadata["phonemes"] = dac["metadata"]["phonemes"]
-					if "language" in dac["metadata"]:
-						utterance_metadata["language"] = dac["metadata"]["language"]
-					if "original_length" in dac["metadata"] and "sample_rate" in dac["metadata"]:
-						utterance_metadata["duration"] = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
+					utterance_metadata = process_artifact_metadata( artifact )
 
 				for k, v in utterance_metadata.items():
 					metadata[id][k] = v
@@ -1484,17 +1503,10 @@ def create_dataset_hdf5( skip_existing=True ):
 
 				# audio
 				if audios:
-					dac = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
-					qnt = torch.from_numpy(dac["codes"].astype(int))[0].t().to(dtype=torch.int16)
+					artifact = np.load(f'{root}/{name}/{id}{_get_quant_extension()}', allow_pickle=True)[()]
+					qnt = torch.from_numpy(artifact["codes"].astype(int))[0].t().to(dtype=torch.int16)
 
-					if "text" in dac["metadata"]:
-						utterance_metadata["text"] = dac["metadata"]["text"]
-					if "phonemes" in dac["metadata"]:
-						utterance_metadata["phonemes"] = dac["metadata"]["phonemes"]
-					if "language" in dac["metadata"]:
-						utterance_metadata["language"] = dac["metadata"]["language"]
-					if "original_length" in dac["metadata"] and "sample_rate" in dac["metadata"]:
-						utterance_metadata["duration"] = dac["metadata"]["original_length"] / dac["metadata"]["sample_rate"]
+					utterance_metadata = process_artifact_metadata( artifact )
 
 					if "audio" not in group:
 						group.create_dataset('audio', data=qnt.numpy().astype(np.int16), compression='lzf')
