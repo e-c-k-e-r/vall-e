@@ -874,7 +874,7 @@ class Dataset(_Dataset):
 		return path, text, resps
 
 
-	def sample_prompts(self, spkr_name, ignore, should_trim=True):
+	def sample_prompts(self, spkr_name, ignore, should_trim=True, reference=None):
 		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0:
 			return None
 
@@ -895,15 +895,11 @@ class Dataset(_Dataset):
 		prom_length = 0
 		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second) if trim else 0
 
+		# to-do: if reference is not None, find the closest utterances to the reference
 		for _ in range(cfg.dataset.max_prompts):
 			path = random.choice(choices)
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
-
-				if "audio" not in cfg.hdf5[key]:
-					_logger.warning(f'MISSING AUDIO: {key}')
-					continue
-
 				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 			else:
 				qnt = _load_quants(path, return_metadata=False)
@@ -1015,7 +1011,7 @@ class Dataset(_Dataset):
 
 		# Base TTS (<text><prompt> => <resp>)
 		if task == "tts":
-			proms = self.sample_prompts(spkr_name, ignore=path)
+			proms = self.sample_prompts(spkr_name, ignore=path, reference=resps)
 
 			if cfg.dataset.inject_noise_in_prom:
 				# sample random noise

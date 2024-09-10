@@ -94,6 +94,7 @@ class TTS():
 			id = symmap[language]
 		return torch.tensor([ id ])
 
+	# to-do: trim before quantizing, instead of after
 	def encode_audio( self, paths, trim_length=0.0 ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
@@ -121,6 +122,29 @@ class TTS():
 			res = trim( res, int( cfg.dataset.frames_per_second * trim_length ) )
 		
 		return res
+
+	@torch.inference_mode()
+	def audio_embedding( self, input, prom=False ):
+		model = None
+
+		for name, engine in self.engines.items():
+			model = engine.module
+			break
+
+		# im really not sure which way is the better way, since the proms_emb and resps_emb have different properties.......
+		if prom:
+			return model.proms_emb(
+				input,
+				quant_level=input.shape[-1] - 1,
+				offset=0,
+				sums=True,
+			)
+		return sum([ model.resps_emb(
+			input[:, :l+1],
+			offset = 0 if l == 0 else 1, # or maybe set to 1
+			quant_level = l,
+			sums = False
+		) for l in range( input.shape[-1] - 1 ) ])
 
 	@torch.inference_mode()
 	def inference(
