@@ -146,7 +146,7 @@ def process(
 				wavs.append((
 					outpath,
 					text,
-					language.lower(),
+					language,
 					waveform,
 					sample_rate
 				))
@@ -156,7 +156,7 @@ def process(
 					try:
 						outpath, text, language, waveform, sample_rate = job
 
-						phones = phonemize(text, language=language)
+						phones = phonemize(text, language=f'{language}'.lower())
 						qnt = quantize(waveform, sr=sample_rate, device=device)
 
 
