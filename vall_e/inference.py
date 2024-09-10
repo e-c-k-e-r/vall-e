@@ -124,6 +124,22 @@ class TTS():
 		return res
 
 	@torch.inference_mode()
+	def text_embedding( self, input, prom=False ):
+		model = None
+
+		for name, engine in self.engines.items():
+			model = engine.module
+			break
+
+		if isinstance( input, str ):
+			input = cfg.tokenizer.encode(input)
+
+		if isinstance( input, list ):
+			input = torch.tensor( input, dtype=torch.uint8, device=self.device )
+
+		return model.text_emb( input )
+
+	@torch.inference_mode()
 	def audio_embedding( self, input, prom=False ):
 		model = None
 
