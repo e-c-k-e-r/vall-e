@@ -26,6 +26,15 @@ def romanize( runes, sep="" ):
 	result = kks.convert( runes )
 	return sep.join([ res['hira'] for res in result ])
 
+# to-do: fill out this table
+# although desu the only thing that might be needed are en-uk/en-gb, es-la, pt-br, and pt-pt
+def coerce_language( lang ):
+	if lang == "en":
+		lang = "en-us"
+	if lang == "fr":
+		return "fr-fr"
+	return lang
+
 cached_backends = {}
 def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=True, strip=True ):
 	key = f'{language}_{backend}'
@@ -44,8 +53,7 @@ def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=T
 
 
 def encode(text: str, language="en-us", backend="auto", punctuation=True, stress=True, strip=True) -> list[str]:
-	if language == "en":
-		language = "en-us"
+	language = coerce_language( language )
 
 	# Convert to kana because espeak does not like kanji...
 	if language[:2] == "ja" and backend == "auto":
