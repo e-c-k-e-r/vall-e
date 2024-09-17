@@ -491,8 +491,12 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", return_metadat
 	# AudioDec uses a different pathway
 	if cfg.audio_backend == "audiodec":
 		model = _load_audiodec_model(device)
-		wav = wav.unsqueeze(0)
-		wav = convert_audio(wav, sr, model.sample_rate, 1)
+		# reshape (channel, samples) => (batch, channel, samples)
+		if wav.dim() < 3:
+			wav = wav.unsqueeze(0)
+		# skip unnecessary resample
+		if sr != model.sample_rate and wav.shape[1] != 1:
+			wav = convert_audio(wav, sr, model.sample_rate, 1)
 		wav = wav.to(device)
 
 		# wav = rearrange(wav, "t c -> t 1 c").to(device)
@@ -502,8 +506,12 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", return_metadat
 
 	# vocos does not encode wavs to encodecs, so just use normal encodec
 	model = _load_encodec_model(device)
-	wav = wav.unsqueeze(0)
-	wav = convert_audio(wav, sr, model.sample_rate, model.channels)
+	# reshape (channel, samples) => (batch, channel, samples)
+	if wav.dim() < 3:
+		wav = wav.unsqueeze(0)
+	# skip unnecessary resample
+	if sr != model.sample_rate and wav.shape[1] != model.channels:
+		wav = convert_audio(wav, sr, model.sample_rate, model.channels)
 	wav = wav.to(device)
 
 	with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):

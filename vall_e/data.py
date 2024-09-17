@@ -873,14 +873,29 @@ class Dataset(_Dataset):
 
 		return path, text, resps
 
+	def get_similar_utterance(self, spkr_name, reference, offset=0 ):
+		# lots of boilerplate checks
+		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
+		if not metadata_path.exists():
+			return None
+		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+		if reference not in metadata:
+			return None
+		reference_metadata = metadata[reference]
+		if "similar" not in reference_metadata:
+			return None
+		if len(reference_metadata["similar"]) >= offset:
+			offset = -1
+		
+		return reference_metadata["similar"][offset][0]
 
-	def sample_prompts(self, spkr_name, ignore, should_trim=True, reference=None):
+	def sample_prompts(self, spkr_name, reference, should_trim=True):
 		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0:
 			return None
 
 		prom_list = []
 
-		choices = set(self.paths_by_spkr_name[spkr_name]) - {ignore}
+		choices = set(self.paths_by_spkr_name[spkr_name]) - {reference}
 		choices = [*choices]
 
 		# no other utterances, it'd make more sense to prune speakers with only one utterance in the validation step
@@ -895,9 +910,14 @@ class Dataset(_Dataset):
 		prom_length = 0
 		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second) if trim else 0
 
-		# to-do: if reference is not None, find the closest utterances to the reference
 		for _ in range(cfg.dataset.max_prompts):
-			path = random.choice(choices)
+			if reference is not None and cfg.dataset.prom_sample_similar:
+				path = self.get_similar_utterance( spkr_name=spkr_name, reference=reference, offset = len(prom_list) )
+				# yuck
+				if not path:
+					path = random.choice(choices)
+			else:
+				path = random.choice(choices)
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
 				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
@@ -1011,7 +1031,7 @@ class Dataset(_Dataset):
 
 		# Base TTS (<text><prompt> => <resp>)
 		if task == "tts":
-			proms = self.sample_prompts(spkr_name, ignore=path, reference=resps)
+			proms = self.sample_prompts(spkr_name, reference=path)
 
 			if cfg.dataset.inject_noise_in_prom:
 				# sample random noise
@@ -1087,7 +1107,7 @@ class Dataset(_Dataset):
 		# target speech extraction ( <text><prom><resp + other resp> => <resp> )
 		elif task == "tse":
 			# sample a prompt
-			proms = self.sample_prompts(spkr_name, ignore=path)
+			proms = self.sample_prompts(spkr_name, reference=path)
 
 			# sample another speaker
 			_, __, other_resps = self.sample_utterance(self.sample_speakers(ignore=[spkr_name]))

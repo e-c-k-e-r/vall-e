@@ -148,16 +148,14 @@ class Dataset:
 	phones_range: list[int] = field(default_factory=lambda: [4, 256]) # deprecated, the amount of phonemes an utterance can be to be included in the dataset
 	duration_range: list[float] = field(default_factory=lambda: [1.0, 12.0]) # the duration range an utterance can be to be included in the dataset
 	prompt_duration_range: list[float] = field(default_factory=lambda: [3.0, 6.0]) # the duration range the input prompts can be
+	
+	# to-do: clean up the following block, it's a mess
 	min_utterances: int = 2 # minimum number of utterances a speaker can have
-
 	random_utterance: float = 1.0 # probability to use a different utterance rather than using the target utterance as an input prompt
 	max_prompts: int = 3 # maximum number of utterances that can be included in an input prompt for training
-	
 	prompt_duration: float | None = None # legacy
-	
 	max_resps: int = 1 # number of samples to target for training
 	p_resp_append: float = 1.0 # probability to append another sample to the training target
-
 	p_resp_pad_silence: float = 0.0 # probability to pad resp with silence to fit within the next window
 
 	sample_type: str = "path" # path | speaker
@@ -166,6 +164,8 @@ class Dataset:
 	# for a full sized model with 12GiB of VRAM for Encodec, 120 seconds is just enough
 	# for a full sized model with 24GiB of VRAM for Encodec, 380 seconds is 80% VRAM consumed (but it might be limited by batch size)
 	sample_shuffle: bool = True # i swear this is spiking the loss when sample_order = duration + sample_max_duration_batch > 0
+
+	prom_sample_similar: bool = True # if available, try and sample the prompt closest to the sampled response utterance (requires specific metadata generated)
 
 	tasks_list: list[str] = field(default_factory=lambda: ["tts"]) # list of tasks to train against
 	reencode_on_concat: bool = False # whether to concat audio by decode => concat => encode, or naively concat codes

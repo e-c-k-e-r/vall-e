@@ -15,12 +15,22 @@ from pathlib import Path
 
 from vall_e.config import cfg
 
+from vall_e.emb.g2p import encode as phonemize
+from vall_e.emb.qnt import encode as quantize, _replace_file_extension, convert_audio
+
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
 
 def process_items( items, stride=0, stride_offset=0 ):
 	items = sorted( items )
 	return items if stride == 0 else [ item for i, item in enumerate( items ) if (i+stride_offset) % stride == 0 ]
+
+def load_audio( path, device="cuda" ):
+	waveform, sample_rate = torchaudio.load(path)
+	if waveform.shape[0] > 1:
+		waveform = torch.mean(waveform, dim=0, keepdim=True)
+	waveform = convert_audio(waveform, sample_rate, cfg.sample_rate, 1)
+	return waveform.to(device=device), cfg.sample_rate
 
 def process(
 		audio_backend="encodec",
@@ -57,10 +67,6 @@ def process(
 	cfg.inference.weight_dtype = dtype # "bfloat16"
 	cfg.inference.amp = amp # False
 
-	# import after because we've overriden the config above
-	# need to validate if this is even necessary anymore
-	from vall_e.emb.g2p import encode as phonemize
-	from vall_e.emb.qnt import encode as quantize, _replace_file_extension
 
 	output_dataset = f"{output_dataset}/{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
 
@@ -139,9 +145,7 @@ def process(
 				text = metadata["text"]
 
 				if waveform is None:
-					waveform, sample_rate = torchaudio.load(inpath)
-					if waveform.shape[0] > 1:
-						waveform = torch.mean(waveform, dim=0, keepdim=True)
+					waveform, sample_rate = load_audio(inpath)
 
 				wavs.append((
 					outpath,

@@ -48,6 +48,7 @@ def process(
 	amp=False,
 
 	verbose=False,
+	metadata_path=None,
 ):
 	cfg.set_audio_backend(audio_backend)
 	artifact_extension = cfg.audio_backend_extension
@@ -68,7 +69,6 @@ def process(
 	# compute features (embeddings if quantized already, MFCC features if raw audio)
 	for filename in tqdm(os.listdir(f'./{input_speaker}/'), desc="Encoding...", disable=not verbose):
 		extension = filename.split(".")[-1]
-
 
 		if text:
 			if extension not in artifact_extension:
@@ -140,17 +140,29 @@ def process(
 		if filename_a not in sorted_similarities[filename_b]:
 			sorted_similarities[filename_b][filename_a] = similarity
 
+	metadata = None	
+	if metadata_path is not None:
+		metadata_path = metadata_path / f'{input_speaker}.json'
+		if metadata_path.exists():
+			metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+
 	# sort similarities scores
 	for key, sorted_similarity in sorted_similarities.items():
+		filename_a, filename_b = key.split(":")
 		sorted_similarities[key] = sorted([ ( filename, similarity ) for filename, similarity in sorted_similarity.items() ], key=lambda x: x[1], reverse=True)
 
 		most_filename, most_score = sorted_similarities[key][0]
 		least_filename, least_score = sorted_similarities[key][-1]
 
+		if metadata is not None and filename_a in metadata:
+			metadata[filename_a] = sorted_similarities
+
 		if verbose:
 			print( f'{key}:\n\tMost: {most_filename} ({most_score:.3f})\n\tLeast: {least_filename} ({least_score:.3f})' )
 
-	# to-do: store this somewhere
+	if metadata is not None:
+		with open(str(metadata_path), "w", encoding="utf-8") as f:
+			f.write( json.dumps( metadata ) )
 
 	return sorted_similarities
 
