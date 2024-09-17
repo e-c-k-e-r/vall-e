@@ -20,6 +20,7 @@ import torchaudio.functional as F
 import torchaudio.transforms as T
 
 from ..config import cfg
+from ..utils import truncate_json
 
 # need to validate if this is safe to import before modifying the config
 from .g2p import encode as phonemize
@@ -142,8 +143,11 @@ def process(
 			sorted_similarities[filename_b][filename_a] = similarity
 
 	metadata = None	
-	if metadata_path is not None and metadata_path.exists():
-		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+	if metadata_path is not None:
+		if metadata_path.exists():
+			metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+		else:
+			metadata = {}
 
 	# sort similarities scores
 	for filename, sorted_similarity in sorted_similarities.items():
@@ -152,15 +156,19 @@ def process(
 		most_filename, most_score = sorted_similarities[filename][0]
 		least_filename, least_score = sorted_similarities[filename][-1]
 
-		if metadata is not None and filename in metadata:
-			metadata[filename] = sorted_similarities[filename]
+		if metadata is not None:
+			if filename not in metadata:
+				metadata[filename] = {}
+			metadata[filename]["similar"] = sorted_similarities[filename]
 
 		if verbose:
 			print( f'{filename}:\n\tMost: {most_filename} ({most_score:.3f})\n\tLeast: {least_filename} ({least_score:.3f})' )
 
 	if metadata is not None:
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
-			f.write( json.dumps( metadata ) )
+			serialized = json.dumps( metadata )
+			serialized = truncate_json( serialized )
+			f.write( serialized )
 
 	return sorted_similarities
 
@@ -181,14 +189,14 @@ def main():
 	args = parser.parse_args()
 
 	if args.use_dataset:		
-		root = str(cfg.data_dir)
-
 		cfg.metadata_dir.mkdir(parents=True, exist_ok=True)
 
 		def add( dir, type="training", audios=True, texts=True ):
 			name = str(dir)
-			name = name.replace(root, "")
+			name = name.replace(str(cfg.data_dir), "")
 			speaker_name = name
+			if "LibriTTS-R" in speaker_name:
+				speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
 
 			process(
 				speaker_path=cfg.data_dir / speaker_name,

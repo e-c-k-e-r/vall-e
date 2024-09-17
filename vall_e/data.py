@@ -1373,6 +1373,10 @@ def create_dataset_metadata( skip_existing=True ):
 		name = name.replace(root, "")
 
 		speaker_name = name
+		"""
+		if "LibriTTS-R" in speaker_name:
+			speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
+		"""
 
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		metadata_path.parents[0].mkdir(parents=True, exist_ok=True)
@@ -1593,8 +1597,6 @@ if __name__ == "__main__":
 		_logger.info(json.dumps(dataset))
 	elif args.action == "metadata":
 		create_dataset_metadata()
-	elif args.action == "similarity-metadata":
-		create_dataset_similarity_metadata()
 	elif args.action == "sample":
 		train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 
