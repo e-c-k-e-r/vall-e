@@ -1593,6 +1593,8 @@ if __name__ == "__main__":
 		_logger.info(json.dumps(dataset))
 	elif args.action == "metadata":
 		create_dataset_metadata()
+	elif args.action == "similarity-metadata":
+		create_dataset_similarity_metadata()
 	elif args.action == "sample":
 		train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 

@@ -38,7 +38,7 @@ def load_audio( path ):
 	return waveform, sr
 
 def process(
-	input_speaker,
+	speaker_path,
 	yaml,
 	text=False,
 
@@ -67,14 +67,15 @@ def process(
 	mfcc = T.MFCC(sample_rate=cfg.sample_rate)
 
 	# compute features (embeddings if quantized already, MFCC features if raw audio)
-	for filename in tqdm(os.listdir(f'./{input_speaker}/'), desc="Encoding...", disable=not verbose):
+	for filename in tqdm(os.listdir(f'./{speaker_path}/'), desc="Encoding...", disable=not verbose):
 		extension = filename.split(".")[-1]
+		filename = filename.replace(f".{extension}", "")
 
 		if text:
 			if extension not in artifact_extension:
 				raise Exception("!")
 
-			artifact = np.load(f'./{input_speaker}/{filename}', allow_pickle=True)[()]
+			artifact = np.load(f'./{speaker_path}/{filename}.{extension}', allow_pickle=True)[()]
 
 			lang = artifact["metadata"]["language"] if "language" in artifact["metadata"]["language"] else "en"
 			if "phonemes" in artifact["metadata"]:
@@ -91,15 +92,15 @@ def process(
 		else:
 			# treat embeddings as features, if provided quantized audio
 			if extension in artifact_extension:
-				artifact = np.load(f'./{input_speaker}/{filename}', allow_pickle=True)[()]
+				artifact = np.load(f'./{speaker_path}/{filename}.{extension}', allow_pickle=True)[()]
 				qnt = torch.from_numpy(artifact["codes"].astype(int))[0].t().to(dtype=torch.int16, device=device)
 				qnt = trim( qnt, int( cfg.dataset.frames_per_second * 3 ) )
 				
 				features[filename] = tts.audio_embedding( qnt )
 			# try and extract features from the raw audio itself
 			else:
-				# qnt = tts.encode_audio(f'./{input_speaker}/{filename}', trim_length=3.0).to(device)
-				wav, sr = load_audio( f'./{input_speaker}/{filename}' )
+				# qnt = tts.encode_audio(f'./{speaker_path}/{filename}', trim_length=3.0).to(device)
+				wav, sr = load_audio( f'./{speaker_path}/{filename}.{extension}' )
 				features[filename] = mfcc(wav.to(device))[0].t()
 
 	# calculate pairs, flattened because it makes tqdm nicer
@@ -141,24 +142,21 @@ def process(
 			sorted_similarities[filename_b][filename_a] = similarity
 
 	metadata = None	
-	if metadata_path is not None:
-		metadata_path = metadata_path / f'{input_speaker}.json'
-		if metadata_path.exists():
-			metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+	if metadata_path is not None and metadata_path.exists():
+		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
 
 	# sort similarities scores
-	for key, sorted_similarity in sorted_similarities.items():
-		filename_a, filename_b = key.split(":")
-		sorted_similarities[key] = sorted([ ( filename, similarity ) for filename, similarity in sorted_similarity.items() ], key=lambda x: x[1], reverse=True)
+	for filename, sorted_similarity in sorted_similarities.items():
+		sorted_similarities[filename] = sorted([ ( filename, similarity ) for filename, similarity in sorted_similarity.items() ], key=lambda x: x[1], reverse=True)
 
-		most_filename, most_score = sorted_similarities[key][0]
-		least_filename, least_score = sorted_similarities[key][-1]
+		most_filename, most_score = sorted_similarities[filename][0]
+		least_filename, least_score = sorted_similarities[filename][-1]
 
-		if metadata is not None and filename_a in metadata:
-			metadata[filename_a] = sorted_similarities
+		if metadata is not None and filename in metadata:
+			metadata[filename] = sorted_similarities[filename]
 
 		if verbose:
-			print( f'{key}:\n\tMost: {most_filename} ({most_score:.3f})\n\tLeast: {least_filename} ({least_score:.3f})' )
+			print( f'{filename}:\n\tMost: {most_filename} ({most_score:.3f})\n\tLeast: {least_filename} ({least_score:.3f})' )
 
 	if metadata is not None:
 		with open(str(metadata_path), "w", encoding="utf-8") as f:
@@ -169,7 +167,9 @@ def process(
 def main():
 	parser = argparse.ArgumentParser()
 
-	parser.add_argument("--input-speaker", type=Path)
+	parser.add_argument("--input-speaker", type=Path, default=None)
+	parser.add_argument("--use-dataset", action="store_true")
+
 	parser.add_argument("--yaml", type=Path)
 	parser.add_argument("--text", action="store_true")
 
@@ -180,18 +180,56 @@ def main():
 	
 	args = parser.parse_args()
 
-	process(
-		input_speaker=args.input_speaker,
-		yaml=args.yaml,
-		text=args.text,
+	if args.use_dataset:		
+		root = str(cfg.data_dir)
 
-		audio_backend=args.audio_backend,
-		device=args.device,
-		dtype=args.dtype,
-		amp=args.amp,
+		cfg.metadata_dir.mkdir(parents=True, exist_ok=True)
 
-		verbose=True,
-	)
+		def add( dir, type="training", audios=True, texts=True ):
+			name = str(dir)
+			name = name.replace(root, "")
+			speaker_name = name
+
+			process(
+				speaker_path=cfg.data_dir / speaker_name,
+				metadata_path=cfg.metadata_dir / f'{speaker_name}.json',
+				yaml=args.yaml,
+				text=args.text,
+
+				audio_backend=args.audio_backend,
+				device=args.device,
+				dtype=args.dtype,
+				amp=args.amp,
+
+				verbose=False,
+			)
+
+		# training
+		for data_dir in tqdm(sorted(cfg.dataset.training), desc="Processing Training"):
+			add( data_dir, type="training" )
+
+		# validation
+		for data_dir in tqdm(sorted(cfg.dataset.validation), desc='Processing Validation'):
+			add( data_dir, type="validation" )
+
+		# noise
+		for data_dir in tqdm(sorted(cfg.dataset.noise), desc='Processing Noise'):
+			add( data_dir, type="noise", texts=False )
+	elif args.input_speaker:
+		process(
+			speaker_path=args.input_speaker,
+			yaml=args.yaml,
+			text=args.text,
+
+			audio_backend=args.audio_backend,
+			device=args.device,
+			dtype=args.dtype,
+			amp=args.amp,
+
+			verbose=True,
+		)
+	else:
+		raise Exception("!")
 
 if __name__ == "__main__":
 	main()
