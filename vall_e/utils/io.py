@@ -5,6 +5,33 @@ from pathlib import Path
 from safetensors import safe_open as sft_load
 from safetensors.torch import save_file as sft_save
 
+try:
+	use_orjson = True
+	import orjson as json
+except:
+	import json
+
+def json_stringify( data ):
+	return json.dumps( data )
+
+def json_parse( string ):
+	return json.loads( string )
+
+def json_read( path, default=None ):
+	path = coerce_path( path )
+
+	if not path.exists():
+		return default
+
+	with (open( str(path), "rb" ) if use_orjson else open( str(path), "r", encoding="utf-8" ) ) as f:
+		return json_parse( f.read() )
+
+def json_write( data, path ):
+	path = coerce_path( path )
+	
+	with (open( str(path), "wb" ) if use_orjson else open( str(path), "w", encoding="utf-8" ) ) as f:
+		f.write( json_stringify( data ) )
+
 def coerce_path( path ):
 	return path if isinstance( path, Path ) else Path(path)
 

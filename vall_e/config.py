@@ -579,7 +579,7 @@ class DeepSpeed:
 			del ds_cfg[k]
 
 		if os.path.exists("./data/ds_config.json"):
-			ds_cfg.update(json.load(open("./data/ds_config.json", "r", encoding="utf-8")))
+			ds_cfg.update(json.loads(open("./data/ds_config.json", "r", encoding="utf-8")).read())
 		else:
 			ds_cfg.update(self.config)
 

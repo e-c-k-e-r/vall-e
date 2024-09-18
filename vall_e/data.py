@@ -15,7 +15,7 @@ from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge
 from .emb.g2p import encode as encode_phns
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
-from .utils.io import torch_save, torch_load
+from .utils.io import torch_save, torch_load, json_read, json_write
 
 from collections import defaultdict
 from functools import cache, cached_property
@@ -472,6 +472,7 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 	metadata = {}
 
 	if cfg.dataset.use_metadata and metadata_path.exists():
+		#metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
 		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
 
 	if len(metadata) == 0:
@@ -886,8 +887,9 @@ class Dataset(_Dataset):
 			return None
 		if len(reference_metadata["similar"]) >= offset:
 			offset = -1
-		
-		return reference_metadata["similar"][offset][0]
+		metadata_keys = list(metadata.keys())
+		index = reference_metadata["similar"][offset]
+		return metadata_keys[index]
 
 	def sample_prompts(self, spkr_name, reference, should_trim=True):
 		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0:

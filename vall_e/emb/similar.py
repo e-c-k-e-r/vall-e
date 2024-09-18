@@ -4,7 +4,6 @@
 """
 
 import os
-import orjson as json
 import argparse
 import torch
 import torchaudio
@@ -23,6 +22,7 @@ import torchaudio.transforms as T
 
 from ..config import cfg
 from ..utils import truncate_json
+from ..utils.io import json_read, json_write
 
 from .g2p import encode as phonemize
 from .qnt import encode as quantize, trim, convert_audio
@@ -255,7 +255,8 @@ def main():
 				faiss.write_index(similarities, str(metadata_path.with_suffix(".faiss")))
 				return
 
-			metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read()) if metadata_path.exists() else {}
+			#metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read()) if metadata_path.exists() else {}
+			metadata = json_read( metadata_path, default={} )
 			metadata_keys = list(metadata.keys()) if metadata else list(similarities.keys())
 
 			for filename, sim in similarities.items():
@@ -264,9 +265,13 @@ def main():
 				
 				metadata[filename]["similar"] = sim
 
+			json_write( metadata, metadata_path )
+
+			"""
 			with open(str(metadata_path), "wb") as f:
 				f.write( json.dumps( metadata ) )
 				#f.write( truncate_json( json.dumps( metadata ) ) )
+			"""
 
 		# training
 		for data_dir in tqdm(sorted(cfg.dataset.training), desc="Processing Training"):

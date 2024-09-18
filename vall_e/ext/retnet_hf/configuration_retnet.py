@@ -6,7 +6,7 @@ from transformers.configuration_utils import PretrainedConfig
 
 def load_config_from_json(config_file):
     with open(config_file, 'r') as f:
-        config = json.load(f)
+        config = json.loads(f.read())
         config = RetNetConfig.from_dict(config)
     return config
 
