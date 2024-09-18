@@ -15,7 +15,7 @@ from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge
 from .emb.g2p import encode as encode_phns
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size
-from .utils.io import torch_save, torch_load, json_read, json_write
+from .utils.io import torch_save, torch_load, json_read, json_write, json_stringify, json_parse
 
 from collections import defaultdict
 from functools import cache, cached_property
@@ -473,7 +473,7 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 
 	if cfg.dataset.use_metadata and metadata_path.exists():
 		#metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
-		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+		metadata = json_read( metadata_path )
 
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_quant_extension(), validate )
@@ -554,7 +554,8 @@ def _get_phones(path):
 	phone_path = _get_phone_path(path)
 	quant_path = _get_quant_path(path)
 	if phone_path.exists():
-		metadata = json.loads(open(phone_path, "r", encoding="utf-8").read())
+		#metadata = json.loads(open(phone_path, "r", encoding="utf-8").read())
+		metadata = json_read(phone_path)
 	elif quant_path.exists():
 		_, metadata = _load_quants( path, return_metadata=True )
 	else:
@@ -879,7 +880,7 @@ class Dataset(_Dataset):
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		if not metadata_path.exists():
 			return None
-		metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
+		metadata = json_read( metadata_path )
 		if reference not in metadata:
 			return None
 		reference_metadata = metadata[reference]
@@ -1335,18 +1336,28 @@ def create_train_val_dataloader():
 
 	return train_dl, subtrain_dl, val_dl
 
+# parse metadata from an numpy file (.enc/.dac) and validate it
 def process_artifact_metadata( artifact ):
 	metadata = {}
 
+	# text transcription (just in case)
 	if "text" in artifact["metadata"]:
 		metadata["text"] = artifact["metadata"]["text"]
+	# phonemization of text transcription (just in case)
 	if "phonemes" in artifact["metadata"]:
 		metadata["phonemes"] = artifact["metadata"]["phonemes"]
+	# language for sampling / input creation
 	if "language" in artifact["metadata"]:
 		metadata["language"] = artifact["metadata"]["language"]
-	if "original_length" in artifact["metadata"] and "sample_rate" in artifact["metadata"]:
+	# top-k similar utterances for this utternace
+	if "similar" in artifact["metadata"]:
+		metadata["similar"] = artifact["metadata"]["similar"]
+	# duration for use of culling / sorting dataset
+	if "duration" in artifact["metadata"]:
+		metadata["duration"] = duration
+	# derive duration from sample count / sample rate
+	elif "original_length" in artifact["metadata"] and "sample_rate" in artifact["metadata"]:
 		metadata["duration"] = artifact["metadata"]["original_length"] / artifact["metadata"]["sample_rate"]
-
 	# rephonemize if required
 	if "phonemes" not in metadata and "text" in metadata:
 		metadata["phonemes"] = encode_phns( metadata["text"], language=metadata["language"] if "language" in metadata["language"] else "en" )
@@ -1361,6 +1372,16 @@ def process_artifact_metadata( artifact ):
 
 	return metadata
 
+# yucky, but I would like to have the LibriTTS-R utterances remapped to their LibriSpeech counterpart
+# to-do: allow this to be adjusted without having to regenerate metadata / HDF5 by remapping name during dataloader creation
+def remap_speaker_name( name ):
+	# commented out because I don't want the LibriSpeech portion of the dataset to get added
+	"""
+	if "LibriTTS-R" in speaker_name:
+		name = name.replace("LibriTTS-R", "LibriVox")
+	"""
+	return name
+
 # parse dataset into better to sample metadata
 def create_dataset_metadata( skip_existing=True ):
 	symmap = get_phone_symmap()
@@ -1373,25 +1394,16 @@ def create_dataset_metadata( skip_existing=True ):
 	def add( dir, type="training", audios=True, texts=True ):
 		name = str(dir)
 		name = name.replace(root, "")
-
-		speaker_name = name
-		"""
-		if "LibriTTS-R" in speaker_name:
-			speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
-		"""
+		speaker_name = remap_speaker_name( name )
 
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		metadata_path.parents[0].mkdir(parents=True, exist_ok=True)
 
-		try:
-			metadata = {} if not metadata_path.exists() else json.loads(open(str(metadata_path), "r", encoding="utf-8").read())
-		except Exception as e:
-			metadata = {}
+		metadata = json_read( metadata_path, default={} )
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return
 
-		# tqdm.write(f'{root}/{name}')
 		files = os.listdir(f'{root}/{name}/')
 
 		# grab IDs for every file
@@ -1430,8 +1442,7 @@ def create_dataset_metadata( skip_existing=True ):
 				tqdm.write(f'Error while processing {id}: {e}')
 
 		if wrote:
-			with open(str(metadata_path), "w", encoding="utf-8") as f:
-				f.write( json.dumps( metadata ) )
+			json_write( metadata, metadata_path )
 
 	# training
 	for data_dir in tqdm(sorted(cfg.dataset.training), desc="Processing Training"):
@@ -1460,16 +1471,12 @@ def create_dataset_hdf5( skip_existing=True ):
 	def add( dir, type="training", audios=True, texts=True ):
 		name = str(dir)
 		name = name.replace(root, "")
-		
-		# yucky
-		speaker_name = name
-		if "LibriTTS-R" in speaker_name:
-			speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
+		speaker_name = remap_speaker_name( name )
 
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		metadata_path.parents[0].mkdir(parents=True, exist_ok=True)
 
-		metadata = {} if not metadata_path.exists() else json.loads(open(str(metadata_path), "r", encoding="utf-8").read())
+		metadata = json_read(metadata_path, default={})
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return
@@ -1534,9 +1541,11 @@ def create_dataset_hdf5( skip_existing=True ):
 						group.create_dataset('audio', data=qnt.numpy().astype(np.int16), compression='lzf')
 
 				# text
+				# this is a relic from when I did have the quantized audio and phoneme transcription separate
+				# to-do: ensure I can remove this block
 				if texts:
 					if not utterance_metadata and text_exists:
-						utterance_metadata = json.loads(open(f'{root}/{name}/{id}{_get_phone_extension()}', "r", encoding="utf-8").read())
+						utterance_metadata = json_read(f'{root}/{name}/{id}{_get_phone_extension()}')
 
 					phn = "".join(utterance_metadata["phonemes"])
 					phn = cfg.tokenizer.encode(phn)
@@ -1552,8 +1561,7 @@ def create_dataset_hdf5( skip_existing=True ):
 			except Exception as e:
 				tqdm.write(f'Error while processing {id}: {e}')
 
-		with open(str(metadata_path), "w", encoding="utf-8") as f:
-			f.write( json.dumps( metadata ) )
+		json_write( metadata, metadata_path )
 
 	# training
 	for data_dir in tqdm(cfg.dataset.training, desc="Processing Training"):
@@ -1571,7 +1579,7 @@ def create_dataset_hdf5( skip_existing=True ):
 	if "symmap" in hf:
 		del hf['symmap']
 
-	hf.create_dataset('symmap', data=json.dumps(symmap))
+	hf.create_dataset('symmap', data=json_stringify(symmap))
 	hf.close()
 
 if __name__ == "__main__":
@@ -1596,7 +1604,7 @@ if __name__ == "__main__":
 					continue
 				dataset.append(f'{group}/{name}')
 
-		_logger.info(json.dumps(dataset))
+		_logger.info(json_stringify(dataset))
 	elif args.action == "metadata":
 		create_dataset_metadata()
 	elif args.action == "sample":

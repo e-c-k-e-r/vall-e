@@ -54,6 +54,7 @@ def process(
 	verbose=False,
 	metadata_path=None,
 	top_k=8,
+	metadata_keys=[],
 
 	trim_duration=0,
 	min_duration=0,
@@ -73,12 +74,15 @@ def process(
 	if tts is None:
 		tts = init_tts( yaml=yaml, restart=False, device=device, dtype=dtype )
 
-	features = {}
+	features = { key: None for key in metadata_keys }
 
 	mfcc = None
 
 	simplified_metadata = True # aims to slim down the raw data in the JSON to store
 	slop = True # should probably have a better name for this, but it governs whether to just sum the entire sequence of embeddings into one embedding to make life easier
+
+	if not speaker_path.exists():
+		return
 
 	# compute features (embeddings if quantized already, MFCC features if raw audio)
 	for filename in tqdm(os.listdir(f'./{speaker_path}/'), desc=f"Encoding '{speaker_path.name}'", disable=not verbose):
@@ -92,11 +96,13 @@ def process(
 			artifact = np.load(f'./{speaker_path}/{filename}.{extension}', allow_pickle=True)[()]
 			duration = artifact["metadata"]["original_length"] / artifact["metadata"]["sample_rate"]
 
+			"""
 			if 0 < min_duration and duration < min_duration:
 				continue
 			
 			if 0 < max_duration and max_duration < duration:
 				continue
+			"""
 
 			lang = artifact["metadata"]["language"] if "language" in artifact["metadata"]["language"] else "en"
 			if "phonemes" in artifact["metadata"]:
@@ -178,22 +184,35 @@ def process(
 	# do batch cosine similarity processing
 
 	keys = list(features.keys())
-	embeddings = torch.stack( list( features.values() ) )
+	top_k = min( top_k, len(keys) )
+
+	if top_k == 0:
+		return
+
+	null_embedding = torch.zeros( (1024,), device=tts.device, dtype=tts.dtype )
+	embeddings = torch.stack( [ feature if feature is not None else null_embedding for feature in features.values()  ] )
 	sorted_similarities = {}
 
+
 	for index, filename in tqdm(enumerate(keys), total=len(keys), desc=f"Computing similarities: {speaker_path.name}"):
+		if features[filename] is None:
+			continue
+
 		embedding = features[filename].unsqueeze(0)
 
 		similarities = torch.nn.functional.cosine_similarity(embedding, embeddings, dim=1)
+		
+		# sorting is slow, don't bother
+		#sorted_similarities[filename] = sorted([ ( i if simplified_metadata else keys[i], similarity ) for i, similarity in enumerate( similarities ) if index != i ], key=lambda x: x[1], reverse=True)
+
 		# set current index to -inf
 		similarities[index] = float("-inf")
-		similarities = torch.topk(similarities, k=top_k, largest=True, sorted=True).indices.tolist()
-		# similarities = torch.nn.functional.cosine_similarity(embedding, embeddings, dim=1).cpu().tolist()
+
+		topk = torch.topk(similarities, k=top_k, largest=True, sorted=True)
+		similarities = [ (index, keys[index], score) for index, score in zip( topk.indices.tolist(), topk.values.tolist() ) ]
 
 		sorted_similarities[filename] = similarities
 
-		# sorting is slow, don't bother
-		#sorted_similarities[filename] = sorted([ ( i if simplified_metadata else keys[i], similarity ) for i, similarity in enumerate( similarities ) if index != i ], key=lambda x: x[1], reverse=True)
 
 	return sorted_similarities
 
@@ -221,6 +240,8 @@ def main():
 	
 	args = parser.parse_args()
 
+	args.skip_existing = False # 
+
 	if args.use_dataset:		
 		cfg.metadata_dir.mkdir(parents=True, exist_ok=True)
 
@@ -228,10 +249,17 @@ def main():
 			name = str(dir)
 			name = name.replace(str(cfg.data_dir), "")
 			speaker_name = name
+			"""
 			if "LibriTTS-R" in speaker_name:
 				speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
+			"""
 			
 			metadata_path = cfg.metadata_dir / f'{speaker_name}.json'
+			metadata = json_read( metadata_path, default={} )
+			metadata_keys = list(metadata.keys()) if metadata else []
+
+			if args.skip_existing and metadata_keys and "similar" in metadata[metadata_keys[-1]]:
+				return
 
 			similarities = process(
 				speaker_path=cfg.data_dir / speaker_name,
@@ -242,6 +270,7 @@ def main():
 				#min_duration=args.min_duration,
 				#max_duration=args.max_duration,
 				storage_backend=args.storage_backend,
+				metadata_keys=metadata_keys,
 
 				audio_backend=args.audio_backend,
 				device=args.device,
@@ -250,28 +279,22 @@ def main():
 
 				verbose=True,
 			)
+			
+			if not similarities:
+				return
 
 			if args.storage_backend == "faiss":
 				faiss.write_index(similarities, str(metadata_path.with_suffix(".faiss")))
 				return
-
-			#metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read()) if metadata_path.exists() else {}
-			metadata = json_read( metadata_path, default={} )
-			metadata_keys = list(metadata.keys()) if metadata else list(similarities.keys())
-
-			for filename, sim in similarities.items():
+			
+			for filename, similar in similarities.items():
 				if filename not in metadata:
 					metadata[filename] = {}
 				
-				metadata[filename]["similar"] = sim
+				# overkill but i'm very paranoid about mismatching indices
+				metadata[filename]["similar"] = [ metadata_keys.index(s[1]) for s in similar ]
 
 			json_write( metadata, metadata_path )
-
-			"""
-			with open(str(metadata_path), "wb") as f:
-				f.write( json.dumps( metadata ) )
-				#f.write( truncate_json( json.dumps( metadata ) ) )
-			"""
 
 		# training
 		for data_dir in tqdm(sorted(cfg.dataset.training), desc="Processing Training"):
@@ -286,7 +309,7 @@ def main():
 			add( data_dir, type="noise", texts=False )
 
 	elif args.input_speaker:
-		process(
+		similarities = process(
 			speaker_path=args.input_speaker,
 			yaml=args.yaml,
 			text=args.text,
@@ -304,6 +327,10 @@ def main():
 			storage_backend=args.storage_backend,
 			verbose=True,
 		)
+
+		# and print
+		for filename, sim in similarities.items():
+			print(f'{filename}: {sim}')
 	else:
 		raise Exception("!")
 
