@@ -189,6 +189,7 @@ def process(
 	if top_k == 0:
 		return
 
+	# fill any missing keys with a null embedding to keep the order the same
 	null_embedding = torch.zeros( (1024,), device=tts.device, dtype=tts.dtype )
 	embeddings = torch.stack( [ feature if feature is not None else null_embedding for feature in features.values()  ] )
 	sorted_similarities = {}
