@@ -138,7 +138,6 @@ def process(
 				speaker_id = metadata["speaker"]
 				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
 
-
 				if _replace_file_extension(outpath, audio_extension).exists():
 					continue
 

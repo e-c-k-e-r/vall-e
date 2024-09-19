@@ -1413,7 +1413,7 @@ def create_dataset_metadata( skip_existing=True ):
 
 		wrote = False
 
-		for id in tqdm(ids, desc=f"Processing {name}"):
+		for id in tqdm(ids, desc=f"Processing {name}", disable=True):
 			try:
 				quant_path = Path(f'{root}/{name}/{id}{_get_quant_extension()}')
 
