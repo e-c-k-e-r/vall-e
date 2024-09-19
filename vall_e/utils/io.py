@@ -13,9 +13,13 @@ except:
 
 from .utils import truncate_json
 
-def json_stringify( data, truncate=False ):
+def json_stringify( data, truncate=False, pretty=False ):
 	if truncate:
 		return truncate_json( json.dumps( data ) )
+	if pretty:
+		if use_orjson:
+			return json.dumps( data, option=json.OPT_INDENT_2 ).decode('utf-8')
+		return json.dumps( data, indent='\t' ).decode('utf-8')
 	return json.dumps( data )
 
 def json_parse( string ):

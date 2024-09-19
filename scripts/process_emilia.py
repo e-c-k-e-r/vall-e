@@ -100,29 +100,29 @@ def process(
 
 		group_name = "Emilia"
 
-		for speaker_id in tqdm(process_items(os.listdir(f'./{input_audio}/{language}/'), stride=stride, stride_offset=stride_offset), desc=f"Processing speaker in {language}"):
-			if not os.path.isdir(f'./{input_audio}/{language}/{speaker_id}'):
-				print("Is not dir:", f'./{input_audio}/{language}/{speaker_id}')
+		for speaker_group in tqdm(process_items(os.listdir(f'./{input_audio}/{language}/'), stride=stride, stride_offset=stride_offset), desc=f"Processing speaker in {language}"):
+			if not os.path.isdir(f'./{input_audio}/{language}/{speaker_group}'):
+				print("Is not dir:", f'./{input_audio}/{language}/{speaker_group}')
 				continue
 			
-			if speaker_id in ignore_speakers:
+			if speaker_group in ignore_speakers:
 				continue
-			if only_speakers and speaker_id not in only_speakers:
+			if only_speakers and speaker_group not in only_speakers:
 				continue
 
-			os.makedirs(f'./{output_dataset}/{group_name}/{speaker_id}/', exist_ok=True)
+			os.makedirs(f'./{output_dataset}/{group_name}/{speaker_group}/', exist_ok=True)
 
-			if f'{group_name}/{speaker_id}' not in dataset:
-				dataset.append(f'{group_name}/{speaker_id}')
+			if f'{group_name}/{speaker_group}' not in dataset:
+				dataset.append(f'{group_name}/{speaker_group}')
 
 			txts = []
 			wavs = []
 
-			for filename in os.listdir(f'./{input_audio}/{language}/{speaker_id}'):
+			for filename in os.listdir(f'./{input_audio}/{language}/{speaker_group}'):
 				if ".mp3" not in filename:
 					continue
 
-				inpath = Path(f'./{input_audio}/{language}/{speaker_id}/{filename}')
+				inpath = Path(f'./{input_audio}/{language}/{speaker_group}/{filename}')
 				jsonpath = _replace_file_extension(inpath, ".json")
 				if not inpath.exists() or not jsonpath.exists():
 					missing["audio"].append(str(inpath))
@@ -130,14 +130,14 @@ def process(
 			
 				extension = os.path.splitext(filename)[-1][1:]
 				fname = filename.replace(f'.{extension}', "")
-
-				waveform, sample_rate = None, None
-
-				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
-				metadata = json.load(open(jsonpath, "r", encoding="utf-8"))
-
 				if "text" not in metadata:
 					continue
+
+				waveform, sample_rate = None, None
+				metadata = json.load(open(jsonpath, "r", encoding="utf-8"))
+				speaker_id = metadata["speaker"]
+				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
+
 
 				if _replace_file_extension(outpath, audio_extension).exists():
 					continue

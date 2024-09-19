@@ -5,6 +5,10 @@ import argparse
 import random
 import tempfile
 import functools
+
+import torch
+import numpy as np
+
 from datetime import datetime
 
 import torchaudio
@@ -16,6 +20,8 @@ from pathlib import Path
 from .inference import TTS, cfg
 from .train import train
 from .utils import get_devices, setup_logging
+from .utils.io import json_read, json_stringify
+from .emb.qnt import decode_to_wave
 
 tts = None
 
@@ -23,6 +29,7 @@ layout = {}
 layout["inference_tts"] = {}
 layout["inference_stt"] = {}
 layout["training"] = {}
+layout["dataset"] = {}
 layout["settings"] = {}
 
 for k in layout.keys():
@@ -89,6 +96,29 @@ def load_model( yaml, device, dtype, attention ):
 	except Exception as e:
 		raise gr.Error(e)
 	gr.Info(f"Loaded model")
+
+def get_speakers():
+	return cfg.dataset.training
+
+#@gradio_wrapper(inputs=layout["dataset"]["inputs"].keys())
+def load_sample( speaker ):
+	metadata_path = cfg.metadata_dir / f'{speaker}.json'
+	metadata = json_read( metadata_path )
+	if not metadata:
+		raise gr.Error(f"Metadata not found: {metadata_path}")
+
+	key = random.choice( list(metadata.keys()) )
+	path = cfg.data_dir / speaker / f'{key}.enc' # to-do: get proper file extension
+	data = json_stringify( metadata[key], pretty=True )
+	wav, sr = None, None
+
+	if path.exists():
+		artifact = np.load(path, allow_pickle=True)[()]
+		codes = torch.from_numpy(artifact["codes"].astype(int))[0].t().to(dtype=torch.int16, device=cfg.device)
+		wav, sr = decode_to_wave( codes )
+		wav = wav.squeeze(0).cpu().numpy()
+
+	return data, (sr, wav)
 
 def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention="auto"):
 	global tts
@@ -428,6 +458,21 @@ with ui:
 			outputs=[ x for x in layout["training"]["outputs"].values() if x is not None],
 		)
 	"""
+
+	with gr.Tab("Dataset"):
+		with gr.Row():
+			with gr.Column(scale=7):
+				layout["dataset"]["outputs"]["transcription"] = gr.Textbox(lines=5, label="Sample Metadata")
+			with gr.Column(scale=1):
+				layout["dataset"]["inputs"]["speaker"] = gr.Dropdown(choices=get_speakers(), label="Speakers")
+				layout["dataset"]["outputs"]["audio"] = gr.Audio(label="Output")
+				layout["dataset"]["buttons"]["sample"] = gr.Button(value="Sample")
+
+			layout["dataset"]["buttons"]["sample"].click(
+				fn=load_sample,
+				inputs=[ x for x in layout["dataset"]["inputs"].values() if x is not None],
+				outputs=[ x for x in layout["dataset"]["outputs"].values() if x is not None],
+			)
 
 	with gr.Tab("Settings"):
 		with gr.Row():
