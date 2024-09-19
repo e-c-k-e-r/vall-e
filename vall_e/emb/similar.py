@@ -195,7 +195,7 @@ def process(
 	sorted_similarities = {}
 
 
-	for index, filename in tqdm(enumerate(keys), total=len(keys), desc=f"Computing similarities: {speaker_path.name}"):
+	for index, filename in tqdm(enumerate(keys), total=len(keys), desc=f"Computing similarities: {speaker_path.name}", disable=not verbose):
 		if features[filename] is None:
 			continue
 
@@ -241,7 +241,7 @@ def main():
 	
 	args = parser.parse_args()
 
-	args.skip_existing = False # 
+	args.skip_existing = True # 
 
 	if args.use_dataset:		
 		cfg.metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -278,7 +278,7 @@ def main():
 				dtype=args.dtype,
 				amp=args.amp,
 
-				verbose=True,
+				verbose=False,
 			)
 			
 			if not similarities:
