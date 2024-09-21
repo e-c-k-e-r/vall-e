@@ -3,6 +3,7 @@
 import copy
 import h5py
 import json
+import re
 import logging
 import numpy as np
 import os
@@ -1370,8 +1371,9 @@ def process_artifact_metadata( artifact ):
 	# to-do: regex replace /([a-z]{2})/ to ""
 	if "phonemes" in metadata:
 		metadata["phonemes"] = metadata["phonemes"].replace("(en)", "")
-	if "phonemes" in metadata and "language" in metadata:
-		metadata["phonemes"] = metadata["phonemes"].replace(f"({metadata['language']})", "")
+		if "language" in metadata:
+			metadata["phonemes"] = metadata["phonemes"].replace(f"({metadata['language']})", "")
+		metadata["phonemes"] = re.sub(r'\([a-z]{2}\)', "", metadata["phonemes"])
 
 	return metadata
 
