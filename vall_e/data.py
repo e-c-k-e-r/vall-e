@@ -1005,6 +1005,9 @@ class Dataset(_Dataset):
 			lang = metadata["language"] if "language" in metadata else None
 			tone = metadata["tone"] if "tone" in metadata else None
 			text_string = metadata["text"] if "text" in metadata else None
+
+			if cfg.dataset.retokenize_text and "phonemes" in metadata:
+				text = torch.tensor(tokenize( metadata["phonemes"] )).to(self.text_dtype)
 		else:
 			resps, metadata = _load_quants(path, return_metadata=True)
 			text = torch.tensor(tokenize( metadata["phonemes"] )).to(self.text_dtype)

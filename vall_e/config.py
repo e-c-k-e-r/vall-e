@@ -173,7 +173,8 @@ class Dataset:
 	reencode_device: str = "cpu" # "cpu" is slower but saves memory, cuda throws [rank0]: RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
 	noise_scale: float = 0.25 # scaling noise value
 	inject_noise_in_prom: bool = False # adds noise to the input prompt waveform to try and vary things
-	
+	retokenize_text: bool = False
+
 	_frames_per_second: int = 0 # allows setting your own hint
 
 	@cached_property
