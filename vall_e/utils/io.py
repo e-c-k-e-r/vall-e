@@ -80,6 +80,8 @@ def state_dict_to_tensor_metadata( data: dict, module_key=None ):
 			# not a dict of tensors, put it as metadata
 			try:
 				metadata[k] = json.dumps(v)
+				if isinstance( metadata[k], bytes ):
+					metadata[k] = metadata[k].decode('utf-8')
 			except Exception as e:
 				pass
 
