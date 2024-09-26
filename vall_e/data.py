@@ -880,7 +880,10 @@ class Dataset(_Dataset):
 		return path, text, resps
 
 	# icky slop
-	def get_similar_utterance(self, path, offset=0 ):
+	def get_similar_utterance(self, path, offset=None ):
+		if offset is None:
+			offset = cfg.dataset.prompt_similar_top_k_offset
+
 		reference = path.name
 
 		if cfg.dataset.use_hdf5:
@@ -904,7 +907,12 @@ class Dataset(_Dataset):
 			offset = 0
 
 		metadata_keys = list(metadata.keys())
-		index = reference_metadata["similar"][offset]
+
+		if cfg.dataset.prompt_similar_top_k > 1:
+			indices = reference_metadata["similar"][offset:offset+cfg.dataset.prompt_similar_top_k]
+			index = random.choice( indices )
+		else:
+			index = reference_metadata["similar"][offset]
 		name = metadata_keys[index]
 
 		return root / name
