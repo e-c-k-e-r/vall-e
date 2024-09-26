@@ -120,6 +120,7 @@ def main():
 
 		samples_dirs["dataset"] = args.demo_dir / "dataset"
 
+		"""
 		_logger.info("Loading dataloader...")
 		dataloader = create_train_dataloader()
 		_logger.info("Loaded dataloader.")
@@ -152,7 +153,7 @@ def main():
 
 			decode_to_file( batch["proms"].to("cuda"), prompt, device="cuda" )
 			decode_to_file( batch["resps"].to("cuda"), reference, device="cuda" )
-
+		"""
 	for k, sample_dir in samples_dirs.items():
 		if not sample_dir.exists():
 			continue
@@ -174,7 +175,7 @@ def main():
 
 			samples.append((
 				text,
-			 	[ prompt, reference, out_path ] + extra_sources
+			 	[ prompt, out_path ] + extra_sources + [ reference ],
 			))
 
 			if args.skip_existing and out_path.exists():

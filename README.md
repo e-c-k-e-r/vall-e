@@ -114,7 +114,7 @@ To export your LoRA weights, run `python3 -m vall_e.export --lora --yaml="./trai
 
 Included is a helper script to parse the training metrics. Simply invoke it with, for example: `python3 -m vall_e.plot --yaml="./training/config.yaml"`
 
-You can specify what X and Y labels you want to plot against by passing `--xs tokens_processed --ys loss stats.acc`
+You can specify what X and Y labels you want to plot against by passing `--xs tokens_processed --ys loss.nll stats.acc`
 
 ### Notices
 
@@ -243,7 +243,7 @@ A Gradio-based web UI is accessible by running `python3 -m vall_e.webui`. You ca
 
 Synthesizing speech is simple:
 
-* `Input Prompt`: The guiding text prompt. Each new line will be it's own generated audio to be stitched together at the end.
+* `Input Prompt`: The guiding text prompt. Each new line will be its own generated audio to be stitched together at the end.
 * `Audio Input`: The reference audio for the synthesis. Under Gradio, you can trim your clip accordingly, but leaving it as-is works fine.
   - A properly trained model can inference without a prompt to generate a random voice (without even needing to generate a random prompt itself).
 * `Output`: The resultant audio.
@@ -255,6 +255,12 @@ All the additional knobs have a description that can be correlated to the above 
 
 Speech-To-Text phoneme transcriptions for models that support it can be done using the `Speech-to-Text` tab.
 
+#### Dataset
+
+This tab currently only features exploring a dataset already prepared and referenced in your `config.yaml`. You can select a registered voice, and have it randomly sample an utterance.
+
+In the future, this *should* contain the necessary niceties to process raw audio into a dataset to train/finetune through, without needing to invoke the above commands to prepare the dataset.
+
 #### Settings
 
 So far, this only allows you to load a different model without needing to restart. The previous model should seamlessly unload, and the new one will load in place.
@@ -264,8 +270,8 @@ So far, this only allows you to load a different model without needing to restar
 * [x] train and release a serviceable model for finetuning against.
   - LoRA tests shows it's already very capable, although there's room for higher quality (possibly in better NAR training).
 * [ ] train and release a ***good*** zero-shot model.
-  - ~~this should, hopefully, just simply requires another epoch or two for `ar+nar-llama-8`, as the foundation seems rather robust now.~~
-  - this might need a better training paradigm with providing similar enough input prompts to a given output response.
+  - ~~this might need a better training paradigm with providing similar enough input prompts to a given output response.~~
+    - this might have just needed a better dataset + a better input prompt "sampling" method
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
 * [x] ~~explore alternative setups, like a NAR-only model~~
   - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
@@ -274,7 +280,7 @@ So far, this only allows you to load a different model without needing to restar
   - the NAR benefits from greedy sampling, and anything else just harms output quality.
 * [ ] clean up the README, and document, document, document onto the wiki.
 * [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
-  - [ ] extend the reference model to include at least one other model
+  - reference model is trained against English, Japanese, French, and German.    
 * [ ] extend to addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - `stt` (Speech-to-Text) seems to be working fine for the most part.
   - other tasks seem to require a ton of VRAM......
@@ -286,16 +292,26 @@ So far, this only allows you to load a different model without needing to restar
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   - espeak is nice, but I can only really put my whole trust with phonemizing English.
   - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
+* [ ] explore exotic features like:
+  * using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
+  * interleaving by using summed embedding tokens:
+    * for example, `<RVQ 0-7><RVQ 0>` => `<RVQ 0-7><RVQ 0-1>` => `<RVQ 0-7><RVQ 0-2>` (etc.)
+    * however, I imagine the sequences to train for this are *too* exotic.
+  * mixing multiple speakers through summing input prompt embeddings
+    * I do not expect this to work, but you never know...
 
 ## Caveats
 
 Despite how lightweight it is in comparison to other TTS's I've meddled with, there are still some caveats, be it with the implementation or model weights:
 * the audio embeddings have some quirks to having the AR's RVQ level 0 separate from the NAR's RVQ level 0 (sharing them caused some problems in testing)
 * the trainer / dataloader assumes there are zero variations between a speaker's utterances, and thus it can extract the basics of a speaker's features rather than deeper features (like prosidy, tone, etc.) when performing inferences.
-  + however, trying to work around this would require training under `tts-c` (VALL-E continuous) mode or modifying an input prompt enough to where its quantized representation differs enough from the output response the prompt derives from.
+  + ~~however, trying to work around this would require training under `tts-c` (VALL-E continuous) mode or modifying an input prompt enough to where its quantized representation differs enough from the output response the prompt derives from.~~
+  + to remedy this, training benefits from calculating the most similar utterances for each utterance, and using that as the input prompt for training.
 * the trainer's default RVQ level distribution prioritizes lower RVQ levels over higher RVQ levels, as the lower levels contribute to the final waveform more; however, this leaves some minor artifacting that rises in the higher RVQ levels due to inaccuracy issues.
+  + summing the audio embeddings for later RVQ levels seems to help?
 * speakers that aren't similar to an audiobook narrator voice has similarity issues due to the majority of training used `path`-based dataloader sampling instead of `speaker`-based (or `group`-based) dataloader sampling.
   + although LoRAs help a ton for fixing results for a single voice.
+  + this *might* be remedied with a much, much, *much* more diverse dataset (such as Emilia).
 
 ## Notices and Citations
 
