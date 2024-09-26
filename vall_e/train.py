@@ -115,7 +115,7 @@ def run_eval(engines, eval_name, dl):
 			for i, task in enumerate( batch["task"] ):
 				# easier to just change it to a tts task than drop stt tasks from the batch
 				if task == "stt":
-					has_stt = True
+					# has_stt = True
 					batch["task"][i] = "tts"
 					batch["proms"][i] = batch["resps"][i][:75*3, :]
 
