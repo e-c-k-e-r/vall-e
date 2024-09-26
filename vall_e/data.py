@@ -995,6 +995,9 @@ class Dataset(_Dataset):
 			spkr_group = self.get_speaker_group(path)
 			#spkr_group_id = self.spkr_group_symmap[spkr_group]
 
+		if not isinstance( path, Path ):
+			path = Path( path )
+
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)
 
