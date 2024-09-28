@@ -22,6 +22,7 @@ from .train import train
 from .utils import get_devices, setup_logging
 from .utils.io import json_read, json_stringify
 from .emb.qnt import decode_to_wave
+from .data import get_lang_symmap
 
 tts = None
 
@@ -100,6 +101,9 @@ def load_model( yaml, device, dtype, attention ):
 def get_speakers():
 	return cfg.dataset.training
 
+def get_languages():
+	return get_lang_symmap().keys()
+
 #@gradio_wrapper(inputs=layout["dataset"]["inputs"].keys())
 def load_sample( speaker ):
 	metadata_path = cfg.metadata_dir / f'{speaker}.json'
@@ -158,7 +162,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--text", type=str, default=kwargs["text"])
 	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
-	parser.add_argument("--language", type=str, default="en")
+	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*cfg.dataset.frames_per_second))
 	parser.add_argument("--max-nar-levels", type=int, default=0), # kwargs["max-nar-levels"])
@@ -231,7 +235,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser = argparse.ArgumentParser(allow_abbrev=False)
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
-	parser.add_argument("--language", type=str, default="en")
+	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--max-ar-steps", type=int, default=0)
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
 	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
@@ -381,6 +385,7 @@ with ui:
 							layout["inference_tts"]["inputs"]["nar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR. (0 to greedy sample)")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
+							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")
@@ -419,7 +424,7 @@ with ui:
 							layout["inference_stt"]["inputs"]["ar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy sample)")
 						with gr.Row():
 							layout["inference_stt"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
-					
+							layout["inference_stt"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
 							layout["inference_stt"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")
