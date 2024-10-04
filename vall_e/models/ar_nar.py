@@ -45,6 +45,8 @@ class AR_NAR(Base):
 		max_steps: int = 1000,
 		max_levels: int = 0,
 
+		input_prompt_prefix: bool = False,
+
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
 		sampling_top_k: int = -100,
@@ -245,6 +247,7 @@ class AR_NAR(Base):
 			enable_lora( self, cfg.lora.active_level( 0 ) )
 
 		# STT
+		start_slice = [ 0 for _ in range(batch_size) ]
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 		
@@ -258,22 +261,21 @@ class AR_NAR(Base):
 
 		scores = [ 1.0 ] * sampling_beam_width
 
-		# add <bos> to text for STT
 		for i, sequence in enumerate( sequence_list ):
+			# add <bos> to text for STT
 			if task_list[i] in text_task:
+				start_slice[i] = 1
 				sequence_list[i] = torch.cat([sequence_list[i], torch.tensor([1], dtype=torch.int16, device=device)])
+			# treat input prompt as initial resp (by prefixing with the prompt instead)
+			elif input_prompt_prefix:
+				start_slice[i] = proms_list[i].shape[0]
+				sequence_list[i], proms_list[i] = proms_list[i][:, 0], sequence_list[i]
 
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.causal_size), desc="AR", disable=disable_tqdm):
 			#
 			text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
 			resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
-
-			"""
-			print( "task_list:", task_list )
-			print( "text_list:", text_list )
-			print( "resps_list:", resps_list )
-			"""
 
 			inputs = self.inputs(
 				text_list=text_list,
@@ -357,7 +359,7 @@ class AR_NAR(Base):
 		# remove stop token
 		sequence_list = [self._prune(r, audio_stop_token if task_list[i] not in text_task else text_stop_token) for i, r in enumerate(sequence_list)]
 		# remove <bos>
-		sequence_list = [ sequence_list[i] if task not in text_task else sequence_list[i][1:] for i, task in enumerate( task_list ) ]
+		sequence_list = [ sequence_list[i][start_slice[i]:] for i, task in enumerate( task_list ) ]
 		return sequence_list
 
 

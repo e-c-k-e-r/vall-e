@@ -64,7 +64,10 @@ If you already have a dataset you want, for example, your own large corpus or fo
 3. Run `python3 -m vall_e.emb.process`. This will phonemize the transcriptions and quantize the audio.
   + If you're using a Descript-Audio-Codec based model, ensure to set the sample rate and audio backend accordingly.
 
-4. Copy `./data/config.yaml` to `./training/config.yaml`. Customize the training configuration and populate your `dataset.training` list with the values stored under `./training/dataset/list.json`.
+4. Run `python3 -m vall_e.emb.similar`. This will calculate the top-k most similar utterances for each utterance for use with sampling.
+  + Doing this will help the model follow the input prompt stronger, at the possible "cost" of the model not learning how to "infer" the target speaker AND prosidy.
+
+5. Copy `./data/config.yaml` to `./training/config.yaml`. Customize the training configuration and populate your `dataset.training` list with the values stored under `./training/dataset/list.json`.
   + Refer to `./vall_e/config.py` for additional configuration details.
 
 ### Dataset Formats
@@ -88,7 +91,7 @@ For multiple GPUs, or exotic distributed training:
 
 You can enter `save` to save the state at any time, or `quit` to save and quit training.
 
-The `lr` will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
+The `lr` command will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
 
 ### Finetuning
 
@@ -205,8 +208,12 @@ Some additional flags you can pass are:
 * `--device`: device to use (default: `cuda`, examples: `cuda:0`, `cuda:1`, `cpu`)
 * `--ar-temp`: sampling temperature to use for the AR pass. During experimentation, `0.95` provides the most consistent output, but values close to it works fine.
 * `--nar-temp`: sampling temperature to use for the NAR pass. During experimentation, the lower value, the better. Set to `0` to enable greedy sampling.
+* `--input-prompt-length`: the maximum duration the input prompt can be (~6 seconds is fine, longer durations lead to slower generations for "better" accuracy, as long as the model was trained against such input prompt durations)
 
 And some experimental sampling flags you can use too (your mileage will ***definitely*** vary, but most of these are bandaids for a bad AR):
+* `--input-prompt-prefix`: (AR only) treats the input prompt as the initial response prefix, but...
+  * the transcription of the prompt needs to be in the input text prompt.
+  * doesn't perform all that well (I belive the model needs to be trained a bit on this, as `tts-c`).
 * `--min-ar-temp`: triggers the dynamic temperature pathway, adjusting the temperature based on the confidence of the best token. Acceptable values are between `[0.0, (n)ar-temp)`.
   + This simply uplifts the [original implementation](https://github.com/kalomaze/koboldcpp/blob/dynamic-temp/llama.cpp#L5132) to perform it.
   + **!**NOTE**!**: This does not seem to resolve any issues with setting too high/low of a temperature. The right values are yet to be found.
@@ -273,8 +280,9 @@ So far, this only allows you to load a different model without needing to restar
   - ~~this might need a better training paradigm with providing similar enough input prompts to a given output response.~~
     - this might have just needed a better dataset + a better input prompt "sampling" method
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
-* [x] ~~explore alternative setups, like a NAR-only model~~
+* [x] ~~explore alternative setups, like a NAR-only model or Descript-Audio-Codec~~
   - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
+  - Descript-Audio-Codec 44KHz has NAR issues, but this *might* be user error.
 * [x] ~~explore better sampling techniques~~
   - the AR doesn't *need* exotic sampling techniques, as they're bandaids for a bad AR.
   - the NAR benefits from greedy sampling, and anything else just harms output quality.
@@ -290,6 +298,9 @@ So far, this only allows you to load a different model without needing to restar
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
 * [ ] replace the phonemizer with something that doesn't depend on espeak
+  * [ ] train the model to handle text => phoneme (without a hit to the rest of the model)
+    * [ ] ...and phonemes => text
+    * [ ] allow raw text as input instead
   - espeak is nice, but I can only really put my whole trust with phonemizing English.
   - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
 * [ ] explore exotic features like:

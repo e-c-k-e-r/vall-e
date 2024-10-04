@@ -164,6 +164,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
+	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*cfg.dataset.frames_per_second))
 	parser.add_argument("--max-nar-levels", type=int, default=0), # kwargs["max-nar-levels"])
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
@@ -203,6 +204,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			max_ar_steps=args.max_ar_steps,
 			max_nar_levels=args.max_nar_levels,
 			input_prompt_length=args.input_prompt_length,
+			input_prompt_prefix=args.input_prompt_prefix,
 			ar_temp=args.ar_temp,
 			nar_temp=args.nar_temp,
 			min_ar_temp=args.min_ar_temp,
@@ -384,6 +386,7 @@ with ui:
 							layout["inference_tts"]["inputs"]["ar-temp"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy sample)")
 							layout["inference_tts"]["inputs"]["nar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR. (0 to greedy sample)")
 						with gr.Row():
+							#layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
 							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
 							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
 					with gr.Tab("Sampler Settings"):

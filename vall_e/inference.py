@@ -174,6 +174,7 @@ class TTS():
 		max_nar_levels=7,
 		#
 		input_prompt_length=0.0,
+		input_prompt_prefix=False,
 		#
 		ar_temp=0.95,
 		nar_temp=0.5,
@@ -275,6 +276,7 @@ class TTS():
 				if model_ar is not None:
 					resps_list = model_ar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps,
+						input_prompt_prefix=input_prompt_prefix,
 						sampling_temperature=ar_temp,
 						sampling_min_temperature=min_ar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k,
@@ -291,6 +293,7 @@ class TTS():
 					)
 					resps_list = model_nar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
+						input_prompt_prefix=input_prompt_prefix,
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
 						sampling_min_temperature=min_nar_temp,
