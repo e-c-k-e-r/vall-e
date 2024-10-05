@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import random
 import numpy as np
 import re
+from time import perf_counter
 
 from typing import Literal, overload, Optional, Tuple
 from functools import partial
@@ -1479,8 +1480,8 @@ class Base(nn.Module):
 		elif self.causal:
 			logits = [ logit[-self.causal_size:] for logit in logits ]
 
-		devices = [ logit.device for logit in logits ]
-		logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
+		# this might actually slow things down a bit slightly-er?
+		#logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 		
 		# (NAR) disable stop token
 		if quant_levels is not None and "ar" in self.capabilities:
@@ -1494,12 +1495,12 @@ class Base(nn.Module):
 			return [ logit.argmax(dim=1) for logit in logits ]
 
 		# perform repetition penalizing	
-		if "len" not in self.capabilities and prev_list is not None:
+		if "len" not in self.capabilities and prev_list is not None and repetition_penalty != 1.0:
 			# to-do: figure out a faster way to handle tolist()
 			logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
-		if quant_levels is None and self.causal and prev_list is not None:
+		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
 
 		# perform top_k/top_p filtering of our logits

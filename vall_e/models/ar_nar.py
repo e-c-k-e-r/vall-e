@@ -276,7 +276,7 @@ class AR_NAR(Base):
 
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.causal_size), desc="AR", disable=disable_tqdm):
-			#
+			# it would technically be faster to just append the new token's embedding to the inputs, but there's a VERY small performance gain from doing it, so it's not worth it
 			text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
 			resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
 
@@ -291,6 +291,7 @@ class AR_NAR(Base):
 				quant_levels=[ 0 for _ in range( max( batch_size, sampling_beam_width ) ) ]
 			)
 
+			# to-do: find an elegant way to write this
 			if state is not None:
 				logits, state = super().forward(
 					inputs=inputs,
