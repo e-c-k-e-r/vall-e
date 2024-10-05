@@ -9,17 +9,14 @@ import functools
 import torch
 import numpy as np
 
-from datetime import datetime
-
 import torchaudio
 import gradio as gr
 
-from time import perf_counter
 from pathlib import Path
 
 from .inference import TTS, cfg
 from .train import train
-from .utils import get_devices, setup_logging
+from .utils import get_devices, setup_logging, timer
 from .utils.io import json_read, json_stringify
 from .emb.qnt import decode_to_wave
 from .data import get_lang_symmap
@@ -51,20 +48,6 @@ def gradio_wrapper(inputs):
 				raise gr.Error(str(e))
 		return wrapped_function
 	return decorated
-
-class timer:
-	def __init__(self, msg="Elapsed time:"):
-		self.msg = msg
-
-	def __enter__(self):
-		self.start = perf_counter()
-		return self
-
-	def __exit__(self, type, value, traceback):
-		msg = f'{self.msg} {(perf_counter() - self.start):.3f}s'
-
-		gr.Info(msg)
-		print(f'[{datetime.now().isoformat()}] {msg}')
 
 # returns a list of models, assuming the models are placed under ./training/ or ./models/
 def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
@@ -164,7 +147,8 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
-	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
+	#parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
+	parser.add_argument("--input-prompt-prefix", action='store_true')
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*cfg.dataset.frames_per_second))
 	parser.add_argument("--max-nar-levels", type=int, default=0), # kwargs["max-nar-levels"])
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
@@ -194,7 +178,8 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	tts = init_tts()
 	
 	gr.Info("Inferencing...")
-	with timer("Inferenced in") as t:
+	
+	with timer("Inferenced in", callback=lambda msg: gr.Info( msg )) as t:
 		wav, sr = tts.inference(
 			text=args.text,
 			language=args.language,

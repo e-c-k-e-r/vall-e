@@ -25,7 +25,28 @@ from torch import Tensor, nn
 from tqdm.auto import tqdm
 from typing import Callable, TypeVar, overload
 from contextlib import contextmanager
+
+from time import perf_counter
+from datetime import datetime
+
 T = TypeVar("T")
+
+class timer:
+	def __init__(self, msg="Elapsed time:", callback=None):
+		self.msg = msg
+		self.callback = callback
+
+	def __enter__(self):
+		self.start = perf_counter()
+		return self
+
+	def __exit__(self, type, value, traceback):
+		msg = f'{self.msg} {(perf_counter() - self.start):.9f}s'
+
+		if self.callback:
+			self.callback(msg)
+
+		print(f'[{datetime.now().isoformat()}] {msg}')
 
 def truncate_json( str ):
 

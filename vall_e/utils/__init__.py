@@ -10,5 +10,6 @@ from .utils import (
     set_seed,
     passes_policy,
     get_devices,
-    truncate_json
+    truncate_json,
+    timer
 )

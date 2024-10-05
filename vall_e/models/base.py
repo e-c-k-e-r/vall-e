@@ -1447,7 +1447,7 @@ class Base(nn.Module):
 	def sample(
 		self,
 		logits: list[Tensor], # logit scores
-		prev_list: list[Tensor], # previous tokens
+		prev_list: list[Tensor] | None = None, # previous tokens
 		quant_levels: int | list[int] | Tensor | None = None,
 		# base sampling parameters
 		temperature: float = 1.0,
@@ -1494,11 +1494,12 @@ class Base(nn.Module):
 			return [ logit.argmax(dim=1) for logit in logits ]
 
 		# perform repetition penalizing	
-		if "len" not in self.capabilities:
+		if "len" not in self.capabilities and prev_list is not None:
+			# to-do: figure out a faster way to handle tolist()
 			logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
-		if quant_levels is None and self.causal:
+		if quant_levels is None and self.causal and prev_list is not None:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
 
 		# perform top_k/top_p filtering of our logits

@@ -17,11 +17,14 @@ import math
 from einops import rearrange
 from torch import Tensor
 from tqdm import trange
+from time import perf_counter
+
 import logging
 
 _logger = logging.getLogger(__name__)
 
 from ..emb.qnt import trim, encode_as_embedding
+from ..utils import get_devices, setup_logging, timer
 
 from .lora import enable_lora
 
@@ -301,7 +304,7 @@ class AR_NAR(Base):
 
 			r = super().sample(
 				logits=logits,
-				prev_list=[ resps_list[i] if task not in text_task else text_list[i] for i, task in enumerate( task_list ) ],
+				prev_list=None if sampling_repetition_penalty == 1.0 and sampling_length_penalty == 0.0 else [ resps_list[i] if task not in text_task else text_list[i] for i, task in enumerate( task_list ) ],
 
 				temperature=sampling_temperature,
 				min_temperature=sampling_min_temperature,
