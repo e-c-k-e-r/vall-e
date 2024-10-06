@@ -9,7 +9,7 @@ _logger = logging.getLogger(__name__)
 # to-do: implement automatically downloading model
 DEFAULT_MODEL_PATH = Path(__file__).parent.parent.parent / 'data/models'
 DEFAULT_MODEL_URLS = {
-	'ar+nar-tts+stt-llama-8/fp32.sft': 'https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/ar%2Bnar-tts%2Bstt-llama-8/fp32.sft',
+	'ar+nar-llama-8/fp32.sft': 'https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/ar%2Bnar-llama-8/fp32.sft',
 }
 
 # kludge, probably better to use HF's model downloader function

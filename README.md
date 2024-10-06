@@ -12,7 +12,7 @@ Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`
 - Linux users can consult their package managers on installing `espeak`/`espeak-ng`.
 - Windows users are required to install [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/releases/tag/1.51#Assets).
   + additionally, you may be required to set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
-- In the future, an internal homebrew to replace this *would* be fantastic.
+- In the future, an internal homebrew to replace this would be fantastic.
 
 ## Install
 
@@ -22,20 +22,23 @@ I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
 ## Pre-Trained Model
 
-> [!NOTE]
-> Pre-Trained weights aren't up to par as a pure zero-shot model at the moment, but are fine for finetuning / LoRAs.
-
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 
 A script to setup a proper environment and download the weights can be invoked with `./scripts/setup.sh`. This will automatically create a `venv`, and download the `ar+nar-llama-8` weights and config file to the right place.
+* In the future, the model should be automatically downloaded.
 
 ## Train
 
 Training is very dependent on:
 * the quality of your dataset.
+  * clean utterances and accurate transcriptions go a long way.
+  * a diverse dataset in prosidy and speakers help a ton.
 * how much data you have.
-* the bandwidth you quantized your audio to.
+  * training from scratch requires upwards of 15K hours.
+  * training new languages from the base model simply requires maybe ~2K hours each.
+* the bandwidth you quantized your audio to, as this affects the how many tokens are processed per step.
 * the underlying model architecture used.
+  * some models behave better than others for a unified approach, others do not.
 
 ### Try Me
 
@@ -246,6 +249,14 @@ A Gradio-based web UI is accessible by running `python3 -m vall_e.webui`. You ca
 * `--yaml=./path/to/your/config.yaml`: will load the targeted YAML
 * `--listen 0.0.0.0:7860`: will set the web UI to listen to all IPs at port 7860. Replace the IP and Port to your preference.
 
+### Emergent Behavior
+
+The model can be prompted in creative ways to yield some interesting behaviors:
+* prompting without an input audio prompt will have the model generate a random voice at the "cost" of some unintelligible utterance at the beginning of the output response (despite doing no promptless training).
+  * finetunes / LoRAs can benefit from this by having input audio promptless synthesis, while opting to have an input audio prompt for guidance.
+* prompting with an input text prompt being the transcription of the input audio prompt will have the response follow very closely to the input prompt  (despite not doing input=output training).
+  * this should allow for easy transcription editing without much fuss.
+
 #### Inference
 
 Synthesizing speech is simple:
@@ -275,10 +286,8 @@ So far, this only allows you to load a different model without needing to restar
 ## To-Do
 
 * [x] train and release a serviceable model for finetuning against.
-  - LoRA tests shows it's already very capable, although there's room for higher quality (possibly in better NAR training).
-* [ ] train and release a ***good*** zero-shot model.
-  - ~~this might need a better training paradigm with providing similar enough input prompts to a given output response.~~
-    - this might have just needed a better dataset + a better input prompt "sampling" method
+* [x] train and release a ***good*** zero-shot model.
+  - for what it's worth it's decent enough for me to finally be happy with it.
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
 * [x] ~~explore alternative setups, like a NAR-only model or Descript-Audio-Codec~~
   - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
@@ -320,9 +329,10 @@ Despite how lightweight it is in comparison to other TTS's I've meddled with, th
   + to remedy this, training benefits from calculating the most similar utterances for each utterance, and using that as the input prompt for training.
 * the trainer's default RVQ level distribution prioritizes lower RVQ levels over higher RVQ levels, as the lower levels contribute to the final waveform more; however, this leaves some minor artifacting that rises in the higher RVQ levels due to inaccuracy issues.
   + summing the audio embeddings for later RVQ levels seems to help?
+  + `model.experimental.p_rvq_levels: [0,0,0,0,0,0,0,1,2,3,4,5,6,7]` seems to help?
 * speakers that aren't similar to an audiobook narrator voice has similarity issues due to the majority of training used `path`-based dataloader sampling instead of `speaker`-based (or `group`-based) dataloader sampling.
   + although LoRAs help a ton for fixing results for a single voice.
-  + this *might* be remedied with a much, much, *much* more diverse dataset (such as Emilia).
+  + a diverse dataset in prosidy and speaker (such as a corpus sourced from dramatic media like video games) helps a ton.
 
 ## Notices and Citations
 

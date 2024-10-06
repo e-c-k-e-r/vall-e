@@ -828,6 +828,8 @@ class Base(nn.Module):
 
 			x = t[0]
 			
+			# to-do: figure out why KV caching doesn't work
+			#if not self.training:
 			if state is not None:
 				state = t[1]
 			

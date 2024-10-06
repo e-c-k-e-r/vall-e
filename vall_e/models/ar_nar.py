@@ -217,10 +217,13 @@ class AR_NAR(Base):
 					quant_levels=quant_levels,
 				)
 
-				logits = super().forward(
+				output = super().forward(
 					inputs=inputs,
 					quant_levels=quant_levels,
 				)
+				if not isinstance( output, tuple ):
+					output = (output, None)
+				logits, state = output
 
 				resps_list = super().sample(
 					logits=logits,
@@ -292,16 +295,14 @@ class AR_NAR(Base):
 			)
 
 			# to-do: find an elegant way to write this
-			if state is not None:
-				logits, state = super().forward(
-					inputs=inputs,
-					state=state,
-				)
-			else:
-				logits = super().forward(
-					inputs=inputs,
-					state=state,
-				)
+			output = super().forward(
+				inputs=inputs,
+				state=state,
+			)
+			if not isinstance( output, tuple ):
+				output = (output, None)
+			
+			logits, state = output
 
 			r = super().sample(
 				logits=logits,
