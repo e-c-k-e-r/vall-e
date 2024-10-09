@@ -23,6 +23,7 @@ def process_items( items, stride=0, stride_offset=0 ):
 
 def transcribe(
 	input_audio = "voices",
+	input_voice = None,
 	output_metadata = "training/metadata",
 	model_name = "large-v3",
 	
@@ -30,12 +31,24 @@ def transcribe(
 	diarize = False,
 
 	stride = 0,
-	stride_offset = ,
+	stride_offset = 0,
 
 	batch_size = 16,
 	device = "cuda",
 	dtype = "float16",
 ):
+	# to-do: make this also prepared from args
+	language_map = {} # k = group, v = language
+
+	ignore_groups = [] # skip these groups
+	ignore_speakers = [] # skip these speakers
+
+	only_groups = [] # only process these groups
+	only_speakers = [] # only process these speakers
+
+	if input_voice is not None:
+		only_speakers = [input_voice]
+
 	# 
 	model = whisperx.load_model(model_name, device, compute_type=dtype)
 	align_model, align_model_metadata, align_model_language = (None, None, None)
@@ -49,8 +62,18 @@ def transcribe(
 		if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
 			continue
 
+		if group_name in ignore_groups:
+			continue
+		if only_groups and group_name not in only_groups:
+			continue
+
 		for speaker_id in tqdm(process_items(os.listdir(f'./{input_audio}/{dataset_name}/')), desc="Processing speaker"):
 			if not os.path.isdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
+				continue
+
+			if speaker_id in ignore_speakers:
+				continue
+			if only_speakers and speaker_id not in only_speakers:
 				continue
 
 			outpath = Path(f'./{output_metadata}/{dataset_name}/{speaker_id}/whisper.json')
@@ -122,6 +145,7 @@ def main():
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument("--input-audio", type=str, default="voices")
+	parser.add_argument("--input-voice", type=str, default=None)
 	parser.add_argument("--output-metadata", type=str, default="training/metadata")
 
 	parser.add_argument("--model-name", type=str, default="large-v3")
@@ -147,6 +171,7 @@ def main():
 
 	transcribe(
 		input_audio = args.input_audio,
+		input_voice = args.input_voice,
 		output_metadata = args.output_metadata,
 		model_name = args.model_name,
 

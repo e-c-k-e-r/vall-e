@@ -87,21 +87,22 @@ def process_jobs( jobs, speaker_id="", raise_exceptions=True ):
 			continue
 
 def process(
-		audio_backend="encodec",
-		input_audio="voices",
-		input_metadata="metadata",
-		output_dataset="training",
-		raise_exceptions=False,
-		stride=0,
-		stride_offset=0,
-		slice="auto",
+	audio_backend="encodec",
+	input_audio="voices",
+	input_voice=None,
+	input_metadata="metadata",
+	output_dataset="training",
+	raise_exceptions=False,
+	stride=0,
+	stride_offset=0,
+	slice="auto",
 
-		low_memory=False,
+	low_memory=False,
 
-		device="cuda",
-		dtype="float16",
-		amp=False,
-	):
+	device="cuda",
+	dtype="float16",
+	amp=False,
+):
 	# prepare from args
 	cfg.set_audio_backend(audio_backend)
 	audio_extension = cfg.audio_backend_extension
@@ -128,6 +129,9 @@ def process(
 		"audio": []
 	}
 	dataset = []
+
+	if input_voice is not None:
+		only_speakers = [input_voice]
 
 	for group_name in sorted(os.listdir(f'./{input_audio}/')):
 		if not os.path.isdir(f'./{input_audio}/{group_name}/'):
@@ -255,6 +259,7 @@ def main():
 
 	parser.add_argument("--audio-backend", type=str, default="encodec")
 	parser.add_argument("--input-audio", type=str, default="voices")
+	parser.add_argument("--input-voice", type=str, default=None)
 	parser.add_argument("--input-metadata", type=str, default="training/metadata")
 	parser.add_argument("--output-dataset", type=str, default="training/dataset")
 	parser.add_argument("--raise-exceptions", action="store_true")
@@ -279,6 +284,7 @@ def main():
 	process(
 		audio_backend=args.audio_backend,
 		input_audio=args.input_audio,
+		input_voice=args.input_voice,
 		input_metadata=args.input_metadata,
 		output_dataset=args.output_dataset,
 		raise_exceptions=args.raise_exceptions,
