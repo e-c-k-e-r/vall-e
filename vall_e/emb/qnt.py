@@ -247,6 +247,7 @@ def _load_encodec_model(device="cuda", levels=0):
 	model.sample_rate = cfg.sample_rate
 	model.normalize = cfg.inference.normalize
 	model.backend = "encodec"
+	model.device = device
 
 	return model
 
@@ -274,6 +275,7 @@ def _load_vocos_model(device="cuda", levels=0):
 	model.bandwidth_id = torch.tensor([bandwidth_id], device=device)
 	model.sample_rate = cfg.sample_rate
 	model.backend = "vocos"
+	model.device = device
 
 	return model
 
@@ -294,6 +296,7 @@ def _load_dac_model(device="cuda"):
 
 	model.backend = "dac"
 	model.model_type = kwargs["model_type"]
+	model.device = device
 
 	return model
 
@@ -309,6 +312,7 @@ def _load_audiodec_model(device="cuda", model_name=None):
 
 	model.backend = "audiodec"
 	model.sample_rate = sample_rate
+	model.device = device
 
 	return model
 
