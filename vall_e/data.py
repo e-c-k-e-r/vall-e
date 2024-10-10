@@ -72,7 +72,7 @@ def get_random_prompts( validation=True, length=0, tokenized=False ):
 
 	# Pull from validation dataset if existing + requested
 	if validation and cfg.dataset.validation:
-		paths = _load_paths(cfg.dataset.validation, type="validation")
+		paths = _load_paths(cfg.dataset.validation, type="validation", silent=True)
 		paths = list(itertools.chain.from_iterable(paths.values()))
 		
 		for path in paths:
@@ -527,8 +527,8 @@ def _get_duration_map( type="training" ):
 	return _durations_map[type] if type in _durations_map else {}
 
 @cfg.diskcache()
-def _load_paths(dataset, type="training"):
-	return { cfg.get_spkr( cfg.data_dir / data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}") }
+def _load_paths(dataset, type="training", silent=False):
+	return { cfg.get_spkr( cfg.data_dir / data_dir / "dummy" ): _load_paths_from_metadata( data_dir, type=type, validate=cfg.dataset.validate and type == "training" ) for data_dir in tqdm(dataset, desc=f"Parsing dataset: {type}", disable=silent) }
 
 def _load_paths_from_metadata(group_name, type="training", validate=False):
 	data_dir = group_name if cfg.dataset.use_hdf5 else cfg.data_dir / group_name

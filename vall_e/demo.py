@@ -124,7 +124,7 @@ def main():
 	# pull from dataset samples
 	if args.sample_from_dataset:
 		cfg.dataset.cache = False
-		cfg.dataset.sample_type = "speaker"
+		cfg.dataset.sample_type = "path" if args.lora else "speaker"
 		cfg.dataset.tasks_list = [ 'tts' ]
 
 		samples_dirs["dataset"] = args.demo_dir / "dataset"
@@ -133,7 +133,7 @@ def main():
 		dataloader = create_train_dataloader()
 		_logger.info("Loaded dataloader.")
 
-		length = len( dataloader.dataset )
+		length = min(len( dataloader.dataset ), cfg.evaluation.batch_size)
 		num = args.dataset_samples if args.dataset_samples else length
 
 		for i in trange( num, desc="Sampling dataset for samples" ):
@@ -232,6 +232,9 @@ def main():
 
 		# write audio into template
 		html = html.replace("${"+k.upper()+"_SAMPLES}", "\n".join( samples ) )
+
+		if not args.lora:
+			html = html.replace("\n\t\t\t\t\t<th>Our VALL-E (No LoRA)</th>", "")
 
 	# write demo page
 	open( args.demo_dir / "index.html", "w", encoding="utf-8" ).write( html )
