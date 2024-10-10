@@ -26,7 +26,7 @@ from pathlib import Path
 
 from .inference import TTS
 from .config import cfg
-from .data import create_train_dataloader, create_val_dataloader
+from .data import create_train_dataloader, create_val_dataloader, get_random_prompt
 from .emb.qnt import decode_to_file
 
 from tqdm import tqdm, trange
@@ -78,6 +78,9 @@ def main():
 	parser.add_argument("--device", type=str, default=None)
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=None)
+
+	parser.add_argument("--random-prompts", action="store_true")
+	parser.add_argument("--lora", action="store_true")
 	
 	args = parser.parse_args()
 	
@@ -142,7 +145,7 @@ def main():
 
 			metadata = batch["metadata"]
 
-			text = metadata["text"]
+			text = get_random_prompt() if args.random_prompts else metadata["text"]
 			language = metadata["language"].lower()
 			
 			prompt = dir / "prompt.wav"
@@ -174,8 +177,9 @@ def main():
 			prompt = dir / "prompt.wav"
 			reference = dir / "reference.wav"
 			out_path = dir / "out" / "ours.wav"
+			out_path_lora = dir / "out" / "ours_lora.wav"
 
-			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else []
+			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else ([ out_path_lora ] if args.lora else [])
 
 			samples.append((
 				text,
@@ -185,26 +189,35 @@ def main():
 			if args.skip_existing and out_path.exists():
 				continue
 
+			kwargs = dict(
+				text=text,
+				references=[prompt],
+				language=language,
+				input_prompt_length=args.input_prompt_length,
+				max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
+				ar_temp=args.ar_temp, nar_temp=args.nar_temp,
+				min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
+				top_p=args.top_p, top_k=args.top_k,
+				repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
+				length_penalty=args.length_penalty,
+				beam_width=args.beam_width,
+				mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
+				seed=args.seed,
+				tqdm=False,
+			)
+
+			if args.lora:
+				tts.enable_lora()
+				try:
+					tts.inference( out_path=out_path_lora, **kwargs )
+				except Exception as e:
+					print(f'Error while processing {out_path}: {e}')
+				tts.disable_lora()
 			try:
-				tts.inference(
-					text=text,
-					references=[prompt],
-					language=language,
-					out_path=out_path,
-					input_prompt_length=args.input_prompt_length,
-					max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
-					ar_temp=args.ar_temp, nar_temp=args.nar_temp,
-					min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
-					top_p=args.top_p, top_k=args.top_k,
-					repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
-					length_penalty=args.length_penalty,
-					beam_width=args.beam_width,
-					mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
-					seed=args.seed,
-					tqdm=False,
-				)
+				tts.inference( out_path=out_path, **kwargs )
 			except Exception as e:
 				print(f'Error while processing {out_path}: {e}')
+
 
 		# collate entries into HTML
 		samples = [

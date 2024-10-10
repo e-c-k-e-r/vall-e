@@ -221,6 +221,7 @@ def main():
 	parser = argparse.ArgumentParser()
 
 	parser.add_argument("--input-speaker", type=Path, default=None)
+	parser.add_argument("--input-voice", type=str, default=None)
 	parser.add_argument("--use-dataset", action="store_true")
 
 	parser.add_argument("--yaml", type=Path)
@@ -254,6 +255,9 @@ def main():
 			if "LibriTTS-R" in speaker_name:
 				speaker_name = speaker_name.replace("LibriTTS-R", "LibriVox")
 			"""
+
+			if args.input_voice and speaker_name != args.input_voice:
+				return
 			
 			metadata_path = cfg.metadata_dir / f'{speaker_name}.json'
 			metadata = json_read( metadata_path, default={} )

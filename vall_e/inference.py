@@ -16,6 +16,7 @@ from .utils import to_device, set_seed, wrapper as ml
 
 from .config import cfg, Config
 from .models import get_models
+from .models.lora import enable_lora
 from .engines import load_engines, deepspeed_available
 from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize
 
@@ -76,6 +77,13 @@ class TTS():
 		self.engines.eval()
 		self.symmap = get_phone_symmap()
 		_logger.info("Loaded model")
+
+	def enable_lora( self, enabled=True ):
+		for name, engine in self.engines.items():
+			enable_lora( engine.module, mode = enabled )
+
+	def disable_lora( self ):
+		return self.enable_lora( enabled=False )
 
 	def encode_text( self, text, language="en" ):
 		# already a tensor, return it

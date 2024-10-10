@@ -156,8 +156,10 @@ class AR(Base):
 				)
 		
 		# is AR
+		"""
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( 0 ) )
+		"""
 
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()

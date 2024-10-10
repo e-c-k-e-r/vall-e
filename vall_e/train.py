@@ -1,8 +1,8 @@
 # todo: clean this mess up
 
 from .config import cfg
-from .data import create_train_val_dataloader
-from .emb import qnt
+from .data import create_train_val_dataloader, get_random_prompt, tokenize
+from .emb import qnt, g2p
 
 from .utils import setup_logging, to_device, trainer, flatten_dict, do_gc
 from .data import fold_inputs, unfold_outputs
@@ -57,9 +57,12 @@ def train_feeder(engine, batch):
 	return loss, stats
 
 @torch.inference_mode()
-def run_eval(engines, eval_name, dl):
+def run_eval(engines, eval_name, dl, args=None):
 	stats = defaultdict(list)
 	stats['loss'] = []
+
+	if cfg.evaluation.size == 0:
+		return
 
 	def process( name, batch, resps_list ):
 		for speaker, path, ref, hyp, prom, task in zip(batch["spkr_name"], batch["path"], batch["resps"], resps_list, batch["proms"], batch["task"]):
@@ -84,16 +87,21 @@ def run_eval(engines, eval_name, dl):
 			ref_path.parent.mkdir(parents=True, exist_ok=True)
 			prom_path.parent.mkdir(parents=True, exist_ok=True)
 			
-			ref_audio, sr = qnt.decode_to_file(ref, ref_path)
 			hyp_audio, sr = qnt.decode_to_file(hyp, hyp_path)
+			
+			if ref is not None:
+				ref_audio, sr = qnt.decode_to_file(ref, ref_path)
+
 			if prom is not None:
 				prom_audio, sr = qnt.decode_to_file(prom, prom_path)
 
-			# pseudo loss calculation since we don't get the logits during eval
-			min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )
-			ref_audio = ref_audio[..., 0:min_length]
-			hyp_audio = hyp_audio[..., 0:min_length]
-			stats['loss'].append(mel_stft_loss(hyp_audio[None, :, :], ref_audio[None, :, :]).item())
+			# naive loss calculation
+			# to-do: find a better way to calculate this / a better metric
+			if ref is not None:
+				min_length = min( ref_audio.shape[-1], hyp_audio.shape[-1] )
+				ref_audio = ref_audio[..., 0:min_length]
+				hyp_audio = hyp_audio[..., 0:min_length]
+				stats['loss'].append(mel_stft_loss(hyp_audio[None, :, :], ref_audio[None, :, :]).item())
 	
 	processed = 0
 	while processed < cfg.evaluation.size:
@@ -105,19 +113,25 @@ def run_eval(engines, eval_name, dl):
 
 		batch_size = len(batch["text"])
 
-		processed += batch_size
+		# to-do: eval for text tasks
+		has_stt = False
+		for i, task in enumerate( batch["task"] ):
+			# easier to just change it to a tts task than drop stt tasks from the batch
+			if task == "stt":
+				# has_stt = True
+				batch["task"][i] = "tts"
+				batch["proms"][i] = batch["resps"][i][:75*3, :]
 
+		# random prompts requested
+		if args and args.eval_random_text_prompts and eval_name == "subtrain":
+			for i, _ in enumerate(batch["text"]):
+				batch["text"][i] = get_random_prompt(tokenized=True).to(device=cfg.device)
+				batch["resps"][i] = None
+
+		processed += batch_size
 		for name in engines:
 			engine = engines[name]
 
-			# to-do: eval for text tasks
-			has_stt = False
-			for i, task in enumerate( batch["task"] ):
-				# easier to just change it to a tts task than drop stt tasks from the batch
-				if task == "stt":
-					# has_stt = True
-					batch["task"][i] = "tts"
-					batch["proms"][i] = batch["resps"][i][:75*3, :]
 
 			kwargs = dict(
 				text_list=batch["text"],
@@ -157,7 +171,7 @@ def run_eval(engines, eval_name, dl):
 
 				_logger.info(f"Validation Metrics (STT): {text_list}")
 
-	stats = {k: sum(v) / len(v) for k, v in stats.items()}
+	stats = {k: sum(v) / len(v) for k, v in stats.items() if v}
 	engines_stats = {
 		f'{name}.{eval_name}': stats,
 		"it": engines.global_step,
@@ -170,6 +184,8 @@ def run_eval(engines, eval_name, dl):
 def train():
 	parser = argparse.ArgumentParser("VALL-E TTS")
 	parser.add_argument("--eval", action="store_true", default=None)
+	parser.add_argument("--eval-random-text-prompts", action="store_true", default=None)
+	#parser.add_argument("--eval-random-audio-prompts", action="store_true", default=None)
 	args, unknown = parser.parse_known_args()
 
 	# create log folder
@@ -185,8 +201,8 @@ def train():
 		engines.eval()
 		# wrapped in a try block because it's sometimes prone to breaking
 		try:
-			run_eval(engines, "subtrain", subtrain_dl)
-			run_eval(engines, "val", val_dl)
+			run_eval(engines, "subtrain", subtrain_dl, args)
+			run_eval(engines, "val", val_dl, args)
 		except Exception as e:
 			_logger.warning(f"Error occurred while performing eval: {str(e)}")
 			_logger.warning(traceback.format_exc())

@@ -96,6 +96,10 @@ You can enter `save` to save the state at any time, or `quit` to save and quit t
 
 The `lr` command will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
 
+Some additional flags can be passed as well:
+* `--eval`: only run the evaluation / validation pass, then exit afterwards.
+* `--eval-random-text-prompts`: use random text prompts for the evaluation pass, rather than the provided text prompts in the dataset.
+
 ### Finetuning
 
 Finetuning can be done by training the full model, or using a LoRA.

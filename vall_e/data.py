@@ -35,6 +35,72 @@ from tqdm.auto import tqdm
 
 _logger = logging.getLogger(__name__)
 
+@cache
+def get_random_prompts( validation=True, length=0, tokenized=False ):
+	sentences = [
+		"The birch canoe slid on the smooth planks.",
+		"Glue the sheet to the dark blue background.",
+		"It's easy to tell the depth of a well.",
+		"These days a chicken leg is a rare dish.",
+		"Rice is often served in round bowls.",
+		"The juice of lemons makes fine punch.",
+		"The box was thrown beside the parked truck.",
+		"The hogs were fed chopped corn and garbage.",
+		"Four hours of steady work faced us.",
+		"A large size in stockings is hard to sell.",
+		"The boy was there when the sun rose.",
+		"A rod is used to catch pink salmon.",
+		"The source of the huge river is the clear spring.",
+		"Kick the ball straight and follow through.",
+		"Help the woman get back to her feet.",
+		"A pot of tea helps to pass the evening.",
+		"Smoky fires lack flame and heat.",
+		"The soft cushion broke the man's fall.",
+		"The salt breeze came across from the sea.",
+		"The girl at the booth sold fifty bonds.",
+		"The small pup gnawed a hole in the sock.",
+		"The fish twisted and turned on the bent hook.",
+		"Press the pants and sew a button on the vest.",
+		"The swan dive was far short of perfect.",
+		"The beauty of the view stunned the young boy.",
+		"Two blue fish swam in the tank.",
+		"Her purse was full of useless trash.",
+		"The colt reared and threw the tall rider.",
+		"It snowed, rained, and hailed the same morning.",
+		"Read verse out loud for pleasure.",
+	]
+
+	# Pull from validation dataset if existing + requested
+	if validation and cfg.dataset.validation:
+		paths = _load_paths(cfg.dataset.validation, type="validation")
+		paths = list(itertools.chain.from_iterable(paths.values()))
+		
+		for path in paths:
+			text_string = ""
+			if cfg.dataset.use_hdf5:
+				key = _get_hdf5_path(path)
+
+				metadata = { f'{k}': f'{v}' for k, v in cfg.hdf5[key].attrs.items() }
+				text_string = metadata["text"] if "text" in metadata else ""
+			else:
+				_, metadata = _load_quants(path, return_metadata=True)
+				text_string = metadata["text"] if "text" in metadata else ""
+			
+			if len( text_string ) < length:
+				continue
+
+			sentences.append( text_string )
+
+	if tokenized:
+		return [ torch.tensor( tokenize( encode_phns( text ) ) ).to(dtype=torch.uint8) for text in sentences ]
+
+	return sentences
+
+# samples a random text prompt
+def get_random_prompt( *args, **kwargs ):
+	# Harvard sentences
+	return random.choice(get_random_prompts( *args, **kwargs ))
+
 # fold into a typical LLM sequence (one embedding rather than split embeddings)
 def fold_inputs(
 	text_list = [],
@@ -718,7 +784,7 @@ class Dataset(_Dataset):
 		if len(self.paths) == 0:
 			raise ValueError(f"No valid path is found for {self.dataset_type}")
 
-		if self.sampler_type == "path":
+		if self.sampler_type == "path" and self.training:
 			if self.sampler_order == "duration" and cfg.dataset.sample_max_duration_batch > 0:
 				self.sampler = BatchedOrderedSampler(
 					self.duration_buckets if not self.sampler_state_dict_path.exists() else {}, # pass nothing if we're just going to load from a state anyways
@@ -735,9 +801,7 @@ class Dataset(_Dataset):
 			self.samplers = { name: PoolSampler( paths, keep_all=True, shuffle=self.sampler_shuffle ) for name, paths in self.paths_by_spkr_name.items() }
 			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True, shuffle=self.sampler_shuffle ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
-		# loading validation state dict causes issues
-		if self.dataset_type != "validation":
-			self.load_state_dict()
+		self.load_state_dict()
 
 	@cached_property
 	def sampler_state_dict_path(self):
@@ -789,6 +853,9 @@ class Dataset(_Dataset):
 		torch_save(state_dict, path)
 
 	def load_state_dict(self, path = None):
+		if not self.training:
+			return
+
 		if path is None:
 			path = self.sampler_state_dict_path
 

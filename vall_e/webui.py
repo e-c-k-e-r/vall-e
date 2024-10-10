@@ -19,7 +19,7 @@ from .train import train
 from .utils import get_devices, setup_logging, timer
 from .utils.io import json_read, json_stringify
 from .emb.qnt import decode_to_wave
-from .data import get_lang_symmap
+from .data import get_lang_symmap, get_random_prompt
 
 tts = None
 
@@ -284,42 +284,7 @@ def do_training( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	while True:
 		metrics = next(it)
 		yield metrics
-"""
-
-def get_random_prompt():
-	harvard_sentences=[
-		"The birch canoe slid on the smooth planks.",
-		"Glue the sheet to the dark blue background.",
-		"It's easy to tell the depth of a well.",
-		"These days a chicken leg is a rare dish.",
-		"Rice is often served in round bowls.",
-		"The juice of lemons makes fine punch.",
-		"The box was thrown beside the parked truck.",
-		"The hogs were fed chopped corn and garbage.",
-		"Four hours of steady work faced us.",
-		"A large size in stockings is hard to sell.",
-		"The boy was there when the sun rose.",
-		"A rod is used to catch pink salmon.",
-		"The source of the huge river is the clear spring.",
-		"Kick the ball straight and follow through.",
-		"Help the woman get back to her feet.",
-		"A pot of tea helps to pass the evening.",
-		"Smoky fires lack flame and heat.",
-		"The soft cushion broke the man's fall.",
-		"The salt breeze came across from the sea.",
-		"The girl at the booth sold fifty bonds.",
-		"The small pup gnawed a hole in the sock.",
-		"The fish twisted and turned on the bent hook.",
-		"Press the pants and sew a button on the vest.",
-		"The swan dive was far short of perfect.",
-		"The beauty of the view stunned the young boy.",
-		"Two blue fish swam in the tank.",
-		"Her purse was full of useless trash.",
-		"The colt reared and threw the tall rider.",
-		"It snowed, rained, and hailed the same morning.",
-		"Read verse out loud for pleasure.",
-	]
-	return random.choice(harvard_sentences)
+"""	
 
 # setup args
 parser = argparse.ArgumentParser(allow_abbrev=False)
