@@ -36,7 +36,8 @@ from tqdm.auto import tqdm
 _logger = logging.getLogger(__name__)
 
 @cache
-def get_random_prompts( validation=True, min_length=0, min_duration=6, tokenized=False ):
+def get_random_prompts( validation=True, min_length=0, tokenized=False ):
+	duration_range = [ 5.5, 12.0 ] # to-do: pull from cfg.dataset.duration_range
 	sentences = [
 		"The birch canoe slid on the smooth planks.",
 		"Glue the sheet to the dark blue background.",
@@ -91,7 +92,7 @@ def get_random_prompts( validation=True, min_length=0, min_duration=6, tokenized
 				text_string = metadata["text"] if "text" in metadata else ""
 				duration = metadata['duration'] if "duration" in metadata else 0
 			
-			if len( text_string ) < min_length or duration < min_duration:
+			if len( text_string ) < min_length or not (duration_range[0] <= duration and duration <= duration_range[1]):
 				continue
 
 			sentences.append( text_string )

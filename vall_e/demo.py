@@ -49,6 +49,7 @@ def main():
 	parser.add_argument("--dataset-samples", type=int, default=0)
 	parser.add_argument("--audio-path-root", type=str, default=None)
 	parser.add_argument("--preamble", type=str, default=None)
+	parser.add_argument("--output-filename", type=str, default="index.html")
 	
 	parser.add_argument("--language", type=str, default="en")
 
@@ -249,7 +250,7 @@ def main():
 				html = html.replace("<th>Our VALL-E</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<th>Our VALL-E (LoRA)</th>")
 
 	# write demo page
-	open( args.demo_dir / "index.html", "w", encoding="utf-8" ).write( html )
+	open( args.demo_dir / args.output_filename, "w", encoding="utf-8" ).write( html )
 
 if __name__ == "__main__":
 	main()
