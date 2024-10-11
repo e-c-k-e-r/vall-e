@@ -246,7 +246,7 @@ def main():
 			if args.random_prompts:
 				html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<th>Our VALL-E (LoRA)</th>")
 			else:
-				html = html.replace("<th>Our VALL-E</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<<th>Our VALL-E (LoRA)</th>")
+				html = html.replace("<th>Our VALL-E</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<th>Our VALL-E (LoRA)</th>")
 
 	# write demo page
 	open( args.demo_dir / "index.html", "w", encoding="utf-8" ).write( html )
