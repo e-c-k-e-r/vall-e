@@ -58,6 +58,7 @@ class AR(Base):
 		sampling_dry_allowed_length=2,
 
 		disable_tqdm=False,
+		use_lora=None,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)
@@ -156,10 +157,8 @@ class AR(Base):
 				)
 		
 		# is AR
-		"""
 		if cfg.lora is not None:
-			enable_lora( self, cfg.lora.active_level( 0 ) )
-		"""
+			enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
 
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()

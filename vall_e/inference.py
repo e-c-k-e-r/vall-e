@@ -211,6 +211,7 @@ class TTS():
 		out_path=None,
 
 		tqdm=True,
+		use_lora=None,
 	):
 		lines = text.split("\n")
 
@@ -255,6 +256,7 @@ class TTS():
 						sampling_dry_allowed_length=dry_allowed_length,
 
 						disable_tqdm=not tqdm,
+						use_lora=use_lora,
 					)
 				else:
 					raise Exception("!")
@@ -298,6 +300,7 @@ class TTS():
 						sampling_dry_allowed_length=dry_allowed_length,
 
 						disable_tqdm=not tqdm,
+						use_lora=use_lora,
 					)
 					resps_list = model_nar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
@@ -309,6 +312,7 @@ class TTS():
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 
 						disable_tqdm=not tqdm,
+						use_lora=use_lora,
 					)
 				elif model_len is not None:
 					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=10, disable_tqdm=not tqdm ) # don't need more than that
@@ -320,6 +324,7 @@ class TTS():
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 
 						disable_tqdm=not tqdm,
+						use_lora=use_lora,
 					)
 				else:
 					raise Exception("!")

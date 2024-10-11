@@ -65,6 +65,7 @@ class AR_NAR(Base):
 		sampling_dry_allowed_length=2,
 
 		disable_tqdm=False,
+		use_lora=None,
 	):
 		text_task = [ "stt" ]
 
@@ -204,7 +205,7 @@ class AR_NAR(Base):
 					break
 
 				if cfg.lora is not None:
-					enable_lora( self, cfg.lora.active_level( level ) )
+					enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
 				quant_levels = [ level for _ in range(batch_size) ] # torch.full((len(text_list),), level)
 
@@ -243,14 +244,11 @@ class AR_NAR(Base):
 
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
-			if cfg.lora is not None:
-				enable_lora( self )
-
 			return prev_list
 		
 		# is AR
 		if cfg.lora is not None:
-			enable_lora( self, cfg.lora.active_level( 0 ) )
+			enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
 
 		# STT
 		start_slice = [ 0 for _ in range(batch_size) ]

@@ -19,6 +19,7 @@ import argparse
 import base64
 import random
 import logging
+import time
 
 _logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ def main():
 	
 	parser.add_argument("--demo-dir", type=Path, default=None)
 	parser.add_argument("--skip-existing", action="store_true")
+	parser.add_argument("--dataset-dir-name", type=str, default="dataset")
 	parser.add_argument("--sample-from-dataset", action="store_true")
 	parser.add_argument("--skip-loading-dataloader", action="store_true")
 	parser.add_argument("--dataset-samples", type=int, default=0)
@@ -118,8 +120,8 @@ def main():
 		"librispeech": args.demo_dir / "librispeech",
 	}
 
-	if (args.demo_dir / "dataset").exists():
-		samples_dirs["dataset"] = args.demo_dir / "dataset"
+	if (args.demo_dir / args.dataset_dir_name).exists():
+		samples_dirs["dataset"] = args.demo_dir / args.dataset_dir_name
 
 	# pull from dataset samples
 	if args.sample_from_dataset:
@@ -127,7 +129,7 @@ def main():
 		cfg.dataset.sample_type = "path" if args.lora else "speaker"
 		cfg.dataset.tasks_list = [ 'tts' ]
 
-		samples_dirs["dataset"] = args.demo_dir / "dataset"
+		samples_dirs["dataset"] = args.demo_dir / args.dataset_dir_name
 
 		_logger.info("Loading dataloader...")
 		dataloader = create_train_dataloader()
@@ -139,7 +141,7 @@ def main():
 		for i in trange( num, desc="Sampling dataset for samples" ):
 			batch = dataloader.dataset[i]
 
-			dir = args.demo_dir / "dataset" / f'{i}'
+			dir = args.demo_dir / args.dataset_dir_name / f'{i}'
 
 			(dir / "out").mkdir(parents=True, exist_ok=True)
 
@@ -181,13 +183,18 @@ def main():
 
 			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else ([ out_path_lora ] if args.lora else [])
 
+			if not args.random_prompts:
+				extra_sources += [ reference ]
+
 			samples.append((
 				text,
-			 	[ prompt, out_path ] + extra_sources + [ reference ],
+			 	[ prompt, out_path ] + extra_sources,
 			))
 
 			if args.skip_existing and out_path.exists():
 				continue
+
+			seed = args.seed if args.seed else int(time.time())
 
 			kwargs = dict(
 				text=text,
@@ -202,17 +209,19 @@ def main():
 				length_penalty=args.length_penalty,
 				beam_width=args.beam_width,
 				mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
-				seed=args.seed,
+				seed=seed,
 				tqdm=False,
 			)
 
 			if args.lora:
-				tts.enable_lora()
+				tts.enable_lora() # I don't think this is necessary with the below
+				kwargs["use_lora"] = True
 				try:
 					tts.inference( out_path=out_path_lora, **kwargs )
 				except Exception as e:
 					print(f'Error while processing {out_path}: {e}')
 				tts.disable_lora()
+				kwargs["use_lora"] = False
 			try:
 				tts.inference( out_path=out_path, **kwargs )
 			except Exception as e:
@@ -233,8 +242,11 @@ def main():
 		# write audio into template
 		html = html.replace("${"+k.upper()+"_SAMPLES}", "\n".join( samples ) )
 
-		if not args.lora:
-			html = html.replace("\n\t\t\t\t\t<th>Our VALL-E (No LoRA)</th>", "")
+		if args.lora:
+			if args.random_prompts:
+				html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<th>Our VALL-E (LoRA)</th>")
+			else:
+				html = html.replace("<th>Our VALL-E</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<<th>Our VALL-E (LoRA)</th>")
 
 	# write demo page
 	open( args.demo_dir / "index.html", "w", encoding="utf-8" ).write( html )

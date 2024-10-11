@@ -36,7 +36,7 @@ from tqdm.auto import tqdm
 _logger = logging.getLogger(__name__)
 
 @cache
-def get_random_prompts( validation=True, length=0, tokenized=False ):
+def get_random_prompts( validation=True, min_length=0, min_duration=6, tokenized=False ):
 	sentences = [
 		"The birch canoe slid on the smooth planks.",
 		"Glue the sheet to the dark blue background.",
@@ -76,21 +76,27 @@ def get_random_prompts( validation=True, length=0, tokenized=False ):
 		paths = list(itertools.chain.from_iterable(paths.values()))
 		
 		for path in paths:
+			duration = 0
 			text_string = ""
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
 
 				metadata = { f'{k}': f'{v}' for k, v in cfg.hdf5[key].attrs.items() }
+				metadata = process_artifact_metadata( { "metadata": metadata } )
 				text_string = metadata["text"] if "text" in metadata else ""
+				duration = metadata['duration'] if "duration" in metadata else 0
 			else:
 				_, metadata = _load_quants(path, return_metadata=True)
+				metadata = process_artifact_metadata( { "metadata": metadata } )
 				text_string = metadata["text"] if "text" in metadata else ""
+				duration = metadata['duration'] if "duration" in metadata else 0
 			
-			if len( text_string ) < length:
+			if len( text_string ) < min_length or duration < min_duration:
 				continue
 
 			sentences.append( text_string )
 
+	# tokenize here because our harvard sentences need to be phonemized anyways
 	if tokenized:
 		return [ torch.tensor( tokenize( encode_phns( text ) ) ).to(dtype=torch.uint8) for text in sentences ]
 
