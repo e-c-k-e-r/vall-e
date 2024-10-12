@@ -244,15 +244,15 @@ def main():
 				tqdm=False,
 			)
 
-			def safe_inference():
+			def safe_inference( out_path=out_path ):
 				try:
-					tts.inference( out_path=out_path_comparison, **kwargs )
+					tts.inference( out_path=out_path, **kwargs )
 				except Exception as e:
 					print(f'Error while processing {out_path}: {e}')
 
 			if comparison_kwargs["enabled"]:
 				kwargs.update( comparison_kwargs["before"] )
-				safe_inference()
+				safe_inference(out_path_comparison)
 				kwargs.update( comparison_kwargs["after"] )
 
 			safe_inference()
