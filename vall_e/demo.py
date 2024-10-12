@@ -64,6 +64,7 @@ def main():
 
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
+	parser.add_argument("--min-p", type=float, default=0.0)
 	parser.add_argument("--repetition-penalty", type=float, default=1.0)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)
@@ -121,8 +122,15 @@ def main():
 		comparison_kwargs["enabled"] = True
 		comparison_kwargs["suffix"] = "_entropix"
 		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]
+		
 		comparison_kwargs["before"]["entropix_sampling"] = True
+		comparison_kwargs["before"]["ar_temp"] = 0.666
+		comparison_kwargs["before"]["top_k"] = 27
+		comparison_kwargs["before"]["top_p"] = 0.9
 		comparison_kwargs["after"]["entropix_sampling"] = False
+		comparison_kwargs["after"]["ar_temp"] = args.ar_temp
+		comparison_kwargs["after"]["top_k"] = args.top_k
+		comparison_kwargs["after"]["top_p"] = args.top_p
 
 
 	# read html template
@@ -135,7 +143,7 @@ def main():
 		max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
 		ar_temp=args.ar_temp, nar_temp=args.nar_temp,
 		min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
-		top_p=args.top_p, top_k=args.top_k,
+		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
