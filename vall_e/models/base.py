@@ -1507,135 +1507,22 @@ class Base(nn.Module):
 		elif self.causal:
 			logits = [ logit[-self.causal_size:] for logit in logits ]
 
-		# calculate entropies
-		# I would love to shove it in samplers.py but we modify our sampler settings
+		# entropix sampling
 		if attentions is not None:
-			entropy = [ calculate_entropix_metrics( logit, attn ) for logit, attn in zip(logits, attentions) ]
-
-		if attentions is not None:
-			entropix_enabled = True
-
-			# this might actually slow things down a bit slightly-er?
+			# move to CPU for speedups
 			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 
-			# to-do: not make it hardcoded to bsz=1
-			metrics = entropy[0]
-			logit = logits[0]
+			res = [ sample_entropix(
+				logit,
+				attentions[-1], #torch.stack(attentions, dim=1),
+				temperature,
+				top_k,
+				top_p,
+				min_p,
+			) for logit in logits ]
 
-			ent, vent = metrics["logits_entropy"], metrics["logits_varentropy"]
-			attn_ent, attn_vent = metrics["attn_entropy"], metrics["attn_varentropy"]
-			agreement = metrics["agreement"]
-			interaction_strength = metrics["interaction_strength"]
-
-			# adjust sample settings
-			cfg = EntropixSamplerConfig()
-
-			entropy[0]["action"] = -1
-			# Low Entropy, Low Varentropy: "flowing with unspoken intent"
-			if ent < cfg.low_ent_thresh and vent < cfg.low_vent_thresh:
-				entropy[0]["action"] = 0
-				temperature *= 0
-			# High Entropy, Low Varentropy: "treading carefully, asking clarifying questions"
-			elif ent > cfg.high_ent_thresh and vent < cfg.low_vent_thresh:
-				entropy[0]["action"] = 1
-				# sample with slightly higher temperature
-				temperature *= cfg.helv_attn_ent_offset + cfg.helv_attn_ent_coef * attn_ent  # Increase temperature based on attention entropy
-			# Low Entropy, High Varentropy: "exploring forks in the path"
-			elif ent < cfg.high_ent_thresh and vent > cfg.high_vent_thresh:
-				entropy[0]["action"] = 2
-				temperature *= cfg.lehv_interaction_strength_offset + cfg.lehv_interaction_strength_coef * interaction_strength  # Increase temperature based on interaction strength
-				top_k = max(5, int(top_k * (1 + 0.5 * (1 - agreement))))  # Increase top_k when agreement is low
-			# High Entropy, High Varentropy: "resampling in the mist"
-			elif ent > cfg.med_ent_thresh and vent > cfg.high_vent_thresh:
-				entropy[0]["action"] = 3
-				# Use high temperature and adjusted top_p based on attention metrics
-				temperature *= cfg.hehv_attn_vent_offset + cfg.hehv_attn_vent_coef * attn_vent  # Increase temperature based on attention varentropy
-				top_p = max(0.5, top_p - cfg.hehv_attn_ent_coef * attn_ent)  # Decrease top_p when attention entropy is high
-			# Middle ground: use adaptive sampling
-			else:
-				entropy[0]["action"] = 4
-				log_softmax = torch.nn.functional.log_softmax(logit)
-				logits_uncertainty = ent + vent
-				attn_uncertainty = attn_ent + attn_vent
-
-				temperature = temperature * float(1 + cfg.ada_temp_logits * logits_uncertainty + cfg.ada_temp_attn * attn_uncertainty - cfg.ada_temp_agree * agreement)
-				top_p = float(torch.clip(top_p * (1 + cfg.ada_top_p * attn_vent), min=0.1, max=1.0))
-				top_k = int(torch.clip(
-					torch.round(top_k * (1 + cfg.ada_top_k_int * interaction_strength - cfg.ada_top_k_agree * agreement)),
-					min=cfg.top_k_min,
-					max=cfg.top_k_max
-				))
-				min_p = float(torch.clip(cfg.min_p * (1 - cfg.ada_min_p * logits_uncertainty), 0.01, 0.5))
-				temperature = clamp( temperature, cfg.temperature_min, cfg.temperature_max )
-
-				def _sample( logits ):
-					# perform repetition penalizing	
-					if "len" not in self.capabilities and prev_list is not None and repetition_penalty != 1.0:
-						# to-do: figure out a faster way to handle tolist()
-						logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
-
-					# (AR) perform length penalizing
-					if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
-						logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
-
-					if min_p > 0.0:
-						logits = [ min_p_filtering(logit, min_p=min_p) for logit in logits ]
-
-					# perform top_k/top_p filtering of our logits
-					if top_k > 0 or top_p < 1.0:
-						logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
-
-					# trigger dynamic temperature sampling if the minimum temperature is not the same as the sampling temperature
-					#	 epsilon float comparison because I don't trust Python
-					if abs(temperature - min_temperature) >= 0.001: 
-						logits = [ dynamic_temperature(logit, temperature=temperature, min_temperature=min_temperature) for logit in logits ]
-					else:
-						logits = [ logit / temperature for logit in logits ]
-					
-					# do DRY sampling
-					if dry_multiplier > 0.0:
-						logits = [ dry_sampling(logit, previous=resps[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, resps in zip( logits, prev_list ) ]
-
-					return [ Categorical(logits=logit).sample() for logit in logits ]
-
-				if entropix_enabled:
-					samples = [ _sample([ logit.clone() for logit in logits ]) for _ in range(cfg.n_adaptive_samples) ]
-
-					def score_sample(sample):
-						one_hot = torch.nn.functional.one_hot(sample[0], logit.shape[-1])
-						log_prob = torch.sum(log_softmax * one_hot)
-
-						confidence_score = (
-							(1 - ent) * cfg.ada_score_logits_ent +
-							(1 - attn_ent) * cfg.ada_score_attn_ent +
-							(1 - vent) * cfg.ada_score_logits_vent +
-							(1 - attn_vent) * cfg.ada_score_attn_vent +
-							agreement * cfg.ada_score_agree +
-							interaction_strength * cfg.ada_score_int
-						)
-						return log_prob + confidence_score
-
-					sample_scores = [ score_sample(sample) for sample in samples ]
-					best_sample_idx = torch.argmax(torch.asarray(sample_scores))
-					
-					res = samples[best_sample_idx]
-					scores = sample_scores
-					return Sampled(res, scores, entropy)
-
-			temperature = clamp( float(temperature), cfg.temperature_min, cfg.temperature_max )
-			min_temperature = temperature
-
-			entropy[0]["temperature"] = temperature
-			entropy[0]["top_k"] = top_k
-			entropy[0]["top_p"] = top_p
-			entropy[0]["min_p"] = min_p
-
-			if not entropix_enabled:
-				temperature = 1.0
-				min_temperature = 1.0
-				top_k = 0
-				top_p = 1.0
-				min_p = 0.0
+			if res:
+				return Sampled([ r[0] for r in res], scores, [ r[1] for r in res])
 
 		# (NAR) disable stop token
 		if quant_levels is not None and "ar" in self.capabilities:
