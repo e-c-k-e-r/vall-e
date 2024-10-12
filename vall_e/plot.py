@@ -99,10 +99,7 @@ def plot_entropies( entropies ):
 	fig.set_figwidth( 16 * len(entropies) // cfg.dataset.frames_per_second )
 	"""
 
-	data = {}
-	
-	for key in entropies[0][0].keys():
-		data[key] = [ e[0][key].item() if hasattr( e[0][key], "item" ) else e[0][key] for e in entropies ]
+	data = { key: [ e[0][key] for e in entropies ] for key in entropies[0][0].keys() }
 
 	df = pd.DataFrame(data)
 	df.plot()
