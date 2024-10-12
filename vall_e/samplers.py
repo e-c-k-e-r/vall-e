@@ -362,14 +362,16 @@ def sample_entropix(
 	logits,
 	attentions,
 	temperature=1.0,
-	top_k=32,
+	top_k=27,
 	top_p=1.0,
 	min_p=0.0,
 	cfg=EntropixSamplerConfig(),
 ):
+	"""
 	temperature = cfg.temp
 	top_k = cfg.top_k
 	top_p = cfg.top_p
+	"""
 
 	metrics = calculate_entropix_metrics( logits, attentions )
 
