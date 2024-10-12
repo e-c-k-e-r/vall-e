@@ -1507,23 +1507,6 @@ class Base(nn.Module):
 		elif self.causal:
 			logits = [ logit[-self.causal_size:] for logit in logits ]
 
-		# entropix sampling
-		if attentions is not None:
-			# move to CPU for speedups
-			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
-
-			res = [ sample_entropix(
-				logit,
-				attentions[-1], #torch.stack(attentions, dim=1),
-				temperature,
-				top_k,
-				top_p,
-				min_p,
-			) for logit in logits ]
-
-			if res:
-				return Sampled([ r[0] for r in res], scores, [ r[1] for r in res])
-
 		# (NAR) disable stop token
 		if quant_levels is not None and "ar" in self.capabilities:
 			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, prev_list) ) ]
@@ -1545,6 +1528,23 @@ class Base(nn.Module):
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
+
+		# (AR) entropix sampling
+		if attentions is not None and quant_levels is None:
+			# move to CPU for speedups
+			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
+
+			res = [ sample_entropix(
+				logit,
+				attentions[-1], #torch.stack(attentions, dim=1),
+				temperature,
+				top_k,
+				top_p,
+				min_p,
+			) for logit in logits ]
+
+			if res:
+				return Sampled([ r[0] for r in res], scores, [ r[1] for r in res])
 
 		# perform min_p filtering of our logits
 		if min_p > 0.0:

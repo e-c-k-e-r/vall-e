@@ -245,7 +245,6 @@ class AR_NAR(Base):
 				)
 
 				resps_list = sampled[0]
-
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 			return prev_list
@@ -377,6 +376,7 @@ class AR_NAR(Base):
 		sequence_list = [self._prune(r, audio_stop_token if task_list[i] not in text_task else text_stop_token) for i, r in enumerate(sequence_list)]
 		# remove <bos>
 		sequence_list = [ sequence_list[i][start_slice[i]:] for i, task in enumerate( task_list ) ]
+
 		return sequence_list
 
 

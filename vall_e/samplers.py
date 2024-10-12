@@ -356,7 +356,7 @@ def _sample_entropix(
 	probs_sort = probs_sort / torch.sum(probs_sort, dim=-1, keepdims=True)
 
 	next_token = torch.argmax(probs_sort / Exponential.sample(probs_sort.shape), dim=-1, keepdim=True)
-	return torch.take_along_dim(probs_idx, next_token, dim=-1)
+	return torch.take_along_dim(probs_idx, next_token, dim=-1)[0]
 
 def sample_entropix(
 	logits,
@@ -430,6 +430,12 @@ def sample_entropix(
 				agreement * cfg.ada_score_agree +
 				interaction_strength * cfg.ada_score_int
 			)
+
+			"""
+			if 1024 in sample:
+				return 1000
+			"""
+
 			return log_prob + confidence_score
 
 		sample_scores = [ score_sample(sample) for sample in samples ]
