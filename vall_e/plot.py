@@ -93,6 +93,29 @@ def plot(paths, args):
 		#bbox_to_anchor=(1.04, 0.5),
 	)
 
+def plot_entropies( entropies ):
+	"""
+	fig = plt.figure()
+	fig.set_figwidth( 16 * len(entropies) // cfg.dataset.frames_per_second )
+	"""
+
+	data = {}
+	
+	for key in entropies[0][0].keys():
+		data[key] = [ e[0][key].item() if hasattr( e[0][key], "item" ) else e[0][key] for e in entropies ]
+
+	df = pd.DataFrame(data)
+	df.plot()
+
+	plt.gca().legend(
+		#loc="center left",
+		fancybox=True,
+		shadow=True,
+		#bbox_to_anchor=(1.04, 0.5),
+	)
+
+	out_path = cfg.rel_path / "metrics.png"
+	plt.savefig(out_path, bbox_inches="tight")
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()

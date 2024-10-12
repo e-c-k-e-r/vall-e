@@ -172,16 +172,17 @@ class NAR(Base):
 					quant_levels=quant_levels,
 				)
 
-				logits = super().forward(
+				output = super().forward(
 					inputs=inputs,
 					quant_levels=quant_levels,
 				)
+				logits = output.logits
 
 				"""
 				resps_list = [ logit[-l:].argmax(dim=1) for logit, l in zip(logits, len_list) ]
 				"""
 
-				resps_list = super().sample(
+				sampled = super().sample(
 					logits=logits,
 					prev_list=prev_list,
 					quant_levels=quant_levels,
@@ -196,6 +197,7 @@ class NAR(Base):
 					#beam_width=sampling_beam_width,
 					#mirostat=mirostat,
 				)
+				resps_list = sampled[0]
 
 				if n == 0:
 					prev_list = [ r.unsqueeze(-1).to(device) for r in resps_list ]
@@ -225,9 +227,10 @@ class NAR(Base):
 				quant_levels=[ 0 for _ in range( max( batch_size, sampling_beam_width ) ) ]
 			)
 
-			logits = super().forward(
+			output = super().forward(
 				inputs=inputs,
 			)
+			logits = output.logits
 
 			r = [ logit[-1:].argmax(dim=1) for logit in logits ]
 			# sanitize

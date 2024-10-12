@@ -196,10 +196,13 @@ def process(
 
 			for filename in sorted(metadata.keys()):
 				inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{filename}')
+
+				"""
 				if not inpath.exists():
 					missing["audio"].append(str(inpath))
 					continue
-				
+				"""
+
 				extension = os.path.splitext(filename)[-1][1:]
 				fname = filename.replace(f'.{extension}', "")
 
@@ -220,9 +223,18 @@ def process(
 					jobs.append(( outpath, waveform, sample_rate, text, language ))
 				else:
 					i = 0
+					presliced = not inpath.exists()
+					
 					for segment in metadata[filename]["segments"]:
 						id = pad(i, 4)
 						i = i + 1
+
+						if presliced:
+							inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{fname}_{id}.{extension}')
+
+						if not inpath.exists():
+							missing["audio"].append(str(inpath))
+							continue
 
 						outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}_{id}.{extension}').with_suffix(audio_extension)
 						text = segment["text"]
@@ -234,18 +246,19 @@ def process(
 						if waveform is None:
 							waveform, sample_rate = load_audio( inpath )
 
-						start = int(segment['start'] * sample_rate)
-						end = int(segment['end'] * sample_rate)
+						start = int((segment['start']-0.05) * sample_rate)
+						end = int((segment['end']+0.5) * sample_rate)
 
-						if start < 0:
-							start = 0
-						if end >= waveform.shape[-1]:
-							end = waveform.shape[-1] - 1
+						if not presliced:
+							if start < 0:
+								start = 0
+							if end >= waveform.shape[-1]:
+								end = waveform.shape[-1] - 1
 
-						if end - start < 0:
-							continue
+							if end - start < 0:
+								continue
 
-						jobs.append(( outpath, waveform[:, start:end], sample_rate, text, language ))
+						jobs.append(( outpath, waveform if presliced else waveform[:, start:end], sample_rate, text, language ))
 
 				# processes audio files one at a time
 				if low_memory:
@@ -286,6 +299,11 @@ def main():
 		args.stride = torch.cuda.device_count()
 		args.stride_offset = int(args.device)
 		args.device = f'cuda:{args.device}'
+
+	if args.slice == "true":
+		args.slice = True
+	elif args.slice == "false":
+		args.slice = False
 
 	process(
 		audio_backend=args.audio_backend,

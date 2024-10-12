@@ -237,6 +237,8 @@ class ModelExperimentalSettings:
 	p_len_train: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
 	# to-to: just incorporate this as a task instead
 
+	entropix_sampling: bool = False # experimental sampling based on https://github.com/xjdr-alt/entropix, experimental flag because it requires using naive attention for output scores
+
 # I really need to clean this up
 @dataclass()
 class Model:

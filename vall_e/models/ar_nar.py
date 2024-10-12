@@ -64,6 +64,8 @@ class AR_NAR(Base):
 		sampling_dry_base=1.75,
 		sampling_dry_allowed_length=2,
 
+		sampling_entropix=None,
+
 		disable_tqdm=False,
 		use_lora=None,
 	):
@@ -222,11 +224,9 @@ class AR_NAR(Base):
 					inputs=inputs,
 					quant_levels=quant_levels,
 				)
-				if not isinstance( output, tuple ):
-					output = (output, None)
-				logits, state = output
+				logits, state = output.logits, output.state
 
-				resps_list = super().sample(
+				sampled = super().sample(
 					logits=logits,
 					prev_list=prev_list,
 					quant_levels=quant_levels,
@@ -241,6 +241,8 @@ class AR_NAR(Base):
 					#beam_width=sampling_beam_width,
 					#mirostat=mirostat,
 				)
+
+				resps_list = sampled[0]
 
 				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
@@ -264,6 +266,10 @@ class AR_NAR(Base):
 		] * batch_size if sampling_mirostat_tau > 0.0 else None
 
 		scores = [ 1.0 ] * sampling_beam_width
+		entropies = []
+
+		if sampling_entropix is None:
+			sampling_entropix = self.config.experimental.entropix_sampling
 
 		for i, sequence in enumerate( sequence_list ):
 			# add <bos> to text for STT
@@ -296,13 +302,11 @@ class AR_NAR(Base):
 			output = super().forward(
 				inputs=inputs,
 				state=state,
+				output_attentions=sampling_entropix,
 			)
-			if not isinstance( output, tuple ):
-				output = (output, None)
-			
-			logits, state = output
+			logits, state = output.logits, output.state
 
-			r = super().sample(
+			sampled = super().sample(
 				logits=logits,
 				prev_list=None if sampling_repetition_penalty == 1.0 and sampling_length_penalty == 0.0 else [ resps_list[i] if task not in text_task else text_list[i] for i, task in enumerate( task_list ) ],
 
@@ -320,17 +324,20 @@ class AR_NAR(Base):
 				dry_multiplier=sampling_dry_multiplier,
 				dry_base=sampling_dry_base,
 				dry_allowed_length=sampling_dry_allowed_length,
+
+				attentions=output.attentions if sampling_entropix else None,
 			)
 
+			r = sampled[0]
+
+			if sampled.entropy:
+				entropies.append( sampled.entropy )
+
 			if mirostat is not None:
-				# r is the state
-				mirostat = r
-				# extract token from state
-				r = [ state["token"] for state in mirostat ]
-			# we do it here because the sampler will already expand our logits list
+				mirostat = sampled.scores
 			elif sampling_beam_width > 0:
 				# expand tuple
-				r, s = r
+				scores = sampled.scores
 				# first step, expand batch
 				if batch_size == 1:
 					batch_size = sampling_beam_width
@@ -339,7 +346,7 @@ class AR_NAR(Base):
 					sequence_list = sequence_list * sampling_beam_width
 					stopped = torch.zeros(batch_size, device=device).bool()
 
-				scores = [ scores[i] + score for i, score in enumerate(s) ]
+				scores = [ scores[i] + score for i, score in enumerate(scores) ]
 
 			# append tokens
 			for i, ri in enumerate(r):
@@ -353,6 +360,10 @@ class AR_NAR(Base):
 			# stopped |= r == stop_token
 			if stopped.all().item():
 				break
+
+		if entropies:
+			from ..plot import plot_entropies
+			plot_entropies( entropies )
 
 		# pick the best scoring candidate
 		# desu this is always going to be candidate 0

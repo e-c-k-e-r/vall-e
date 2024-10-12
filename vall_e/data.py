@@ -1458,7 +1458,7 @@ def process_artifact_metadata( artifact ):
 		metadata["similar"] = artifact["metadata"]["similar"]
 	# duration for use of culling / sorting dataset
 	if "duration" in artifact["metadata"]:
-		metadata["duration"] = duration
+		metadata["duration"] = float(artifact["metadata"]["duration"])
 	# derive duration from sample count / sample rate
 	elif "original_length" in artifact["metadata"] and "sample_rate" in artifact["metadata"]:
 		metadata["duration"] = artifact["metadata"]["original_length"] / artifact["metadata"]["sample_rate"]

@@ -15,8 +15,9 @@ import torch.nn.functional as F
 import random
 import numpy as np
 import re
-from time import perf_counter
 
+from time import perf_counter
+from collections import namedtuple
 from typing import Literal, overload, Optional, Tuple
 from functools import partial
 from einops import rearrange
@@ -36,6 +37,9 @@ from ..emb.qnt import encode_as_embedding
 
 # yuck, kind of needed
 from ..data import get_task_symmap
+
+Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions'])
+Sampled = namedtuple('Sampled', ['out', 'scores', 'entropy']) # these seem more elegant than a dict
 
 """
 from ..utils.pattern import DelayedPatternProvider, VALLEPattern
@@ -805,11 +809,15 @@ class Base(nn.Module):
 		inputs,
 		mask = None,
 		position_ids = None,
+		
 		state = None,
+		output_attentions = False,
 	):
 		x = inputs
 		m = mask.squeeze(-1).int()
+		
 		aux_loss = None
+		attentions = None
 
 		# HF transformer derived model
 		if self.arch_type in ["llama", "mistral", "mixtral"]:
@@ -819,22 +827,25 @@ class Base(nn.Module):
 				past_key_values=state,
 				position_ids=position_ids,
 				use_cache=not self.training,
-			#	return_dict=True,
+				output_attentions=output_attentions,
+				return_dict=True,
 			)
 			if self.n_experts > 1 and self.training:
 				kwargs["output_router_logits"] = True
 
-			t = self.model(**kwargs)
-
-			x = t[0]
+			output = self.model(**kwargs)
+			x = output["last_hidden_state"]
 			
 			# to-do: figure out why KV caching doesn't work
 			#if not self.training:
 			if state is not None:
-				state = t[1]
+				state = output["past_key_values"]
+
+			if output_attentions:
+				attentions = output["attentions"]
 			
 			if self.n_experts > 1 and self.training:
-				router_logits = t[-1]
+				router_logits = output["aux_loss"]
 				aux_loss = self.model.config.router_aux_loss_coef * load_balancing_loss_func( router_logits, self.model.config.num_local_experts, self.model.config.num_experts_per_tok )
 		elif self.arch_type == "transformer":
 			# ensures we specify a quant_level for the transformer implementation's AdaLN
@@ -895,7 +906,7 @@ class Base(nn.Module):
 		if self.classifier is not None:
 			x = self.classifier(x) * mask
 
-		return x, state, aux_loss
+		return Logits(x, state, aux_loss, attentions)
 
 	# takes a bunch of separate lists and parses them into an ordered array of tuples to guide input sequence creation
 	def inputs(
@@ -1390,6 +1401,7 @@ class Base(nn.Module):
 
 		quant_levels: int | list[int] | Tensor | None = None,
 		state: dict | list | None = None,
+		output_attentions = False,
 	):
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		x, m = list_to_tensor(x_list)
@@ -1420,32 +1432,36 @@ class Base(nn.Module):
 		# needs to be done here as we still have our raw inputs
 		position_ids = self.inputs_to_position_ids( inputs, mask=m.squeeze(-1).int() ) if not self.unified_position_ids else None
 
-		x, state, aux_loss = self._forward(
+		output = self._forward(
 			inputs=x,
 			mask=m,
 			state=state,
 			position_ids=position_ids,
+			output_attentions = output_attentions,
 		)
+
+		logits = output.logits
 
 		# to-do: piece-wise classification, now that there's a head for text
 		# although again, one single monolithic head would be preferable instead......
 		if self.classifiers is not None:
 			special_tasks = [ "len", "stt" ]
 			classifier_quant_levels = [ -1 if inputs[i][0][-1] in special_tasks else l for i, l in enumerate( quant_levels ) ] 
-			x = self.classifiers(x, levels = classifier_quant_levels) * m
+			logits = self.classifiers(logits, levels = classifier_quant_levels) * m
 
 		# Remove padding
-		logits = [ hi[:li] for hi, li in zip(x, map(len, x_list)) ]
+		logits = [ hi[:li] for hi, li in zip(logits, map(len, x_list)) ]
 		
 		# compute loss if the target is given
 		if training:
 			self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels )
 
 			# include any additional losses (for example: MoE router)
-			if aux_loss is not None:
-				self.loss["aux_loss"] = aux_loss
+			if output.aux_loss is not None:
+				self.loss["aux_loss"] = output.aux_loss
 			
-		return (logits, state) if state is not None else logits
+		# rewrap, because we're modifying the logits here
+		return Logits(logits, output.state, output.aux_loss, output.attentions)
 
 	def sample(
 		self,
@@ -1470,9 +1486,14 @@ class Base(nn.Module):
 		dry_multiplier=0.0,
 		dry_base=1.75,
 		dry_allowed_length=2,
+		# other
+		attentions=None,
 	):
 		if min_temperature < 0:
 			min_temperature = temperature
+
+		scores = None
+		entropy = None
 
 		# (NAR) return the entire generated response
 		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)		
@@ -1482,9 +1503,114 @@ class Base(nn.Module):
 		elif self.causal:
 			logits = [ logit[-self.causal_size:] for logit in logits ]
 
-		# this might actually slow things down a bit slightly-er?
-		#logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
-		
+		# calculate entropies
+		# I would love to shove it in samplers.py but we modify our sampler settings
+		if attentions is not None:
+			entropy = [ calculate_entropix_metrics( logit, attn ) for logit, attn in zip(logits, attentions) ]
+
+			# this might actually slow things down a bit slightly-er?
+			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
+
+			# to-do: not make it hardcoded to bsz=1
+			metrics = entropy[0]
+			logit = logits[0]
+
+			ent, vent = metrics["logits_entropy"], metrics["logits_varentropy"]
+			attn_ent, attn_vent = metrics["attn_entropy"], metrics["attn_varentropy"]
+			agreement = metrics["agreement"]
+			interaction_strength = metrics["interaction_strength"]
+
+			# adjust sample settings
+			cfg = EntropixSamplerConfig()
+
+			# Low Entropy, Low Varentropy: "flowing with unspoken intent"
+			if ent < cfg.low_ent_thresh and vent < cfg.low_vent_thresh:
+				entropy[0]["action"] = 0
+				temperature *= 0
+			# High Entropy, Low Varentropy: "treading carefully, asking clarifying questions"
+			elif ent > cfg.high_ent_thresh and vent < cfg.low_vent_thresh:
+				entropy[0]["action"] = 1
+				# sample with slightly higher temperature
+				temperature *= cfg.helv_attn_ent_offset + cfg.helv_attn_ent_coef * attn_ent  # Increase temperature based on attention entropy
+			# Low Entropy, High Varentropy: "exploring forks in the path"
+			elif ent < cfg.high_ent_thresh and vent > cfg.high_vent_thresh:
+				entropy[0]["action"] = 2
+				temperature *= cfg.lehv_interaction_strength_offset + cfg.lehv_interaction_strength_coef * interaction_strength  # Increase temperature based on interaction strength
+				top_k = max(5, int(top_k * (1 + 0.5 * (1 - agreement))))  # Increase top_k when agreement is low
+			# High Entropy, High Varentropy: "resampling in the mist"
+			elif ent > cfg.med_ent_thresh and vent > cfg.high_vent_thresh:
+				entropy[0]["action"] = 3
+				# Use high temperature and adjusted top_p based on attention metrics
+				temperature *= cfg.hehv_attn_vent_offset + cfg.hehv_attn_vent_coef * attn_vent  # Increase temperature based on attention varentropy
+				top_p = max(0.5, top_p - cfg.hehv_attn_ent_coef * attn_ent)  # Decrease top_p when attention entropy is high
+			# Middle ground: use adaptive sampling
+			else:
+				entropy[0]["action"] = 4
+				log_softmax = torch.nn.functional.log_softmax(logit)
+				logits_uncertainty = ent + vent
+				attn_uncertainty = attn_ent + attn_vent
+
+				temperature = temperature * float(1 + cfg.ada_temp_logits * logits_uncertainty + cfg.ada_temp_attn * attn_uncertainty - cfg.ada_temp_agree * agreement)
+				top_p = torch.clip(top_p * (1 + cfg.ada_top_p * attn_vent), min=0.1, max=1.0).item()
+				top_k = int(torch.clip(
+					torch.round(top_k * (1 + cfg.ada_top_k_int * interaction_strength - cfg.ada_top_k_agree * agreement)),
+					min=cfg.top_k_min,
+					max=cfg.top_k_max
+				))
+				min_p = torch.clip(cfg.min_p * (1 - cfg.ada_min_p * logits_uncertainty), 0.01, 0.5)
+
+				def _sample( logits ):
+					# perform repetition penalizing	
+					if "len" not in self.capabilities and prev_list is not None and repetition_penalty != 1.0:
+						# to-do: figure out a faster way to handle tolist()
+						logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
+
+					# (AR) perform length penalizing
+					if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
+						logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
+
+					# perform top_k/top_p filtering of our logits
+					if top_k > 0 or top_p < 1.0:
+						logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
+
+					# trigger dynamic temperature sampling if the minimum temperature is not the same as the sampling temperature
+					#	 epsilon float comparison because I don't trust Python
+					if abs(temperature - min_temperature) >= 0.001: 
+						logits = [ dynamic_temperature(logit, temperature=temperature, min_temperature=min_temperature) for logit in logits ]
+					else:
+						logits = [ logit / temperature for logit in logits ]
+					
+					# do DRY sampling
+					if dry_multiplier > 0.0:
+						logits = [ dry_sampling(logit, previous=resps[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, resps in zip( logits, prev_list ) ]
+
+					return [ Categorical(logits=logit).sample() for logit in logits ]
+
+				samples = [ _sample([ logit.clone() for logit in logits ]) for _ in range(cfg.n_adaptive_samples) ]
+
+				def score_sample(sample):
+					one_hot = torch.nn.functional.one_hot(sample[0], logit.shape[-1])
+					log_prob = torch.sum(log_softmax * one_hot)
+
+					confidence_score = (
+						(1 - ent) * cfg.ada_score_logits_ent +
+						(1 - attn_ent) * cfg.ada_score_attn_ent +
+						(1 - vent) * cfg.ada_score_logits_vent +
+						(1 - attn_vent) * cfg.ada_score_attn_vent +
+						agreement * cfg.ada_score_agree +
+						interaction_strength * cfg.ada_score_int
+					)
+					return log_prob + confidence_score
+
+				sample_scores = [ score_sample(sample) for sample in samples ]
+				best_sample_idx = torch.argmax(torch.asarray(sample_scores))
+				
+				res = samples[best_sample_idx]
+				scores = sample_scores
+				return Sampled(res, scores, entropy)
+
+			temperature = min(1.5, float(temperature))
+
 		# (NAR) disable stop token
 		if quant_levels is not None and "ar" in self.capabilities:
 			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, prev_list) ) ]
@@ -1494,7 +1620,9 @@ class Base(nn.Module):
 
 		# argmax instead
 		if temperature <= 0.0:
-			return [ logit.argmax(dim=1) for logit in logits ]
+			res = [ logit.argmax(dim=1) for logit in logits ]
+			scores = None
+			return Sampled(res, scores, entropy) 
 
 		# perform repetition penalizing	
 		if "len" not in self.capabilities and prev_list is not None and repetition_penalty != 1.0:
@@ -1524,17 +1652,18 @@ class Base(nn.Module):
 		# currently incompatible with beam searching with the way the two are implemented, perhaps a night of brain bashing can make the two work
 		if mirostat is not None:
 			# mirostat sampling
-			return [ mirostat_sample(logit, state=state) for logit, state in zip(logits, mirostat) ]
-
+			scores = [ mirostat_sample(logit, state=state) for logit, state in zip(logits, mirostat) ]
+			res = [ state["token"] for state in scores ]
 		# do beam search (naive implementation)
 		# picks the top-k across all batches, and re-batches those resultant tokens
 		# returns the logit scores as well to be P-concatted with the previous scores
 		# to-do: not naively implement beam searching
-		if beam_width > 1:
+		elif beam_width > 1:
 			candidates = top_k_logits_list( logits, beam_width )
 			res = [ torch.tensor(token, dtype=torch.int16).unsqueeze(dim=-1) for batch, token in candidates ]
 			scores = [ logits[batch].flatten()[token] for batch, token in candidates ]
-			return res, scores
+		# basic sampling
+		else:
+			res = [ Categorical(logits=logit).sample() for logit in logits ]
 
-		# and sample
-		return [ Categorical(logits=logit).sample() for logit in logits ]
+		return Sampled(res, scores, entropy)

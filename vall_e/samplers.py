@@ -5,6 +5,8 @@ import numpy as np
 
 from torch import Tensor, einsum, nn
 
+from dataclasses import asdict, dataclass, field
+
 # Simple filter to modify a token's probability if it shows up in the past
 # `one_time` will only apply the penalty once
 # `decay` is a factor that will exponentially apply to how far away it is
@@ -202,3 +204,85 @@ def dry_sampling( logits, previous=None, factor=0.0, base=1.75, allowed_length=2
 		logits[:, token] -= factor * base ** (length - allowed_length)
 
 	return logits
+
+
+LN_2 = 0.69314718056  # ln(2) = 1.0 / LOG2_E
+
+# Grabbed from https://github.com/xjdr-alt/entropix/blob/main/entropix/sampler.py
+# Right now I only care about quantifying these two, I'll figure out how to best apply this to the model
+def calculate_entropix_metrics( logits, attention_scores=None, dim=-1 ):
+	"""Calculate the entropy and varentropy of the probability distribution using logsoftmax."""
+	log_probs = torch.nn.functional.log_softmax(logits, dim=dim)
+	probs = torch.exp(log_probs)
+	entropy = -torch.sum(probs * log_probs, dim=dim) / LN_2  # Convert to base-2
+	varentropy = torch.sum(probs * (log_probs / LN_2 + entropy[..., None])**2, dim=dim)
+
+	if attention_scores is None:
+		return {
+			"logits_entropy": torch.mean(entropy).item(),
+			"logits_varentropy": torch.mean(varentropy).item(),
+		}
+
+	attention_probs = torch.nn.functional.softmax(attention_scores, dim=-1)
+	attn_entropy = -torch.sum(attention_probs * torch.log2(torch.clip(attention_probs, 1e-10, 1.0)), dim=-1)
+	attn_varentropy = torch.var(attn_entropy, dim=1)
+
+	mean_attention = torch.mean(attention_probs, dim=1)
+	agreement = torch.mean(torch.abs(attention_probs - mean_attention[:, None, :]), dim=(1, 2))
+
+	interaction_strength = torch.mean(torch.abs(attention_scores), dim=(1, 2, 3))
+	return {
+		"logits_entropy": torch.mean(entropy),
+		"logits_varentropy": torch.mean(varentropy),
+		"attn_entropy": torch.mean(attn_entropy),
+		"attn_varentropy": torch.mean(attn_varentropy),
+		"agreement": torch.mean(agreement),
+		"interaction_strength": torch.mean(torch.abs(attention_scores), dim=(1, 2, 3)),
+	}
+
+# to-do: play around with these values
+@dataclass()
+class EntropixSamplerConfig:
+    temp: float = 0.999
+    top_p: float = 0.90
+    top_k: int = 32
+    min_p: float = 0.01 # was 0.03  # Turn this down to 0.01 to reduce the shoggoth
+
+    low_ent_thresh: float = 0.1
+    low_vent_thresh: float = 0.1
+    med_ent_thresh: float = 3.0
+    high_ent_thresh: float = 5.0
+    high_vent_thresh: float = 5.0
+
+    # TODO this is a bit of a nasty mess, but also makes all the hyperparameters visible
+    helv_attn_ent_offset: float = 1.3
+    helv_attn_ent_coef: float = 0.2
+
+    lehv_interaction_strength_offset: float = 1.2
+    lehv_interaction_strength_coef: float = 0.3
+
+    hehv_attn_ent_coef: float = 0.2
+    hehv_attn_vent_offset: float = 2.0
+    hehv_attn_vent_coef: float = 0.5
+
+    # TODO not convinced this should
+    n_adaptive_samples: int = 5
+
+    # Adaptive sampling parameters
+    ada_temp_logits: float = 0.3
+    ada_temp_attn: float = 0.2
+    ada_temp_agree: float = 0.2
+    ada_top_p: float = 0.1
+    ada_top_k_int: float = 0.3
+    ada_top_k_agree: float = 0.2
+    ada_min_p: float = 0.5
+    ada_score_logits_ent: float = 0.1
+    ada_score_attn_ent: float = 0.2
+    ada_score_logits_vent: float = 0.3
+    ada_score_attn_vent: float = 0.4
+    ada_score_agree: float = 0.5
+    ada_score_int: float = 0.6
+
+    # extra stuff
+    top_k_min: int = 32
+    top_k_max: int = 128

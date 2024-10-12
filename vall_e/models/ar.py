@@ -188,18 +188,13 @@ class AR(Base):
 				quant_levels=[ 0 for _ in range( max( batch_size, sampling_beam_width ) ) ]
 			)
 
-			if state is not None:
-				logits, state = super().forward(
-					inputs=inputs,
-					state=state,
-				)
-			else:
-				logits = super().forward(
-					inputs=inputs,
-					state=state,
-				)
+			output = super().forward(
+				inputs=inputs,
+				state=state,
+			)
+			logits, state = output.logits, output.state
 
-			r = super().sample(
+			sampled = super().sample(
 				logits=logits,
 				prev_list=resps_list,
 
@@ -219,15 +214,13 @@ class AR(Base):
 				dry_allowed_length=sampling_dry_allowed_length,
 			)
 
+			r = sampled[0]
+
 			if mirostat is not None:
-				# r is the state
-				mirostat = r
-				# extract token from state
-				r = [ state["token"] for state in mirostat ]
-			# we do it here because the sampler will already expand our logits list
+				mirostat = sampled.scores
 			elif sampling_beam_width > 0:
 				# expand tuple
-				r, s = r
+				scores = sampled.scores
 				# first step, expand batch
 				if batch_size == 1:
 					batch_size = sampling_beam_width
@@ -236,7 +229,7 @@ class AR(Base):
 					sequence_list = sequence_list * sampling_beam_width
 					stopped = torch.zeros(batch_size, device=device).bool()
 
-				scores = [ scores[i] + score for i, score in enumerate(s) ]
+				scores = [ scores[i] + score for i, score in enumerate(scores) ]
 
 			# append tokens
 			for i, ri in enumerate(r):

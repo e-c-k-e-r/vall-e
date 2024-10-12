@@ -184,7 +184,7 @@ def main():
 
 			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else ([ out_path_lora ] if args.lora else [])
 
-			if not args.random_prompts:
+			if not args.random_prompts or k == "librispeech":
 				extra_sources += [ reference ]
 
 			samples.append((
