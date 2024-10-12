@@ -45,6 +45,9 @@ Sampled = namedtuple('Sampled', ['out', 'scores', 'entropy']) # these seem more 
 from ..utils.pattern import DelayedPatternProvider, VALLEPattern
 """
 
+def clamp(n, lo, hi):
+	return max(lo, min(n, hi))
+
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
 	seq = torch.arange(max(l), device=device).unsqueeze(0)  # (1 t)
@@ -1473,6 +1476,7 @@ class Base(nn.Module):
 		min_temperature: float = -1.0, # activates dynamic temperature sampling
 		top_k: int = -100,
 		top_p: float = 1.0,
+		min_p: float = 0.0,
 		# repetition penalty parameters
 		repetition_penalty: float = 1.0,
 		repetition_penalty_decay: float = 0.0,
@@ -1508,6 +1512,9 @@ class Base(nn.Module):
 		if attentions is not None:
 			entropy = [ calculate_entropix_metrics( logit, attn ) for logit, attn in zip(logits, attentions) ]
 
+		if attentions is not None:
+			entropix_enabled = True
+
 			# this might actually slow things down a bit slightly-er?
 			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 
@@ -1523,6 +1530,7 @@ class Base(nn.Module):
 			# adjust sample settings
 			cfg = EntropixSamplerConfig()
 
+			entropy[0]["action"] = -1
 			# Low Entropy, Low Varentropy: "flowing with unspoken intent"
 			if ent < cfg.low_ent_thresh and vent < cfg.low_vent_thresh:
 				entropy[0]["action"] = 0
@@ -1551,13 +1559,14 @@ class Base(nn.Module):
 				attn_uncertainty = attn_ent + attn_vent
 
 				temperature = temperature * float(1 + cfg.ada_temp_logits * logits_uncertainty + cfg.ada_temp_attn * attn_uncertainty - cfg.ada_temp_agree * agreement)
-				top_p = torch.clip(top_p * (1 + cfg.ada_top_p * attn_vent), min=0.1, max=1.0).item()
+				top_p = float(torch.clip(top_p * (1 + cfg.ada_top_p * attn_vent), min=0.1, max=1.0))
 				top_k = int(torch.clip(
 					torch.round(top_k * (1 + cfg.ada_top_k_int * interaction_strength - cfg.ada_top_k_agree * agreement)),
 					min=cfg.top_k_min,
 					max=cfg.top_k_max
 				))
-				min_p = torch.clip(cfg.min_p * (1 - cfg.ada_min_p * logits_uncertainty), 0.01, 0.5)
+				min_p = float(torch.clip(cfg.min_p * (1 - cfg.ada_min_p * logits_uncertainty), 0.01, 0.5))
+				temperature = clamp( temperature, cfg.temperature_min, cfg.temperature_max )
 
 				def _sample( logits ):
 					# perform repetition penalizing	
@@ -1568,6 +1577,9 @@ class Base(nn.Module):
 					# (AR) perform length penalizing
 					if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
 						logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
+
+					if min_p > 0.0:
+						logits = [ min_p_filtering(logit, min_p=min_p) for logit in logits ]
 
 					# perform top_k/top_p filtering of our logits
 					if top_k > 0 or top_p < 1.0:
@@ -1586,30 +1598,44 @@ class Base(nn.Module):
 
 					return [ Categorical(logits=logit).sample() for logit in logits ]
 
-				samples = [ _sample([ logit.clone() for logit in logits ]) for _ in range(cfg.n_adaptive_samples) ]
+				if entropix_enabled:
+					samples = [ _sample([ logit.clone() for logit in logits ]) for _ in range(cfg.n_adaptive_samples) ]
 
-				def score_sample(sample):
-					one_hot = torch.nn.functional.one_hot(sample[0], logit.shape[-1])
-					log_prob = torch.sum(log_softmax * one_hot)
+					def score_sample(sample):
+						one_hot = torch.nn.functional.one_hot(sample[0], logit.shape[-1])
+						log_prob = torch.sum(log_softmax * one_hot)
 
-					confidence_score = (
-						(1 - ent) * cfg.ada_score_logits_ent +
-						(1 - attn_ent) * cfg.ada_score_attn_ent +
-						(1 - vent) * cfg.ada_score_logits_vent +
-						(1 - attn_vent) * cfg.ada_score_attn_vent +
-						agreement * cfg.ada_score_agree +
-						interaction_strength * cfg.ada_score_int
-					)
-					return log_prob + confidence_score
+						confidence_score = (
+							(1 - ent) * cfg.ada_score_logits_ent +
+							(1 - attn_ent) * cfg.ada_score_attn_ent +
+							(1 - vent) * cfg.ada_score_logits_vent +
+							(1 - attn_vent) * cfg.ada_score_attn_vent +
+							agreement * cfg.ada_score_agree +
+							interaction_strength * cfg.ada_score_int
+						)
+						return log_prob + confidence_score
 
-				sample_scores = [ score_sample(sample) for sample in samples ]
-				best_sample_idx = torch.argmax(torch.asarray(sample_scores))
-				
-				res = samples[best_sample_idx]
-				scores = sample_scores
-				return Sampled(res, scores, entropy)
+					sample_scores = [ score_sample(sample) for sample in samples ]
+					best_sample_idx = torch.argmax(torch.asarray(sample_scores))
+					
+					res = samples[best_sample_idx]
+					scores = sample_scores
+					return Sampled(res, scores, entropy)
 
-			temperature = min(1.5, float(temperature))
+			temperature = clamp( float(temperature), cfg.temperature_min, cfg.temperature_max )
+			min_temperature = temperature
+
+			entropy[0]["temperature"] = temperature
+			entropy[0]["top_k"] = top_k
+			entropy[0]["top_p"] = top_p
+			entropy[0]["min_p"] = min_p
+
+			if not entropix_enabled:
+				temperature = 1.0
+				min_temperature = 1.0
+				top_k = 0
+				top_p = 1.0
+				min_p = 0.0
 
 		# (NAR) disable stop token
 		if quant_levels is not None and "ar" in self.capabilities:
@@ -1632,6 +1658,10 @@ class Base(nn.Module):
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
+
+		# perform min_p filtering of our logits
+		if min_p > 0.0:
+			logits = [ min_p_filtering(logit, min_p=min_p) for logit in logits ]
 
 		# perform top_k/top_p filtering of our logits
 		if top_k > 0 or top_p < 1.0:

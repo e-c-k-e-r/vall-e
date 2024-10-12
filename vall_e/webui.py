@@ -157,6 +157,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--min-nar-temp", type=float, default=kwargs["min-nar-temp"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
+	parser.add_argument("--min-p", type=float, default=kwargs["min-p"])
 	parser.add_argument("--repetition-penalty", type=float, default=kwargs["repetition-penalty"])
 	parser.add_argument("--repetition-penalty-decay", type=float, default=kwargs["repetition-penalty-decay"])
 	parser.add_argument("--length-penalty", type=float, default=kwargs["length-penalty"])
@@ -196,6 +197,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			min_nar_temp=args.min_nar_temp,
 			top_p=args.top_p,
 			top_k=args.top_k,
+			min_p=args.min_p,
 			repetition_penalty=args.repetition_penalty,
 			repetition_penalty_decay=args.repetition_penalty_decay,
 			length_penalty=args.length_penalty,
@@ -228,6 +230,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
+	parser.add_argument("--min-p", type=int, default=kwargs["min-p"])
 	parser.add_argument("--repetition-penalty", type=float, default=kwargs["repetition-penalty"])
 	parser.add_argument("--repetition-penalty-decay", type=float, default=kwargs["repetition-penalty-decay"])
 	parser.add_argument("--length-penalty", type=float, default=kwargs["length-penalty"])
@@ -266,6 +269,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			min_ar_temp=args.min_ar_temp,
 			top_p=args.top_p,
 			top_k=args.top_k,
+			min_p=args.min_p,
 			repetition_penalty=args.repetition_penalty,
 			repetition_penalty_decay=args.repetition_penalty_decay,
 			length_penalty=args.length_penalty,
@@ -343,6 +347,7 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")
 							layout["inference_tts"]["inputs"]["top-k"] = gr.Slider(value=0, minimum=0, maximum=1024, step=1, label="Top K", info="Limits the samples to the top K of probabilities.")
+							layout["inference_tts"]["inputs"]["min-p"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Min P")
 							layout["inference_tts"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.0, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")
@@ -382,6 +387,7 @@ with ui:
 						with gr.Row():
 							layout["inference_stt"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")
 							layout["inference_stt"]["inputs"]["top-k"] = gr.Slider(value=0, minimum=0, maximum=1024, step=1, label="Top K", info="Limits the samples to the top K of probabilities.")
+							layout["inference_stt"]["inputs"]["min-p"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Min P")
 							layout["inference_stt"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 						with gr.Row():
 							layout["inference_stt"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.25, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")

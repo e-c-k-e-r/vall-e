@@ -192,6 +192,7 @@ class TTS():
 		#
 		top_p=1.0,
 		top_k=0,
+		min_p=0.0,
 		#
 		repetition_penalty=1.0,
 		repetition_penalty_decay=0.0,
@@ -245,7 +246,7 @@ class TTS():
 						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], max_steps=max_ar_steps,
 						sampling_temperature=ar_temp,
 						sampling_min_temperature=min_ar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k,
+						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 						sampling_length_penalty=length_penalty,
 						sampling_beam_width=beam_width,
@@ -289,7 +290,7 @@ class TTS():
 						input_prompt_prefix=input_prompt_prefix,
 						sampling_temperature=ar_temp,
 						sampling_min_temperature=min_ar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k,
+						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 						sampling_length_penalty=length_penalty,
 						sampling_beam_width=beam_width,
@@ -308,7 +309,7 @@ class TTS():
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
 						sampling_min_temperature=min_nar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k,
+						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 
 						disable_tqdm=not tqdm,
@@ -320,7 +321,7 @@ class TTS():
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
 						sampling_min_temperature=min_nar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k,
+						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
 
 						disable_tqdm=not tqdm,

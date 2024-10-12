@@ -50,6 +50,26 @@ def ban_tokens( logits, tokens ):
 		logits[:, token] = -float("inf")
 	return logits
 
+# Performs min_p filtering
+# From https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/generation/logits_process.py#L537
+def min_p_filtering( logits, min_p=0.0, min_tokens_to_keep=32 ):
+	if min_p <= 0.0:
+		return logits
+
+	# Convert logits to probabilities
+	probs = torch.softmax(logits, dim=-1)
+	# Get the probability of the top token for each sequence in the batch
+	top_probs, _ = probs.max(dim=-1, keepdim=True)
+	# Calculate the actual min_p threshold by scaling min_p with the top token's probability
+	scaled_min_p = min_p * top_probs
+
+	sorted_indices = torch.argsort(logits, descending=True, dim=-1)
+	sorted_indices_to_remove = torch.gather(probs < scaled_min_p, dim=-1, index=sorted_indices)
+	sorted_indices_to_remove[..., :min_tokens_to_keep] = False
+
+	indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+	return logits.masked_fill(indices_to_remove, -float("inf"))
+
 # Credit to https://github.com/microsoft/unilm/blob/master/xtune/src/transformers/modeling_utils.py#L1145 / https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
 def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"), min_tokens=1 ):
 	"""Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
@@ -243,46 +263,48 @@ def calculate_entropix_metrics( logits, attention_scores=None, dim=-1 ):
 # to-do: play around with these values
 @dataclass()
 class EntropixSamplerConfig:
-    temp: float = 0.999
-    top_p: float = 0.90
-    top_k: int = 32
-    min_p: float = 0.01 # was 0.03  # Turn this down to 0.01 to reduce the shoggoth
+	temp: float = 0.85
+	top_p: float = 0.90
+	top_k: int = 27
+	min_p: float = 0.01 # was 0.03  # Turn this down to 0.01 to reduce the shoggoth
 
-    low_ent_thresh: float = 0.1
-    low_vent_thresh: float = 0.1
-    med_ent_thresh: float = 3.0
-    high_ent_thresh: float = 5.0
-    high_vent_thresh: float = 5.0
+	low_ent_thresh: float = 0.1 # 3.0
+	low_vent_thresh: float = 0.1 # 3.0
+	med_ent_thresh: float = 3.0 # 6.0
+	high_ent_thresh: float = 5.0 # 9.0
+	high_vent_thresh: float = 5.0 # 9.0
 
-    # TODO this is a bit of a nasty mess, but also makes all the hyperparameters visible
-    helv_attn_ent_offset: float = 1.3
-    helv_attn_ent_coef: float = 0.2
+	# TODO this is a bit of a nasty mess, but also makes all the hyperparameters visible
+	helv_attn_ent_offset: float = 1.3
+	helv_attn_ent_coef: float = 0.2
 
-    lehv_interaction_strength_offset: float = 1.2
-    lehv_interaction_strength_coef: float = 0.3
+	lehv_interaction_strength_offset: float = 1.2
+	lehv_interaction_strength_coef: float = 0.3
 
-    hehv_attn_ent_coef: float = 0.2
-    hehv_attn_vent_offset: float = 2.0
-    hehv_attn_vent_coef: float = 0.5
+	hehv_attn_ent_coef: float = 0.2
+	hehv_attn_vent_offset: float = 2.0
+	hehv_attn_vent_coef: float = 0.5
 
-    # TODO not convinced this should
-    n_adaptive_samples: int = 5
+	# TODO not convinced this should
+	n_adaptive_samples: int = 5
 
-    # Adaptive sampling parameters
-    ada_temp_logits: float = 0.3
-    ada_temp_attn: float = 0.2
-    ada_temp_agree: float = 0.2
-    ada_top_p: float = 0.1
-    ada_top_k_int: float = 0.3
-    ada_top_k_agree: float = 0.2
-    ada_min_p: float = 0.5
-    ada_score_logits_ent: float = 0.1
-    ada_score_attn_ent: float = 0.2
-    ada_score_logits_vent: float = 0.3
-    ada_score_attn_vent: float = 0.4
-    ada_score_agree: float = 0.5
-    ada_score_int: float = 0.6
+	# Adaptive sampling parameters
+	ada_temp_logits: float = 0.3
+	ada_temp_attn: float = 0.2
+	ada_temp_agree: float = 0.2
+	ada_top_p: float = 0.1
+	ada_top_k_int: float = 0.3
+	ada_top_k_agree: float = 0.2
+	ada_min_p: float = 0.5
+	ada_score_logits_ent: float = 0.1
+	ada_score_attn_ent: float = 0.2
+	ada_score_logits_vent: float = 0.3
+	ada_score_attn_vent: float = 0.4
+	ada_score_agree: float = 0.5
+	ada_score_int: float = 0.6
 
-    # extra stuff
-    top_k_min: int = 32
-    top_k_max: int = 128
+	# extra stuff
+	top_k_min: int = 1
+	top_k_max: int = 1024
+	temperature_max: float = 1.25
+	temperature_min: float = 0.5
