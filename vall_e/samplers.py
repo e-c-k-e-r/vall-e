@@ -407,7 +407,7 @@ def sample_entropix(
 	else:
 		metrics["action"] = 4
 
-		log_softmax = torch.nn.functional.log_softmax(logits)
+		log_softmax = torch.nn.functional.log_softmax(logits, dim=-1)
 		logits_uncertainty = ent + vent
 		attn_uncertainty = attn_ent + attn_vent
 

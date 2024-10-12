@@ -43,6 +43,8 @@ def main():
 	parser.add_argument("--dry-base", type=float, default=1.75)
 	parser.add_argument("--dry-allowed-length", type=int, default=2)
 	
+	parser.add_argument("--entropix-sampling", action="store_true")
+	
 	parser.add_argument("--seed", type=int, default=None)
 
 	parser.add_argument("--device", type=str, default=None)
@@ -69,6 +71,7 @@ def main():
 		beam_width=args.beam_width,
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
+		entropix_sampling=args.entropix_sampling,
 		seed=args.seed,
 	)
 	

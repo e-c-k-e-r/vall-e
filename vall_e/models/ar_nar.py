@@ -64,8 +64,7 @@ class AR_NAR(Base):
 		sampling_dry_multiplier=0.0,
 		sampling_dry_base=1.75,
 		sampling_dry_allowed_length=2,
-
-		sampling_entropix=None,
+		sampling_entropix=False,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -268,9 +267,6 @@ class AR_NAR(Base):
 
 		scores = [ 1.0 ] * sampling_beam_width
 		entropies = []
-
-		if sampling_entropix is None:
-			sampling_entropix = self.config.experimental.entropix_sampling
 
 		for i, sequence in enumerate( sequence_list ):
 			# add <bos> to text for STT

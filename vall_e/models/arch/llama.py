@@ -126,7 +126,8 @@ if torch.backends.cuda.cudnn_sdp_enabled():
 	AVAILABLE_ATTENTIONS.append("cudnn")	
 
 if AVAILABLE_ATTENTIONS:
-	AVAILABLE_ATTENTIONS.append("sdpa")	
+	AVAILABLE_ATTENTIONS.append("sdpa")
+	AVAILABLE_ATTENTIONS.append("default")
 
 class LlamaAttention_Adapted(LlamaAttention):
 	def __init__(self, *args, **kwargs):
@@ -144,6 +145,8 @@ class LlamaAttention_Adapted(LlamaAttention):
 			self.mode = torch.nn.attention.SDPBackend.FLASH_ATTENTION
 		elif self.mode == "cudnn":
 			self.mode = torch.nn.attention.SDPBackend.CUDNN_ATTENTION
+		else:
+			self.mode = None
 
 		super().__init__(*args, **kwargs)
 	
@@ -256,7 +259,7 @@ class LlamaAttention_Adapted(LlamaAttention):
 		position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
 		**kwargs,
 	) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-		if output_attentions:
+		if output_attentions or not self.mode:
 			# TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
 			return self._forward(
 				hidden_states=hidden_states,

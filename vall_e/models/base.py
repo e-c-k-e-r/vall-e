@@ -531,7 +531,7 @@ class Base(nn.Module):
 			if AVAILABLE_ATTENTIONS:
 				attention_backend = AVAILABLE_ATTENTIONS[0]
 			else:
-				attention_backend = "eager"
+				attention_backend = "default"
 
 		hf_attention = attention_backend
 		HF_ATTENTIONS = ["eager", "sdpa", "flash_attention_2"]
@@ -1530,13 +1530,14 @@ class Base(nn.Module):
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
 
 		# (AR) entropix sampling
+		# we do it after the penalizers because entropix's internal sampling doesn't account for them (but does do top_k/top_p/min_p)
 		if attentions is not None and quant_levels is None:
 			# move to CPU for speedups
 			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 
 			res = [ sample_entropix(
 				logit,
-				attentions[-1], #torch.stack(attentions, dim=1),
+				attentions[-1], # original code just uses the last attention scores
 				temperature,
 				top_k,
 				top_p,

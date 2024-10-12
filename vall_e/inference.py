@@ -206,7 +206,9 @@ class TTS():
 		dry_multiplier=0.0,
 		dry_base=1.75,
 		dry_allowed_length=2,
-
+		#
+		entropix_sampling=False,
+		#
 		seed = None,
 
 		out_path=None,
@@ -255,6 +257,7 @@ class TTS():
 						sampling_dry_multiplier=dry_multiplier,
 						sampling_dry_base=dry_base,
 						sampling_dry_allowed_length=dry_allowed_length,
+						sampling_entropix=entropix_sampling,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
@@ -299,6 +302,7 @@ class TTS():
 						sampling_dry_multiplier=dry_multiplier,
 						sampling_dry_base=dry_base,
 						sampling_dry_allowed_length=dry_allowed_length,
+						sampling_entropix=entropix_sampling,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,

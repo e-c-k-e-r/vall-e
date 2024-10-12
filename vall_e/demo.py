@@ -76,6 +76,8 @@ def main():
 	parser.add_argument("--dry-base", type=float, default=1.75)
 	parser.add_argument("--dry-allowed-length", type=int, default=2)
 	
+	parser.add_argument("--entropix-sampling", action="store_true")
+	
 	parser.add_argument("--seed", type=int, default=None)
 
 	parser.add_argument("--device", type=str, default=None)
@@ -84,6 +86,7 @@ def main():
 
 	parser.add_argument("--random-prompts", action="store_true")
 	parser.add_argument("--lora", action="store_true")
+	parser.add_argument("--comparison", action="store_true")
 	
 	args = parser.parse_args()
 	
@@ -97,6 +100,30 @@ def main():
 			'Below are some samples from my VALL-E implementation: <a href="https://git.ecker.tech/mrq/vall-e/">https://git.ecker.tech/mrq/vall-e/</a>.',
 			'Unlike the original VALL-E demo page, I\'m placing emphasis on the input prompt, as the model adheres to it stronger than others.',
 		])
+
+	# comparison kwargs
+	comparison_kwargs = {
+		"enabled": False,
+		"titles": [],
+		"suffix": "_after",
+		"before": {},
+		"after": {}
+	}
+
+	if args.lora:
+		comparison_kwargs["enabled"] = True
+		comparison_kwargs["suffix"] = "_lora"
+		comparison_kwargs["titles"] = ["No LoRA", "LoRA"]
+		comparison_kwargs["before"]["use_lora"] = True
+		comparison_kwargs["after"]["use_lora"] = False
+	# to-do: make this user definable
+	elif args.comparison:
+		comparison_kwargs["enabled"] = True
+		comparison_kwargs["suffix"] = "_entropix"
+		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]
+		comparison_kwargs["before"]["entropix_sampling"] = True
+		comparison_kwargs["after"]["entropix_sampling"] = False
+
 
 	# read html template
 	html = open(args.demo_dir / "index.template.html", "r", encoding="utf-8").read()
@@ -114,6 +141,7 @@ def main():
 		beam_width=args.beam_width,
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
+		entropix_sampling=args.entropix_sampling,
 	)) )
 
 	# pull from provided samples
@@ -127,7 +155,7 @@ def main():
 	# pull from dataset samples
 	if args.sample_from_dataset:
 		cfg.dataset.cache = False
-		cfg.dataset.sample_type = "path" if args.lora else "speaker"
+		cfg.dataset.sample_type = "path" if len(cfg.dataset.training) < cfg.evaluation.batch_size else "speaker"
 		cfg.dataset.tasks_list = [ 'tts' ]
 
 		samples_dirs["dataset"] = args.demo_dir / args.dataset_dir_name
@@ -180,9 +208,9 @@ def main():
 			prompt = dir / "prompt.wav"
 			reference = dir / "reference.wav"
 			out_path = dir / "out" / "ours.wav"
-			out_path_lora = dir / "out" / "ours_lora.wav"
+			out_path_comparison = dir / "out" / f"ours_{comparison_kwargs["suffix"]}.wav"
 
-			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else ([ out_path_lora ] if args.lora else [])
+			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else ([ out_path_comparison ] if comparison_kwargs["enabled"] else [])
 
 			if not args.random_prompts or k == "librispeech":
 				extra_sources += [ reference ]
@@ -210,23 +238,24 @@ def main():
 				length_penalty=args.length_penalty,
 				beam_width=args.beam_width,
 				mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
+				dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
+				entropix_sampling=args.entropix_sampling,
 				seed=seed,
 				tqdm=False,
 			)
 
-			if args.lora:
-				tts.enable_lora() # I don't think this is necessary with the below
-				kwargs["use_lora"] = True
+			def safe_inference():
 				try:
-					tts.inference( out_path=out_path_lora, **kwargs )
+					tts.inference( out_path=out_path_comparison, **kwargs )
 				except Exception as e:
 					print(f'Error while processing {out_path}: {e}')
-				tts.disable_lora()
-				kwargs["use_lora"] = False
-			try:
-				tts.inference( out_path=out_path, **kwargs )
-			except Exception as e:
-				print(f'Error while processing {out_path}: {e}')
+
+			if comparison_kwargs["enabled"]:
+				kwargs.update( comparison_kwargs["before"] )
+				safe_inference()
+				kwargs.update( comparison_kwargs["after"] )
+
+			safe_inference()
 
 
 		# collate entries into HTML
@@ -243,11 +272,12 @@ def main():
 		# write audio into template
 		html = html.replace("${"+k.upper()+"_SAMPLES}", "\n".join( samples ) )
 
-		if args.lora:
+		if comparison_kwargs["enabled"]:
+			before, after = comparison_kwargs["titles"]
 			if args.random_prompts:
-				html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<th>Our VALL-E (LoRA)</th>")
+				html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", f"<th>Our VALL-E ({before})</th>\n\t\t\t\t\t<th>Our VALL-E ({after})</th>")
 			else:
-				html = html.replace("<th>Our VALL-E</th>", "<th>Our VALL-E (No LoRA)</th>\n\t\t\t\t\t<th>Our VALL-E (LoRA)</th>")
+				html = html.replace("<th>Our VALL-E</th>", f"<th>Our VALL-E ({before})</th>\n\t\t\t\t\t<th>Our VALL-E ({after})</th>")
 
 	# write demo page
 	open( args.demo_dir / args.output_filename, "w", encoding="utf-8" ).write( html )

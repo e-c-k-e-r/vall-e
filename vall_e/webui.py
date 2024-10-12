@@ -167,6 +167,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--dry-multiplier", type=float, default=kwargs["dry-multiplier"])
 	parser.add_argument("--dry-base", type=float, default=kwargs["dry-base"])
 	parser.add_argument("--dry-allowed-length", type=int, default=kwargs["dry-allowed-length"])
+	parser.add_argument("--entropix-sampling", action="store_true")
 	args, unknown = parser.parse_known_args()
 
 	tmp = tempfile.NamedTemporaryFile(suffix='.wav')
@@ -175,6 +176,9 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	if not args.references:
 		raise Exception("No reference audio provided.")
 	"""
+
+	if kwargs.pop("entropix-sampling", False):
+		args.entropix_sampling = True
 
 	tts = init_tts()
 	
@@ -206,6 +210,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			dry_multiplier=args.dry_multiplier,
 			dry_base=args.dry_base,
 			dry_allowed_length=args.dry_allowed_length,
+			entropix_sampling=args.entropix_sampling
 		)
 	
 	wav = wav.squeeze(0).cpu().numpy()
@@ -240,7 +245,9 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--dry-multiplier", type=float, default=kwargs["dry-multiplier"])
 	parser.add_argument("--dry-base", type=float, default=kwargs["dry-base"])
 	parser.add_argument("--dry-allowed-length", type=int, default=kwargs["dry-allowed-length"])
+	parser.add_argument("--entropix-sampling", action="store_true")
 	args, unknown = parser.parse_known_args()
+
 
 	"""
 	if not args.references:
@@ -254,6 +261,9 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			duration = metadata.num_frames / metadata.sample_rate
 			args.max_ar_steps += duration
 		args.max_ar_steps = math.floor( args.max_ar_steps * 20 ) # assume 20 tokens per second
+	
+	if kwargs.pop("entropix-sampling", False):
+		args.entropix_sampling = True
 
 	tts = init_tts()
 	
@@ -278,6 +288,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			dry_multiplier=args.dry_multiplier,
 			dry_base=args.dry_base,
 			dry_allowed_length=args.dry_allowed_length,
+			entropix_sampling=args.entropix_sampling,
 		)
 	
 	return text
@@ -342,6 +353,7 @@ with ui:
 						with gr.Row():
 							#layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
 							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
+							layout["inference_tts"]["inputs"]["entropix-sampling"] = gr.Checkbox(label="Entropix Sampling", info="Dynamically samples based on entropy/varentropy values from the logits / attention scores.")
 							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
@@ -382,6 +394,7 @@ with ui:
 							layout["inference_stt"]["inputs"]["ar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy sample)")
 						with gr.Row():
 							layout["inference_stt"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
+							layout["inference_stt"]["inputs"]["entropix-sampling"] = gr.Checkbox(label="Entropix Sampling", info="Dynamically samples based on entropy/varentropy values from the logits / attention scores.")
 							layout["inference_stt"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
