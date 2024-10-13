@@ -292,6 +292,10 @@ class LlamaAttention_Adapted(LlamaAttention):
 					is_causal=is_causal,
 				)
 
+		# cringe
+		if attn_scores is None and output_attentions:
+			attn_scores = attn_output
+
 		attn_output = attn_output.transpose(1, 2).contiguous()
 		attn_output = attn_output.view(bsz, q_len, -1)
 

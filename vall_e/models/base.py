@@ -1498,6 +1498,26 @@ class Base(nn.Module):
 		scores = None
 		entropy = None
 
+		# (AR) entropix sampling
+		# we do it before everything to retain logits for the entire sequence (even though it's still better to pass only the last token)
+		if attentions is not None and quant_levels is None:
+			# move to CPU for speedups
+			seq_lens = [ logit.shape[0] for logit in logits ]
+			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
+			attentions = torch.stack(attentions, dim=1).to(device="cpu") # ( batch, layer, heads, seq_len, seq_len )
+			
+			res = [ sample_entropix(
+				logit[:seq_lens[batch], :], # ( seq_len, vocab )
+				attentions[batch, :, :, :seq_lens[batch], :seq_lens[batch]], # (layer, heads, seq_len, seq_len )
+				temperature,
+				top_k,
+				top_p,
+				min_p,
+			) for batch, logit in enumerate(logits) ]
+
+			if res:
+				return Sampled([ r[0] for r in res ], scores, [ r[1] for r in res ])
+
 		# (NAR) return the entire generated response
 		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)		
 		if quant_levels is not None: #  and "nar" in self.capabilities: # for when I get around to coping about dropping the NAR entirely
@@ -1529,24 +1549,6 @@ class Base(nn.Module):
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
 			logits = [ length_penalize(logit, length=l + 1, factor=length_penalty, token=self.stop_token) for logit, l in zip( logits, map(len, prev_list) ) ]
-
-		# (AR) entropix sampling
-		# we do it after the penalizers because entropix's internal sampling doesn't account for them (but does do top_k/top_p/min_p)
-		if attentions is not None and quant_levels is None:
-			# move to CPU for speedups
-			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
-
-			res = [ sample_entropix(
-				logit,
-				torch.stack(attentions, dim=1)[batch, :, :, :seq_lens[batch], :seq_lens[batch]], # (layer, heads, seq_len, ? ), our attention scores might be padded
-				temperature,
-				top_k,
-				top_p,
-				min_p,
-			) for batch, logit in enumerate(logits) ]
-
-			if res:
-				return Sampled([ r[0] for r in res], scores, [ r[1] for r in res])
 
 		# perform min_p filtering of our logits
 		if min_p > 0.0:
