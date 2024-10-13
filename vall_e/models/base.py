@@ -1502,9 +1502,11 @@ class Base(nn.Module):
 		# (NAR) return the entire generated response
 		# Parallel decoding relies on the last N tokens in the logits, because each token predicts the next RVQ layer in the same place (forgetfully obviously)		
 		if quant_levels is not None: #  and "nar" in self.capabilities: # for when I get around to coping about dropping the NAR entirely
-			logits = [ logit[-l:] for logit, l in zip(logits, map(len, prev_list)) ]
+			seq_lens = map(len, prev_list)
+			logits = [ logit[-l:] for logit, l in zip(logits, seq_lens) ]
 		# (AR chunkwise) return the last chunkwise piece
 		elif self.causal:
+			seq_lens = [ logit.shape[0] - self.causal_size for logit in logits ]
 			logits = [ logit[-self.causal_size:] for logit in logits ]
 
 		# (NAR) disable stop token
@@ -1537,12 +1539,12 @@ class Base(nn.Module):
 
 			res = [ sample_entropix(
 				logit,
-				attentions[-1], # original code just uses the last attention scores
+				torch.stack(attentions, dim=1)[batch, :, :, :seq_lens[batch], :seq_lens[batch]], # (layer, heads, seq_len, ? ), our attention scores might be padded
 				temperature,
 				top_k,
 				top_p,
 				min_p,
-			) for logit in logits ]
+			) for batch, logit in enumerate(logits) ]
 
 			if res:
 				return Sampled([ r[0] for r in res], scores, [ r[1] for r in res])

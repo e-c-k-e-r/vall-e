@@ -135,7 +135,7 @@ class LlamaAttention_Adapted(LlamaAttention):
 			self.mode = kwargs['mode']
 			kwargs.pop("mode")
 		else:
-			self.mode = "math"
+			self.mode = "sdpa"
 
 		if self.mode == "math":
 			self.mode = torch.nn.attention.SDPBackend.MATH
@@ -145,8 +145,6 @@ class LlamaAttention_Adapted(LlamaAttention):
 			self.mode = torch.nn.attention.SDPBackend.FLASH_ATTENTION
 		elif self.mode == "cudnn":
 			self.mode = torch.nn.attention.SDPBackend.CUDNN_ATTENTION
-		else:
-			self.mode = None
 
 		super().__init__(*args, **kwargs)
 	
@@ -330,6 +328,8 @@ class LlamaAttention_Adapted(LlamaAttention):
 
 		key_states = repeat_kv(key_states, self.num_key_value_groups)
 		value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+		# to-do: actually find what is our attention scores, since these seem to not vary at all
 		attn_scores = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim) if output_attentions else None
 
 		causal_mask = attention_mask
