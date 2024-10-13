@@ -107,7 +107,7 @@ def load_sample( speaker ):
 
 	return data, (sr, wav)
 
-def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention="auto"):
+def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention=None):
 	global tts
 
 	if tts is not None:

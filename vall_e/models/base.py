@@ -543,8 +543,7 @@ class Base(nn.Module):
 
 		if attention_backend == "flash_attn_v100":
 			self.l_padding = 32
-		
-		if attention_backend == "fused_attn":
+		elif attention_backend == "fused_attn":
 			self.l_padding = 128
 
 		if self.arch_type == "transformer":

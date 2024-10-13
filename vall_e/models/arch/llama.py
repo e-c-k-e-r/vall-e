@@ -184,6 +184,8 @@ class LlamaAttention_Adapted(LlamaAttention):
 			cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
 			key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
+		attn_scores = None
+
 		if mode in ["xformers", "flash_attn"]:
 			# TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim]. We would need to refactor the KV cache
 			# to be able to avoid many of these transpose/reshape/view.
@@ -240,9 +242,6 @@ class LlamaAttention_Adapted(LlamaAttention):
 
 		key_states = repeat_kv(key_states, self.num_key_value_groups)
 		value_states = repeat_kv(value_states, self.num_key_value_groups)
-
-		# to-do: actually find what is our attention scores, since these seem to not vary at all
-		attn_scores = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim) if output_attentions else None
 
 		causal_mask = attention_mask
 		if attention_mask is not None:
