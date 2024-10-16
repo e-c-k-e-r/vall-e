@@ -11,7 +11,7 @@ from einops import rearrange
 from pathlib import Path
 
 from .emb import g2p, qnt
-from .emb.qnt import trim, trim_random, unload_model
+from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio
 from .utils import to_device, set_seed, wrapper as ml
 
 from .config import cfg, Config
@@ -103,7 +103,7 @@ class TTS():
 		return torch.tensor([ id ])
 
 	# to-do: trim before quantizing, instead of after
-	def encode_audio( self, paths, trim_length=0.0 ):
+	def encode_audio( self, paths, trim_length=9.0 ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
 			return paths
@@ -126,8 +126,14 @@ class TTS():
 
 		res = torch.cat(proms)
 		
+		# kludge, but it's to correct an oversight in training
+		if trim_length:
+			res = repeat_extend_audio( res, cfg.dataset.frames_per_second * trim_length )
+
+		"""
 		if trim_length:
 			res = trim( res, int( cfg.dataset.frames_per_second * trim_length ) )
+		"""
 		
 		return res
 
