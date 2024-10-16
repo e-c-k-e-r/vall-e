@@ -1014,7 +1014,7 @@ class Dataset(_Dataset):
 
 		for _ in range(cfg.dataset.max_prompts):
 			if reference is not None and cfg.dataset.prom_sample_similar:
-				path = self.get_similar_utterance( reference, offset = len(prom_list) )
+				path = self.get_similar_utterance( reference, offset = len(prom_list) ) if random.random() < cfg.dataset.prompt_similar_p else random.choice(choices)
 				# yuck
 				if not path:
 					path = random.choice(choices)

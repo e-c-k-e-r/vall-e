@@ -158,8 +158,9 @@ class Dataset:
 	max_resps: int = 1 # number of samples to target for training
 	p_resp_append: float = 1.0 # probability to append another sample to the training target
 	p_resp_pad_silence: float = 0.0 # probability to pad resp with silence to fit within the next window
-	prompt_similar_top_k: int = 1
-	prompt_similar_top_k_offset: int = 0
+	prompt_similar_p: float = 0.75 # odds of sampling for a similar prompt instead of a random prompt
+	prompt_similar_top_k: int = 1 # top-k similar candidates to sample from 
+	prompt_similar_top_k_offset: int = 0 # offset from the top-k to sample from
 
 	sample_type: str = "path" # path | speaker
 	sample_order: str = "interleaved" # duration
