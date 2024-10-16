@@ -128,7 +128,7 @@ class TTS():
 		
 		# kludge, but it's to correct an oversight in training
 		if trim_length:
-			res = repeat_extend_audio( res, cfg.dataset.frames_per_second * trim_length )
+			res = repeat_extend_audio( res, int( cfg.dataset.frames_per_second * trim_length ) )
 
 		"""
 		if trim_length:
