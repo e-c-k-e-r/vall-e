@@ -31,6 +31,24 @@ from datetime import datetime
 
 T = TypeVar("T")
 
+def prune_missing( source, dest, recurse=True, path=[], parent_is_obj=None, return_missing=True ):
+	is_obj = hasattr( source, "__dict__" )
+	if parent_is_obj is None:
+		parent_is_obj = is_obj
+	haystack = source.__dict__ if is_obj else source
+	keep = {}
+	missing = []
+	for k, v in dest.items():
+		if k in haystack or (parent_is_obj and not is_obj and source == {}):
+			keep[k] = dest[k]
+		else:
+			missing.append(".".join(path + [k]))
+		
+		if recurse and isinstance( v, dict ):
+			keep[k], m = prune_missing( haystack[k], dest[k], path=path + [k], parent_is_obj=parent_is_obj, return_missing=return_missing )
+			missing += m
+	return (keep, missing) if return_missing else keep
+
 class timer:
 	def __init__(self, msg="Elapsed time:", callback=None):
 		self.msg = msg

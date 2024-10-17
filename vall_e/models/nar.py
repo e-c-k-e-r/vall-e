@@ -75,7 +75,7 @@ class NAR(Base):
 			task_list = [ sample_task() for _ in range(batch_size) ]
 
 			# specifies how to sample probabilities of which RVQ levels to train against
-			p_rvq_levels = self.config.experimental.p_rvq_levels if self.config is not None else "equal"
+			rvq_levels_p = self.config.experimental.rvq_levels_p if self.config is not None else "equal"
 			# determines which RVQ level to target per batch
 			quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels - 1 ]
 			# rate to perform token dropout errors
@@ -86,18 +86,18 @@ class NAR(Base):
 			if not token_dropout_rvq_levels:
 				token_dropout_rvq_levels = [0, self.resp_levels - 1]
 			# allow passing a specific distribution of RVQ levels
-			p_rvq_levels = p_rvq_levels if isinstance(p_rvq_levels, list) else []
-			if not p_rvq_levels:
+			rvq_levels_p = rvq_levels_p if isinstance(rvq_levels_p, list) else []
+			if not rvq_levels_p:
 				lo, hi = quant_level_range[0], quant_level_range[1] + 1
 				# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-				if p_rvq_levels == "equal":
-					p_rvq_levels = [ i for i in range( lo, hi ) ]
+				if rvq_levels_p == "equal":
+					rvq_levels_p = [ i for i in range( lo, hi ) ]
 				else:
 					# yuck
-					p_rvq_levels = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
+					rvq_levels_p = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
 
 			# input RVQ levels
-			quant_levels = [ random.choice( p_rvq_levels ) for i in range(batch_size) ]
+			quant_levels = [ random.choice( rvq_levels_p ) for i in range(batch_size) ]
 			# trim resps to only contain all levels below the target level
 			resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
 

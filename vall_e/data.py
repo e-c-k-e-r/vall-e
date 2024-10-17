@@ -1012,10 +1012,12 @@ class Dataset(_Dataset):
 		prom_length = 0
 		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second) if trim else 0
 
-		for _ in range(cfg.dataset.max_prompts):
-			if reference is not None and cfg.dataset.prom_sample_similar:
-				path = self.get_similar_utterance( reference, offset = len(prom_list) ) if random.random() < cfg.dataset.prompt_similar_p else random.choice(choices)
+		for _ in range(cfg.dataset.prompt_max_samples):
+			if reference is not None:
 				# yuck
+				path = None
+				if random.random() < cfg.dataset.prompt_similar_p:
+					path = self.get_similar_utterance( reference, offset = len(prom_list) )
 				if not path:
 					path = random.choice(choices)
 			else:
@@ -1032,7 +1034,7 @@ class Dataset(_Dataset):
 			prom_list.append(qnt)
 			prom_length += qnt.shape[0]
 
-			if prom_length >= trim_length or random.random() > cfg.dataset.random_utterance:
+			if prom_length >= trim_length:
 				break
 
 		# might be better to decode => concat waveforms with silence in between => reencode
@@ -1113,9 +1115,9 @@ class Dataset(_Dataset):
 		naive = cfg.experimental
 
 		# append additional prompts in an attempt to artifically increase lengths / offer new data
-		if cfg.dataset.max_resps > 1 and random.random() < cfg.dataset.p_resp_append:
+		if cfg.dataset.resps_max_samples > 1 and random.random() < cfg.dataset.resps_append_p:
 			ignore_paths = []
-			for _ in range( 1, cfg.dataset.max_resps ):
+			for _ in range( 1, cfg.dataset.resps_max_samples ):
 				path, txt, qnt = self.sample_utterance(spkr_name, ignore=ignore_paths)
 				ignore_paths.append(path)
 
@@ -1316,7 +1318,7 @@ class Dataset(_Dataset):
 			text = torch.tensor([bos_id, eos_id]).to(self.text_dtype)
 
 		# pad the target with silence
-		if random.random() < cfg.dataset.p_resp_pad_silence:
+		if random.random() < cfg.dataset.resps_pad_silence_p:
 			resps = pad_codes_with_silence( resps )
 
 		return dict(

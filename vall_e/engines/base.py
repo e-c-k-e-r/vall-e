@@ -525,9 +525,6 @@ class Engines(dict[str, Engine]):
 
 			n_ooms = torch.zeros([], device=device)
 			
-			if cfg.trainer.aggressive_optimizations:
-				batch = to_device(batch, 'cpu')
-
 			if not cfg.trainer.check_for_oom:
 				engine.backward(loss)
 			else:
