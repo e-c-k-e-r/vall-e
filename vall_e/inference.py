@@ -103,7 +103,7 @@ class TTS():
 		return torch.tensor([ id ])
 
 	# to-do: trim before quantizing, instead of after
-	def encode_audio( self, paths, trim_length=9.0 ):
+	def encode_audio( self, paths, trim_length=5.0 ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
 			return paths
@@ -126,14 +126,9 @@ class TTS():
 
 		res = torch.cat(proms)
 		
-		# kludge, but it's to correct an oversight in training
 		if trim_length:
 			res = repeat_extend_audio( res, int( cfg.dataset.frames_per_second * trim_length ) )
-
-		"""
-		if trim_length:
-			res = trim( res, int( cfg.dataset.frames_per_second * trim_length ) )
-		"""
+			#res = trim( res, int( cfg.dataset.frames_per_second * trim_length ) )
 		
 		return res
 
