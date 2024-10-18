@@ -23,7 +23,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-from ..emb.qnt import trim, encode_as_embedding
+from ..emb.qnt import trim, encode_as_embedding, get_silence
 from ..utils import get_devices, setup_logging, timer
 
 from .lora import enable_lora
@@ -49,6 +49,7 @@ class AR_NAR(Base):
 		max_levels: int = 0,
 
 		input_prompt_prefix: bool = False,
+		prefix_silence: float = 1.0,
 
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
@@ -284,6 +285,10 @@ class AR_NAR(Base):
 			elif input_prompt_prefix:
 				start_slice[i] = proms_list[i].shape[0]
 				sequence_list[i], proms_list[i] = proms_list[i][:, 0], sequence_list[i]
+			elif prefix_silence > 0:
+				sequence_list[i] = get_silence(prefix_silence, device=sequence_list[i].device)
+				sequence_list[i] = sequence_list[i][:, 0]
+				# start_slice[i] = sequence_list[i].shape[0]
 
 		# get next in sequence
 		for n in trange(max_steps // max(1, self.causal_size), desc="AR", disable=disable_tqdm):
@@ -295,7 +300,6 @@ class AR_NAR(Base):
 			# naturally, rep pen wrangles this initial burst of noise, but naively relying on rep_pen is no good, as it fails after ~6 seconds of audio
 			# however, switching to a default sampling temperature with "clean greedy sampled codes" will make the rest of sequence sound as if it were greedy sampled
 			# to-do: tune these values, maybe have it factor based on confidence scores or something
-			# to-do: see if instead just prefixing with blank audio overcomes the initla noise anyways
 			if low_temperature:
 				enabled = n < low_temperature_range
 				sampling_repetition_penalty = 1.35 if enabled else original_sampling_repetition_penalty

@@ -43,6 +43,9 @@ class AR(Base):
 		max_steps: int = 1000,
 		max_levels: int = 0,
 
+		input_prompt_prefix: bool = False,
+		prefix_silence: float = 1.0,
+
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
 		sampling_top_k: int = -100,

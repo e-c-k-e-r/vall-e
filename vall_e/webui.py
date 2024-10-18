@@ -147,14 +147,14 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
-	#parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
-	parser.add_argument("--input-prompt-prefix", action='store_true')
+	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"] if cfg.experimental else False)
 	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*cfg.dataset.frames_per_second))
-	parser.add_argument("--max-nar-levels", type=int, default=0), # kwargs["max-nar-levels"])
+	parser.add_argument("--max-nar-levels", type=int, default=kwargs["max-nar-levels"] if cfg.experimental else 0)
 	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
 	parser.add_argument("--nar-temp", type=float, default=kwargs["nar-temp"])
 	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
 	parser.add_argument("--min-nar-temp", type=float, default=kwargs["min-nar-temp"])
+	parser.add_argument("--prefix-silence", type=float, default=kwargs["prefix-silence"] if cfg.experimental else 0)
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
 	parser.add_argument("--min-p", type=float, default=kwargs["min-p"])
@@ -195,6 +195,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			max_nar_levels=args.max_nar_levels,
 			input_prompt_length=args.input_prompt_length,
 			input_prompt_prefix=args.input_prompt_prefix,
+			prefix_silence=args.prefix_silence,
 			ar_temp=args.ar_temp,
 			nar_temp=args.nar_temp,
 			min_ar_temp=args.min_ar_temp,
@@ -345,13 +346,16 @@ with ui:
 					with gr.Tab("Basic Settings"):
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["max-seconds"] = gr.Slider(value=12, minimum=1, maximum=32, step=0.1, label="Maximum Seconds", info="Limits how many steps to perform in the AR pass.")
-							#layout["inference_tts"]["inputs"]["max-nar-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
+							if cfg.experimental:
+								layout["inference_tts"]["inputs"]["max-nar-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
 							layout["inference_tts"]["inputs"]["input-prompt-length"] = gr.Slider(value=5.0, minimum=0.0, maximum=12.0, step=0.05, label="Input Prompt Repeat/Trim Length", info="Repeats and trims the input prompt down to X seconds. Set 0 to disable.")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["ar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy* sample)")
 							layout["inference_tts"]["inputs"]["nar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR. (0 to greedy sample)")
 						with gr.Row():
-							#layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
+							if cfg.experimental:
+								layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
+								layout["inference_tts"]["inputs"]["prefix-silence"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Silence Prefix Duration", info="Amount of silence to prefix to the output response before beginning inference.")
 							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
 							if cfg.experimental:
 								layout["inference_tts"]["inputs"]["entropix-sampling"] = gr.Checkbox(label="Entropix Sampling", info="Dynamically samples based on entropy/varentropy values from the logits / attention scores.")

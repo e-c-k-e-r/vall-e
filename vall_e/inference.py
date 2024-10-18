@@ -184,6 +184,7 @@ class TTS():
 		#
 		input_prompt_length=0.0,
 		input_prompt_prefix=False,
+		prefix_silence=0.0,
 		#
 		ar_temp=0.0,
 		nar_temp=0.0,
@@ -295,6 +296,7 @@ class TTS():
 					resps_list = model_ar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps,
 						input_prompt_prefix=input_prompt_prefix,
+						prefix_silence=prefix_silence,
 						sampling_temperature=ar_temp,
 						sampling_min_temperature=min_ar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
