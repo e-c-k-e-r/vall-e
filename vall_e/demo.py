@@ -87,7 +87,7 @@ def main():
 
 	parser.add_argument("--random-prompts", action="store_true")
 	parser.add_argument("--lora", action="store_true")
-	parser.add_argument("--comparison", action="store_true")
+	parser.add_argument("--comparison", type=str, default=None)
 	
 	args = parser.parse_args()
 	
@@ -104,34 +104,47 @@ def main():
 
 	# comparison kwargs
 	comparison_kwargs = {
-		"enabled": False,
 		"titles": [],
-		"suffix": "_after",
-		"before": {},
-		"after": {}
+		"suffix": "diff",
+		"enabled": {},
+		"disabled": {}
 	}
 
 	if args.lora:
-		comparison_kwargs["enabled"] = True
-		comparison_kwargs["suffix"] = "_lora"
-		comparison_kwargs["titles"] = ["No LoRA", "LoRA"]
-		comparison_kwargs["before"]["use_lora"] = True
-		comparison_kwargs["after"]["use_lora"] = False
-	# to-do: make this user definable
-	elif args.comparison:
-		comparison_kwargs["enabled"] = True
-		comparison_kwargs["suffix"] = "_entropix"
-		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]
-		
-		comparison_kwargs["before"]["entropix_sampling"] = True
-		comparison_kwargs["before"]["ar_temp"] = 0.666
-		comparison_kwargs["before"]["top_k"] = 27
-		comparison_kwargs["before"]["top_p"] = 0.9
-		comparison_kwargs["after"]["entropix_sampling"] = False
-		comparison_kwargs["after"]["ar_temp"] = args.ar_temp
-		comparison_kwargs["after"]["top_k"] = args.top_k
-		comparison_kwargs["after"]["top_p"] = args.top_p
+		args.comparison = "lora"
 
+	# to-do: just make this mappable
+	if args.comparison == "lora":
+		comparison_kwargs["suffix"] = "lora"
+		comparison_kwargs["titles"] = ["No LoRA", "LoRA"]
+
+		comparison_kwargs["disabled"]["use_lora"] = False
+		comparison_kwargs["enabled"]["use_lora"] = True
+	elif args.comparison == "entropix-sampling":
+		comparison_kwargs["suffix"] = "entropix_sampling"
+		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]		
+		comparison_kwargs["disabled"]["entropix_sampling"] = False
+		comparison_kwargs["disabled"]["ar_temp"] = args.ar_temp
+		comparison_kwargs["disabled"]["top_k"] = args.top_k
+		comparison_kwargs["disabled"]["top_p"] = args.top_p
+		comparison_kwargs["enabled"]["entropix_sampling"] = True
+		comparison_kwargs["enabled"]["ar_temp"] = 0.666
+		comparison_kwargs["enabled"]["top_k"] = 27
+		comparison_kwargs["enabled"]["top_p"] = 0.9
+	elif args.comparison == "ar-temp":
+		comparison_kwargs["suffix"] = "temperature"
+		comparison_kwargs["titles"] = [f"Temp: {args.ar_temp:.2f}", "Temp: 1.0"]
+
+		comparison_kwargs["disabled"]["ar_temp"] = args.ar_temp
+		comparison_kwargs["enabled"]["ar_temp"] = 1.0
+	elif args.comparison == "input-prompt-length":
+		comparison_kwargs["suffix"] = "input_prompt_length"
+		comparison_kwargs["titles"] = [f"Prompt Length: {args.input_prompt_length:.2f}s", "Prompt Length: 6.0s"]
+
+		comparison_kwargs["disabled"]["input-prompt-length"] = args.input_prompt_length
+		comparison_kwargs["enabled"]["input-prompt-length"] = 6.0
+	else:
+		raise Exception(f"Unrecognized comparison flag: {args.comparison}")
 
 	# read html template
 	html = open(args.demo_dir / "index.template.html", "r", encoding="utf-8").read()
@@ -204,10 +217,9 @@ def main():
 		if not sample_dir.exists():
 			continue
 		
-		speakers = [ dir for dir in sample_dir.iterdir() if dir.is_dir() ]
-		sources = [ "ms_valle", "yourtts" ]
-
 		samples = []
+		speakers = [ dir for dir in sample_dir.iterdir() if dir.is_dir() ]
+		sources = [ "ms_valle", "f5" ]
 
 		# generate demo output
 		for dir in tqdm(speakers, desc=f"Generating demo for {k}"):
@@ -217,19 +229,20 @@ def main():
 			reference = dir / "reference.wav"
 			out_path = dir / "out" / "ours.wav"
 			out_path_comparison = dir / "out" / f"ours_{comparison_kwargs["suffix"]}.wav"
+			external_sources = [ dir / "out" / f"{source}.wav" for source in sources ]
 
-			extra_sources = [ dir / "out" / f"{source}.wav" for source in sources ] if k == "librispeech" else ([ out_path_comparison ] if comparison_kwargs["enabled"] else [])
+			audio_samples = [ prompt, out_path ]
+			if args.comparison:
+				audio_samples += [ out_path_comparison ]
+			audio_samples += [ p for p in external_sources if p.exists() ]
 
 			if not args.random_prompts or k == "librispeech":
-				extra_sources += [ reference ]
+				audio_samples += [ reference ]
 
 			samples.append((
 				text,
-			 	[ prompt, out_path ] + extra_sources,
+			 	audio_samples,
 			))
-
-			if args.skip_existing and out_path.exists():
-				continue
 
 			seed = args.seed if args.seed else int(time.time())
 
@@ -253,18 +266,19 @@ def main():
 			)
 
 			def safe_inference( out_path=out_path ):
+				if args.skip_existing and out_path.exists():
+					return
 				try:
 					tts.inference( out_path=out_path, **kwargs )
 				except Exception as e:
 					print(f'Error while processing {out_path}: {e}')
 
-			if comparison_kwargs["enabled"]:
-				kwargs.update( comparison_kwargs["before"] )
+			if args.comparison:
+				kwargs.update( comparison_kwargs["enabled"] )
 				safe_inference(out_path_comparison)
-				kwargs.update( comparison_kwargs["after"] )
+				kwargs.update( comparison_kwargs["disabled"] )
 
 			safe_inference()
-
 
 		# collate entries into HTML
 		samples = [
@@ -280,7 +294,7 @@ def main():
 		# write audio into template
 		html = html.replace("${"+k.upper()+"_SAMPLES}", "\n".join( samples ) )
 
-		if comparison_kwargs["enabled"]:
+		if args.comparison:
 			before, after = comparison_kwargs["titles"]
 			if args.random_prompts:
 				html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", f"<th>Our VALL-E ({before})</th>\n\t\t\t\t\t<th>Our VALL-E ({after})</th>")

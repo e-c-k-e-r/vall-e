@@ -167,6 +167,7 @@ class Dataset:
 	prompt_similar_p: float = 0.75 # odds of sampling for a similar prompt instead of a random prompt
 	prompt_similar_top_k: int = 1 # top-k similar candidates to sample from 
 	prompt_similar_top_k_offset: int = 0 # offset from the top-k to sample from
+	prompt_inject_noise: bool = False # adds noise to the input prompt waveform to try and vary things
 	
 	resps_max_samples: int = 1 # number of samples to target for training
 	resps_append_p: float = 1.0 # probability to append another sample to the training target
@@ -176,7 +177,6 @@ class Dataset:
 	reencode_on_concat: bool = False # whether to concat audio by decode => concat => encode, or naively concat codes
 	reencode_device: str = "cpu" # "cpu" is slower but saves memory, cuda throws [rank0]: RuntimeError: Cannot re-initialize CUDA in forked subprocess. To use CUDA with multiprocessing, you must use the 'spawn' start method
 	noise_scale: float = 0.25 # scaling noise value
-	noise_inject_in_prom: bool = False # adds noise to the input prompt waveform to try and vary things
 	retokenize_text: bool = False
 
 	_frames_per_second: int = 0 # allows setting your own hint

@@ -1010,7 +1010,8 @@ class Dataset(_Dataset):
 			"""
 
 		prom_length = 0
-		trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second) if trim else 0
+		duration_lo, duration_hi = cfg.dataset.prompt_duration_range
+		trim_length = int(random.uniform(duration_lo, duration_hi) * cfg.dataset.frames_per_second) if trim else 0
 
 		for _ in range(cfg.dataset.prompt_max_samples):
 			if reference is not None:
@@ -1142,7 +1143,7 @@ class Dataset(_Dataset):
 		if task == "tts":
 			proms = self.sample_prompts(spkr_name, reference=path)
 
-			if cfg.dataset.inject_noise_in_prom:
+			if cfg.dataset.prompt_inject_noise:
 				# sample random noise
 				noise = self.sample_noise()
 				# extend the noise to fill the target audio
@@ -1156,7 +1157,8 @@ class Dataset(_Dataset):
 		elif task == "tts-c":
 			# trim a piece of the output response
 			if naive:
-				trim_length = int(random.uniform(cfg.dataset.prompt_duration_range[0], cfg.dataset.prompt_duration_range[1]) * cfg.dataset.frames_per_second)
+				duration_lo, duration_hi = cfg.dataset.prompt_duration_range
+				trim_length = int(random.uniform(duration_lo, duration_hi) * cfg.dataset.frames_per_second)
 			
 				proms = resps[:trim_length, :]
 				resps = resps[trim_length:, :]
