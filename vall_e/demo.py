@@ -266,7 +266,7 @@ def main():
 			audio_samples = [ prompt, out_path ]
 			if args.comparison:
 				audio_samples += [ out_path_comparison ]
-			audio_samples += [ p for p in external_sources if p.exists() else None ]
+			audio_samples += [ p if p.exists() else None for p in external_sources ]
 
 			if not args.random_prompts or k == "librispeech":
 				audio_samples += [ reference ]
@@ -309,15 +309,18 @@ def main():
 					return
 				
 				# swap model config swap
+				"""
 				if "dtype" in kwargs or "amp" in kwargs:
 					dtype = kwargs.pop("dtype", args.dtype)
 					amp = kwargs.pop("amp", args.amp)
 					
 					del tts
 					tts = TTS( config=args.yaml, device=args.device, dtype=dtype, amp=amp )
+				"""
 				try:
 					tts.inference( out_path=out_path, **kwargs )
 				except Exception as e:
+					raise e
 					print(f'Error while processing {out_path}: {e}')
 
 			if args.comparison:
