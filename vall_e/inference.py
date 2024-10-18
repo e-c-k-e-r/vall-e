@@ -185,11 +185,11 @@ class TTS():
 		input_prompt_length=0.0,
 		input_prompt_prefix=False,
 		#
-		ar_temp=0.95,
-		nar_temp=0.5,
+		ar_temp=0.0,
+		nar_temp=0.0,
 		#
-		min_ar_temp=0.95,
-		min_nar_temp=0.5,
+		min_ar_temp=0.0,
+		min_nar_temp=0.0,
 		#
 		top_p=1.0,
 		top_k=0,

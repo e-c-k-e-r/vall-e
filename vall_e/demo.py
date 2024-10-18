@@ -58,7 +58,7 @@ def main():
 	parser.add_argument("--max-ar-steps", type=int, default=12 * cfg.dataset.frames_per_second)
 	parser.add_argument("--max-nar-levels", type=int, default=7)
 
-	parser.add_argument("--ar-temp", type=float, default=1.0)
+	parser.add_argument("--ar-temp", type=float, default=0.0)
 	parser.add_argument("--nar-temp", type=float, default=0.0)
 	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
 	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
@@ -155,7 +155,7 @@ def main():
 	elif args.comparison == "dtype":
 		current_dtype = cfg.inference.weight_dtype
 		other_dtype = "float32"
-		
+
 		if current_dtype == "float16":
 			other_dtype = "bfloat16"
 		elif current_dtype == "bfloat16":

@@ -429,7 +429,7 @@ class Evaluation:
 	size: int = 64 # number of samples to generate during eval / val
 
 	steps: int = 500
-	ar_temperature: float = 1.0 # AR temp for inferencing
+	ar_temperature: float = 0.0 # AR temp for inferencing
 	nar_temperature: float = 0.0 # NAR temp for inferencing
 	nar_levels: int = 0 # maximum NAR levels to use for inferencing
 
