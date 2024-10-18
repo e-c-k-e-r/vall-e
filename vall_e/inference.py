@@ -270,6 +270,9 @@ class TTS():
 
 			return text_list[0]
 
+		# validate settings here
+		if not references and ar_temp < 0.5:
+			_logger.warning(f'Audio-promptless inferencing fails with low AR temperatures.')
 
 		for line in lines:
 			if out_path is None:

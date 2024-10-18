@@ -22,7 +22,7 @@ def main():
 	parser.add_argument("--max-nar-levels", type=int, default=7)
 
 	parser.add_argument("--ar-temp", type=float, default=0.0)
-	parser.add_argument("--nar-temp", type=float, default=0.01)
+	parser.add_argument("--nar-temp", type=float, default=0.0)
 	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
 	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
 	parser.add_argument("--input-prompt-length", type=float, default=3.0)
