@@ -234,7 +234,7 @@ class TTS():
 			if "nar" in engine.hyper_config.capabilities:
 				model_nar = engine.module
 		
-		set_seed(seed)
+		seed = set_seed(seed)
 
 		if task == "stt":
 			resp = self.encode_audio( references )

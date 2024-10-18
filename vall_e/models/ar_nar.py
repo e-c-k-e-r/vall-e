@@ -172,7 +172,6 @@ class AR_NAR(Base):
 							...
 						else:
 							resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
-					
 
 				inputs = self.inputs(
 					text_list=text_list,
@@ -268,6 +267,14 @@ class AR_NAR(Base):
 		scores = [ 1.0 ] * sampling_beam_width
 		entropies = []
 
+		# ick
+		low_temperature = sampling_repetition_penalty == 1.0 and sampling_temperature < 0.5
+		low_temperature_range = cfg.dataset.frames_per_second * 3
+		
+		original_sampling_temperature = sampling_temperature 
+		original_sampling_repetition_penalty = sampling_repetition_penalty 
+		original_sampling_repetition_penalty_decay = sampling_repetition_penalty_decay
+
 		for i, sequence in enumerate( sequence_list ):
 			# add <bos> to text for STT
 			if task_list[i] in text_task:
@@ -283,6 +290,17 @@ class AR_NAR(Base):
 			# it would technically be faster to just append the new token's embedding to the inputs, but there's a VERY small performance gain from doing it, so it's not worth it
 			text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
 			resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
+
+			# greedy sampling in the AR *does* work, but requires some quasi-exotic sampling to work around the initial burst of garbage from polluting the rest of the sequence
+			# naturally, rep pen wrangles this initial burst of noise, but naively relying on rep_pen is no good, as it fails after ~6 seconds of audio
+			# however, switching to a default sampling temperature with "clean greedy sampled codes" will make the rest of sequence sound as if it were greedy sampled
+			# to-do: tune these values, maybe have it factor based on confidence scores or something
+			# to-do: see if instead just prefixing with blank audio overcomes the initla noise anyways
+			if low_temperature:
+				enabled = n < low_temperature_range
+				sampling_repetition_penalty = 1.35 if enabled else original_sampling_repetition_penalty
+				sampling_repetition_penalty_decay = 0.5 if enabled else original_sampling_repetition_penalty_decay
+				sampling_temperature = original_sampling_temperature if enabled else 1.0
 
 			inputs = self.inputs(
 				text_list=text_list,

@@ -1535,12 +1535,6 @@ class Base(nn.Module):
 		if quant_levels is None and "len" in self.capabilities:
 			logits = [ ban_tokens(logit, tokens=[*range(11, logit.shape[-1])]) for logit, l in zip( logits, map(len, prev_list) ) ]
 
-		# argmax instead
-		if temperature <= 0.0:
-			res = [ logit.argmax(dim=1) for logit in logits ]
-			scores = None
-			return Sampled(res, scores, entropy) 
-
 		# perform repetition penalizing	
 		if "len" not in self.capabilities and prev_list is not None and repetition_penalty != 1.0:
 			# to-do: figure out a faster way to handle tolist()
@@ -1562,7 +1556,7 @@ class Base(nn.Module):
 		#	 epsilon float comparison because I don't trust Python
 		if abs(temperature - min_temperature) >= 0.001: 
 			logits = [ dynamic_temperature(logit, temperature=temperature, min_temperature=min_temperature) for logit in logits ]
-		else:
+		elif temperature > 0.0:
 			logits = [ logit / temperature for logit in logits ]
 
 		# do DRY sampling
@@ -1585,6 +1579,10 @@ class Base(nn.Module):
 			scores = [ logits[batch].flatten()[token] for batch, token in candidates ]
 		# basic sampling
 		else:
-			res = [ Categorical(logits=logit).sample() for logit in logits ]
+			# argmax instead
+			if temperature <= 0.0:
+				res = [ logit.argmax(dim=1) for logit in logits ]
+			else:
+				res = [ Categorical(logits=logit).sample() for logit in logits ]
 
 		return Sampled(res, scores, entropy)

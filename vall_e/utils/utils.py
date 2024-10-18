@@ -90,6 +90,8 @@ def set_seed(seed=None):
 	np.random.seed(seed)
 	torch.manual_seed(seed)
 
+	return seed
+
 def _get_named_modules(module, attrname):
 	for name, module in module.named_modules():
 		if hasattr(module, attrname):

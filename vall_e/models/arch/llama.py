@@ -114,7 +114,7 @@ except Exception as e:
 
 # to-do: find a better way to query for if there's available kernels since these return true regardless
 if torch.backends.cuda.flash_sdp_enabled():
-	AVAILABLE_ATTENTIONS.append("flash")
+	AVAILABLE_ATTENTIONS.append("flash_(sdpa)")
 
 if torch.backends.cuda.mem_efficient_sdp_enabled():
 	AVAILABLE_ATTENTIONS.append("mem_efficient")	
@@ -141,7 +141,7 @@ class LlamaAttention_Adapted(LlamaAttention):
 			self.mode = torch.nn.attention.SDPBackend.MATH
 		elif self.mode == "mem_efficient":
 			self.mode = torch.nn.attention.SDPBackend.EFFICIENT_ATTENTION
-		elif self.mode == "flash":
+		elif self.mode == "flash_(sdpa)":
 			self.mode = torch.nn.attention.SDPBackend.FLASH_ATTENTION
 		elif self.mode == "cudnn":
 			self.mode = torch.nn.attention.SDPBackend.CUDNN_ATTENTION
