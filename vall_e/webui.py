@@ -117,7 +117,7 @@ def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention=No
 		del tts
 		tts = None
 	
-	parser = argparse.ArgumentParser(allow_abbrev=False)
+	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', yaml)) # os environ so it can be specified in a HuggingFace Space too
 	parser.add_argument("--device", type=str, default=device)
 	parser.add_argument("--amp", action="store_true")
@@ -140,7 +140,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		kwargs['min-ar-temp'] = -1
 		kwargs['min-nar-temp'] = -1
 
-	parser = argparse.ArgumentParser(allow_abbrev=False)
+	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--text", type=str, default=kwargs["text"])
 	parser.add_argument("--task", type=str, default="tts")
@@ -226,7 +226,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	else:
 		kwargs['min-ar-temp'] = -1
 
-	parser = argparse.ArgumentParser(allow_abbrev=False)
+	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])

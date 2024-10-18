@@ -26,6 +26,7 @@ from .utils import set_seed, prune_missing
 @dataclass()
 class BaseConfig:
 	yaml_path: str | None = None # path passed in through --yaml
+	model_path: str | None = None # path passed in through --model
 
 	@property
 	def cfg_path(self):
@@ -114,12 +115,12 @@ class BaseConfig:
 			if arg.startswith("yaml"):
 				args[i] = f'--{arg}'
 
-		parser = argparse.ArgumentParser(allow_abbrev=False)
+		parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 		parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
 		args, unknown = parser.parse_known_args(args=args)
 
 		if args.yaml:
-			return cls.from_yaml( args.yaml )			
+			return cls.from_yaml( args.yaml )
 
 		return cls(**{})
 

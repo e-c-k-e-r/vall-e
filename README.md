@@ -172,6 +172,7 @@ For audio backends:
   * `flash_attn`: uses the available `flash_attn` package (including `flash_attn==1.0.9` through a funny wrapper)
   * `flash_attn_v100`: uses [ZRayZzz/flash-attention-v100](https://github.com/ZRayZzz/flash-attention-v100/)'s Flash Attention for Volta (but doesn't work currently)
   * `fused_attn`: uses an implementation using `triton` (tested on my 7900XTX and V100s), but seems to introduce errors when used to train after a while
+  * `default`: uses the naive path for hte internal implementation (used for attention-debugging purposed)
 * `transformers` Llama\*Attention implementations:
   * `eager`: default `LlamaAttention`
   * `sdpa`: integrated `LlamaSdpaAttention` attention model
@@ -337,6 +338,7 @@ Despite how lightweight it is in comparison to other TTS's I've meddled with, th
 * speakers that aren't similar to an audiobook narrator voice has similarity issues due to the majority of training used `path`-based dataloader sampling instead of `speaker`-based (or `group`-based) dataloader sampling.
   + although LoRAs help a ton for fixing results for a single voice.
   + a diverse dataset in prosidy and speaker (such as a corpus sourced from dramatic media like video games) helps a ton.
+* On my test system (7900XTX), it seems inferencing quality depends on the moon phase; I don't know if it's a matter of ROCm nuances (since I've always found it to not be up to par with actual CUDA) or `bfloat16` (due to the model being trained under `float16`+AMP) being the culprit, but your mileage *will* vary depending on the system + dtype + sampler settings.
 
 ## Notices and Citations
 
