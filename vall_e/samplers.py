@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 # Simple filter to modify a token's probability if it shows up in the past
 # `one_time` will only apply the penalty once
 # `decay` is a factor that will exponentially apply to how far away it is
-def reptition_penalize( logits, previous, factor=1.0, decay=0.0, one_time=True ):
+def reptition_penalize( logits, previous, factor=1.0, decay=0.0, one_time=False ):
 	if factor == 1.0 or previous is None:
 		return logits
 

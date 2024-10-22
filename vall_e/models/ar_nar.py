@@ -302,8 +302,8 @@ class AR_NAR(Base):
 			# to-do: tune these values, maybe have it factor based on confidence scores or something
 			if low_temperature:
 				enabled = n < low_temperature_range
-				sampling_repetition_penalty = 1.35 if enabled else original_sampling_repetition_penalty
-				sampling_repetition_penalty_decay = 0.5 if enabled else original_sampling_repetition_penalty_decay
+				sampling_repetition_penalty = 1.5 if enabled else original_sampling_repetition_penalty
+				sampling_repetition_penalty_decay = 0.0 if enabled else original_sampling_repetition_penalty_decay
 				sampling_temperature = original_sampling_temperature if enabled else 1.0
 
 			inputs = self.inputs(

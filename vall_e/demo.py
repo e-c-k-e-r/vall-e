@@ -33,7 +33,7 @@ from .emb.qnt import decode_to_file
 from tqdm import tqdm, trange
 
 def encode(path):
-	if path is None or path.exists():
+	if path is None or not path.exists():
 		return ""
 	return "data:audio/wav;base64," + base64.b64encode(open(path, "rb").read()).decode('utf-8')
 
@@ -117,11 +117,11 @@ def main():
 
 	# to-do: just make this mappable
 	if args.comparison == "lora":
-		comparison_kwargs["suffix"] = "lora"
-		comparison_kwargs["titles"] = ["No LoRA", "LoRA"]
+		comparison_kwargs["suffix"] = "no_lora"
+		comparison_kwargs["titles"] = ["LoRA", "No LoRA"]
 
-		comparison_kwargs["disabled"]["use_lora"] = False
-		comparison_kwargs["enabled"]["use_lora"] = True
+		comparison_kwargs["disabled"]["use_lora"] = True
+		comparison_kwargs["enabled"]["use_lora"] = False
 	elif args.comparison == "entropix-sampling":
 		comparison_kwargs["suffix"] = "entropix_sampling"
 		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]	
@@ -175,7 +175,7 @@ def main():
 
 		comparison_kwargs["disabled"]["amp"] = current_amp
 		comparison_kwargs["enabled"]["amp"] = other_amp
-	else:
+	elif args.comparison:
 		raise Exception(f"Unrecognized comparison flag: {args.comparison}")
 
 	# read html template
@@ -221,6 +221,7 @@ def main():
 		num = args.dataset_samples if args.dataset_samples else length
 
 		for i in trange( num, desc="Sampling dataset for samples" ):
+			index = i if not cfg.dataset.sample_shuffle else random.randint( i, length )
 			batch = dataloader.dataset[i]
 
 			dir = args.demo_dir / args.dataset_dir_name / f'{i}'
