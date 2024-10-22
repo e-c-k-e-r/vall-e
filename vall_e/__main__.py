@@ -31,7 +31,7 @@ def main():
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
 	parser.add_argument("--min-p", type=float, default=0.0)
-	parser.add_argument("--repetition-penalty", type=float, default=1.0)
+	parser.add_argument("--repetition-penalty", type=float, default=1.125)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)
 	parser.add_argument("--beam-width", type=int, default=0)

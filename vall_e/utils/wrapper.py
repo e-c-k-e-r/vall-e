@@ -101,6 +101,14 @@ if cfg.optimizations.tensorrt:
 		_logger.warning(f'Error while importing TensorRT: {str(e)}')
 		pass
 
+if cfg.optimizations.unsloth:
+	try:
+		from .unsloth import apply_unsloth_offloaded_gradient_checkpoint_monkey_patch
+		#apply_unsloth_offloaded_gradient_checkpoint_monkey_patch()
+	except Exception as e:
+		_logger.warning(f'Error while importing Unsloth: {str(e)}')
+		pass
+
 def compile_model(model, backend="auto"):
 	if not backend or backend == "auto":
 		backend = AVAILABLE_COMPILE_BACKENDS[0]

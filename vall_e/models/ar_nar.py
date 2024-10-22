@@ -232,10 +232,10 @@ class AR_NAR(Base):
 					quant_levels=quant_levels,
 
 					temperature=sampling_temperature,
-					min_temperature=sampling_min_temperature,
-					top_p=sampling_top_p,
-					top_k=sampling_top_k,
-					min_p=sampling_min_p,
+					#min_temperature=sampling_min_temperature,
+					#top_p=sampling_top_p,
+					#top_k=sampling_top_k,
+					#min_p=sampling_min_p,
 					#repetition_penalty=sampling_repetition_penalty,
 					#repetition_penalty_decay=sampling_repetition_penalty_decay,
 					#length_penalty=sampling_length_penalty,
@@ -269,8 +269,8 @@ class AR_NAR(Base):
 		entropies = []
 
 		# ick
-		low_temperature = sampling_repetition_penalty == 1.0 and sampling_temperature < 0.5
-		low_temperature_range = cfg.dataset.frames_per_second * 3
+		low_temperature = False # sampling_repetition_penalty == 1.0 and sampling_temperature == 0.0 #
+		low_temperature_range = cfg.dataset.frames_per_second * 5
 		
 		original_sampling_temperature = sampling_temperature 
 		original_sampling_repetition_penalty = sampling_repetition_penalty 
@@ -302,7 +302,7 @@ class AR_NAR(Base):
 			# to-do: tune these values, maybe have it factor based on confidence scores or something
 			if low_temperature:
 				enabled = n < low_temperature_range
-				sampling_repetition_penalty = 1.5 if enabled else original_sampling_repetition_penalty
+				sampling_repetition_penalty = 1.125 if enabled else original_sampling_repetition_penalty
 				sampling_repetition_penalty_decay = 0.0 if enabled else original_sampling_repetition_penalty_decay
 				sampling_temperature = original_sampling_temperature if enabled else 1.0
 

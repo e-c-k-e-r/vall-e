@@ -692,6 +692,7 @@ class Optimizations:
 	# | {"assign": [[ f'layers.{i}.' for i in range(0,6) ], [ f'layers.{i}.' for i in range(6,12) ]]} will assign layers 0-5 to device 1, and 6-12 to device 2
 
 	tensorrt: bool = False
+	unsloth: bool = False # unsloth gradient checkpointing (it just offloads tensors to the CPU during backwards, I don't think it's significant enough to bother with on small models)
 
 @dataclass()
 class Config(BaseConfig):

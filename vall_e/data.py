@@ -746,9 +746,12 @@ class Dataset(_Dataset):
 				flattened[bucket] = [*_interleaved_reorder(flattened[bucket], self.get_speaker)]
 			# flatten paths
 			self.paths = list(itertools.chain.from_iterable(flattened.values()))
+		elif self.sampler_order == "random":
+			random.shuffle( self.paths )
 		else:
 			# just interleave
 			self.paths = [*_interleaved_reorder(self.paths, self.get_speaker)]
+
 
 		
 		# dict of speakers keyed by speaker group

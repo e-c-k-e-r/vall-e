@@ -1560,8 +1560,8 @@ class Base(nn.Module):
 			logits = [ logit / temperature for logit in logits ]
 
 		# do DRY sampling
-		if dry_multiplier > 0.0:
-			logits = [ dry_sampling(logit, previous=resps[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, resps in zip( logits, prev_list ) ]
+		if dry_multiplier > 0.0 and prev_list is not None:
+			logits = [ dry_sampling(logit, previous=prevs[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, prevs in zip( logits, prev_list ) ]
 
 		# do mirostat sampling
 		# currently incompatible with beam searching with the way the two are implemented, perhaps a night of brain bashing can make the two work

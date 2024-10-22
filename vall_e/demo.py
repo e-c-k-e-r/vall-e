@@ -46,6 +46,7 @@ def main():
 	parser.add_argument("--demo-dir", type=Path, default=None)
 	parser.add_argument("--skip-existing", action="store_true")
 	parser.add_argument("--dataset-dir-name", type=str, default="dataset")
+	parser.add_argument("--dataset-dir-name-prefix", type=str, default=None)
 	parser.add_argument("--sample-from-dataset", action="store_true")
 	parser.add_argument("--skip-loading-dataloader", action="store_true")
 	parser.add_argument("--dataset-samples", type=int, default=0)
@@ -209,6 +210,7 @@ def main():
 	if args.sample_from_dataset:
 		cfg.dataset.cache = False
 		cfg.dataset.sample_type = "path" if len(cfg.dataset.training) < cfg.evaluation.batch_size else "speaker"
+		cfg.dataset.sample_order = "random"
 		cfg.dataset.tasks_list = [ 'tts' ]
 
 		samples_dirs["dataset"] = args.demo_dir / args.dataset_dir_name
@@ -221,16 +223,20 @@ def main():
 		num = args.dataset_samples if args.dataset_samples else length
 
 		for i in trange( num, desc="Sampling dataset for samples" ):
-			index = i if not cfg.dataset.sample_shuffle else random.randint( i, length )
+			index = i if not cfg.dataset.sample_shuffle else random.randint( 0, len( dataloader.dataset ) )
 			batch = dataloader.dataset[i]
 
-			dir = args.demo_dir / args.dataset_dir_name / f'{i}'
+			if args.dataset_dir_name_prefix:
+				dir = args.demo_dir / args.dataset_dir_name / f'{args.dataset_dir_name_prefix}_{i}'
+			else:
+				dir = args.demo_dir / args.dataset_dir_name / f'{i}'
 
 			(dir / "out").mkdir(parents=True, exist_ok=True)
 
 			metadata = batch["metadata"]
 
-			text = get_random_prompt() if args.random_prompts else metadata["text"]
+			#text = get_random_prompt() if args.random_prompts else metadata["text"]
+			text = get_random_prompt() if i >= (num // 2) else metadata["text"]
 			language = metadata["language"].lower()
 			
 			prompt = dir / "prompt.wav"
