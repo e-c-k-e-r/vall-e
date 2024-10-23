@@ -93,13 +93,13 @@ def plot(paths, args):
 		#bbox_to_anchor=(1.04, 0.5),
 	)
 
-def plot_entropies( entropies ):
+def plot_sample_metrics( metrics ):
 	"""
 	fig = plt.figure()
-	fig.set_figwidth( 16 * len(entropies) // cfg.dataset.frames_per_second )
+	fig.set_figwidth( 16 * len(metrics) // cfg.dataset.frames_per_second )
 	"""
 
-	data = { key: [ e[0][key] for e in entropies ] for key in entropies[0][0].keys() }
+	data = { key: [ e[0][key] for e in metrics ] for key in metrics[0][0].keys() }
 
 	df = pd.DataFrame(data)
 	df.plot()
