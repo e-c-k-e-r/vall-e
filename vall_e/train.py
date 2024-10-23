@@ -133,7 +133,7 @@ def run_eval(engines, eval_name, dl, args=None):
 			engine = engines[name]
 
 
-			kwargs = dict(
+			base_kwargs = dict(
 				text_list=batch["text"],
 				proms_list=batch["proms"],
 				lang_list=batch["lang"],
@@ -141,19 +141,23 @@ def run_eval(engines, eval_name, dl, args=None):
 			)
 
 			if engine.hyper_config.experimental.hf:
-				resps_list = engine( **kwargs )
+				resps_list = engine( **base_kwargs )
 			elif "len" in engine.hyper_config.capabilities:
-				len_list = engine( **kwargs, max_steps=10 ) # don't need more than that
+				len_list = engine( **base_kwargs, max_steps=10 ) # don't need more than that
 				len_list = [ min( l, cfg.evaluation.steps ) for l in len_list ]
-				resps_list = engine( **kwargs, len_list=len_list, max_levels=cfg.evaluation.nar_levels )
+				
+				kwargs = base_kwargs | cfg.evaluation.nar_kwargs
+				resps_list = engine( **kwargs, len_list=len_list )
 			else:
 				if "ar" in engine.hyper_config.capabilities:
-					resps_list = engine( **kwargs, max_steps=cfg.evaluation.steps, sampling_temperature=cfg.evaluation.ar_temperature)
+					kwargs = base_kwargs | cfg.evaluation.ar_kwargs
+					resps_list = engine( **kwargs )
 				else:
 					resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
 				if "nar" in engine.hyper_config.capabilities:
-					resps_list = engine( **kwargs, resps_list=resps_list, sampling_temperature=cfg.evaluation.nar_temperature, max_levels=cfg.evaluation.nar_levels )
+					kwargs = base_kwargs | cfg.evaluation.nar_kwargs
+					resps_list = engine( **kwargs, resps_list=resps_list )
 
 			process( name, batch, resps_list )
 

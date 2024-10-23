@@ -427,11 +427,8 @@ class Evaluation:
 	batch_size: int = 64 # number of samples per batch during eval / val
 	frequency: int = 250 # do eval / val every X iterations
 	size: int = 64 # number of samples to generate during eval / val
-
-	steps: int = 500
-	ar_temperature: float = 0.0 # AR temp for inferencing
-	nar_temperature: float = 0.0 # NAR temp for inferencing
-	nar_levels: int = 0 # maximum NAR levels to use for inferencing
+	ar_kwargs: dict = field(default_factory=lambda: {}) # inferencing kwargs
+	nar_kwargs: dict = field(default_factory=lambda: {}) # inferencing kwargs
 
 @dataclass()
 class DeepSpeed:

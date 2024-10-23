@@ -375,6 +375,8 @@ class AR_NAR(Base):
 					text_list = text_list * sampling_beam_width
 					proms_list = proms_list * sampling_beam_width
 					sequence_list = sequence_list * sampling_beam_width
+					task_list = task_list * sampling_beam_width
+					start_slice = start_slice * sampling_beam_width
 					stopped = torch.zeros(batch_size, device=device).bool()
 
 				scores = [ scores[i] + score for i, score in enumerate(scores) ]
@@ -399,7 +401,8 @@ class AR_NAR(Base):
 		# pick the best scoring candidate
 		# desu this is always going to be candidate 0
 		if sampling_beam_width:
-			sequence_list = [ sequence_list[0] ]
+			sequence_list = sequence_list[:1]
+			task_list = task_list[:1]
 
 		# remove stop token
 		sequence_list = [self._prune(r, audio_stop_token if task_list[i] not in text_task else text_stop_token) for i, r in enumerate(sequence_list)]

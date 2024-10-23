@@ -203,6 +203,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			top_p=args.top_p,
 			top_k=args.top_k,
 			min_p=args.min_p,
+			beam_width=args.beam_width,
 			repetition_penalty=args.repetition_penalty,
 			repetition_penalty_decay=args.repetition_penalty_decay,
 			length_penalty=args.length_penalty,

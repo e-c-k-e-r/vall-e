@@ -68,7 +68,7 @@ def main():
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
 	parser.add_argument("--min-p", type=float, default=0.0)
-	parser.add_argument("--repetition-penalty", type=float, default=1.0)
+	parser.add_argument("--repetition-penalty", type=float, default=1.125)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)
 	parser.add_argument("--beam-width", type=int, default=0)
@@ -122,7 +122,9 @@ def main():
 		comparison_kwargs["titles"] = ["LoRA", "No LoRA"]
 
 		comparison_kwargs["disabled"]["use_lora"] = True
+		comparison_kwargs["disabled"]["ar_temp"] = 0.0
 		comparison_kwargs["enabled"]["use_lora"] = False
+		comparison_kwargs["enabled"]["ar_temp"] = 0.95
 	elif args.comparison == "entropix-sampling":
 		comparison_kwargs["suffix"] = "entropix_sampling"
 		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]	
