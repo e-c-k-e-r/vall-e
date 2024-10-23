@@ -368,7 +368,7 @@ class AR_NAR(Base):
 				mirostat = sampled.scores
 			elif sampling_beam_width > 0:
 				# expand tuple
-				scores = sampled.scores
+				s = sampled.scores
 				# first step, expand batch
 				if batch_size == 1:
 					batch_size = sampling_beam_width
@@ -379,7 +379,7 @@ class AR_NAR(Base):
 					start_slice = start_slice * sampling_beam_width
 					stopped = torch.zeros(batch_size, device=device).bool()
 
-				scores = [ scores[i] + score for i, score in enumerate(scores) ]
+				scores = [ scores[i] + score for i, score in enumerate(s) ]
 
 			# append tokens
 			for i, ri in enumerate(r):

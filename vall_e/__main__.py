@@ -21,7 +21,7 @@ def main():
 	parser.add_argument("--max-ar-steps", type=int, default=12 * cfg.dataset.frames_per_second)
 	parser.add_argument("--max-nar-levels", type=int, default=7)
 
-	parser.add_argument("--ar-temp", type=float, default=0.0)
+	parser.add_argument("--ar-temp", type=float, default=0.5)
 	parser.add_argument("--nar-temp", type=float, default=0.0)
 	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
 	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
