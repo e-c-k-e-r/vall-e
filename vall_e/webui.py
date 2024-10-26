@@ -112,7 +112,7 @@ def load_sample( speaker ):
 
 	return data, (sr, wav)
 
-def init_tts(config=None, restart=False, device="cuda", dtype="auto", attention=None):
+def init_tts(config=None, lora=None, restart=False, device="cuda", dtype="auto", attention=None):
 	global tts
 
 	if tts is not None:
@@ -125,6 +125,7 @@ def init_tts(config=None, restart=False, device="cuda", dtype="auto", attention=
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
 	parser.add_argument("--model", type=Path, default=os.environ.get('VALLE_MODEL', None)) # os environ so it can be specified in a HuggingFace Space too
+	parser.add_argument("--lora", type=Path, default=os.environ.get('VALLE_LORA', None)) # os environ so it can be specified in a HuggingFace Space too
 	parser.add_argument("--device", type=str, default=device)
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=dtype)
@@ -137,12 +138,18 @@ def init_tts(config=None, restart=False, device="cuda", dtype="auto", attention=
 		elif config.suffix == ".sft" and not args.model:
 			args.model = config
 
+	if lora and not args.lora:
+		args.lora = lora
+
 	if args.yaml:
 		config = args.yaml
 	elif args.model:
 		config = args.model
 
-	tts = TTS( config=config, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp, attention=args.attention )
+	if args.lora:
+		lora = args.lora
+
+	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp, attention=args.attention )
 	return tts
 
 @gradio_wrapper(inputs=layout["inference_tts"]["inputs"].keys())

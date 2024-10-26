@@ -17,6 +17,8 @@ def main():
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--yaml", type=Path, default=None)
+	parser.add_argument("--model", type=Path, default=None)
+	parser.add_argument("--lora", type=Path, default=None)
 
 	parser.add_argument("--max-ar-steps", type=int, default=12 * cfg.dataset.frames_per_second)
 	parser.add_argument("--max-nar-levels", type=int, default=7)
@@ -53,7 +55,14 @@ def main():
 	parser.add_argument("--attention", type=str, default=None)
 	args = parser.parse_args()
 
-	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
+	config = None
+
+	if args.yaml:
+		config = args.yaml
+	elif args.model:
+		config = args.model
+
+	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
 	output = tts.inference(
 		text=args.text,
 		references=args.references,

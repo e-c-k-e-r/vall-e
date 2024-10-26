@@ -58,8 +58,8 @@ def load_engines(training=True, **model_kwargs):
 			checkpoint_path = pick_path( checkpoint_path.parent / tag / f"state.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
 		# if loaded using --model=
-		if cfg.model_path and cfg.model_path.exists():
-			load_path = cfg.model_path
+		if model.config.path and model.config.path.exists():
+			load_path = model.config.path
 
 		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
 			_logger.warning(f"Checkpoint missing, but weights found: {load_path}")
@@ -208,7 +208,11 @@ def load_engines(training=True, **model_kwargs):
 
 			# load lora weights if exists
 			if cfg.lora is not None:
-				lora_path = pick_path( cfg.ckpt_dir / cfg.lora.full_name / f"lora.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
+				if cfg.lora.path:
+					lora_path = cfg.lora.path
+				else:
+					lora_path = pick_path( cfg.ckpt_dir / cfg.lora.full_name / f"lora.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
+
 				if lora_path.exists():
 					_logger.info( f"Loaded LoRA state dict: {lora_path}" )
 

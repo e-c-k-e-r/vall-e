@@ -27,15 +27,11 @@ from .utils import set_seed, prune_missing
 @dataclass()
 class BaseConfig:
 	yaml_path: str | None = None # path passed in through --yaml
-	model_path: str | None = None # path passed in through --model
 
 	@property
 	def cfg_path(self):
 		if self.yaml_path:
 			return Path(self.yaml_path.parent)
-		
-		if self.model_path:
-			return Path(self.model_path.parent)
 
 		return Path(__file__).parent.parent / "data"
 
@@ -114,14 +110,15 @@ class BaseConfig:
 		return cls(**state)
 
 	@classmethod
-	def from_model( cls, model_path ):
+	def from_model( cls, model_path, lora_path=None ):
 		if not model_path.exists():
 			raise Exception(f'Model path does not exist: {model_path}')
 
 		# load state dict and copy its stored model config
-		state_dict = torch_load( model_path )["config"]
+		model_state_dict = [ torch_load( model_path )["config"] | { "path": model_path } ] if model_path and model_path.exists() else []
+		lora_state_dict = [ torch_load( lora_path )["config"] | { "path": lora_path } ] if lora_path and lora_path.exists() else []
 
-		state = { "models": [ state_dict ], "trainer": { "load_state_dict": True }, "model_path": model_path }
+		state = { "models": model_state_dict, "loras": lora_state_dict, "trainer": { "load_state_dict": True } }
 		return cls(**state)
 
 	@classmethod
@@ -134,10 +131,11 @@ class BaseConfig:
 		parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 		parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
 		parser.add_argument("--model", type=Path, default=os.environ.get('VALLE_MODEL', None)) # os environ so it can be specified in a HuggingFace Space too
+		parser.add_argument("--lora", type=Path, default=os.environ.get('VALLE_LORA', None)) # os environ so it can be specified in a HuggingFace Space too
 		args, unknown = parser.parse_known_args(args=args)
 
 		if args.model:
-			return cls.from_model( args.model )
+			return cls.from_model( args.model, args.lora )
 
 		if args.yaml:
 			return cls.from_yaml( args.yaml )
@@ -276,6 +274,7 @@ class Model:
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 	attention: str = "auto" # for llama arch_types: attention used
 	dropout: float = 0.1 # adjustable dropout value
+	path: Path | None = None
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"]) # + ["lang", "tone"] if you have your dataset labeled for such
@@ -408,6 +407,7 @@ class LoRA:
 	embeddings: bool = False # train the embedding too
 	parametrize: bool = False # whether to use the parameterized pathway for LoRAs or not
 	rvq_levels: list[int] = field(default_factory=lambda: []) # determines RVQ levels to activate the LoRA
+	path: Path | None = None
 
 	@property
 	def full_name(self):
@@ -832,8 +832,8 @@ class Config(BaseConfig):
 		tmp = Config.from_yaml( config_path )
 		self.__dict__.update(tmp.__dict__)
 	
-	def load_model( self, config_path ):
-		tmp = Config.from_model( config_path )
+	def load_model( self, config_path, lora_path=None ):
+		tmp = Config.from_model( config_path, lora_path )
 		self.__dict__.update(tmp.__dict__)
 
 	def load_hdf5( self, write=False ):
@@ -870,6 +870,9 @@ class Config(BaseConfig):
 
 
 	def format( self, training=True ):
+		print( self.models )
+		print( self.loras )
+
 		if isinstance(self.dataset, type):
 			self.dataset = dict()
 
@@ -948,7 +951,6 @@ class Config(BaseConfig):
 			if "audio_embedding_sums" in model:
 				_logger.warning(f"Deprecated flag found: {'cfg.model.p_rvq_levels'}")
 				model["experimental"]["audio_embedding_sums"] = model.pop("audio_embedding_sums")
-
 
 		self.models = [ Model(**model) if isinstance(model, dict) else model for model in self.models ]
 		self.loras = [ LoRA(**lora)  if isinstance(lora, dict) else lora for lora in self.loras ]

@@ -42,6 +42,8 @@ def main():
 	parser = argparse.ArgumentParser("VALL-E TTS Demo")
 
 	parser.add_argument("--yaml", type=Path, default=None)
+	parser.add_argument("--model", type=Path, default=None)
+	parser.add_argument("--lora", type=Path, default=None)
 	
 	parser.add_argument("--demo-dir", type=Path, default=None)
 	parser.add_argument("--skip-existing", action="store_true")
@@ -93,8 +95,14 @@ def main():
 	parser.add_argument("--comparison", type=str, default=None)
 	
 	args = parser.parse_args()
+
+	config = None
+	if args.yaml:
+		config = args.yaml
+	elif args.model:
+		config = args.model
 	
-	tts = TTS( config=args.yaml, device=args.device, dtype=args.dtype, amp=args.amp )
+	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype, amp=args.amp )
 
 	if not args.demo_dir:
 		args.demo_dir = Path("./data/demo/")

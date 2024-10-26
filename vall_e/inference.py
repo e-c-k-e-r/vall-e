@@ -25,16 +25,16 @@ if deepspeed_available:
 	import deepspeed
 
 class TTS():
-	def __init__( self, config=None, device=None, amp=None, dtype=None, attention=None ):
+	def __init__( self, config=None, lora=None, device=None, amp=None, dtype=None, attention=None ):
 		self.loading = True 
 
 		# yes I can just grab **kwargs and forward them here
-		self.load_config( config=config, device=device, amp=amp, dtype=dtype, attention=attention )	
+		self.load_config( config=config, lora=lora, device=device, amp=amp, dtype=dtype, attention=attention )	
 		self.load_model()
 
 		self.loading = False 
 
-	def load_config( self, config=None, device=None, amp=None, dtype=None, attention=None ):
+	def load_config( self, config=None, lora=None, device=None, amp=None, dtype=None, attention=None ):
 		if not config:
 			download_model()
 			config = DEFAULT_MODEL_PATH
@@ -44,7 +44,7 @@ class TTS():
 			cfg.load_yaml( config )
 		elif config.suffix == ".sft":
 			_logger.info(f"Loading model: {config}")
-			cfg.load_model( config )
+			cfg.load_model( config, lora )
 		else:
 			raise Exception(f"Unknown config passed: {config}")		
 
