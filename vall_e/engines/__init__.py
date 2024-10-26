@@ -57,6 +57,10 @@ def load_engines(training=True, **model_kwargs):
 			tag = open(checkpoint_path).read()
 			checkpoint_path = pick_path( checkpoint_path.parent / tag / f"state.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
+		# if loaded using --model=
+		if cfg.model_path and cfg.model_path.exists():
+			load_path = cfg.model_path
+
 		if not loads_state_dict and not checkpoint_path.exists() and load_path.exists():
 			_logger.warning(f"Checkpoint missing, but weights found: {load_path}")
 			loads_state_dict = True

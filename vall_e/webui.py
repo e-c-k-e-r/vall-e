@@ -21,6 +21,7 @@ from .utils.io import json_read, json_stringify
 from .emb.qnt import decode_to_wave
 from .data import get_lang_symmap, get_random_prompt
 
+
 tts = None
 
 layout = {}
@@ -49,9 +50,9 @@ def gradio_wrapper(inputs):
 		return wrapped_function
 	return decorated
 
-# returns a list of models, assuming the models are placed under ./training/ or ./models/
-def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
-	yamls = []
+# returns a list of models, assuming the models are placed under ./training/ or ./models/ or ./data/models/
+def get_model_paths( paths=[Path("./training/"), Path("./models/"), Path("./data/models/")] ):
+	configs = []
 
 	for path in paths:
 		if not path.exists():
@@ -60,10 +61,14 @@ def get_model_paths( paths=[Path("./training/"), Path("./models/")] ):
 		for yaml in path.glob("**/*.yaml"):
 			if "/logs/" in str(yaml):
 				continue
+			configs.append( yaml )
+		
+		for sft in path.glob("**/*.sft"):
+			if "/logs/" in str(sft):
+				continue
+			configs.append( sft )
 
-			yamls.append( yaml )
-
-	return yamls
+	return configs
 
 def get_dtypes():
 	return ["float32", "float16", "bfloat16", "float8_e5m2", "float8_e4m3fn", "auto"]
@@ -73,10 +78,10 @@ def get_attentions():
 	return AVAILABLE_ATTENTIONS + ["auto"]
 
 #@gradio_wrapper(inputs=layout["settings"]["inputs"].keys())
-def load_model( yaml, device, dtype, attention ):
-	gr.Info(f"Loading: {yaml}")
+def load_model( config, device, dtype, attention ):
+	gr.Info(f"Loading: {config}")
 	try:
-		init_tts( yaml=Path(yaml), restart=True, device=device, dtype=dtype, attention=attention )
+		init_tts( config=Path(config), restart=True, device=device, dtype=dtype, attention=attention )
 	except Exception as e:
 		raise gr.Error(e)
 	gr.Info(f"Loaded model")
@@ -107,7 +112,7 @@ def load_sample( speaker ):
 
 	return data, (sr, wav)
 
-def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention=None):
+def init_tts(config=None, restart=False, device="cuda", dtype="auto", attention=None):
 	global tts
 
 	if tts is not None:
@@ -118,20 +123,32 @@ def init_tts(yaml=None, restart=False, device="cuda", dtype="auto", attention=No
 		tts = None
 	
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', yaml)) # os environ so it can be specified in a HuggingFace Space too
+	parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
+	parser.add_argument("--model", type=Path, default=os.environ.get('VALLE_MODEL', None)) # os environ so it can be specified in a HuggingFace Space too
 	parser.add_argument("--device", type=str, default=device)
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=dtype)
 	parser.add_argument("--attention", type=str, default=attention)
 	args, unknown = parser.parse_known_args()
 
-	tts = TTS( config=args.yaml if yaml is None else yaml, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp, attention=args.attention )
+	if config:
+		if config.suffix == ".yaml" and not args.yaml:
+			args.yaml = config
+		elif config.suffix == ".sft" and not args.model:
+			args.model = config
+
+	if args.yaml:
+		config = args.yaml
+	elif args.model:
+		config = args.model
+
+	tts = TTS( config=config, device=args.device, dtype=args.dtype if args.dtype != "auto" else None, amp=args.amp, attention=args.attention )
 	return tts
 
 @gradio_wrapper(inputs=layout["inference_tts"]["inputs"].keys())
 def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
-	if not cfg.yaml_path:
-		raise Exception("No YAML loaded.")
+	if not cfg.models:
+		raise Exception("No model loaded.")
 
 	if kwargs.pop("dynamic-sampling", False):
 		kwargs['min-ar-temp'] = 0.01 if kwargs['ar-temp'] > 0.01 else 0.0
@@ -220,8 +237,8 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 @gradio_wrapper(inputs=layout["inference_stt"]["inputs"].keys())
 def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
-	if not cfg.yaml_path:
-		raise Exception("No YAML loaded.")
+	if not cfg.models:
+		raise Exception("No model loaded.")
 
 	if kwargs.pop("dynamic-sampling", False):
 		kwargs['min-ar-temp'] = 0.85 if kwargs['ar-temp'] > 0.85 else 0.0
@@ -306,6 +323,7 @@ def do_training( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 # setup args
 parser = argparse.ArgumentParser(allow_abbrev=False)
 parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
+parser.add_argument("--model", type=Path, default=os.environ.get('VALLE_MODEL', None)) # os environ so it can be specified in a HuggingFace Space too
 parser.add_argument("--listen", default=None, help="Path for Gradio to listen on")
 parser.add_argument("--share", action="store_true")
 parser.add_argument("--render_markdown", action="store_true", default="VALLE_YAML" in os.environ)
@@ -462,7 +480,7 @@ with ui:
 		with gr.Row():
 			with gr.Column(scale=7):
 				with gr.Row():
-					layout["settings"]["inputs"]["models"] = gr.Dropdown(choices=get_model_paths(), value=args.yaml, label="Model")
+					layout["settings"]["inputs"]["models"] = gr.Dropdown(choices=get_model_paths(), value=args.yaml or args.model, label="Model")
 					layout["settings"]["inputs"]["device"] = gr.Dropdown(choices=get_devices(), value="cuda:0", label="Device")
 					layout["settings"]["inputs"]["dtype"] = gr.Dropdown(choices=get_dtypes(), value="auto", label="Precision")
 					layout["settings"]["inputs"]["attentions"] = gr.Dropdown(choices=get_attentions(), value="auto", label="Attentions")

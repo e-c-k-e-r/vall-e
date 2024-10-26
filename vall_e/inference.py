@@ -19,6 +19,7 @@ from .models import get_models
 from .models.lora import enable_lora
 from .engines import load_engines, deepspeed_available
 from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize
+from .models import download_model, DEFAULT_MODEL_PATH
 
 if deepspeed_available:
 	import deepspeed
@@ -34,9 +35,18 @@ class TTS():
 		self.loading = False 
 
 	def load_config( self, config=None, device=None, amp=None, dtype=None, attention=None ):
-		if config:
+		if not config:
+			download_model()
+			config = DEFAULT_MODEL_PATH
+
+		if config.suffix == ".yaml":
 			_logger.info(f"Loading YAML: {config}")
 			cfg.load_yaml( config )
+		elif config.suffix == ".sft":
+			_logger.info(f"Loading model: {config}")
+			cfg.load_model( config )
+		else:
+			raise Exception(f"Unknown config passed: {config}")		
 
 		try:
 			cfg.format( training=False )

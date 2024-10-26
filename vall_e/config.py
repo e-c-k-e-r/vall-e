@@ -21,6 +21,7 @@ from functools import cached_property
 from pathlib import Path
 
 from .utils.distributed import world_size
+from .utils.io import torch_load
 from .utils import set_seed, prune_missing
 
 @dataclass()
@@ -30,7 +31,13 @@ class BaseConfig:
 
 	@property
 	def cfg_path(self):
-		return Path(self.yaml_path.parent) if self.yaml_path is not None else Path(__file__).parent.parent / "data"
+		if self.yaml_path:
+			return Path(self.yaml_path.parent)
+		
+		if self.model_path:
+			return Path(self.model_path.parent)
+
+		return Path(__file__).parent.parent / "data"
 
 	@property
 	def rel_path(self):
@@ -93,8 +100,6 @@ class BaseConfig:
 	def prune_missing( cls, yaml ):
 		default = cls(**{})
 		default.format()
-		#default = json.loads(default.dumps())
-
 		yaml, missing = prune_missing( source=default, dest=yaml )
 		if missing:
 			_logger.warning(f'Missing keys in YAML: {missing}')
@@ -109,6 +114,17 @@ class BaseConfig:
 		return cls(**state)
 
 	@classmethod
+	def from_model( cls, model_path ):
+		if not model_path.exists():
+			raise Exception(f'Model path does not exist: {model_path}')
+
+		# load state dict and copy its stored model config
+		state_dict = torch_load( model_path )["config"]
+
+		state = { "models": [ state_dict ], "trainer": { "load_state_dict": True }, "model_path": model_path }
+		return cls(**state)
+
+	@classmethod
 	def from_cli(cls, args=sys.argv):
 		# legacy support for yaml=`` format
 		for i, arg in enumerate(args):
@@ -117,7 +133,11 @@ class BaseConfig:
 
 		parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 		parser.add_argument("--yaml", type=Path, default=os.environ.get('VALLE_YAML', None)) # os environ so it can be specified in a HuggingFace Space too
+		parser.add_argument("--model", type=Path, default=os.environ.get('VALLE_MODEL', None)) # os environ so it can be specified in a HuggingFace Space too
 		args, unknown = parser.parse_known_args(args=args)
+
+		if args.model:
+			return cls.from_model( args.model )
 
 		if args.yaml:
 			return cls.from_yaml( args.yaml )
@@ -807,9 +827,13 @@ class Config(BaseConfig):
 			return diskcache.Cache(self.cache_dir).memoize
 		return lambda: lambda x: x
 
-	# I don't remember why this is needed
+	# this gets called from vall_e.inference
 	def load_yaml( self, config_path ):
 		tmp = Config.from_yaml( config_path )
+		self.__dict__.update(tmp.__dict__)
+	
+	def load_model( self, config_path ):
+		tmp = Config.from_model( config_path )
 		self.__dict__.update(tmp.__dict__)
 
 	def load_hdf5( self, write=False ):
@@ -870,7 +894,27 @@ class Config(BaseConfig):
 		if isinstance(self.optimizations, type):
 			self.optimizations = dict()
 
-		self.dataset = Dataset(**self.dataset)
+		if isinstance( self.dataset, dict ):
+			self.dataset = Dataset(**self.dataset)
+
+		if isinstance( self.hyperparameters, dict ):
+			self.hyperparameters = Hyperparameters(**self.hyperparameters)
+
+		if isinstance( self.evaluation, dict ):
+			self.evaluation = Evaluation(**self.evaluation)
+
+		if isinstance( self.trainer, dict ):
+			self.trainer = Trainer(**self.trainer)
+
+		if isinstance( self.trainer.deepspeed, dict ):
+			self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
+
+		if isinstance( self.inference, dict ):
+			self.inference = Inference(**self.inference)
+		
+		if isinstance( self.optimizations, dict ):
+			self.optimizations = Optimizations(**self.optimizations)
+
 		# convert to expanded paths
 		self.dataset.training = [ self.expand(dir) for dir in self.dataset.training ]
 		self.dataset.validation = [ self.expand(dir) for dir in self.dataset.validation ]
@@ -906,28 +950,15 @@ class Config(BaseConfig):
 				model["experimental"]["audio_embedding_sums"] = model.pop("audio_embedding_sums")
 
 
-		self.models = [ Model(**model) for model in self.models ]
-		self.loras = [ LoRA(**lora) for lora in self.loras ]
+		self.models = [ Model(**model) if isinstance(model, dict) else model for model in self.models ]
+		self.loras = [ LoRA(**lora)  if isinstance(lora, dict) else lora for lora in self.loras ]
 
 		if not self.models:
 			self.models = [ Model() ]
 
 		for model in self.models:
-			if not isinstance( model.experimental, dict ):
-				continue
-			model.experimental = ModelExperimentalSettings(**model.experimental)
-
-		self.hyperparameters = Hyperparameters(**self.hyperparameters)
-
-		self.evaluation = Evaluation(**self.evaluation)
-
-		self.trainer = Trainer(**self.trainer)
-
-		if not isinstance(self.trainer.deepspeed, type):
-			self.trainer.deepspeed = DeepSpeed(**self.trainer.deepspeed)
-
-		self.inference = Inference(**self.inference)
-		self.optimizations = Optimizations(**self.optimizations)
+			if isinstance( model.experimental, dict ):
+				model.experimental = ModelExperimentalSettings(**model.experimental)
 
 		if self.hyperparameters.scheduler_type and not self.hyperparameters.scheduler:
 			self.hyperparameters.scheduler = self.hyperparameters.scheduler_type
@@ -961,7 +992,7 @@ class Config(BaseConfig):
 			try:
 				from transformers import PreTrainedTokenizerFast
 
-				tokenizer_path = self.rel_path / self.tokenizer_path if self.yaml_path is not None else None
+				tokenizer_path = self.rel_path / self.tokenizer_path
 				if tokenizer_path and not tokenizer_path.exists():
 					tokenizer_path = Path("./data/") / self.tokenizer_path
 				
