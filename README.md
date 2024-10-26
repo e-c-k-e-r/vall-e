@@ -25,7 +25,8 @@ I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
 
 A script to setup a proper environment and download the weights can be invoked with `./scripts/setup.sh`. This will automatically create a `venv`, and download the `ar+nar-llama-8` weights and config file to the right place.
-* In the future, the model should be automatically downloaded.
+
+When inferencing, either through the web UI or CLI, if no model is passed, the default model will download automatically instead, and should automatically update.
 
 ## Train
 
@@ -207,7 +208,7 @@ You can also export to `safetensors` with `--format=sft`, and `fp32.sft` will be
 
 ## Synthesis
 
-To synthesize speech: `python -m vall_e <text> <ref_path> <out_path> --yaml=<yaml_path>`
+To synthesize speech: `python -m vall_e <text> <ref_path> <out_path> --yaml=<yaml_path>` (or `--model=<model_path>`)
 
 Some additional flags you can pass are:
 * `--language`: specifies the language for phonemizing the text, and helps guide inferencing when the model is trained against that language.
@@ -252,6 +253,7 @@ Currently, the model only transcribes back into the IPA phonemes it was trained 
 A Gradio-based web UI is accessible by running `python3 -m vall_e.webui`. You can, optionally, pass:
 
 * `--yaml=./path/to/your/config.yaml`: will load the targeted YAML
+* `--model=./path/to/your/model.sft`: will load the targeted model weights
 * `--listen 0.0.0.0:7860`: will set the web UI to listen to all IPs at port 7860. Replace the IP and Port to your preference.
 
 ### Emergent Behavior
