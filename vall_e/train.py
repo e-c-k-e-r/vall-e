@@ -132,7 +132,6 @@ def run_eval(engines, eval_name, dl, args=None):
 		for name in engines:
 			engine = engines[name]
 
-
 			base_kwargs = dict(
 				text_list=batch["text"],
 				proms_list=batch["proms"],

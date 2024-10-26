@@ -499,7 +499,7 @@ def example_usage():
 	available_tasks = ["tts", "stt"]
 
 	model = AR_NAR(**kwargs).to(device)
-	steps = 150 * len(available_tasks) # * cfg.model.experimental.causal_size
+	steps = 500 # 150 * len(available_tasks) # * cfg.model.experimental.causal_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""

@@ -427,8 +427,36 @@ class Evaluation:
 	batch_size: int = 64 # number of samples per batch during eval / val
 	frequency: int = 250 # do eval / val every X iterations
 	size: int = 64 # number of samples to generate during eval / val
-	ar_kwargs: dict = field(default_factory=lambda: {}) # inferencing kwargs
-	nar_kwargs: dict = field(default_factory=lambda: {}) # inferencing kwargs
+	kwargs: dict = field(default_factory=lambda: {}) # inferencing kwargs
+
+	# necessary in order to make it not confusing with requiring not-directyl exposed arguments passed to the model
+	@cached_property
+	def ar_kwargs( self ):
+		return dict(
+			max_steps=self.kwargs["max_ar_steps"],
+			sampling_temperature=self.kwargs["ar_temp"],
+			sampling_min_temperature=self.kwargs["min_ar_temp"],
+			sampling_top_p=self.kwargs["top_p"], sampling_top_k=self.kwargs["top_k"], sampling_min_p=self.kwargs["min_p"],
+			sampling_repetition_penalty=self.kwargs["repetition_penalty"], sampling_repetition_penalty_decay=self.kwargs["repetition_penalty_decay"],
+			sampling_length_penalty=self.kwargs["length_penalty"],
+			sampling_beam_width=self.kwargs["beam_width"],
+			sampling_mirostat_tau=self.kwargs["mirostat_tau"],
+			sampling_mirostat_eta=self.kwargs["mirostat_eta"],
+			sampling_dry_multiplier=self.kwargs["dry_multiplier"],
+			sampling_dry_base=self.kwargs["dry_base"],
+			sampling_dry_allowed_length=self.kwargs["dry_allowed_length"],
+			sampling_entropix=self.kwargs["entropix_sampling"],
+		)
+
+	@cached_property
+	def nar_kwargs( self ):
+		return dict(
+			max_levels=self.kwargs["max_nar_levels"],
+			sampling_temperature=self.kwargs["nar_temp"],
+			sampling_min_temperature=self.kwargs["min_nar_temp"],
+			sampling_top_p=self.kwargs["top_p"], sampling_top_k=self.kwargs["top_k"], sampling_min_p=self.kwargs["min_p"],
+			sampling_repetition_penalty=self.kwargs["repetition_penalty"], sampling_repetition_penalty_decay=self.kwargs["repetition_penalty_decay"],
+		)
 
 @dataclass()
 class DeepSpeed:
@@ -648,8 +676,8 @@ class Trainer:
 @dataclass()
 class Inference:
 	backend: str = "local" # backend to use when inferencing
-	weight_dtype: str = "float32" # dtype to load the model under
-	amp: bool = False # automatic mixed precision during inferencing
+	weight_dtype: str = "float16" # dtype to load the model under
+	amp: bool = True # automatic mixed precision during inferencing
 
 	normalize: bool = False # to-do: actually normalize input / output audio, I believe this might cause issues though
 
