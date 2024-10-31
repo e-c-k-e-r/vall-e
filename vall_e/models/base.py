@@ -472,6 +472,7 @@ class Base(nn.Module):
 		self.unified_position_ids = unified_position_ids
 		self.interleave = interleave
 		self.layerskip = layerskip
+		self.training_step = 0
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -1506,11 +1507,12 @@ class Base(nn.Module):
 						self.stats[k].append( v )
 
 				for k, v in self.loss.items():
-					self.loss[k] = self.model.early_exit_loss( losses=v )
+					self.loss[k] = self.model.early_exit_loss( losses=v, t=self.training_step )
+				# ick
+				self.training_step += 1
 
 				for k, v in self.stats.items():
 					self.stats[k] = sum( v ) / len( v )
-
 
 			# include any additional losses (for example: MoE router)
 			if output.aux_loss is not None:
