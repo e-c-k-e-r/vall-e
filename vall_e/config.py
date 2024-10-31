@@ -257,8 +257,12 @@ class ModelExperimentalSettings:
 
 	len_train_p: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
 	# to-to: just incorporate this as a task instead
-	
-	layerskip: bool = False
+
+	layerskip: bool = False # layerskip compatible model (or training for)
+	#layerskip_rvq_levels: list = field(default_factory=lambda: []) # RVQ levels to train / inference layerskip for (to-do: implement, see if it matters)
+	layerskip_r: int = 2 # number of layers to factor into early-exit loss calc
+	layerskip_p_max: float = 0.1 # maximum probabilty to dropout the last layer, used for calculating layer dropout probabilities
+	layerskip_e_scale: float = 0.2 # early-exit loss scalar value
 
 # I really need to clean this up
 @dataclass()
@@ -454,30 +458,32 @@ class Evaluation:
 	# necessary in order to make it not confusing with requiring not-directyl exposed arguments passed to the model
 	@cached_property
 	def ar_kwargs( self ):
+		kwargs = {} | self.kwargs
 		return dict(
-			max_steps=self.kwargs["max_ar_steps"],
-			sampling_temperature=self.kwargs["ar_temp"],
-			sampling_min_temperature=self.kwargs["min_ar_temp"],
-			sampling_top_p=self.kwargs["top_p"], sampling_top_k=self.kwargs["top_k"], sampling_min_p=self.kwargs["min_p"],
-			sampling_repetition_penalty=self.kwargs["repetition_penalty"], sampling_repetition_penalty_decay=self.kwargs["repetition_penalty_decay"],
-			sampling_length_penalty=self.kwargs["length_penalty"],
-			sampling_beam_width=self.kwargs["beam_width"],
-			sampling_mirostat_tau=self.kwargs["mirostat_tau"],
-			sampling_mirostat_eta=self.kwargs["mirostat_eta"],
-			sampling_dry_multiplier=self.kwargs["dry_multiplier"],
-			sampling_dry_base=self.kwargs["dry_base"],
-			sampling_dry_allowed_length=self.kwargs["dry_allowed_length"],
-			sampling_entropix=self.kwargs["entropix_sampling"],
+			max_steps=kwargs.pop("max_ar_steps", 500),
+			sampling_temperature=kwargs.pop("ar_temp", 0.5),
+			sampling_min_temperature=kwargs.pop("min_ar_temp", -1),
+			sampling_top_p=kwargs.pop("top_p", 1.0), sampling_top_k=kwargs.pop("top_k", 0), sampling_min_p=kwargs.pop("min_p", 0.0),
+			sampling_repetition_penalty=kwargs.pop("repetition_penalty", 1.125), sampling_repetition_penalty_decay=kwargs.pop("repetition_penalty_decay", 0),
+			sampling_length_penalty=kwargs.pop("length_penalty", 0),
+			sampling_beam_width=kwargs.pop("beam_width", 0),
+			sampling_mirostat_tau=kwargs.pop("mirostat_tau", 0),
+			sampling_mirostat_eta=kwargs.pop("mirostat_eta", 0),
+			sampling_dry_multiplier=kwargs.pop("dry_multiplier", 0),
+			sampling_dry_base=kwargs.pop("dry_base", 0),
+			sampling_dry_allowed_length=kwargs.pop("dry_allowed_length", 0),
+			sampling_entropix=kwargs.pop("entropix_sampling", False),
 		)
 
 	@cached_property
 	def nar_kwargs( self ):
+		kwargs = {} | self.kwargs
 		return dict(
-			max_levels=self.kwargs["max_nar_levels"],
-			sampling_temperature=self.kwargs["nar_temp"],
-			sampling_min_temperature=self.kwargs["min_nar_temp"],
-			sampling_top_p=self.kwargs["top_p"], sampling_top_k=self.kwargs["top_k"], sampling_min_p=self.kwargs["min_p"],
-			sampling_repetition_penalty=self.kwargs["repetition_penalty"], sampling_repetition_penalty_decay=self.kwargs["repetition_penalty_decay"],
+			max_levels=kwargs.pop("max_nar_levels", 0),
+			sampling_temperature=kwargs.pop("nar_temp", 0.0),
+			sampling_min_temperature=kwargs.pop("min_nar_temp", -1),
+			sampling_top_p=kwargs.pop("top_p", 1.0), sampling_top_k=kwargs.pop("top_k", 0.0), sampling_min_p=kwargs.pop("min_p", 0.0),
+			sampling_repetition_penalty=kwargs.pop("repetition_penalty", 1.0), sampling_repetition_penalty_decay=kwargs.pop("repetition_penalty_decay", 0.0),
 		)
 
 @dataclass()

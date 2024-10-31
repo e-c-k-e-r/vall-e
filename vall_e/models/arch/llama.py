@@ -308,6 +308,7 @@ class LlamaModel_Adapted(LlamaModel):
 	def __init__(self, *args, **kwargs):
 		self.layer_dropout_p = kwargs.pop("layer_dropout_p", 0.1)
 		self.early_exit_scale = kwargs.pop("early_exit_scale", 0.1)
+		self.early_exit_r = kwargs.pop("early_exit_r", 2)
 
 		super().__init__(*args, **kwargs)
 
@@ -321,16 +322,16 @@ class LlamaModel_Adapted(LlamaModel):
 		P = D * self.layer_dropout_p
 		return random.random() < P
 
-	# to-do: properly implement this per the paper
-	# there doesn't seem /too/ bad of a performance hit, but the paper mentions it affecting accuracy of the last layer if all layers had early exit
-	def cirriculum( self, l, t=None, R=2 ):
+	def cirriculum( self, l, t=None ):
+		# no timestep data passed, just treat all layers as enabled
+		# there doesn't seem /too/ bad of a performance hit, but the paper mentions it affecting accuracy of the last layer if all layers had early exit
 		if t is None:
 			return 1
 		
 		# YUCK
 		# this guarantees at least R layers are active at all intervals, which is important because this gives a division by zero otherwise
-		for i in range(R):
-			if l == ((t % self.layers_n) + i * (self.layers_n // R)) % self.layers_n:
+		for i in range(self.early_exit_r):
+			if l == ((t % self.layers_n) + i * (self.layers_n // self.early_exit_r)) % self.layers_n:
 				return 1
 		return 0
 
@@ -357,6 +358,7 @@ class LlamaModel_Adapted(LlamaModel):
 		output_hidden_states: Optional[bool] = None,
 		return_dict: Optional[bool] = None,
 		cache_position: Optional[torch.LongTensor] = None,
+		early_exit_layer: Optional[int] = -1,
 	) -> Union[Tuple, BaseModelOutputWithPast]:
 		output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
 		output_hidden_states = (

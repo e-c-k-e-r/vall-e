@@ -443,7 +443,11 @@ class Base(nn.Module):
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
+		
 		layerskip = self.config.experimental.layerskip if self.config is not None else False
+		layerskip_r = self.config.experimental.layerskip_r if self.config is not None else 2
+		layerskip_p_max = self.config.experimental.layerskip_p_max if self.config is not None else 0.1
+		layerskip_e_scale = self.config.experimental.layerskip_e_scale if self.config is not None else 0.1
 
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
@@ -647,6 +651,11 @@ class Base(nn.Module):
 				))
 				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
+
+			if self.layerskip:
+				self.model.layer_dropout_p = layerskip_p_max
+				self.model.early_exit_scale = layerskip_e_scale
+				self.model.early_exit_r = layerskip_r
 
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
@@ -917,7 +926,8 @@ class Base(nn.Module):
 
 		# process it into a format that I like
 		if output_hidden_states:
-			hidden_states = [ x if i == self.n_layers - 1 else self.model.norm(output.hidden_states[i]) for i in range( self.n_layers ) ]
+			# hidden_states is actually layers + 1, as hidden_states[0] == embedding...........
+			hidden_states = [ x if i == self.n_layers else self.model.norm(output.hidden_states[i]) for i in range( 1, self.n_layers + 1 ) ]
 
 		# output projection layer with masking
 		if self.classifier is not None:
