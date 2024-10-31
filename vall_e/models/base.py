@@ -38,8 +38,9 @@ from ..emb.qnt import encode_as_embedding
 # yuck, kind of needed
 from ..data import get_task_symmap
 
-Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions'])
+Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions', 'hidden_states'])
 Sampled = namedtuple('Sampled', ['out', 'scores', 'entropy']) # these seem more elegant than a dict
+LossStats = namedtuple('LossStats', ['loss', 'stats'])
 
 """
 from ..utils.pattern import DelayedPatternProvider, VALLEPattern
@@ -442,6 +443,7 @@ class Base(nn.Module):
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
+		layerskip = self.config.experimental.layerskip if self.config is not None else False
 
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
@@ -469,6 +471,7 @@ class Base(nn.Module):
 
 		self.unified_position_ids = unified_position_ids
 		self.interleave = interleave
+		self.layerskip = layerskip
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -601,8 +604,9 @@ class Base(nn.Module):
 					use_reentrant=False
 				))
 		elif self.arch_type == "llama":
+			LlamaClass = LlamaModel_Adapted if self.layerskip else LlamaModel
 			if n_experts <= 1:
-				self.model = LlamaModel(LlamaConfig(
+				self.model = LlamaClass(LlamaConfig(
 					vocab_size=n_resp_tokens,
 					hidden_size=d_model,
 					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
@@ -814,12 +818,14 @@ class Base(nn.Module):
 		
 		state = None,
 		output_attentions = False,
+		output_hidden_states = False,
 	):
 		x = inputs
 		m = mask.squeeze(-1).int()
 		
 		aux_loss = None
 		attentions = None
+		hidden_states = None
 
 		# HF transformer derived model
 		if self.arch_type in ["llama", "mistral", "mixtral"]:
@@ -830,6 +836,7 @@ class Base(nn.Module):
 				position_ids=position_ids,
 				use_cache=not self.training,
 				output_attentions=output_attentions,
+				output_hidden_states=output_hidden_states,
 				return_dict=True,
 			)
 			if self.n_experts > 1 and self.training:
@@ -845,6 +852,9 @@ class Base(nn.Module):
 
 			if output_attentions:
 				attentions = output["attentions"]
+			
+			if output_hidden_states:
+				hidden_states = output["hidden_states"]
 			
 			if self.n_experts > 1 and self.training:
 				router_logits = output["aux_loss"]
@@ -904,11 +914,19 @@ class Base(nn.Module):
 
 			x = x[0]
 
+		# process it into a format that I like
+		if output_hidden_states:
+			hidden_states = [ x if i == self.n_layers - 1 else self.model.norm(output.hidden_states[i]) for i in range( self.n_layers ) ]
+
 		# output projection layer with masking
 		if self.classifier is not None:
 			x = self.classifier(x) * mask
+			
+			if output.hidden_states:
+				for i in range( self.n_layers ):
+					hidden_states[i] = self.classifier(hidden_states[i]) * m
 
-		return Logits(x, state, aux_loss, attentions)
+		return Logits(x, state, aux_loss, attentions, hidden_states)
 
 	# takes a bunch of separate lists and parses them into an ordered array of tuples to guide input sequence creation
 	def inputs(
@@ -1217,6 +1235,9 @@ class Base(nn.Module):
 		
 		quant_levels: int | list[int] | Tensor | None = None,
 	):
+		loss = dict(ce = dict())
+		stats = dict(acc = dict())
+
 		device = logits[0].device
 		special_tasks = [ "len", "stt" ]
 		summed_embeddings_task = [ "stt" ]
@@ -1285,23 +1306,22 @@ class Base(nn.Module):
 			if False:
 				target = torch.cat( target_list )
 				inputs = torch.cat( logits )
-				self.loss = dict(
-					# "nll" was in the original implementation and should actually just be called something else
+				loss = dict(
 					nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
 				)
-				self.stats = self.metrics( inputs, targets, classifier_quant_levels ) if self.metrics is not None else dict(
+				stats = self.metrics( inputs, targets, classifier_quant_levels ) if self.metrics is not None else dict(
 					acc = self.accuracy_metric( inputs, target ),
 					# precision = self.precision_metric( inputs, target ),
 				)
 			else:
-				self.loss = dict(
+				loss = dict(
 					nll = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) for targets, inputs in zip( target_list, logits ) ]) / batch_size
 				)
-				self.stats = self.metrics( logits, target_list, classifier_quant_levels ) if self.metrics is not None else dict(
+				stats = self.metrics( logits, target_list, classifier_quant_levels ) if self.metrics is not None else dict(
 					acc = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( target_list, logits ) ] ) / batch_size
 				)
 
-			return
+			return LossStats(loss, stats)
 
 		"""
 		# considerations:
@@ -1311,9 +1331,6 @@ class Base(nn.Module):
 		#	 + extra logic might be required to instead offset from the end for the resp, rather than fit snuggly
 		#	 + this might just be a spook since the odds the very first token of the AR mattering is slim (although I swear I hear a very brief audio pop sometimes)
 		"""
-		self.loss = dict()
-		self.stats = dict(acc = dict())
-
 		info = {}
 		batch_size = len( inputs )
 
@@ -1385,17 +1402,19 @@ class Base(nn.Module):
 			if False:
 				targets = torch.cat( batch["targets"] ).long()
 				inputs = torch.cat( batch["logits"] )
-				self.loss[name] = F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor
-				self.stats["acc"][name] = self.accuracy_metric( inputs, targets )
+				loss[name] = F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor
+				stats["acc"][name] = self.accuracy_metric( inputs, targets )
 			# probably consumes less memory due to not having to allocate memory
 			# this method also opens the way to scale loss per RVQ level (although it shouldn't really be needed)
 			else:
-				self.loss[name] = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor for targets, inputs in zip( batch["targets"], batch["logits"] ) ]) / batch_size
+				loss[name] = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor for targets, inputs in zip( batch["targets"], batch["logits"] ) ]) / batch_size
 				if self.metrics is not None:
 					metrics = self.metrics( batch["logits"], batch["targets"], classifier_quant_levels )
-					self.stats["acc"][name] = metrics["acc"]
+					stats["acc"][name] = metrics["acc"]
 				else:
-					self.stats["acc"][name] = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( batch["targets"], batch["logits"] ) ] ) / batch_size
+					stats["acc"][name] = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( batch["targets"], batch["logits"] ) ] ) / batch_size
+
+		return LossStats(loss, stats)
 
 	def forward(
 		self,
@@ -1404,6 +1423,7 @@ class Base(nn.Module):
 		quant_levels: int | list[int] | Tensor | None = None,
 		state: dict | list | None = None,
 		output_attentions = False,
+		output_hidden_states = False,
 	):
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		x, m = list_to_tensor(x_list)
@@ -1412,10 +1432,12 @@ class Base(nn.Module):
 		device = x.device
 		batch_size = len(x_list)
 
-
 		# pure AR
 		if quant_levels is None:
 			quant_levels = [ 0 for _ in range(batch_size) ]
+
+		if self.layerskip:
+			output_hidden_states = True
 		
 		# pad our input and mask, but retain the original length by doing it after
 		if self.l_padding and x.shape[1] % self.l_padding != 0:
@@ -1440,9 +1462,11 @@ class Base(nn.Module):
 			state=state,
 			position_ids=position_ids,
 			output_attentions = output_attentions,
+			output_hidden_states = output_hidden_states,
 		)
 
 		logits = output.logits
+		hidden_states = output.hidden_states
 
 		# to-do: piece-wise classification, now that there's a head for text
 		# although again, one single monolithic head would be preferable instead......
@@ -1451,19 +1475,52 @@ class Base(nn.Module):
 			classifier_quant_levels = [ -1 if inputs[i][0][-1] in special_tasks else l for i, l in enumerate( quant_levels ) ] 
 			logits = self.classifiers(logits, levels = classifier_quant_levels) * m
 
+			if hidden_states is not None:
+				for i in range( self.n_layers ):
+					hidden_states[i] = self.classifiers(hidden_states[i], levels = classifier_quant_levels) * m
+
 		# Remove padding
 		logits = [ hi[:li] for hi, li in zip(logits, map(len, x_list)) ]
 		
 		# compute loss if the target is given
 		if training:
-			self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels )
+			if not self.layerskip:
+				loss, stats = self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels )
+			else:
+				self.loss = {}
+				self.stats = {}
+				
+				for i in range( self.n_layers ):
+					# remove padding
+					hidden_states[i] = [ hi[:li] for hi, li in zip(hidden_states[i], map(len, x_list)) ]
+					loss, stats = self.calc_loss( inputs=inputs, logits=hidden_states[i], quant_levels=quant_levels )
+					
+					for k, v in loss.items():
+						if k not in self.loss:
+							self.loss[k] = []
+						self.loss[k].append( v )
+
+					for k, v in stats.items():
+						if k not in self.stats:
+							self.stats[k] = []
+						self.stats[k].append( v )
+
+				for k, v in self.loss.items():
+					self.loss[k] = self.model.early_exit_loss( losses=v )
+
+				for k, v in self.stats.items():
+					self.stats[k] = sum( v ) / len( v )
+
 
 			# include any additional losses (for example: MoE router)
 			if output.aux_loss is not None:
-				self.loss["aux_loss"] = output.aux_loss
+				loss["aux_loss"] = output.aux_loss
+
+			self.loss = loss
+			self.stats = stats
 			
 		# rewrap, because we're modifying the logits here
-		return Logits(logits, output.state, output.aux_loss, output.attentions)
+		return Logits(logits, output.state, output.aux_loss, output.attentions, hidden_states)
 
 	def sample(
 		self,

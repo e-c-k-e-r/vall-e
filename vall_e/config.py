@@ -255,8 +255,10 @@ class ModelExperimentalSettings:
 	# it just seems like a bitch to try and train something worthwhile with it, since there's crackles every other token
 	# RetNet's chunked inferencing might be a better place for this
 
-	p_len_train: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
+	len_train_p: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
 	# to-to: just incorporate this as a task instead
+	
+	layerskip: bool = False
 
 # I really need to clean this up
 @dataclass()
@@ -870,9 +872,6 @@ class Config(BaseConfig):
 
 
 	def format( self, training=True ):
-		print( self.models )
-		print( self.loras )
-
 		if isinstance(self.dataset, type):
 			self.dataset = dict()
 

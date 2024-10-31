@@ -43,7 +43,6 @@ def main():
 
 	parser.add_argument("--yaml", type=Path, default=None)
 	parser.add_argument("--model", type=Path, default=None)
-	parser.add_argument("--lora", type=Path, default=None)
 	
 	parser.add_argument("--demo-dir", type=Path, default=None)
 	parser.add_argument("--skip-existing", action="store_true")
@@ -245,8 +244,8 @@ def main():
 
 			metadata = batch["metadata"]
 
-			#text = get_random_prompt() if args.random_prompts else metadata["text"]
-			text = get_random_prompt() if i >= (num // 2) else metadata["text"]
+			text = get_random_prompt() if args.random_prompts else metadata["text"]
+			#text = get_random_prompt() if i >= (num // 2) else metadata["text"]
 			language = metadata["language"].lower()
 			
 			prompt = dir / "prompt.wav"

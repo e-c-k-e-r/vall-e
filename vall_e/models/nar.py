@@ -60,7 +60,7 @@ class NAR(Base):
 
 		# is training
 		if resps_list is not None:
-			p_len_task = self.config.experimental.p_len_train if self.config is not None else 0.05
+			len_train_p = self.config.experimental.len_train_p if self.config is not None else 0.05
 
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
@@ -69,7 +69,7 @@ class NAR(Base):
 
 			# to-do: make this YAML configurable
 			def sample_task():
-				return "len" if random.random() < p_len_task else "tts"
+				return "len" if random.random() < len_train_p else "tts"
 
 			# generate task list to train against
 			task_list = [ sample_task() for _ in range(batch_size) ]
