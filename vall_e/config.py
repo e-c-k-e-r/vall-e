@@ -948,15 +948,6 @@ class Config(BaseConfig):
 				_logger.warning(f"Deprecated flag found: {'cfg.model.interleave'}")
 				del model["interleave"]
 
-			if "p_rvq_levels" in model["experimental"] and "rvq_levels_p" not in model["experimental"]:
-				_logger.warning(f"Deprecated flag found: {'cfg.model.experimental.p_rvq_levels'}")
-				model["experimental"]["rvq_levels_p"] = model["experimental"]["p_rvq_levels"]
-				del model["experimental"]["p_rvq_levels"]
-
-			if "audio_embedding_sums" in model:
-				_logger.warning(f"Deprecated flag found: {'cfg.model.p_rvq_levels'}")
-				model["experimental"]["audio_embedding_sums"] = model.pop("audio_embedding_sums")
-
 		self.models = [ Model(**model) if isinstance(model, dict) else model for model in self.models ]
 		self.loras = [ LoRA(**lora)  if isinstance(lora, dict) else lora for lora in self.loras ]
 

@@ -445,8 +445,8 @@ class LlamaModel_Adapted(LlamaModel):
 			if not self.dropoff_layer( l ):
 				hidden_states = layer_outputs[0]
 
-			if use_cache:
-				next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+				if use_cache:
+					next_decoder_cache = layer_outputs[2 if output_attentions else 1]
 
 			if output_attentions:
 				all_self_attns += (layer_outputs[1],)

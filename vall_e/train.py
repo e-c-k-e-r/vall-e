@@ -196,9 +196,9 @@ def train():
 	# copy config yaml to backup
 	if cfg.yaml_path is not None and is_global_leader():
 		shutil.copy( cfg.yaml_path, cfg.log_dir / "config.yaml" )
-
+	# create dataloaders
 	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
-	
+	# evaluation lambda
 	def eval_fn(engines):
 		do_gc()
 		engines.eval()
@@ -213,18 +213,23 @@ def train():
 		engines.train()
 		qnt.unload_model()
 		do_gc()
-
+	# unload EnCodec if it's already loaded
 	qnt.unload_model()
-
+	# only eval is requested
 	if args.eval:
 		return eval_fn(engines=trainer.load_engines())
 
 	"""
+	# start web UI
 	if cfg.trainer.load_webui:
 		from .webui import start
 		start(lock=False)
 	"""
+	# pre-training config validation
+	if cfg.model.experimental.layerskip and cfg.trainer.weight_dtype == "float16":
+		_logger.warning(f"Training with LayerSkip enabled with float16 will result in frying the model. Please use bfloat16.")
 
+	# train
 	trainer.train(
 		train_dl=train_dl,
 		train_feeder=train_feeder,
