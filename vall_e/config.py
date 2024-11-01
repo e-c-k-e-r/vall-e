@@ -260,7 +260,7 @@ class ModelExperimentalSettings:
 
 	layerskip: bool = False # layerskip compatible model (or training for)
 	#layerskip_rvq_levels: list = field(default_factory=lambda: []) # RVQ levels to train / inference layerskip for (to-do: implement, see if it matters)
-	layerskip_r: int = 2 # number of layers to factor into early-exit loss calc
+	layerskip_r: int = 6 # number of layers to factor into early-exit loss calc
 	layerskip_p_max: float = 0.1 # maximum probabilty to dropout the last layer, used for calculating layer dropout probabilities
 	layerskip_e_scale: float = 0.2 # early-exit loss scalar value
 

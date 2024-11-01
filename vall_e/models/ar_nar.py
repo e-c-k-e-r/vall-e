@@ -43,7 +43,7 @@ class AR_NAR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 
-		training: bool | None = None,
+		training: bool | int | None = None,
 
 		max_steps: int = 1000,
 		max_levels: int = 0,
@@ -97,11 +97,12 @@ class AR_NAR(Base):
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
 
+			# implicit
 			if training is None:
-				training = n_levels == self.n_resp_levels
+				training = 0 if n_levels == self.n_resp_levels else None
 
 			# is training
-			if training:
+			if training is not None:
 				# specifies how to sample probabilities of which RVQ levels to train against
 				rvq_levels_p = self.config.experimental.rvq_levels_p if self.config is not None else "equal"
 				# determines which RVQ level to target per batch

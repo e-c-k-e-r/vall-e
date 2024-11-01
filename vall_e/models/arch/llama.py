@@ -371,7 +371,7 @@ class LlamaModel_Adapted(LlamaModel):
 			raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
 
 		if self.gradient_checkpointing and self.training and use_cache:
-			logger.warning_once(
+			_logger.warning_once(
 				"`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
 			)
 			use_cache = False
@@ -387,7 +387,7 @@ class LlamaModel_Adapted(LlamaModel):
 				past_key_values = DynamicCache()
 			else:
 				past_key_values = DynamicCache.from_legacy_cache(past_key_values)
-				logger.warning_once(
+				_logger.warning_once(
 					"We detected that you are passing `past_key_values` as a tuple of tuples. This is deprecated and "
 					"will be removed in v4.47. Please convert your cache or use an appropriate `Cache` class "
 					"(https://huggingface.co/docs/transformers/kv_cache#legacy-cache-format)"
