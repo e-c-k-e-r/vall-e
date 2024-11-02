@@ -675,6 +675,10 @@ class Dataset(_Dataset):
 		# this just makes it be happy
 		if len(self.dataset) == 0:
 			self.dataset = cfg.dataset.training
+
+		# hard error because I kept getting tricked by this myself
+		if self.sampler_order == "duration" and self.sampler_type != "path":
+			raise Exception(f'Requesting sample_type={self.sampler_type} with sample_order={self.sampler_order}, yet combination will not give expected results.')
 		
 		# dict of paths keyed by speaker names
 		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type)
