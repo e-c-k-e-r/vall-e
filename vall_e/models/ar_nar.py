@@ -66,6 +66,8 @@ class AR_NAR(Base):
 		sampling_dry_base=1.75,
 		sampling_dry_allowed_length=2,
 		sampling_entropix=False,
+		sampling_layer_skip: bool = False,
+		sampling_layer_skip_exit_layer: int = -1,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -326,6 +328,9 @@ class AR_NAR(Base):
 			output = super().forward(
 				inputs=inputs,
 				state=state,
+				
+				layer_skip_exit_layer=sampling_layer_skip_exit_layer,
+
 				output_attentions=sampling_entropix,
 			)
 			logits, state = output.logits, output.state

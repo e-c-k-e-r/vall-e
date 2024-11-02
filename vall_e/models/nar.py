@@ -35,11 +35,13 @@ class NAR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 
-		training: bool | None = None,
+		training: bool | int | None = None,
 
 		max_steps: int = 1000,
 		max_levels: int = 0,
-		max_resp_context: int = -1,
+
+		input_prompt_prefix: bool = False,
+		prefix_silence: float = 1.0,
 
 		sampling_temperature: float = 1.0,
 		sampling_min_temperature: float = -1.0,
@@ -52,8 +54,15 @@ class NAR(Base):
 		sampling_beam_width: int = 0,
 		sampling_mirostat_tau: float = 0.0,
 		sampling_mirostat_eta: float = 0.1,
+		sampling_dry_multiplier=0.0,
+		sampling_dry_base=1.75,
+		sampling_dry_allowed_length=2,
+		sampling_entropix=False,
+		sampling_layer_skip: bool = False,
+		sampling_layer_skip_exit_layer: int = -1,
 
 		disable_tqdm=False,
+		use_lora=None,
 	):
 		device = text_list[0].device
 		batch_size = len(text_list)

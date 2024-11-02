@@ -221,6 +221,9 @@ class TTS():
 		#
 		entropix_sampling=False,
 		#
+		layer_skip=False,
+		layer_skip_exit_layer=-1,
+		#
 		seed = None,
 
 		out_path=None,
@@ -270,6 +273,8 @@ class TTS():
 						sampling_dry_base=dry_base,
 						sampling_dry_allowed_length=dry_allowed_length,
 						sampling_entropix=entropix_sampling,
+						sampling_layer_skip=layer_skip,
+						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
@@ -319,6 +324,8 @@ class TTS():
 						sampling_dry_base=dry_base,
 						sampling_dry_allowed_length=dry_allowed_length,
 						sampling_entropix=entropix_sampling,
+						sampling_layer_skip=layer_skip,
+						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,

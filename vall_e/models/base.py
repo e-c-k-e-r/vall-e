@@ -826,6 +826,9 @@ class Base(nn.Module):
 		position_ids = None,
 		
 		state = None,
+		
+		layer_skip_exit_layer = -1,
+
 		output_attentions = False,
 		output_hidden_states = False,
 	):
@@ -848,8 +851,12 @@ class Base(nn.Module):
 				output_hidden_states=output_hidden_states,
 				return_dict=True,
 			)
+
 			if self.n_experts > 1 and self.training:
 				kwargs["output_router_logits"] = True
+
+			if self.layerskip and 0 <= layer_skip_exit_layer and layer_skip_exit_layer < self.n_layers:
+				kwargs["exit_layer"] = layer_skip_exit_layer
 
 			output = self.model(**kwargs)
 			x = output["last_hidden_state"]
@@ -1436,8 +1443,10 @@ class Base(nn.Module):
 
 		quant_levels: int | list[int] | Tensor | None = None,
 		state: dict | list | None = None,
-		output_attentions = False,
-		output_hidden_states = False,
+		layer_skip_exit_layer: int = -1,
+
+		output_attentions: bool = False,
+		output_hidden_states: bool = False,
 	):
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		x, m = list_to_tensor(x_list)
@@ -1477,6 +1486,7 @@ class Base(nn.Module):
 			position_ids=position_ids,
 			output_attentions = output_attentions,
 			output_hidden_states = output_hidden_states,
+			layer_skip_exit_layer = layer_skip_exit_layer,
 		)
 
 		logits = output.logits

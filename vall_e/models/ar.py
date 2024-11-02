@@ -38,7 +38,7 @@ class AR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 
-		training: bool | None = None,
+		training: bool | int | None = None,
 
 		max_steps: int = 1000,
 		max_levels: int = 0,
@@ -60,6 +60,9 @@ class AR(Base):
 		sampling_dry_multiplier=0.0,
 		sampling_dry_base=1.75,
 		sampling_dry_allowed_length=2,
+		sampling_entropix=False,
+		sampling_layer_skip: bool = False,
+		sampling_layer_skip_exit_layer: int = -1,
 
 		disable_tqdm=False,
 		use_lora=None,

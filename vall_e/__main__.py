@@ -47,6 +47,9 @@ def main():
 	
 	parser.add_argument("--entropix-sampling", action="store_true")
 	
+	parser.add_argument("--layer-skip", action="store_true")
+	parser.add_argument("--layer-skip-exit-layer", type=int, default=None)
+	
 	parser.add_argument("--seed", type=int, default=None)
 
 	parser.add_argument("--device", type=str, default=None)
@@ -81,6 +84,8 @@ def main():
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
 		entropix_sampling=args.entropix_sampling,
+		layer_skip=args.layer_skip,
+		layer_skip_exit_layer=args.layer_skip_exit_layer,
 		seed=args.seed,
 	)
 	
