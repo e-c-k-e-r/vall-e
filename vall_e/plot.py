@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import time
 import re
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def plot(paths, args):
 		#bbox_to_anchor=(1.04, 0.5),
 	)
 
-def plot_sample_metrics( metrics ):
+def plot_sample_metrics( metrics, filename=None ):
 	"""
 	fig = plt.figure()
 	fig.set_figwidth( 16 * len(metrics) // cfg.dataset.frames_per_second )
@@ -111,7 +112,11 @@ def plot_sample_metrics( metrics ):
 		#bbox_to_anchor=(1.04, 0.5),
 	)
 
-	out_path = cfg.rel_path / "metrics.png"
+	if not filename:
+		filename = f'{time.time()}.png'
+
+	out_path = cfg.rel_path / "metrics" / filename
+	out_path.parent.mkdir(parents=True, exist_ok=True)
 	plt.savefig(out_path, bbox_inches="tight")
 
 if __name__ == "__main__":

@@ -14,10 +14,10 @@ from torch.nn.utils.rnn import pad_sequence
 
 import random
 import math
+import time
 from einops import rearrange
 from torch import Tensor
 from tqdm import trange
-from time import perf_counter
 
 import logging
 
@@ -66,6 +66,7 @@ class AR_NAR(Base):
 		sampling_dry_base=1.75,
 		sampling_dry_allowed_length=2,
 		sampling_entropix=False,
+		
 		sampling_layer_skip: bool = False,
 		sampling_layer_skip_exit_layer: int = -1,
 
@@ -281,6 +282,11 @@ class AR_NAR(Base):
 		original_sampling_repetition_penalty_decay = sampling_repetition_penalty_decay
 		"""
 
+		sampling_layer_skip_variables = {} if sampling_layer_skip else None
+
+		if sampling_layer_skip:
+			sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer if sampling_layer_skip_exit_layer >= 0 else self.n_layers
+
 		for i, sequence in enumerate( sequence_list ):
 			# add <bos> to text for STT
 			if task_list[i] in text_task:
@@ -329,7 +335,7 @@ class AR_NAR(Base):
 				inputs=inputs,
 				state=state,
 				
-				layer_skip_exit_layer=sampling_layer_skip_exit_layer,
+				layer_skip_variables=sampling_layer_skip_variables,
 
 				output_attentions=sampling_entropix,
 			)
@@ -360,15 +366,11 @@ class AR_NAR(Base):
 
 			r = sampled[0]
 
-			if sampled.entropy:
-				metrics.append( sampled.entropy )
-				"""
-				elif sampled.confidence:
-					metrics.append( sampled.confidence )
-				"""
-			elif False:
-				p = [ { "p": torch.nn.functional.softmax(logit[-1, :].cpu(), dim=0)[token.item()].item() } for logit, token in zip(logits, r) ]
-				metrics.append( p )
+			if cfg.experimental:
+				if sampled.entropy:
+					metrics.append( sampled.entropy )
+				elif sampled.scores:
+					metrics.append( [ { "p": p[0] } for p in sampled.scores ] )
 
 			if mirostat is not None:
 				mirostat = sampled.scores
@@ -402,7 +404,13 @@ class AR_NAR(Base):
 
 		if metrics:
 			from ..plot import plot_sample_metrics
-			plot_sample_metrics( metrics )
+			filename = "metrics"
+			if sampling_entropix:
+				filename += f'[entropix]'
+			if sampling_layer_skip_exit_layer >= 0:
+				filename += f'[{sampling_layer_skip_exit_layer+1}]'
+
+			plot_sample_metrics( metrics, filename=f'{filename}.png' )
 
 		# pick the best scoring candidate
 		# desu this is always going to be candidate 0

@@ -426,6 +426,7 @@ def sample_entropix(
 	top_p=1.0,
 	min_p=0.0,
 	cfg=EntropixSamplerConfig(),
+	metrics_only=False,
 ):
 	"""
 	temperature = cfg.temp

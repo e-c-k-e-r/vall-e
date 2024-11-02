@@ -358,7 +358,8 @@ class LlamaModel_Adapted(LlamaModel):
 		output_hidden_states: Optional[bool] = None,
 		return_dict: Optional[bool] = None,
 		cache_position: Optional[torch.LongTensor] = None,
-		exit_layer: Optional[int] = -1,
+		
+		layer_skip_lambda = None,
 	) -> Union[Tuple, BaseModelOutputWithPast]:
 		output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
 		output_hidden_states = (
@@ -451,7 +452,9 @@ class LlamaModel_Adapted(LlamaModel):
 			if output_attentions:
 				all_self_attns += (layer_outputs[1],)
 
-			if 0 <= exit_layer and exit_layer <= l:
+			# check if we should early-exit
+			if layer_skip_lambda and layer_skip_lambda( l, hidden_states ):
+				#_logger.info(f"Early exit at layer: {l}")
 				break
 
 		hidden_states = self.norm(hidden_states)
