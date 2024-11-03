@@ -144,6 +144,12 @@ def main():
 		comparison_kwargs["enabled"]["ar_temp"] = 0.666
 		comparison_kwargs["enabled"]["top_k"] = 27
 		comparison_kwargs["enabled"]["top_p"] = 0.9
+	elif args.comparison == "layerskip":
+		comparison_kwargs["suffix"] = "layerskip"
+		comparison_kwargs["titles"] = [f"Without LayerSkip", "With LayerSkip"]
+
+		comparison_kwargs["disabled"]["layer_skip"] = False
+		comparison_kwargs["enabled"]["layer_skip"] = True
 	elif args.comparison == "ar-temp":
 		current_temp = args.ar_temp
 		other_temp = 1.0

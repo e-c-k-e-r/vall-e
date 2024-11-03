@@ -1448,7 +1448,7 @@ class Base(nn.Module):
 			kwargs = {
 				"logits_entropy": 0.1,
 				"logits_varentropy": 0.1,
-				"min_layer": self.n_layers // 2,
+				"min_layer": self.n_layers // 4,
 				"max_layer": self.n_layers,
 			}
 
@@ -1466,9 +1466,9 @@ class Base(nn.Module):
 
 			# output projection layer with masking
 			if self.classifier is not None:
-				x = self.classifier(x) * m
+				x = self.classifier(x) # * m
 			elif self.classifiers is not None:
-				logits = self.classifiers(logits, levels = classifier_quant_levels) * m
+				logits = self.classifiers(logits, levels = classifier_quant_levels) # * m
 
 			# calculate metrics
 			metrics = calculate_entropix_metrics( logits )
@@ -1528,19 +1528,19 @@ class Base(nn.Module):
 
 		# output projection layer with masking
 		if self.classifier is not None:
-			logits = self.classifier(logits) * m
+			logits = self.classifier(logits) # * m
 			
 			if output.hidden_states:
 				for i, state in enumerate( hidden_states ):
-					hidden_states[i] = self.classifier(hidden_states[i]) * m
+					hidden_states[i] = self.classifier(hidden_states[i]) # * m
 		# to-do: piece-wise classification, now that there's a head for text
 		# although again, one single monolithic head would be preferable instead......
 		elif self.classifiers is not None:
-			logits = self.classifiers(logits, levels = classifier_quant_levels) * m
+			logits = self.classifiers(logits, levels = classifier_quant_levels) # * m
 
 			if hidden_states is not None:
 				for i, state in enumerate( hidden_states ):
-					hidden_states[i] = self.classifiers(hidden_states[i], levels = classifier_quant_levels) * m
+					hidden_states[i] = self.classifiers(hidden_states[i], levels = classifier_quant_levels) # * m
 
 		# Remove padding
 		logits = [ hi[:li] for hi, li in zip(logits, map(len, x_list)) ]
@@ -1618,13 +1618,14 @@ class Base(nn.Module):
 
 		scores = None
 		entropy = None
+		#logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
+		#logits = [ logit.to(device="cpu") for logit in logits ]
 
 		# (AR) entropix sampling
 		# we do it before everything to retain logits for the entire sequence (even though it's still better to pass only the last token)
 		if attentions is not None and quant_levels is None:
 			# move to CPU for speedups
 			seq_lens = [ logit.shape[0] for logit in logits ]
-			logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
 			attentions = torch.stack(attentions, dim=1).to(device="cpu") # ( batch, layer, heads, seq_len, seq_len )
 			
 			res = [ sample_entropix(

@@ -230,7 +230,7 @@ def train():
 	"""
 	# pre-training config validation
 	if cfg.model.experimental.layerskip and cfg.trainer.weight_dtype == "float16":
-		_logger.warning(f"Training with LayerSkip enabled with float16 will result in frying the model. Please use bfloat16.")
+		_logger.warning(f"Training with LayerSkip enabled with float16 may result in frying the model if the loss scale gets too small (<=8K) or with too large of a de facto batch size (>512 samples).")
 
 	# train
 	trainer.train(

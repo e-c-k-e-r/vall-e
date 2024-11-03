@@ -240,6 +240,8 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--dry-multiplier`: (AR only) performs DRY sampling, the scalar factor.
 * `--dry-base`: (AR only) for DRY sampling, the base of the exponent factor.
 * `--dry-allowed-length`: (AR only) for DRY sampling, the window to perform DRY sampling within.
+* `--layer-skip` (AR only) enables early-exit layer skipping if the model is confident enough (for compatible models)
+* `--layer-skip-exit-layer`: (AR only) maximum layer to use (for compatbiel models)
 
 ### Speech-to-Text
 
@@ -313,12 +315,19 @@ So far, this only allows you to load a different model without needing to restar
 * [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
+* [ ] speed up inferencing
+  - KV caching both yields broken output and quadratically slow output, unless I'm doing something grossly wrong.
+    - A pure HF model is the only way to fix this, but converting the model to one is a bit of a chore.
+  - Speculative sampling seems overkill for small models (and in reality seems like it's better to just train a larger model).
+  - Self-speculation through layer-skipping doesn't offer any tangible speedups, sadly.
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   * [ ] train the model to handle text => phoneme (without a hit to the rest of the model)
     * [ ] ...and phonemes => text
     * [ ] allow raw text as input instead
   - espeak is nice, but I can only really put my whole trust with phonemizing English.
   - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
+* [ ] smarter/clever inferencing, such as:
+  * [ ] "rolling" context, where the last generated sentence is the prefix for the next sentence.
 * [ ] explore exotic features like:
   * using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
   * interleaving by using summed embedding tokens:
@@ -339,8 +348,7 @@ Despite how lightweight it is in comparison to other TTS's I've meddled with, th
   + `model.experimental.p_rvq_levels: [0,0,0,0,0,0,0,1,2,3,4,5,6,7]` seems to help?
 * speakers that aren't similar to an audiobook narrator voice has similarity issues due to the majority of training used `path`-based dataloader sampling instead of `speaker`-based (or `group`-based) dataloader sampling.
   + although LoRAs help a ton for fixing results for a single voice.
-  + a diverse dataset in prosidy and speaker (such as a corpus sourced from dramatic media like video games) helps a ton.
-* On my test system (7900XTX), it seems inferencing quality depends on the moon phase; I don't know if it's a matter of ROCm nuances (since I've always found it to not be up to par with actual CUDA) or `bfloat16` (due to the model being trained under `float16`+AMP) being the culprit, but your mileage *will* vary depending on the system + dtype + sampler settings.
+  + a diverse dataset in prosidy and speaker (such as a corpus sourced from dramatic media like video games) helps a ton, but still has issues for speakers not similar to any seen speakers.
 
 ## Notices and Citations
 

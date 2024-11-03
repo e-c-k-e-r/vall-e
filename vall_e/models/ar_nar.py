@@ -205,6 +205,11 @@ class AR_NAR(Base):
 			
 			prev_list = resps_list
 
+			sampling_layer_skip_variables = {} if sampling_layer_skip else None
+
+			if sampling_layer_skip:
+				sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer if sampling_layer_skip_exit_layer >= 0 else self.n_layers
+
 			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):				
 				level = prev_list[0].shape[-1]
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
@@ -227,6 +232,8 @@ class AR_NAR(Base):
 				output = super().forward(
 					inputs=inputs,
 					quant_levels=quant_levels,
+
+					layer_skip_variables=sampling_layer_skip_variables,
 				)
 				logits, state = output.logits, output.state
 

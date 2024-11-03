@@ -338,6 +338,8 @@ class TTS():
 						sampling_min_temperature=min_nar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+						#sampling_layer_skip=layer_skip,
+						#sampling_layer_skip_exit_layer=layer_skip_exit_layer,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
