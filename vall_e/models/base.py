@@ -78,9 +78,11 @@ def list_to_tensor(x_list: list[Tensor], pattern="t b c -> b t c"):
 	l = list(map(len, x_list))
 	x = rearrange(pad_sequence(x_list), pattern)
 	m = _create_mask(l, x_list[0].device)
+	"""
 	m = m.t().unsqueeze(-1)  # (t b 1)
 	m = rearrange(m, pattern)
-	m = m.to(x)
+	"""
+	m = m.to(x).int()
 	return x, m
 
 def _interleave_sequence_reshape( input: list[torch.Tensor], dim=-1 ):
@@ -835,7 +837,7 @@ class Base(nn.Module):
 		output_hidden_states = False,
 	):
 		x = inputs
-		m = mask.squeeze(-1).int()
+		m = mask #.squeeze(-1).int()
 		
 		aux_loss = None
 		attentions = None
@@ -844,7 +846,7 @@ class Base(nn.Module):
 		# HF transformer derived model
 		if self.arch_type in ["llama", "mistral", "mixtral"]:
 			kwargs = dict(
-				attention_mask=m,
+				#attention_mask=m,
 				inputs_embeds=x,
 				past_key_values=state,
 				position_ids=position_ids,
@@ -1475,7 +1477,9 @@ class Base(nn.Module):
 			return metrics["logits_entropy"] < kwargs["logits_entropy"] and metrics["logits_varentropy"] < kwargs["logits_varentropy"]
 
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
-		x, m = list_to_tensor(x_list)
+		
+		x, mask = list_to_tensor(x_list)
+		m = mask.unsqueeze(dim=-1)
 
 		training = self.training
 		device = x.device
@@ -1501,16 +1505,17 @@ class Base(nn.Module):
 			# pad mask
 			shape[2] = 1
 			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
-			m = torch.cat([m, padding], dim=1)
+			mask = torch.cat([mask, padding], dim=1)
 
 		# needs to be done here as we still have our raw inputs
-		position_ids = self.inputs_to_position_ids( inputs, mask=m.squeeze(-1).int() ) if not self.unified_position_ids else None
+		#position_ids = self.inputs_to_position_ids( inputs, mask=m.squeeze(-1).int() ) if not self.unified_position_ids else None
+		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		
 		classifier_quant_levels = [ -1 if inputs[i][0][-1] in self.special_tasks else l for i, l in enumerate( quant_levels ) ] 
 
 		output = self._forward(
 			inputs=x,
-			mask=m,
+			mask=mask,
 			state=state,
 			position_ids=position_ids,
 			output_attentions = output_attentions,
@@ -1530,7 +1535,7 @@ class Base(nn.Module):
 					hidden_states[i] = self.classifier(hidden_states[i]) * m
 		# to-do: piece-wise classification, now that there's a head for text
 		# although again, one single monolithic head would be preferable instead......
-		if self.classifiers is not None:
+		elif self.classifiers is not None:
 			logits = self.classifiers(logits, levels = classifier_quant_levels) * m
 
 			if hidden_states is not None:

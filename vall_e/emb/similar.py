@@ -72,7 +72,7 @@ def process(
 
 	# easy way to load the model and handle encoding audio
 	if tts is None:
-		tts = init_tts( yaml=yaml, restart=False, device=device, dtype=dtype )
+		tts = init_tts( config=yaml, restart=False, device=device, dtype=dtype )
 
 	features = { key: None for key in metadata_keys }
 

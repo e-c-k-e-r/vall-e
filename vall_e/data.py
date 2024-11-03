@@ -513,6 +513,8 @@ def get_task_symmap():
 	}
 
 def _replace_file_extension(path, suffix):
+	if not isinstance( path, Path ):
+		path = Path(path)
 	return (path.parent / path.name.split(".")[0]).with_suffix(suffix)
 
 def _get_quant_extension():
