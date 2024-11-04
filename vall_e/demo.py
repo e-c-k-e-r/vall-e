@@ -156,6 +156,12 @@ def main():
 
 		comparison_kwargs["disabled"]["layer_skip"] = False
 		comparison_kwargs["enabled"]["layer_skip"] = True
+	elif args.comparison == "refine-on-stop":
+		comparison_kwargs["suffix"] = "refine-on-stop"
+		comparison_kwargs["titles"] = [f"Without Ro<S>", "With Ro<S>"]
+
+		comparison_kwargs["disabled"]["refine_on_stop"] = False
+		comparison_kwargs["enabled"]["refine_on_stop"] = True
 	elif args.comparison == "ar-temp":
 		current_temp = args.ar_temp
 		other_temp = 1.0

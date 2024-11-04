@@ -948,6 +948,14 @@ class Config(BaseConfig):
 				_logger.warning(f"Deprecated flag found: {'cfg.model.interleave'}")
 				del model["interleave"]
 
+			if "p_rvq_levels" in model["experimental"]:
+				model["experimental"]["rvq_levels_p"] = model["experimental"]["p_rvq_levels"]
+				del model["experimental"]["p_rvq_levels"]
+
+			if "p_len_train" in model["experimental"]:
+				model["experimental"]["len_train_p"] = model["experimental"]["p_len_train"]
+				del model["experimental"]["p_len_train"]
+
 		self.models = [ Model(**model) if isinstance(model, dict) else model for model in self.models ]
 		self.loras = [ LoRA(**lora)  if isinstance(lora, dict) else lora for lora in self.loras ]
 

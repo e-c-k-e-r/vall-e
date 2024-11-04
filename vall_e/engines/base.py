@@ -48,8 +48,12 @@ from ..utils import wrapper as ml
 
 _logger = logging.getLogger(__name__)
 
-if not distributed_initialized() and cfg.trainer.backend == "local": # and world_size() > 1:
-	init_distributed(torch.distributed.init_process_group)
+# windows throws an error here
+try:
+	if not distributed_initialized() and cfg.trainer.backend == "local": # and world_size() > 1:
+		init_distributed(torch.distributed.init_process_group)
+except Exception as e:
+	pass
 
 # A very naive engine implementation using barebones PyTorch
 class Engine():

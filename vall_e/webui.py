@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import math
 import argparse
@@ -21,6 +22,8 @@ from .utils.io import json_read, json_stringify
 from .emb.qnt import decode_to_wave
 from .data import get_lang_symmap, get_random_prompt
 
+
+is_windows = sys.platform.startswith("win")
 
 tts = None
 
@@ -67,6 +70,9 @@ def get_model_paths( paths=[Path("./training/"), Path("./models/"), Path("./data
 			if "/logs/" in str(sft):
 				continue
 			configs.append( sft )
+
+	if is_windows:
+		configs = [ str(p) for p in configs ]
 
 	return configs
 
@@ -199,7 +205,10 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--refine-on-stop", action="store_true")
 	args, unknown = parser.parse_known_args()
 
-	tmp = tempfile.NamedTemporaryFile(suffix='.wav')
+	if is_windows:
+		tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+	else:
+		tmp = tempfile.NamedTemporaryFile(suffix='.wav')
 
 	"""
 	if not args.references:

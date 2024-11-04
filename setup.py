@@ -37,7 +37,7 @@ setup(
     packages=find_packages(),
     install_requires=(
         # training backends
-        ["deepspeed>=0.7.7"] if not sys.platform.startswith("win") else [])
+        ["deepspeed>=0.7.7"] if not sys.platform.startswith("win") else ["psutil"])
         + [
         # logging niceties
         "coloredlogs>=15.0.1",

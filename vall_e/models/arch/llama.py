@@ -5,7 +5,7 @@ import torch
 import logging
 import random
 
-from typing import Literal, overload, Optional, Tuple, Union, List, Unpack
+from typing import Literal, overload, Optional, Tuple, Union, List
 
 from torch import Tensor, nn
 from transformers.cache_utils import Cache
