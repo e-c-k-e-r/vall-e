@@ -39,7 +39,7 @@ from ..emb.qnt import encode_as_embedding
 from ..data import get_task_symmap
 
 # these seem more elegant than a dict
-Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions', 'hidden_states'])
+Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions', 'hidden_states', 'exited_layer'])
 Sampled = namedtuple('Sampled', ['out', 'scores', 'entropy'])
 LossStats = namedtuple('LossStats', ['loss', 'stats'])
 
@@ -942,7 +942,7 @@ class Base(nn.Module):
 			# but skip the last state, as it already is normalized
 			hidden_states = [ x if i == self.n_layers - 1 else self.model.norm(output.hidden_states[i]) for i, state in enumerate( hidden_states ) ]
 
-		return Logits(x, state, aux_loss, attentions, hidden_states)
+		return Logits(x, state, aux_loss, attentions, hidden_states, None)
 
 	# takes a bunch of separate lists and parses them into an ordered array of tuples to guide input sequence creation
 	def inputs(
@@ -1444,11 +1444,13 @@ class Base(nn.Module):
 	):
 		# return early if it's "good" enough"
 		# lambda because we need to capture the classifier_quant_levels and mask
+		exited_layer = self.n_layers
 		def layer_skip_lambda( layer, logits ):
+			nonlocal exited_layer
 			kwargs = {
-				"logits_entropy": 0.1,
-				"logits_varentropy": 0.1,
-				"min_layer": self.n_layers // 4,
+				"entropy_threshold": 0.05,
+				"varentropy_threshold": 0.05,
+				"min_layer": self.n_layers // 2,
 				"max_layer": self.n_layers,
 			}
 
@@ -1472,9 +1474,15 @@ class Base(nn.Module):
 
 			# calculate metrics
 			metrics = calculate_entropix_metrics( logits )
-
 			# exit early if "good enough""
-			return metrics["logits_entropy"] < kwargs["logits_entropy"] and metrics["logits_varentropy"] < kwargs["logits_varentropy"]
+			early = metrics["logits_entropy"] <= kwargs["entropy_threshold"] and metrics["logits_varentropy"] <= kwargs["varentropy_threshold"]
+			
+			if early:
+				exited_layer = layer
+
+			#print( layer, early, metrics )
+
+			return early
 
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		
@@ -1526,7 +1534,8 @@ class Base(nn.Module):
 		logits = output.logits
 		hidden_states = output.hidden_states
 
-		# output projection layer with masking
+		# output projection layer
+		# the very, very original implementation multiplied by the mask, but the mask only attends to padding, and the padding gets removed anyways
 		if self.classifier is not None:
 			logits = self.classifier(logits) # * m
 			
@@ -1582,7 +1591,7 @@ class Base(nn.Module):
 			self.stats = stats
 			
 		# rewrap, because we're modifying the logits here
-		return Logits(logits, output.state, output.aux_loss, output.attentions, hidden_states)
+		return Logits(logits, output.state, output.aux_loss, output.attentions, hidden_states, exited_layer)
 
 	def sample(
 		self,

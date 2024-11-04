@@ -240,8 +240,13 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--dry-multiplier`: (AR only) performs DRY sampling, the scalar factor.
 * `--dry-base`: (AR only) for DRY sampling, the base of the exponent factor.
 * `--dry-allowed-length`: (AR only) for DRY sampling, the window to perform DRY sampling within.
-* `--layer-skip` (AR only) enables early-exit layer skipping if the model is confident enough (for compatible models)
-* `--layer-skip-exit-layer`: (AR only) maximum layer to use (for compatbiel models)
+* `--layer-skip` enables early-exit layer skipping if the model is confident enough (for compatible models)
+* `--layer-skip-exit-layer`: maximum layer to use
+* `--layer-skip-entropy-threshold`: the maximum the logits' entropy (confidence) needs to be before exiting early
+* `--layer-skip-varentropy-threshold`: the maximum the logits' varentropy (confidence spread) needs to be before exiting early
+* `--refine-on-stop`: (AR only) uses the last steps' logits for the entire final output sequence, rather than the step-by-step iterative sequence.
+  + This needs experimenting with to see if there's any downside.
+  + to-do: compare the probability scores with the original output sequence, and pick the best one.
 
 ### Speech-to-Text
 

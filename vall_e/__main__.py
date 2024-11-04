@@ -33,7 +33,7 @@ def main():
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
 	parser.add_argument("--min-p", type=float, default=0.0)
-	parser.add_argument("--repetition-penalty", type=float, default=1.125)
+	parser.add_argument("--repetition-penalty", type=float, default=1.5)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)
 	parser.add_argument("--beam-width", type=int, default=0)
@@ -49,6 +49,9 @@ def main():
 	
 	parser.add_argument("--layer-skip", action="store_true")
 	parser.add_argument("--layer-skip-exit-layer", type=int, default=None)
+	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=0.1)
+	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=0.1)
+	parser.add_argument("--refine-on-stop", action="store_true")
 	
 	parser.add_argument("--seed", type=int, default=None)
 
@@ -86,6 +89,9 @@ def main():
 		entropix_sampling=args.entropix_sampling,
 		layer_skip=args.layer_skip,
 		layer_skip_exit_layer=args.layer_skip_exit_layer,
+		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
+		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
+		refine_on_stop=args.refine_on_stop,
 		seed=args.seed,
 	)
 	

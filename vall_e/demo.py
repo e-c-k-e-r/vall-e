@@ -82,6 +82,12 @@ def main():
 	parser.add_argument("--dry-allowed-length", type=int, default=2)
 	
 	parser.add_argument("--entropix-sampling", action="store_true")
+
+	parser.add_argument("--layer-skip", action="store_true")
+	parser.add_argument("--layer-skip-exit-layer", type=int, default=None)
+	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=0.1)
+	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=0.1)
+	parser.add_argument("--refine-on-stop", action="store_true")
 	
 	parser.add_argument("--seed", type=int, default=None)
 

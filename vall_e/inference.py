@@ -223,6 +223,10 @@ class TTS():
 		#
 		layer_skip=False,
 		layer_skip_exit_layer=-1,
+		layer_skip_entropy_threshold=-1,
+		layer_skip_varentropy_threshold=-1,
+		#
+		refine_on_stop=False,
 		#
 		seed = None,
 
@@ -275,6 +279,7 @@ class TTS():
 						sampling_entropix=entropix_sampling,
 						sampling_layer_skip=layer_skip,
 						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
+						sampling_refine_on_stop=refine_on_stop,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
@@ -326,6 +331,9 @@ class TTS():
 						sampling_entropix=entropix_sampling,
 						sampling_layer_skip=layer_skip,
 						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
+						sampling_layer_skip_entropy_threshold=layer_skip_entropy_threshold,
+						sampling_layer_skip_varentropy_threshold=layer_skip_varentropy_threshold,
+						sampling_refine_on_stop=refine_on_stop,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
@@ -338,8 +346,10 @@ class TTS():
 						sampling_min_temperature=min_nar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-						#sampling_layer_skip=layer_skip,
-						#sampling_layer_skip_exit_layer=layer_skip_exit_layer,
+						sampling_layer_skip=layer_skip,
+						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
+						sampling_layer_skip_entropy_threshold=layer_skip_entropy_threshold,
+						sampling_layer_skip_varentropy_threshold=layer_skip_varentropy_threshold,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,

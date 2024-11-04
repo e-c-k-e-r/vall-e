@@ -69,6 +69,10 @@ class AR_NAR(Base):
 		
 		sampling_layer_skip: bool = False,
 		sampling_layer_skip_exit_layer: int = -1,
+		sampling_layer_skip_entropy_threshold: float = -1,
+		sampling_layer_skip_varentropy_threshold: float = -1,
+
+		sampling_refine_on_stop: bool = False,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -208,7 +212,12 @@ class AR_NAR(Base):
 			sampling_layer_skip_variables = {} if sampling_layer_skip else None
 
 			if sampling_layer_skip:
-				sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer if sampling_layer_skip_exit_layer >= 0 else self.n_layers
+				if sampling_layer_skip_entropy_threshold >= 0:
+					sampling_layer_skip_variables["entropy_threshold"] = sampling_layer_skip_entropy_threshold
+				if sampling_layer_skip_varentropy_threshold >= 0:
+					sampling_layer_skip_variables["varentropy_threshold"] = sampling_layer_skip_varentropy_threshold
+				if sampling_layer_skip_exit_layer >= 0:
+					sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
 
 			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):				
 				level = prev_list[0].shape[-1]
@@ -292,7 +301,12 @@ class AR_NAR(Base):
 		sampling_layer_skip_variables = {} if sampling_layer_skip else None
 
 		if sampling_layer_skip:
-			sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer if sampling_layer_skip_exit_layer >= 0 else self.n_layers
+			if sampling_layer_skip_entropy_threshold >= 0:
+				sampling_layer_skip_variables["entropy_threshold"] = sampling_layer_skip_entropy_threshold
+			if sampling_layer_skip_varentropy_threshold >= 0:
+				sampling_layer_skip_variables["varentropy_threshold"] = sampling_layer_skip_varentropy_threshold
+			if sampling_layer_skip_exit_layer >= 0:
+				sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
 
 		for i, sequence in enumerate( sequence_list ):
 			# add <bos> to text for STT
@@ -377,7 +391,7 @@ class AR_NAR(Base):
 				if sampled.entropy:
 					metrics.append( sampled.entropy )
 				elif sampled.scores:
-					metrics.append( [ { "p": p[0] } for p in sampled.scores ] )
+					metrics.append( [ { "p": p[0], "exited_layer": output.exited_layer } for p in sampled.scores ] )
 
 			if mirostat is not None:
 				mirostat = sampled.scores
@@ -409,6 +423,8 @@ class AR_NAR(Base):
 			if stopped.all().item():
 				break
 
+		# to-do for layerskip / speculative sampling: rerun the last sequence again at max depth
+
 		if metrics:
 			from ..plot import plot_sample_metrics
 			filename = "metrics"
@@ -429,6 +445,17 @@ class AR_NAR(Base):
 		sequence_list = [self._prune(r, audio_stop_token if task_list[i] not in text_task else text_stop_token) for i, r in enumerate(sequence_list)]
 		# remove <bos>
 		sequence_list = [ sequence_list[i][start_slice[i]:] for i, task in enumerate( task_list ) ]
+
+		if sampling_refine_on_stop:
+			# get how much we need to slice from the end
+			slice_lengths = [ sequence.shape[-1] for sequence in sequence_list ]
+			# -1 for the stop token
+			logits = [ logit[-length-1:-1] for logit, length in zip(logits, slice_lengths) ]
+			# greedy sample from the sequence
+			refined_list = [ logit.argmax(dim=-1) for logit in logits ]
+			# to-do: compare scores
+			# set the "refined" list as the output
+			sequence_list = refined_list	
 
 		return sequence_list
 

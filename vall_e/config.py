@@ -115,7 +115,7 @@ class BaseConfig:
 			raise Exception(f'Model path does not exist: {model_path}')
 
 		# load state dict and copy its stored model config
-		model_state_dict = [ torch_load( model_path )["config"] | { "path": model_path } ] if model_path and model_path.exists() else []
+		model_state_dict = [ torch_load( model_path )["config"] | { "path": model_path, "attention": "auto" } ] if model_path and model_path.exists() else []
 		lora_state_dict = [ torch_load( lora_path )["config"] | { "path": lora_path } ] if lora_path and lora_path.exists() else []
 
 		state = { "models": model_state_dict, "loras": lora_state_dict, "trainer": { "load_state_dict": True } }
