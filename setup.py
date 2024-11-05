@@ -72,8 +72,8 @@ setup(
         "vocos",
         "descript-audio-codec",
 
-        # gradio web UI
-        "gradio"
+        # gradio web UI (my linux install doesn't like 5.x, windows is fine)
+        f"gradio{"<5.0.0" if not sys.platform.startswith("win") else ""}"
         
     ],
     extras_require = {

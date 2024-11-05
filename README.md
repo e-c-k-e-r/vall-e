@@ -12,7 +12,11 @@ Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`
 - Linux users can consult their package managers on installing `espeak`/`espeak-ng`.
 - Windows users are required to install [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/releases/tag/1.51#Assets).
   + additionally, you may be required to set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
+    + Simply running `set PHONEMIZER_ESPEAK_LIBRARY="C:\Program Files\eSpeak NG\libespeak-ng.dll"` beforehand should fix this.
 - In the future, an internal homebrew to replace this would be fantastic.
+
+Support on AMD systems with ROCm is *mostly* supported, but performance ***will*** vary.
+- ROCm is simply too inconsistent with outputs.
 
 ## Install
 

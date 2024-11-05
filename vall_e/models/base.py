@@ -539,10 +539,13 @@ class Base(nn.Module):
 			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
 
 		if attention_backend == "auto":
+			attention_backend = "sdpa"
+			"""
 			if AVAILABLE_ATTENTIONS:
 				attention_backend = AVAILABLE_ATTENTIONS[0]
 			else:
 				attention_backend = "default"
+			"""
 
 		hf_attention = attention_backend
 		HF_ATTENTIONS = ["eager", "sdpa", "flash_attention_2"]

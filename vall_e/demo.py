@@ -289,12 +289,12 @@ def main():
 
 		# generate demo output
 		for dir in tqdm(speakers, desc=f"Generating demo for {k}"):
-			text = open(dir / "prompt.txt").read()
+			text = open(dir / "prompt.txt", encoding="utf-8").read()
 			language = open(dir / "language.txt").read() if (dir / "language.txt").exists() else "en"
 			prompt = dir / "prompt.wav"
 			reference = dir / "reference.wav"
 			out_path = dir / "out" / "ours.wav"
-			out_path_comparison = dir / "out" / f"ours_{comparison_kwargs["suffix"]}.wav"
+			out_path_comparison = dir / "out" / f"ours_{comparison_kwargs['suffix']}.wav"
 			external_sources = [ dir / "out" / f"{source}.wav" for source in sources ]
 
 			audio_samples = [ prompt, out_path ]
