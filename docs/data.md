@@ -1,4 +1,4 @@
-# data.py
+# `data.py`
 
 This script handles the meat of preparing the data to feed the model through the dataloader, and unfortunately makes up for quite a lot of this project's complexity.
 

@@ -42,9 +42,9 @@ Despite how lightweight it is in comparison to other TTS's I've meddled with, th
 * [x] ~~explore better sampling techniques~~
   - the AR doesn't *need* exotic sampling techniques, as they're bandaids for a bad AR.
   - the NAR benefits from greedy sampling, and anything else just harms output quality.
-* [ ] clean up the README, and document, document, document onto the wiki.
+* [x] clean up the README, and document, document, document.
 * [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
-  - reference model is trained against English, Japanese, French, and German.    
+  - reference model is trained against English, Japanese, French, and German.
 * [ ] extend to addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - `stt` (Speech-to-Text) seems to be working fine for the most part.
   - other tasks seem to require a ton of VRAM......

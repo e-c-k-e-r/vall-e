@@ -2,6 +2,10 @@
 
 This script handles everything the higher level functions of inferencing the model for various tasks for the end user.
 
+For invoking this model in another Python package, refer to `webui.py` and `demo.py` on how to use this outside of this scope.
+
+`__main__.py` invokes this according to the below arguments.
+
 ## Synthesis
 
 To synthesize speech: `python -m vall_e <text> <ref_path> <out_path> --yaml=<yaml_path>` (or `--model=<model_path>`)
