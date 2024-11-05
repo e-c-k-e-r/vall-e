@@ -296,7 +296,7 @@ def _load_dac_model(device="cuda"):
 
 	model.backend = "dac"
 	model.model_type = kwargs["model_type"]
-	model.device = device
+	#model.device = device
 
 	return model
 
