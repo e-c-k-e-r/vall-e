@@ -33,6 +33,16 @@ This script implements the core underlying model for VALL-E. This handle:
 
 This script aims to implement everything as required per VALL-E agnostically, to allow for different implementations to contain little extra code.
 
+### Tasks
+
+The base model handles processing inputs into token sequences, per the requested task assigned to each input in a batch.
+
+Most sequences follow a `<text><RVQ level><language><prompt><output>` sequence, but some tasks will receive the prompt as a list of tensors, instead.
+
+The length predictor `len` task will naively output the length in base-10 followed by a stop token.
+
+Speech-To-Text will follow a reverse sequence of `<audio><language><RVQ level><output>`.
+
 ## `models/ar_nar.py`
 
 This script implements VALL-E as a unified autoregressive and non-autoregressive model, where RVQ-level 0 is inferenced autoregressively, the remaining levels are infereneced non-autoregressively.
