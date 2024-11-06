@@ -6,6 +6,8 @@
 
 An unofficial PyTorch implementation of [VALL-E](https://vall-e-demo.ecker.tech/), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
 
+A demo is available on HuggingFace [here](https://huggingface.co/spaces/ecker/vall-e).
+
 ## Requirements
 
 Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/) for phonemizing text:

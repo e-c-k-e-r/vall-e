@@ -1,5 +1,11 @@
-import os
 import sys
+import os
+
+argv = os.environ.get('VALLE_ARGS', None)
+
+if argv:
+	sys.argv = sys.argv + argv.split(" ")
+
 import re
 import math
 import argparse
@@ -29,7 +35,7 @@ try:
 
 	USING_SPACES = True
 	spaces_zerogpu_decorator = spaces.GPU
-except ImportError:
+except Exception as e:
 	USING_SPACES = False
 	def spaces_zerogpu_decorator(func):
 		return func
@@ -556,11 +562,11 @@ with ui:
 def start( lock=True ):
 	setup_logging()
 
-	ui.queue(max_size=8)
-	ui.launch(share=args.share, server_name=args.listen_host, server_port=args.listen_port, prevent_thread_lock=not lock)
-
-if __name__ == "__main__":
 	if not USING_SPACES:
-		start()
+		ui.queue(max_size=8)
+		ui.launch(share=args.share, server_name=args.listen_host, server_port=args.listen_port, prevent_thread_lock=not lock)
 	else:
 		ui.queue().launch()
+
+if __name__ == "__main__":
+	start()
