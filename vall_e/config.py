@@ -430,7 +430,7 @@ class LoRA:
 class Hyperparameters:
 	batch_size: int = 8 # number of samples per training batch
 	gradient_accumulation_steps: int = 32 # number of steps to accumulate gradients before updating
-	gradient_clipping: int | float = 10 # largest size a gradient norm can be
+	gradient_clipping: int | float = 1.0 # largest size a gradient norm can be
 
 	optimizer: str = "Adamw" # optimizer to use, should be 'Prodigyopt" now
 	optimizer_params: dict = field(default_factory=lambda: {}) # to pass through deepspeed config

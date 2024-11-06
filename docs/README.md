@@ -15,6 +15,7 @@ Unlike the paper, this VALL-E aims to:
 	+ Bark was needlessly complex in providing even additional voices to use.
 	+ Current SoTA such as F5-TTS supports it, but seems to have a rather high ceiling to finetune it. 
 * provide decent zero-shot text-to-speech synthesis, both without requiring sampling adjustments and providing thorough sampler settings.
+* provide additional, easy to use functionality, that other solutions don't offer.
 
 ## Caveats
 

@@ -22,14 +22,8 @@ import gradio as gr
 
 from pathlib import Path
 
-from .inference import TTS, cfg
-from .train import train
-from .utils import get_devices, setup_logging, timer
-from .utils.io import json_read, json_stringify
-from .emb.qnt import decode_to_wave
-from .data import get_lang_symmap, get_random_prompt
-from .models.arch import AVAILABLE_ATTENTIONS
 
+# agony with HF's ZeroGPU spaces
 try:
 	import spaces
 
@@ -39,6 +33,24 @@ except Exception as e:
 	USING_SPACES = False
 	def spaces_zerogpu_decorator(func):
 		return func
+# more agony, because gradio will not stay launched if directly called from the package, for who knows why
+# this allows me to directly copy this file rather than constantly edit it on the HF space repo
+if USING_SPACES:
+	from vall_e.inference import TTS, cfg
+	from vall_e.train import train
+	from vall_e.utils import get_devices, setup_logging, timer
+	from vall_e.utils.io import json_read, json_stringify
+	from vall_e.emb.qnt import decode_to_wave
+	from vall_e.data import get_lang_symmap, get_random_prompt
+	from vall_e.models.arch import AVAILABLE_ATTENTIONS
+else:
+	from .inference import TTS, cfg
+	from .train import train
+	from .utils import get_devices, setup_logging, timer
+	from .utils.io import json_read, json_stringify
+	from .emb.qnt import decode_to_wave
+	from .data import get_lang_symmap, get_random_prompt
+	from .models.arch import AVAILABLE_ATTENTIONS
 
 is_windows = sys.platform.startswith("win")
 

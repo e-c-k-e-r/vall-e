@@ -25,6 +25,11 @@ Some additional flags can be passed as well:
 * `--eval`: only run the evaluation / validation pass, then exit afterwards.
 * `--eval-random-text-prompts`: use random text prompts for the evaluation pass, rather than the provided text prompts in the dataset.
 
+A training paradigm that works for me is:
+* setting the dataloader to sort by duration, then training one epoch, so the model starts with small utterances then trains to larger ones.
+* some additional training using a shuffled dataloader, as the model will be fixated towards whatever duration range it was trained under.
+* additional training for sampling per speaker, to better help diversify how well it can perform for a range of speakers, rather than just speaking itself
+
 ## Try Me
 
 To quickly test if a configuration works, you can run `python -m vall_e.models.ar_nar --yaml="./data/config.yaml"`; a small trainer will overfit a provided utterance.
