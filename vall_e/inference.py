@@ -356,6 +356,7 @@ class TTS():
 					)
 				elif model_len is not None:
 					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=10, disable_tqdm=not tqdm ) # don't need more than that
+					len_list = [ min(l, max_ar_steps) for l in len_list ]
 					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list,
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
