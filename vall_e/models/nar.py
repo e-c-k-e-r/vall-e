@@ -21,6 +21,9 @@ from tqdm import trange
 from ..emb.qnt import trim
 import logging
 
+def clamp(n, lo, hi):
+	return max(lo, min(n, hi))
+
 _logger = logging.getLogger(__name__)
 
 class NAR(Base):
@@ -58,118 +61,171 @@ class NAR(Base):
 		sampling_dry_base=1.75,
 		sampling_dry_allowed_length=2,
 		sampling_entropix=False,
+		
 		sampling_layer_skip: bool = False,
 		sampling_layer_skip_exit_layer: int = -1,
+		sampling_layer_skip_entropy_threshold: float = -1,
+		sampling_layer_skip_varentropy_threshold: float = -1,
+
+		sampling_refine_on_stop: bool = False,
 
 		disable_tqdm=False,
 		use_lora=None,
 	):
-		device = text_list[0].device
-		batch_size = len(text_list)
+		text_task = [ "stt" ]
 
-		# is training
-		if resps_list is not None:
-			len_train_p = self.config.experimental.len_train_p if self.config is not None else 0.05
+		if text_list is not None:
+			default_task = "tts"
+			device = text_list[0].device
+			batch_size = len(text_list)
+		else:
+			default_task = "stt"
+			device = resps_list[0].device
+			batch_size = len(resps_list)
 
+		# generate task list if not provided
+		if task_list is None:
+			task_list = [ default_task for _ in range(batch_size) ]
+
+		has_none = resps_list is None or text_list is None
+		if not has_none:
+			for i, task in enumerate( task_list ):
+				if resps_list[i] is None or text_list[i] is None:
+					has_none = True
+					break
+
+		# is training or NAR
+		if not has_none:
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
 
-			# assert n_levels == self.n_resp_levels
+			# implicit
+			if training is None:
+				training = 0 if n_levels == self.n_resp_levels else None
 
-			# to-do: make this YAML configurable
-			def sample_task():
-				return "len" if random.random() < len_train_p else "tts"
+			# is training
+			if training is not None:
+				len_train_p = self.config.experimental.len_train_p if self.config is not None else 0.05
 
-			# generate task list to train against
-			task_list = [ sample_task() for _ in range(batch_size) ]
+				n_levels_set = {r.shape[-1] for r in resps_list}
+				n_levels = next(iter(n_levels_set))
 
-			# specifies how to sample probabilities of which RVQ levels to train against
-			rvq_levels_p = self.config.experimental.rvq_levels_p if self.config is not None else "equal"
-			# determines which RVQ level to target per batch
-			quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels - 1 ]
-			# rate to perform token dropout errors
-			token_dropout_error = self.config.experimental.token_dropout_error
-			# RVQ levels to apply token dropout on
-			token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
-			# implicitly set it to all levels
-			if not token_dropout_rvq_levels:
-				token_dropout_rvq_levels = [0, self.resp_levels - 1]
-			# allow passing a specific distribution of RVQ levels
-			rvq_levels_p = rvq_levels_p if isinstance(rvq_levels_p, list) else []
-			if not rvq_levels_p:
-				lo, hi = quant_level_range[0], quant_level_range[1] + 1
-				# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
-				if rvq_levels_p == "equal":
-					rvq_levels_p = [ i for i in range( lo, hi ) ]
-				else:
-					# yuck
-					rvq_levels_p = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
+				# assert n_levels == self.n_resp_levels
 
-			# input RVQ levels
-			quant_levels = [ random.choice( rvq_levels_p ) for i in range(batch_size) ]
-			# trim resps to only contain all levels below the target level
-			resps_list = [r[..., :l+1] for r, l in zip(resps_list, quant_levels)]
+				# to-do: make this YAML configurable
+				def sample_task():
+					return "len" if random.random() < len_train_p else "tts"
 
-			# I hate python's value/reference semantics so much
-			for i, quant_level, resps, proms in zip(range(batch_size), quant_levels, resps_list, proms_list):
-				# cap quant_level if it exceeds its corresponding resp/prom
-				if quant_level >= resps.shape[-1]:
-					quant_levels[i] = resps.shape[-1] - 1
+				# generate task list to train against
+				task_list = [ sample_task() for _ in range(batch_size) ]
 
-				# proms could be a Tensor, list[Tensor], or None
-				if isinstance( proms, torch.Tensor ):
-					if quant_level >= proms.shape[-1]:
-						quant_levels[i] = proms.shape[-1] - 1
+				# specifies how to sample probabilities of which RVQ levels to train against
+				rvq_levels_p = self.config.experimental.rvq_levels_p if self.config is not None else "equal"
+				# determines which RVQ level to target per batch
+				quant_level_range = self.config.experimental.rvq_level_range if self.config is not None and self.config.experimental.rvq_level_range else [ 0 if self.causal else 1, self.n_resp_levels - 1 ]
+				# rate to perform token dropout errors
+				token_dropout_error = self.config.experimental.token_dropout_error
+				# RVQ levels to apply token dropout on
+				token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
+				# implicitly set it to all levels
+				if not token_dropout_rvq_levels:
+					token_dropout_rvq_levels = [0, self.resp_levels - 1]
+				# allow passing a specific distribution of RVQ levels
+				rvq_levels_p = rvq_levels_p if isinstance(rvq_levels_p, list) else []
+				if not rvq_levels_p:
+					lo, hi = quant_level_range[0], quant_level_range[1] + 1
+					# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
+					if rvq_levels_p == "equal":
+						rvq_levels_p = [ i for i in range( lo, hi ) ]
+					else:
+						# yuck
+						rvq_levels_p = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
 
-				elif isinstance( proms, list ):
-					for j, prom in enumerate( proms ):
-						if not isinstance( prom, torch.Tensor ):
-							continue
-					
-					if quant_level >= prom.shape[-1]:
-						quant_levels[i] = prom.shape[-1] - 1
+				# input RVQ levels
+				quant_levels = [ random.choice( rvq_levels_p ) for i in range(batch_size) ]
+				for i, task in enumerate( task_list ):
+					if task in text_task:
+						quant_levels[i] = 0 # self.n_resp_levels - 1
+				
+				# trim resps to only contain all levels below the target level
+				resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
 
-				# apply token dropout error compensation
-				if token_dropout_error > 0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
-					steps = resps.shape[0]
-					for l in range( quant_level ):
-						for t in range( steps ):
-							token = resps[t, l].item()
+				# tensor to cat for RVQ level 0
+				text_stop_sequence = torch.tensor([[2] * 1], device=device, dtype=torch.int16)
+				audio_stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
+				# I hate python's value/reference semantics so much
+				for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
+					# cap quant_level if it exceeds its corresponding resp/prom
+					if quant_level >= resps.shape[-1]:
+						quant_levels[i] = resps.shape[-1] - 1
 
-							if random.random() < token_dropout_error:								
-								offset = 1 * ( 1 if random.random() < 0.5  else -1 )
-								resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
+					# proms could be a Tensor, list[Tensor], or None
+					if isinstance( proms, torch.Tensor ):
+						if quant_level >= proms.shape[-1]:
+							quant_levels[i] = proms.shape[-1] - 1
 
-			inputs = self.inputs(
-				text_list=text_list,
-				proms_list=proms_list,
-				resps_list=resps_list,
-				lang_list=lang_list,
-				tone_list=tone_list,
-				task_list=task_list,
+					elif isinstance( proms, list ):
+						for j, prom in enumerate( proms ):
+							if not isinstance( prom, torch.Tensor ):
+								continue
+							if quant_level >= prom.shape[-1]:
+								quant_levels[i] = prom.shape[-1] - 1
 
-				quant_levels=quant_levels,
-			)
+					# apply token dropout error compensation
+					if token_dropout_error > 0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
+						steps = resps.shape[0]
+						for l in range( quant_level ):
+							for t in range( steps ):
+								token = resps[t, l].item()
 
-			return super().forward(
-				inputs=inputs,
-				quant_levels=quant_levels,
-			)
+								if random.random() < token_dropout_error:								
+									offset = 1 * ( 1 if random.random() < 0.5  else -1 )
+									resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
-		# NAR
+					# only apply stop token for RVQ level 0
+					if quant_level <= 0:
+						# append stop tokens for AR
+						if task in text_task:
+							#text_list[i] = torch.cat([ resps, text_stop_sequence ])
+							...
+						else:
+							#resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
+							...
+
+				inputs = self.inputs(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					lang_list=lang_list,
+					tone_list=tone_list,
+					task_list=task_list,
+
+					quant_levels=quant_levels,
+				)
+
+				return super().forward(
+					inputs=inputs,
+					quant_levels=quant_levels,
+				)
+
+
 		if len_list is not None:
 			# is NAR
 			if max_levels == 0:
 				max_levels = self.n_resp_levels
 			
 			# fill with mock tokens
+			# to-do: repeat with the input prompt, as per training
 			prev_list = [ torch.tensor([ self.stop_token for _ in range(resp_len) ], device=device, dtype=torch.int16) for resp_len in len_list ]
 
-			start = True
+			# to-do: figure out why this fails when I copy some things from ar_nar
 			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):
 				level = 0 if n == 0 else prev_list[0].shape[-1]
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
+
+				if cfg.lora is not None:
+					enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
 				quant_levels = [ level for _ in range(batch_size) ] # torch.full((len(text_list),), level)
 
@@ -185,19 +241,17 @@ class NAR(Base):
 				output = super().forward(
 					inputs=inputs,
 					quant_levels=quant_levels,
-				)
-				logits = output.logits
 
-				"""
-				resps_list = [ logit[-l:].argmax(dim=1) for logit, l in zip(logits, len_list) ]
-				"""
+				#	layer_skip_variables=sampling_layer_skip_variables,
+				)
+				logits, state = output.logits, output.state
 
 				sampled = super().sample(
 					logits=logits,
 					prev_list=prev_list,
 					quant_levels=quant_levels,
 
-					temperature=1.0 if n == 0 else sampling_temperature,
+					temperature=sampling_temperature,
 					min_temperature=sampling_min_temperature,
 					top_p=sampling_top_p,
 					top_k=sampling_top_k,
@@ -218,6 +272,9 @@ class NAR(Base):
 			return prev_list
 		
 		# is AR
+		if cfg.lora is not None:
+			enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
+
 		sequence_list = [ torch.tensor([0], device=device,dtype=torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 		

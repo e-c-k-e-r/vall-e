@@ -36,6 +36,7 @@ Non-autoregressive trainng is performed by having the input tokens from the prev
 However, having a pure NAR is challenging, as you need to both explicitly provide the duration and provide a "good enough" starting sequence of tokens for the initial sequence.
 * The former problem is easily "solved" by training a `len` inferencing task, where the given input predicts the requested duration for a given utterance autoregressively.
 * The latter however proves to be a bit of a challenge, as this could be anything from random noise to a unique token.
+  * The current implementation repeats the input prompt's RVQ level 0 as the initial condition, but inferencing fills with stop tokens. This *might* be the problem, but I do not have my `nar-len-llama-8` weights stored anywhere, sadly.
 * Testing showed that it's easy to predict the duration, but decoding the first RVQ level accurately proves to be a chore.
   * Initially, output seemed chaotic and unreliable, but further experiments showed the model will "work" for a brief moment before going silent.
 
@@ -47,6 +48,8 @@ One problem exhibited from a NAR is producing arfifacts ("crust") in the final w
 ## Embeddings
 
 The "magic" of subjugating a transformer for audio use lies within the ensemble of the embeddings. This is necessary as each piece of a sequence is fundamentally different, but a HF-compatible model can geta way with treating each sequence as separate ranges within a total token sequence.
+
+While embeddings *can* be tied to the output head, testing showed that the model ***really*** does not like to do this, although my implementation could very well be flawed.
 
 ### Text Embeddings
 

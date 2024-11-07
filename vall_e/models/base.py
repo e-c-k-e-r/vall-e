@@ -1126,25 +1126,27 @@ class Base(nn.Module):
 
 						embedding = _interleave_sequence_reshape( embeddings )
 					elif "len" in self.capabilities and quant_level == 0:
-						if input_prom is not None:
-							# fill with the prom as the initial condition
-							repeat = (input.shape[0] // input_prom.shape[0]) + 1
-							repeated = input_prom[:, :1].repeat((repeat, 1))[:input.shape[0], :1]
+						assert input_prom is not None, "Guru mediating during training"
+						# fill with the prom as the initial condition
+						repeat = (input.shape[0] // input_prom.shape[0]) + 1
+						repeated = input_prom[:, :1].repeat((repeat, 1))[:input.shape[0], :1]
 
-							embedding = self.resps_emb(
-								repeated,
-								offset = 0,
-								quant_level = 0,
-							)
-						else:
-							# fill with "stop" token from the len layer for the NAR-only model
-							filler_token = 12
-							embedding = self.resps_emb(
-								# self.dropout_token.repeat((input.shape[0], 1)),
-								torch.full_like(input if input.dim() == 1 else input[..., 0], filler_token),
-								offset = 0,
-								quant_level = 0,
-							)
+						embedding = self.resps_emb(
+							repeated,
+							offset = 0,
+							quant_level = 0,
+						)
+						"""
+						# fill with "stop" token from the len layer for the NAR-only model
+						filler_token = 12
+						embedding = self.resps_emb(
+							# self.dropout_token.repeat((input.shape[0], 1)),
+							torch.full_like(input if input.dim() == 1 else input[..., 0], filler_token),
+							offset = 0,
+							quant_level = 0,
+						)
+						"""
+
 					# cheat-y way to handle performing STT across all levels
 					elif task_type in summed_embeddings_task:
 						# we do a manual sum because I trained it to use the AR embeddings + NAR embeddings for STT......
