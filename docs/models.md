@@ -35,15 +35,19 @@ Non-autoregressive trainng is performed by having the input tokens from the prev
 
 However, having a pure NAR is challenging, as you need to both explicitly provide the duration and provide a "good enough" starting sequence of tokens for the initial sequence.
 * The former problem is easily "solved" by training a `len` inferencing task, where the given input predicts the requested duration for a given utterance autoregressively.
-* The latter however proves to be a bit of a challenge, as this could be anything from random noise to a unique token.
-  * The current implementation repeats the input prompt's RVQ level 0 as the initial condition, but inferencing fills with stop tokens. This *might* be the problem, but I do not have my `nar-len-llama-8` weights stored anywhere, sadly.
-* Testing showed that it's easy to predict the duration, but decoding the first RVQ level accurately proves to be a chore.
-  * Initially, output seemed chaotic and unreliable, but further experiments showed the model will "work" for a brief moment before going silent.
+* The latter however proves to be challenging, as generating tokens from nothing in one step is not possible.
+  * diffusion solves this, but requires additional steps at best and a separate model at worse, just for one RVQ level.
+  * however, it's possible to have a similar paradigm to diffusers, but instead iterating upon random noise, masked tokens are iterated per step, and each step picks the most confident tokens per step.
+    * incidentally, [this paper](https://arxiv.org/abs/2406.05478) demonstrates this in the use of a NAR transformer for image generation
+  * the normal NAR (RVQ level 1+) does not face this problem, as it's already given a sufficient initial sequence of tokens to work with, and thus only requires one step.
 
 One problem exhibited from a NAR is producing arfifacts ("crust") in the final waveform. I believe this is a confidence problem where the wrong token is inferred.
 * Unfortunately, one solution is to simply train a separate NAR, as this should help bolster the model's NAR capabilities without the AR influencing things, as I imagine being able to both causally and parallel-ly decode tokens harms things.
   * This is backed by the used `cfg.model.experimental.rvq_levels_p` distribution affecting the model's AR capabilities, as increasing the NAR's share in training causes the AR to perform *less*.
     * However, this may be simply wrong, but checkpoints that used such distributions felt lobotomized.
+* Another solution that may help is to provide two token dropout methods:
+  * `token_dropout_error`: This will randomly nudge a small percentage of tokens from the prior RVQ level to simulate wrong tokens being predicted.
+  * `token_dropout_rate`: This will randomly mask off tokens from the prior RVQ level with a mask token, to try and have the model not-strongly-rely on the given input.
 
 ## Embeddings
 

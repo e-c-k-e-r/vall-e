@@ -216,9 +216,11 @@ class NAR(Base):
 				max_levels = self.n_resp_levels
 			
 			# fill with mock tokens
-			# to-do: repeat with the input prompt, as per training
 			#prev_list = [ torch.tensor([ self.stop_token for _ in range(resp_len) ], device=device, dtype=torch.int16) for resp_len in len_list ]
-			prev_list = [ repeat_extend_audio( prom, resp_len ) for resp_len, prom in zip(len_list, proms_list) ]
+			#prev_list = [ repeat_extend_audio( prom, resp_len ) for resp_len, prom in zip(len_list, proms_list) ]
+			
+			prev_list = [ torch.concat([ self.dropout_token.unsqueeze(0) for _ in range( resp_len ) ]) for resp_len in len_list ]
+			#prev_list = [ None for resp_len in len_list ]
 
 			# to-do: figure out why this fails when I copy some things from ar_nar
 			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):
