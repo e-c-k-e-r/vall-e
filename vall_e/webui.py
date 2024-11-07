@@ -12,7 +12,6 @@ import argparse
 import random
 import tempfile
 import functools
-import spaces
 
 import torch
 import numpy as np
