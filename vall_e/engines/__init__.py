@@ -188,7 +188,7 @@ def load_engines(training=True, **model_kwargs):
 
 			# resize modules if I'm doing experiments and can't be assed to manually trim things
 			if cfg.trainer.resize_modules:
-				uses_stop_token = 1 if "len" not in model.capabilities and model.causal_size > 0 else 0
+				uses_stop_token = 1 if model.causal_size > 0 else 0
 				keys = [
 					("text_emb.weight", model.config.text_tokens ),
 					("tasks_emb.weight", model.config.tasks ),

@@ -220,7 +220,8 @@ class NAR(Base):
 			#prev_list = [ repeat_extend_audio( prom, resp_len ) for resp_len, prom in zip(len_list, proms_list) ]
 			#prev_list = [ None for resp_len in len_list ] # this breaks the position ID calc
 			
-			prev_list = [ torch.concat([ self.dropout_token.unsqueeze(0) for _ in range( resp_len ) ]) for resp_len in len_list ]
+			mask_token = torch.tensor([self.stop_token], dtype=torch.int16, device=device)
+			prev_list = [ torch.concat([ mask_token for _ in range( resp_len ) ]) for resp_len in len_list ]
 
 			# to-do: special "scheduling" to inference RVQ-level 0
 
@@ -483,6 +484,8 @@ def example_usage():
 
 		len_list = engine(text_list, proms_list, max_steps=steps, sampling_temperature=0.95 )
 		resps_list = engine( text_list, proms_list, len_list=len_list, sampling_temperature=0.2 )
+
+		len_list = [ min(l, 500) for l in len_list ]
 
 		for i, o in enumerate(resps_list):
 			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
