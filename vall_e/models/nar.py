@@ -226,7 +226,7 @@ class NAR(Base):
 					sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
 
 			# initial condition
-			len_list = [ min(l, 500) for l in len_list ]
+			len_list = [ min(l, 75*3) for l in len_list ]
 			metrics = []
 
 			mask_token = torch.tensor([self.stop_token], dtype=torch.int16, device=device)
@@ -240,8 +240,10 @@ class NAR(Base):
 			_super = super()
 			def forward_lambda( ids, step, temperature ):
 				quant_levels = [ level for _ in range(batch_size) ]
-				prev_list = [ ids[0] ]
+				prev_list = [ ids ]
 				seq_len = ids.shape[-1]
+
+				sampling_top_k = math.floor( seq_len * 0.9 )
 
 				inputs = _super.inputs(
 					text_list=text_list,
@@ -260,6 +262,7 @@ class NAR(Base):
 				)
 				logits = output.logits
 
+				# sample with sampler settings
 				sampled = _super.sample(
 					logits=logits,
 					prev_list=prev_list,
@@ -277,14 +280,30 @@ class NAR(Base):
 					#mirostat=mirostat,
 				)
 
-				ids = sampled[0]
+				# greedy sample
+				greedy_sampled = _super.sample(
+					logits=logits,
+					prev_list=prev_list,
+					quant_levels=quant_levels,
 
-				return logits[0][-seq_len:].unsqueeze(0), ids[0].unsqueeze(0)
+					temperature=0.0,
+					#min_temperature=sampling_min_temperature,
+					#top_p=sampling_top_p,
+					#top_k=sampling_top_k,
+					#min_p=sampling_min_p,
+					#repetition_penalty=sampling_repetition_penalty,
+					#repetition_penalty_decay=sampling_repetition_penalty_decay,
+					#length_penalty=sampling_length_penalty,
+					#beam_width=sampling_beam_width,
+					#mirostat=mirostat,
+				)
+
+				return sampled, greedy_sampled
 
 			scheduler = SampleScheduler(
 				device=device,
 				mask_token=self.stop_token,
-				max_steps=30,
+				max_steps=5,
 				forward_lambda=forward_lambda,
 				sampling_temperature=sampling_temperature,
 			)

@@ -40,7 +40,7 @@ from ..data import get_task_symmap
 
 # these seem more elegant than a dict
 Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions', 'hidden_states', 'exited_layer'])
-Sampled = namedtuple('Sampled', ['out', 'scores', 'entropy'])
+Sampled = namedtuple('Sampled', ['out', 'logits', 'scores', 'entropy'])
 LossStats = namedtuple('LossStats', ['loss', 'stats'])
 
 """
@@ -1681,7 +1681,7 @@ class Base(nn.Module):
 			) for batch, logit in enumerate(logits) ]
 
 			if res:
-				return Sampled([ r[0] for r in res ], scores, [ r[1] for r in res ])
+				return Sampled([ r[0] for r in res ], logits, scores, [ r[1] for r in res ])
 		"""
 		elif quant_levels is None:
 			seq_lens = [ logit.shape[0] for logit in logits ]
@@ -1772,4 +1772,4 @@ class Base(nn.Module):
 					for logit, tokens in zip(logits, res)
 				]
 
-		return Sampled(res, scores, entropy)
+		return Sampled(res, logits, scores, entropy)
