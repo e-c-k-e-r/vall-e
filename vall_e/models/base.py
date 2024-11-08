@@ -47,8 +47,13 @@ LossStats = namedtuple('LossStats', ['loss', 'stats'])
 from ..utils.pattern import DelayedPatternProvider, VALLEPattern
 """
 
-def _dropout_mask( input, p=0.8 ):
-	return torch.tensor( [ 0 if random.random() < p else 1 for _ in range( input.shape[0] ) ], dtype=torch.uint8, device=input.device )
+def _dropout_mask( input, p=None ):
+	# cosine scheduling
+	if p is None:
+		t = random.random()
+		p = math.cos(t * math.pi * 0.5)
+
+	return torch.tensor( [ random.random() < p for _ in range( input.shape[0] ) ], dtype=torch.bool, device=input.device )
 
 def clamp(n, lo, hi):
 	return max(lo, min(n, hi))
@@ -1004,7 +1009,9 @@ class Base(nn.Module):
 
 					# store dropout mask
 					if "len" in self.capabilities and quant_level == 0:
-						dropout_mask = _dropout_mask( resps_list[i], p=0.8 )
+						t = random.random()
+						p = math.cos(t * math.pi * 0.5)
+						dropout_mask = _dropout_mask( resps_list[i], p=p )
 						inputs[i].append( ("dropout_mask", dropout_mask ) )
 		
 			# Audio length prediction task
@@ -1145,36 +1152,14 @@ class Base(nn.Module):
 						) for l in range( input.shape[-1] ) ]
 
 						embedding = _interleave_sequence_reshape( embeddings )
-					elif "len" in self.capabilities and quant_level == 0:
-						mask_token = self.resps_emb(
-							torch.tensor( [ self.stop_token ], dtype=torch.int16, device=input.device ),
+
+					# if training NAR-len RVQ level 0
+					elif "len" in self.capabilities and quant_level == 0 and dropout_mask is not None:
+						embedding = self.resps_emb(
+							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, 0] ),
 							offset = 0,
-							quant_level = 0
+							quant_level = 0,
 						)
-
-						# if training
-						if not input.is_floating_point():
-							# get original sequence
-							embedding = self.resps_emb(
-								input,
-								offset = 0,
-								quant_level = 0,
-							)
-
-							# create dropout mask if one is not provided
-							if dropout_mask is None:
-								dropout_mask = _dropout_mask( input )
-							
-							# replace with masked tokens
-							for i, token in enumerate( dropout_mask ):
-								if token == 0:
-									embedding[i] = mask_token
-
-						# if inferencing
-						else:
-							# fill with mask tokens for now
-							embedding = torch.concat([ mask_token for _ in range( input.shape[0] ) ])
-
 					# cheat-y way to handle performing STT across all levels
 					elif task_type in summed_embeddings_task:
 						# we do a manual sum because I trained it to use the AR embeddings + NAR embeddings for STT......
@@ -1331,9 +1316,7 @@ class Base(nn.Module):
 					elif name == "resp":
 						# mask found, apply it
 						if dropout_mask is not None:
-							seq = input if input.dim() == 1 else input[:, 0]
-							masked = torch.tensor([ token if dropout_mask[i] == 1 else self.ignore_index for i, token in enumerate( seq ) ], dtype=torch.int16, device=input.device)
-							target.append( masked )
+							target.append( torch.where( dropout_mask, input if input.dim() == 1 else input[:, 0], self.ignore_index ) )
 						elif self.interleave:
 							target.append( _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] ) )
 
@@ -1778,9 +1761,15 @@ class Base(nn.Module):
 				res = [ Categorical(logits=logit).sample() for logit in logits ]
 
 			# calculate token probabilities
-			scores = [ 
-				[ F.softmax(logit[-1, :], dim=0)[token].item() for token in tokens ]
-				for logit, tokens in zip(logits, res)
-			]
+			if "len" in self.capabilities:
+				scores = [
+					[ F.softmax(logit[i, :], dim=0)[token].item() for i, token in enumerate(tokens) ]
+					for logit, tokens in zip(logits, res)
+				]
+			else:
+				scores = [ 
+					[ F.softmax(logit[-1, :], dim=0)[token].item() for token in tokens ]
+					for logit, tokens in zip(logits, res)
+				]
 
 		return Sampled(res, scores, entropy)

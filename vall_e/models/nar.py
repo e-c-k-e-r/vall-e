@@ -6,21 +6,22 @@ It *does* have to inference the initial length in an autoregresssive-ish manner 
 Initial experiments show this only really "works" for the a few brief seconds before going to silence. I imagine I need to read more papers or just need to train longer.
 """
 
-from .base import Base, list_to_tensor, Categorical
-from ..config import cfg
-
-import torch
-from torch.nn.utils.rnn import pad_sequence
 
 import random
 import math
+import numpy as np
+import logging
+import torch
+from torch.nn.utils.rnn import pad_sequence
+
 from einops import rearrange
 from torch import Tensor
 from tqdm import trange
 
+from .base import Base, list_to_tensor, Categorical, _dropout_mask
+from ..config import cfg
 from ..emb.qnt import trim, repeat_extend_audio
-
-import logging
+from ..samplers import SampleScheduler
 
 def clamp(n, lo, hi):
 	return max(lo, min(n, hi))
@@ -211,23 +212,91 @@ class NAR(Base):
 
 
 		if len_list is not None:
-			# is NAR
+			sampling_layer_skip_variables = {} if sampling_layer_skip else None
+			
 			if max_levels == 0:
-				max_levels = self.n_resp_levels
-			
-			# fill with mock tokens
-			#prev_list = [ torch.tensor([ self.stop_token for _ in range(resp_len) ], device=device, dtype=torch.int16) for resp_len in len_list ]
-			#prev_list = [ repeat_extend_audio( prom, resp_len ) for resp_len, prom in zip(len_list, proms_list) ]
-			#prev_list = [ None for resp_len in len_list ] # this breaks the position ID calc
-			
+				max_levels = self.n_max_levels - 1
+
+			if sampling_layer_skip:
+				if sampling_layer_skip_entropy_threshold >= 0:
+					sampling_layer_skip_variables["entropy_threshold"] = sampling_layer_skip_entropy_threshold
+				if sampling_layer_skip_varentropy_threshold >= 0:
+					sampling_layer_skip_variables["varentropy_threshold"] = sampling_layer_skip_varentropy_threshold
+				if sampling_layer_skip_exit_layer >= 0:
+					sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
+
+			# initial condition
+			len_list = [ min(l, 500) for l in len_list ]
+			metrics = []
+
 			mask_token = torch.tensor([self.stop_token], dtype=torch.int16, device=device)
 			prev_list = [ torch.concat([ mask_token for _ in range( resp_len ) ]) for resp_len in len_list ]
 
-			# to-do: special "scheduling" to inference RVQ-level 0
+			# special "scheduling" to inference RVQ-level 0
+			level = 0
+			if cfg.lora is not None:
+				enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
-			# to-do: figure out why this fails when I copy some things from ar_nar
-			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):
-				level = 0 if n == 0 else prev_list[0].shape[-1]
+			_super = super()
+			def forward_lambda( ids, step, temperature ):
+				quant_levels = [ level for _ in range(batch_size) ]
+				prev_list = [ ids[0] ]
+				seq_len = ids.shape[-1]
+
+				inputs = _super.inputs(
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=prev_list,
+					lang_list=lang_list,
+					tone_list=tone_list,
+					quant_levels=quant_levels,
+				)
+
+				output = _super.forward(
+					inputs=inputs,
+					quant_levels=quant_levels,
+
+					layer_skip_variables=sampling_layer_skip_variables,
+				)
+				logits = output.logits
+
+				sampled = _super.sample(
+					logits=logits,
+					prev_list=prev_list,
+					quant_levels=quant_levels,
+
+					temperature=temperature,
+					min_temperature=sampling_min_temperature,
+					top_p=sampling_top_p,
+					top_k=sampling_top_k,
+					min_p=sampling_min_p,
+					repetition_penalty=sampling_repetition_penalty,
+					repetition_penalty_decay=sampling_repetition_penalty_decay,
+					length_penalty=sampling_length_penalty,
+					#beam_width=sampling_beam_width,
+					#mirostat=mirostat,
+				)
+
+				ids = sampled[0]
+
+				return logits[0][-seq_len:].unsqueeze(0), ids[0].unsqueeze(0)
+
+			scheduler = SampleScheduler(
+				device=device,
+				mask_token=self.stop_token,
+				max_steps=30,
+				forward_lambda=forward_lambda,
+				sampling_temperature=sampling_temperature,
+			)
+			prev_list = [ scheduler.sample( seq_len=len_list[0] ) ]
+
+			# expand if given a raw 1D tensor
+			for i, resp in enumerate(prev_list):
+				if resp.dim() == 1:
+					prev_list[i] = resp.unsqueeze(-1)
+			
+			for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):				
+				level = prev_list[0].shape[-1]
 				if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
 					break
 
@@ -249,7 +318,7 @@ class NAR(Base):
 					inputs=inputs,
 					quant_levels=quant_levels,
 
-				#	layer_skip_variables=sampling_layer_skip_variables,
+					layer_skip_variables=sampling_layer_skip_variables,
 				)
 				logits, state = output.logits, output.state
 
@@ -258,24 +327,20 @@ class NAR(Base):
 					prev_list=prev_list,
 					quant_levels=quant_levels,
 
-					#temperature=sampling_temperature,
-					temperature=1.0 if n == 0 else sampling_temperature,
-					min_temperature=sampling_min_temperature,
-					top_p=sampling_top_p,
-					top_k=sampling_top_k,
-					min_p=sampling_min_p,
-					repetition_penalty=sampling_repetition_penalty,
-					repetition_penalty_decay=sampling_repetition_penalty_decay,
+					temperature=0.0, # sampling_temperature,
+					#min_temperature=sampling_min_temperature,
+					#top_p=sampling_top_p,
+					#top_k=sampling_top_k,
+					#min_p=sampling_min_p,
+					#repetition_penalty=sampling_repetition_penalty,
+					#repetition_penalty_decay=sampling_repetition_penalty_decay,
 					#length_penalty=sampling_length_penalty,
 					#beam_width=sampling_beam_width,
 					#mirostat=mirostat,
 				)
-				resps_list = sampled[0]
 
-				if n == 0:
-					prev_list = [ r.unsqueeze(-1).to(device) for r in resps_list ]
-				else:
-					prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
+				resps_list = sampled[0]
+				prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
 
 			return prev_list
 		

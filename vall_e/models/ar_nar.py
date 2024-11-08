@@ -391,7 +391,8 @@ class AR_NAR(Base):
 				if sampled.entropy:
 					metrics.append( sampled.entropy )
 				elif sampled.scores:
-					metrics.append( [ { "p": p[0], "exited_layer": output.exited_layer } for p in sampled.scores ] )
+					#metrics.append( [ { "p": p[0], "exited_layer": output.exited_layer } for p in sampled.scores ] )
+					metrics.append( [ { "p": p[0] } for p in sampled.scores ] )
 
 			if mirostat is not None:
 				mirostat = sampled.scores
