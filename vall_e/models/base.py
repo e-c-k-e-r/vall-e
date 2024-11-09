@@ -1711,7 +1711,7 @@ class Base(nn.Module):
 		"""
 
 		# perform repetition penalizing	
-		if "len" not in self.capabilities and prev_list is not None and repetition_penalty != 1.0:
+		if prev_list is not None and repetition_penalty != 1.0:
 			# to-do: figure out a faster way to handle tolist()
 			logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
