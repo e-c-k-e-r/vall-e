@@ -5,9 +5,11 @@ The underlying model is a robust transformer, where:
 * the embedded inputs are then passed through each layer of the transformer (or other model type)
 * the last hidden states are then passed through the output head / classifier / projection, resulting in logit probabilities to sample from.
 
+The beauty of a transformer, I feel, is that you can easily define any task at it, and it should follow through with it very well.
+
 The inputs are sequenced in a way that the given task requires automatically, and the outputs are handled as per the class that extends the base model.
 
-While the original paper called for a separate AR model and a NAR model, you can actually train a unified model for effectively free, as the internal states of the two should overlap quite a lot.
+While the original paper called for a separate AR model and a NAR model, and by treating the AR and the NAR as unique tasks, you can actually train a unified model for effectively free, as the internal states of the two should overlap quite a lot.
 
 ## The AR (Autoregressive) Model
 
@@ -49,6 +51,7 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 * The former problem is easily "solved" by training a `len` inferencing task, where the given input predicts the requested duration for a given utterance autoregressively.
 * The latter however proves to be challenging, as generating tokens from nothing in one step is not possible.
   * diffusion solves this, but requires additional steps at best and a separate model at worse, just for one RVQ level.
+  * embedding the current timestep is *required*, despite this technically being encoded in how many masked tokens exist within a sequence.
   * the normal NAR (RVQ level 1+) does not face this problem, as it's already given a sufficient initial sequence of tokens to work with, and thus only requires one step.
 
 The implemented solution follows a similar paradigm to diffusion, but with masking instead of noise.
@@ -68,6 +71,8 @@ The input text phonemes (or output for STT) are passed through an embedding head
 
 Technically, due to how the audio embeddings are implemented, it's possible to offer "language specific" embeddings, rather than one unified IPA-based embedding + a language embedding (`lang`).
 * Such an implementation *could* in fact inference from normal text rather than IPA phonemes.
+
+These embeddings *could* instead be added on top of the input prompt embedding instead of serving as additional tasks (similar to injecting position embeddings), but additional experimentation is required to see if the model both can work under this and/or benefits from this.
 
 #### Language Embedding
 
@@ -118,6 +123,12 @@ Finally, the model *may* then sum each embedding level back down to one sequence
   * The reference model was trained originally without summing, then trained with summing.
 
 Additionally, it's *technically* possible to instead use the embeddings from the core model used to encode the audio, but in theory this may exclude specific features the model has encoded within the embeddings.
+
+#### RVQ Level Embedding
+
+This embedding hints what the target RVQ level of the audio codes is being targetted. This embedding is not required, but seems some architectures (Mamba) requires this.
+
+This *may* replace needing separate embeddings for each RVQ level, but experimentation is required to test this claim.
 
 ### Tasks
 
