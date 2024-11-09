@@ -51,7 +51,6 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 * The former problem is easily "solved" by training a `len` inferencing task, where the given input predicts the requested duration for a given utterance autoregressively.
 * The latter however proves to be challenging, as generating tokens from nothing in one step is not possible.
   * diffusion solves this, but requires additional steps at best and a separate model at worse, just for one RVQ level.
-  * embedding the current timestep is *required*, despite this technically being encoded in how many masked tokens exist within a sequence.
   * the normal NAR (RVQ level 1+) does not face this problem, as it's already given a sufficient initial sequence of tokens to work with, and thus only requires one step.
 
 The implemented solution follows a similar paradigm to diffusion, but with masking instead of noise.

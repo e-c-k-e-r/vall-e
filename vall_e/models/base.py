@@ -1739,7 +1739,14 @@ class Base(nn.Module):
 		# perform repetition penalizing	
 		if prev_list is not None and repetition_penalty != 1.0:
 			# to-do: figure out a faster way to handle tolist()
-			logits = [ reptition_penalize(logit, previous=prevs[:, -1].tolist() if prevs.dim() > 1 else prevs.tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
+
+			# penalize non-autoregressively
+			if quant_levels is not None:
+				#logits = [ reptition_penalize(logit, previous=logit.argmax(dim=1).tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit in logits ]
+				logits = [ reptition_penalize(logit, previous=prevs.tolist() if prevs.dim() == 1 else prevs[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
+			# penalize autoregressively
+			else:
+				logits = [ reptition_penalize(logit, previous=prevs.tolist() if prevs.dim() == 1 else prevs[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:

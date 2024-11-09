@@ -8,29 +8,52 @@ from torch import Tensor, einsum, nn
 from einops import rearrange
 from dataclasses import asdict, dataclass, field
 
+def clamp(n, lo, hi):
+	return max(lo, min(n, hi))
+
 # Simple filter to modify a token's probability if it shows up in the past
 # `one_time` will only apply the penalty once
 # `decay` is a factor that will exponentially apply to how far away it is
-def reptition_penalize( logits, previous, factor=1.0, decay=0.0, one_time=False, limit=75 ):
+
+# this is split between applying autoregressively (applying to the last token, starting from the end), and applying non-autoregressively (starting from the beginning, and applying to tokens in the future)
+def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=False, limit=75 ):
 	if factor == 1.0 or previous is None:
 		return logits
 
-	unique = set()
-	priors = reversed(previous)
-	for distance, token in enumerate(priors):
-		# rep-pen range
-		if limit and distance >= limit:
-			continue
-		# skip if we're only applying the decay once
-		if one_time and token in unique:
-			continue
+	seq_len = logits.shape[0]
+	prev_len = len( previous )
+	
+	# apply autoregressively
+	if prev_len < seq_len:
+		unique = set()
+		priors = reversed(previous)
+		for i, token in enumerate(priors):
+			# rep-pen range
+			if limit and i >= limit:
+				continue
+			# skip if we're only applying the decay once
+			if one_time and token in unique:
+				continue
 
-		distance += 1
-		logits[:, token] /= factor * (distance ** decay)
-		
-		# add to set if we care about it
-		if one_time:
-			unique.add(token)
+			distance = i + 1		
+			logits[-1, token] /= factor * (distance ** decay)
+
+			# add to set if we care about it
+			if one_time:
+				unique.add(token)
+	# apply non-autoregressively
+	else:
+		for i, token in enumerate( previous ):
+			# apply to next token
+			start = i + 1
+			# apply either up to limit tokens, or to the end
+			end = start + limit if limit > 0 else seq_len
+			start = clamp(0, seq_len - 1, start)
+			end   = clamp(0, seq_len - 1, end)
+			for j in range( start, end ):
+				distance = j - i
+				logits[j, token] /= factor * (distance ** decay)
+
 
 	return logits
 
@@ -379,8 +402,6 @@ def _sample_entropix(
 	min_p=0.0,
 	cfg=EntropixSamplerConfig(),
 ):
-	def clamp(n, lo, hi):
-		return max(lo, min(n, hi))
 
 	if top_k == 0:
 		top_k = logits.shape[-1]

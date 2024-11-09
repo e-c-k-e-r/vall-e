@@ -252,12 +252,13 @@ class NAR(Base):
 				test_artifact = np.load(path, allow_pickle=True)[()]
 				text_list = [ torch.tensor( cfg.tokenizer.encode( test_artifact["metadata"]["phonemes"] ) ).to(dtype=torch.uint8, device=device) ]
 				resps_list = [ torch.from_numpy(test_artifact["codes"].astype(np.int16))[0, :, :].t().to(dtype=torch.int16, device=device) ]
-				proms_list = [ resps for resps in resps_list ]
+				proms_list = [ resps[:75*3, :] for resps in resps_list ]
+				#proms_list = [ resps for resps in resps_list ]
 				len_list = [ resps.shape[0] for resps in resps_list ]
 			"""
 
 			_super = super()
-			def demask_sampling( seq_len, max_steps=20, temperature=0.3 ):
+			def demask_sampling( seq_len, max_steps=5, temperature=1.0 ):
 				starting_temperature = temperature
 
 				input_ids = torch.ones((seq_len,), dtype=torch.long, device=device) * self.stop_token
@@ -268,12 +269,13 @@ class NAR(Base):
 
 				start_noise = 0.0
 				end_noise = 1.0
+				sampling_repetition_penalty = 1.0 # force rep pen off, because this caused false positives due to how rep pen was being naively applied......
 
 				# use hardcoded reference file to test inference capabilities
 				if test_artifact is not None:
 					# because we "set" it later on, it's not implicitly captured
 					nonlocal resps_list
-					start_noise = 0.0
+					start_noise = 0.5
 					noise_p = math.cos( start_noise * math.pi * 0.5 )
 					input_ids = torch.tensor( [ self.stop_token if random.random() < noise_p else token for _, token in enumerate( resps_list[0][:, 0] ) ], dtype=torch.int16, device=device )
 
@@ -348,15 +350,15 @@ class NAR(Base):
 
 					# sample with gumbelnoise
 					# I actually feel like this doesn't matter? it's hard to judge with a partially trained NAR-len model
-					#sampled_ids = gumbel_sample( filtered_logits, temperature=temperature, dim=-1 )
-					sampled_ids = filtered_tokens
+					sampled_ids = gumbel_sample( filtered_logits, temperature=temperature, dim=-1 )
+					#sampled_ids = filtered_tokens
 
 					# keep unmasked tokens
 					input_ids = torch.where( is_masked, sampled_ids, input_ids )
 					# update scores (conjugated to put the worst scores at the top)
 					scores = 1.0 - torch.tensor([score for score in unfiltered_scores], device=device)
 
-				# print( timestep, steps_until_x0, noise_p, masked_tokens_n, input_ids, scores )
+					print( timestep, steps_until_x0, noise_p, masked_tokens_n, input_ids, scores )
 
 				return input_ids
 
