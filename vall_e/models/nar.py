@@ -298,6 +298,7 @@ class NAR(Base):
 						resps_list=resps_list,
 						lang_list=lang_list,
 						tone_list=tone_list,
+						time_list=[ timestep ],
 						quant_levels=quant_levels,
 					)
 					output = _super.forward(
