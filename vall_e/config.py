@@ -258,6 +258,11 @@ class ModelExperimentalSettings:
 	len_train_p: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
 	# to-to: just incorporate this as a task instead
 
+	# classifier-free guidance shit
+	cfg_cond_dropout_p: float = 0.2 # probability to drop out text and audio during training
+	cfg_text_dropout_p: float = 0.0  # probability to drop out input audio prompt during training
+	cfg_prom_dropout_p: float = 0.3  # probability to drop out input audio prompt during training
+
 	layerskip: bool = False # layerskip compatible model (or training for)
 	#layerskip_rvq_levels: list = field(default_factory=lambda: []) # RVQ levels to train / inference layerskip for (to-do: implement, see if it matters)
 	layerskip_r: int = 2 # number of layers to factor into early-exit loss calc

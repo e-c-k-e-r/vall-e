@@ -13,7 +13,7 @@ from transformers.cache_utils import Cache
 from transformers import LlamaModel, LlamaConfig, LlamaForCausalLM
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
-from transformers.models.llama.modeling_llama import LlamaAttention, apply_rotary_pos_emb, repeat_kv
+from transformers.models.llama.modeling_llama import LlamaAttention, LlamaDecoderLayer, LlamaRMSNorm, LlamaRotaryEmbedding, apply_rotary_pos_emb, repeat_kv
 
 _logger = logging.getLogger(__name__)
 
@@ -304,15 +304,125 @@ class LlamaAttention_Adapted(LlamaAttention):
 
 		return attn_output, attn_scores, past_key_value
 
+class LlamaDecoderLayer_Adapted(LlamaDecoderLayer):
+	# apply timestep embedding with attention norm
+	# I don't have a concrete idea on how helpful this is, as:
+	# * F5-TTS's UNetT implementation doesn't do this
+	# * F5-TTS's DiT does this, but only for pre-attention normalization
+	# * MaskGCT does this for both
+	# * Muse doesn't do this, but instead appends the timestep embedding
+	def weigh_by_timestep(
+		self,
+		hidden_states,
+		timesteps,
+	):
+		if timesteps is None:
+			return hidden_states
+
+		for i, timestep in enumerate( timesteps ):
+			# invalid
+			if not isinstance( timestep, torch.Tensor ):
+				continue
+			hidden_states[i] *= timestep
+		
+		return hidden_states
+
+	def forward(
+		self,
+		hidden_states: torch.Tensor,
+		attention_mask: Optional[torch.Tensor] = None,
+		position_ids: Optional[torch.LongTensor] = None,
+		past_key_value: Optional[Cache] = None,
+		output_attentions: Optional[bool] = False,
+		use_cache: Optional[bool] = False,
+		cache_position: Optional[torch.LongTensor] = None,
+		position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
+		timesteps: Optional[list] = None,
+		**kwargs,
+	) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
+		"""
+		Args:
+			hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+			attention_mask (`torch.FloatTensor`, *optional*):
+				attention mask of size `(batch_size, sequence_length)` if flash attention is used or `(batch_size, 1,
+				query_sequence_length, key_sequence_length)` if default attention is used.
+			output_attentions (`bool`, *optional*):
+				Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+				returned tensors for more detail.
+			use_cache (`bool`, *optional*):
+				If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding
+				(see `past_key_values`).
+			past_key_value (`Tuple(torch.FloatTensor)`, *optional*): cached past key and value projection states
+			cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+				Indices depicting the position of the input sequence tokens in the sequence
+			position_embeddings (`Tuple[torch.FloatTensor, torch.FloatTensor]`, *optional*):
+				Tuple containing the cosine and sine positional embeddings of shape `(batch_size, seq_len, head_dim)`,
+				with `head_dim` being the embedding dimension of each attention head.
+			kwargs (`dict`, *optional*):
+				Arbitrary kwargs to be ignored, used for FSDP and other methods that injects code
+				into the model
+		"""
+		residual = hidden_states
+
+		hidden_states = self.input_layernorm(hidden_states)
+		hidden_states = self.weigh_by_timestep( hidden_states, timesteps )
+		# Self Attention
+		hidden_states, self_attn_weights, present_key_value = self.self_attn(
+			hidden_states=hidden_states,
+			attention_mask=attention_mask,
+			position_ids=position_ids,
+			past_key_value=past_key_value,
+			output_attentions=output_attentions,
+			use_cache=use_cache,
+			cache_position=cache_position,
+			position_embeddings=position_embeddings,
+			**kwargs,
+		)
+		hidden_states = residual + hidden_states
+
+		# Fully Connected
+		residual = hidden_states
+		hidden_states = self.post_attention_layernorm(hidden_states)
+		hidden_states = self.weigh_by_timestep( hidden_states, timesteps )
+
+		hidden_states = self.mlp(hidden_states)
+		hidden_states = residual + hidden_states
+
+		outputs = (hidden_states,)
+
+		if output_attentions:
+			outputs += (self_attn_weights,)
+
+		if use_cache:
+			outputs += (present_key_value,)
+
+		return outputs
+
 class LlamaModel_Adapted(LlamaModel):
-	def __init__(self, *args, **kwargs):
+	def __init__(self, config, *args, **kwargs):
 		self.layer_dropout_p = kwargs.pop("layer_dropout_p", 0.1)
 		self.early_exit_scale = kwargs.pop("early_exit_scale", 0.1)
 		self.early_exit_r = kwargs.pop("early_exit_r", 2)
 
-		super().__init__(*args, **kwargs)
+		#super().__init__(*args, **kwargs)
+		super(LlamaModel, self).__init__(config)
 
-		self.layers_n = len(self.layers)
+		self.padding_idx = config.pad_token_id
+		self.vocab_size = config.vocab_size
+		self.layers_n = config.num_hidden_layers
+
+		# self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+
+		self.layers = nn.ModuleList(
+			[LlamaDecoderLayer_Adapted(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+		)
+		self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+		self.rotary_emb = LlamaRotaryEmbedding(config=config)
+		self.gradient_checkpointing = False
+
+		# Initialize weights and apply final processing
+		self.post_init()
+
 	def dropoff_layer( self, l ):
 		if not self.training:
 			return False
@@ -360,6 +470,7 @@ class LlamaModel_Adapted(LlamaModel):
 		cache_position: Optional[torch.LongTensor] = None,
 		
 		layer_skip_lambda = None,
+		timesteps: Optional[list] = None,
 	) -> Union[Tuple, BaseModelOutputWithPast]:
 		output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
 		output_hidden_states = (
@@ -377,8 +488,10 @@ class LlamaModel_Adapted(LlamaModel):
 			)
 			use_cache = False
 
+		"""
 		if inputs_embeds is None:
 			inputs_embeds = self.embed_tokens(input_ids)
+		"""
 
 		# kept for BC (non `Cache` `past_key_values` inputs)
 		return_legacy_cache = False
@@ -430,6 +543,7 @@ class LlamaModel_Adapted(LlamaModel):
 					use_cache,
 					cache_position,
 					position_embeddings,
+					timesteps,
 				)
 			else:
 				layer_outputs = decoder_layer(
@@ -441,6 +555,7 @@ class LlamaModel_Adapted(LlamaModel):
 					use_cache=use_cache,
 					cache_position=cache_position,
 					position_embeddings=position_embeddings,
+					timesteps=timesteps,
 				)
 
 			if not self.dropoff_layer( l ):
@@ -469,6 +584,7 @@ class LlamaModel_Adapted(LlamaModel):
 
 		if not return_dict:
 			return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+
 		return BaseModelOutputWithPast(
 			last_hidden_state=hidden_states,
 			past_key_values=next_cache,

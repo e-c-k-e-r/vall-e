@@ -53,7 +53,9 @@ def _dropout_mask( input, p=None ):
 		t = random.random()
 		p = math.cos(t * math.pi * 0.5)
 
-	return torch.tensor( [ random.random() < p for _ in range( input.shape[0] ) ], dtype=torch.bool, device=input.device )
+	seq = [ random.random() < p for _ in range( input.shape[0] ) ]
+	mask = torch.tensor( seq, dtype=torch.bool, device=input.device )
+	return mask
 
 def clamp(n, lo, hi):
 	return max(lo, min(n, hi))
@@ -646,7 +648,8 @@ class Base(nn.Module):
 					use_reentrant=False
 				))
 		elif self.arch_type == "llama":
-			LlamaClass = LlamaModel_Adapted if self.layerskip else LlamaModel
+			LlamaClass = LlamaModel_Adapted if (self.layerskip or "len" in self.capabilities) else LlamaModel
+
 			if n_experts <= 1:
 				self.model = LlamaClass(LlamaConfig(
 					vocab_size=n_resp_tokens,
@@ -664,8 +667,16 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
+
+				# replace with desired attention
 				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
+
+				# replace with modified Llama
+				"""
+				if "len" in self.capabilities:
+					self.model = ml.replace_attention( self.model, klass=LlamaDecoderLayer_Adapted, target=LlamaDecoderLayer, mode=attention_backend )
+				"""
 			else:
 				self.model = MixtralModel(MixtralConfig(
 					vocab_size =n_resp_tokens,
@@ -866,6 +877,7 @@ class Base(nn.Module):
 		state = None,
 		
 		layer_skip_lambda = None,
+		timesteps = None,
 
 		output_attentions = False,
 		output_hidden_states = False,
@@ -895,6 +907,9 @@ class Base(nn.Module):
 
 			if self.layerskip and layer_skip_lambda is not None:
 				kwargs["layer_skip_lambda"] = layer_skip_lambda
+
+			if "len" in self.capabilities and timesteps is not None:
+				kwargs["timesteps"] = timesteps
 
 			output = self.model(**kwargs)
 			x = output["last_hidden_state"]
@@ -1036,8 +1051,12 @@ class Base(nn.Module):
 						p = math.cos(t * math.pi * 0.5)
 						dropout_mask = _dropout_mask( resps_list[i], p=p )
 						
-						inputs[i].append( ("timestep", torch.tensor(t, device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
+						inputs[i].append( ("timestep", torch.tensor([t], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
 						inputs[i].append( ("dropout_mask", dropout_mask ) )
+					else:
+						# in the event it's needed (it makes shit sound worse)
+						#inputs[i].append( ("timestep", torch.tensor([1.0], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
+						...
 		
 			# Audio length prediction task
 			# Sequence: <text><sep><rvq lvl><prom><sep><len>
@@ -1088,7 +1107,6 @@ class Base(nn.Module):
 					inputs[i].append( ( "text", text_list[i] ) )
 			else:
 				raise Exception(f'Unrecognized task: {task_type}')
-
 		return inputs
 
 	def inputs_to_embeddings(
@@ -1139,13 +1157,10 @@ class Base(nn.Module):
 			for name, input in batch_input:
 				if name == "dropout_mask":
 					dropout_mask = input
-				elif name == "timestep":
-					timestep = input
 
 			for name, input in batch_input:
 				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
 				embedding = None
-
 				# is already an embedding		
 				if name == "task":
 					# noop
@@ -1162,6 +1177,10 @@ class Base(nn.Module):
 					embedding = self.langs_emb( input )
 				elif name == "prom":
 					proms = [ input ] if isinstance(input, torch.Tensor) else input
+					"""
+					if proms is None:
+						continue
+					"""
 					# to-do: probably insert separators if task requires it?
 					embedding = torch.cat( [ prompt_input_to_embedding( input, quant_level ) for input in proms if input is not None ] )
 				elif name == "tone" and self.tones_emb is not None:
@@ -1179,13 +1198,11 @@ class Base(nn.Module):
 					# if training NAR-len RVQ level 0
 					elif "len" in self.capabilities and quant_level == 0 and dropout_mask is not None:
 						embedding = self.resps_emb(
+							# if masked use masked token, else original token
 							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, 0] ),
 							offset = 0,
 							quant_level = 0,
 						)
-
-						t_emb = self.time_emb( timestep )
-						embedding += t_emb
 					# cheat-y way to handle performing STT across all levels
 					elif task_type in summed_embeddings_task:
 						# we do a manual sum because I trained it to use the AR embeddings + NAR embeddings for STT......
@@ -1227,17 +1244,35 @@ class Base(nn.Module):
 									continue
 								
 								embedding[i] = self.dropout_token
-
+				elif name == "timestep" and self.time_emb is not None:
+					embedding = self.time_emb( input )
 				elif name == "len" and self.len_emb is not None:
 					embedding = self.len_emb( input )
 				else:
 					# should probably raise an exception so things aren't processed silently
 					continue
+
 				batch.append(embedding)
 
 			x_list.append( _join( batch, self.sep ) )
 
 		return x_list
+
+	# get an attribute from a given input list
+	def get_input(
+		self,
+		inputs,
+		name,
+		at=None,
+	):
+		for batch_index, batch_input in enumerate(inputs):
+			if at is not None and batch_index != batch_index:
+				continue
+
+			for n, input in batch_input:
+				if n == name:
+					return input
+		return None
 
 	# creates position ids from a given input list
 	# if not unified_position_ids, then each input segment will have its own sequence
@@ -1262,7 +1297,7 @@ class Base(nn.Module):
 					return 1
 
 				# a mask
-				if name in ["dropout_mask", "timestep"]:
+				if name in ["dropout_mask"]:
 					return 0
 
 				# list of tokens
@@ -1342,6 +1377,7 @@ class Base(nn.Module):
 					elif name == "resp":
 						# mask found, apply it
 						if dropout_mask is not None:
+							# if mask use original token, else ignore
 							target.append( torch.where( dropout_mask, input if input.dim() == 1 else input[:, 0], self.ignore_index ) )
 						elif self.interleave:
 							target.append( _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] ) )
@@ -1350,6 +1386,8 @@ class Base(nn.Module):
 							target.append( torch.full_like(input[..., 0], self.ignore_index) )
 						else:
 							target.append( input if input.dim() == 1 else input[:, quant_level] )
+					elif name == "timestep":
+						target.append( torch.tensor([self.ignore_index], device=input.device) )
 					elif name in ["text", "quant_level", "lang", "tone", "len"]:
 						target.append( input )
 
@@ -1579,7 +1617,15 @@ class Base(nn.Module):
 		#position_ids = self.inputs_to_position_ids( inputs, mask=m.squeeze(-1).int() ) if not self.unified_position_ids else None
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 
-		classifier_quant_levels = [ -1 if inputs[i][0][-1] in self.special_tasks else l for i, l in enumerate( quant_levels ) ] 
+		tasks = [ self.get_input(inputs, "task", at=i) for i in range( batch_size ) ]
+		"""
+		timesteps = [ self.get_input(inputs, "timestep", at=i) for i in range( batch_size ) ]
+		#timesteps = [ inputs[i][-1] if timestep is not None else None for i, timestep in enumerate(timesteps) ]
+		timesteps = [ self.time_emb(timestep) if timestep is not None else None for i, timestep in enumerate(timesteps) ]
+		"""
+		timesteps = []
+
+		classifier_quant_levels = [ -1 if tasks[i] in self.special_tasks else l for i, l in enumerate( quant_levels ) ] 
 
 		output = self._forward(
 			inputs=x,
@@ -1589,6 +1635,7 @@ class Base(nn.Module):
 			output_attentions = output_attentions,
 			output_hidden_states = output_hidden_states,
 			layer_skip_lambda = layer_skip_lambda if self.layerskip and layer_skip_variables else None,
+			timesteps=timesteps,
 		)
 
 		logits = output.logits

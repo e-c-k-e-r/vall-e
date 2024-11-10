@@ -56,7 +56,13 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 The implemented solution follows a similar paradigm to diffusion, but with masking instead of noise.
 * incidentally, [this paper](https://arxiv.org/abs/2406.05478) demonstrates this in the use of a NAR transformer for image generation
 
-To-do: fill out this more when it works.
+To-do: fill out this more when it works. Getting this to work is a huge pain.
+* Some masked transformers do not "inject" any timestep information (Text-To-Image Muse as far as I can tell)
+* Others "expose" it by applying a timestep embedding after pre/post attention normalization
+  * Except F5-TTS only does this pre for its DiTS, but not UnetT
+  * MaskGCT does it both pre and post
+  * the test trainier actually degrades the output immensely when doing this
+* I'm sure I've seen a masked transformer not have CFG, but most of them seem to do (and all seem to be poorly documentated on specifically how its doing it for my dumb brain)
 
 ## Embeddings
 

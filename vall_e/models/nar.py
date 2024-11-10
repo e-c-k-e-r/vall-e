@@ -128,6 +128,10 @@ class NAR(Base):
 				token_dropout_error = self.config.experimental.token_dropout_error
 				# RVQ levels to apply token dropout on
 				token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
+				# CFG
+				cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
+				cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
+				cfg_prom_dropout_p = self.config.experimental.cfg_prom_dropout_p if self.config is not None else 0.0
 				# implicitly set it to all levels
 				if not token_dropout_rvq_levels:
 					token_dropout_rvq_levels = [0, self.resp_levels - 1]
@@ -150,12 +154,10 @@ class NAR(Base):
 				
 				# trim resps to only contain all levels below the target level
 				resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
-
-				# tensor to cat for RVQ level 0
-				text_stop_sequence = torch.tensor([[2] * 1], device=device, dtype=torch.int16)
-				audio_stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
+				# empty string for CFG
+				text_start_stop_sequence = torch.tensor([1, 2], device=device, dtype=torch.int16)
 				# I hate python's value/reference semantics so much
-				for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
+				for i, quant_level, text, resps, proms, task in zip(range(batch_size), quant_levels, text_list, resps_list, proms_list, task_list):
 					# cap quant_level if it exceeds its corresponding resp/prom
 					if quant_level >= resps.shape[-1]:
 						quant_levels[i] = resps.shape[-1] - 1
@@ -193,6 +195,24 @@ class NAR(Base):
 							#resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
 							...
 
+					# apply CFG (should probably only apply to NAR quant level 0)
+					if task not in text_task:
+						drop_text = False
+						drop_audio = False
+
+						if random.random() < cfg_prom_dropout_p:
+							drop_audio = True
+						
+						if random.random() < cfg_cond_dropout_p:
+							drop_audio = True
+							drop_text = True
+
+						if drop_text:
+							text_list[i] = text_start_stop_sequence
+
+						if drop_audio:
+							proms_list[i] = None
+
 				inputs = self.inputs(
 					text_list=text_list,
 					proms_list=proms_list,
@@ -225,7 +245,7 @@ class NAR(Base):
 					sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
 
 			# initial condition
-			len_list = [ min(l, 75*3) for l in len_list ]
+			len_list = [ clamp(1, 75*3, l) for l in len_list ]
 			metrics = []
 
 			mask_token = torch.tensor([self.stop_token], dtype=torch.int16, device=device)
@@ -279,6 +299,10 @@ class NAR(Base):
 					noise_p = math.cos( start_noise * math.pi * 0.5 )
 					input_ids = torch.tensor( [ self.stop_token if random.random() < noise_p else token for _, token in enumerate( resps_list[0][:, 0] ) ], dtype=torch.int16, device=device )
 
+				null_text = torch.tensor([1, 2], device=device, dtype=torch.int16)
+				null_prom = None
+				cfg_strength = 1.0
+
 				for timestep, steps_until_x0 in zip(torch.linspace(start_noise, end_noise, max_steps), reversed(range(max_steps))):
 					# anneal temperature
 					temperature = starting_temperature * (steps_until_x0 / max_steps) 
@@ -294,6 +318,7 @@ class NAR(Base):
 					is_masked = input_ids == self.stop_token
 					# setup inputs
 					resps_list = [ input_ids ]
+
 					inputs = _super.inputs(
 						text_list=text_list,
 						proms_list=proms_list,
@@ -308,11 +333,29 @@ class NAR(Base):
 						quant_levels=quant_levels,
 						layer_skip_variables=sampling_layer_skip_variables,
 					)
+					if cfg_strength > 0:
+						null_inputs = _super.inputs(
+							text_list=[ null_text ],
+							proms_list=[ null_prom ],
+							resps_list=resps_list,
+							lang_list=lang_list,
+							tone_list=tone_list,
+							time_list=[ timestep ],
+							quant_levels=quant_levels,
+						)
+						null_output = _super.forward(
+							inputs=null_inputs,
+							quant_levels=quant_levels,
+							layer_skip_variables=sampling_layer_skip_variables,
+						)
+						logits = [ logits + ( logits - null_logits ) * cfg_strength for logits, null_logits in zip(output.logits, null_output.logits) ]
+					else:
+						logits = output.logits
 
 					# sample with sampler settings
 					sampling_top_p = 0.9
 					filtered_sampled = _super.sample(
-						logits=output.logits,
+						logits=logits,
 						prev_list=prev_list,
 						quant_levels=quant_levels,
 
@@ -328,7 +371,7 @@ class NAR(Base):
 
 					# retrieves unfiltered logits
 					unfiltered_sampled = _super.sample(
-						logits=output.logits,
+						logits=logits,
 						prev_list=prev_list,
 						quant_levels=quant_levels,
 						temperature=0.0,
@@ -503,7 +546,6 @@ def example_usage():
 		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.resp_levels, :].t().to(torch.int16)
 
 	qnt = _load_quants(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
-
 
 	text_list = [
 		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
