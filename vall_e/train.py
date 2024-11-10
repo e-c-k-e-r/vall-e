@@ -140,6 +140,7 @@ def run_eval(engines, eval_name, dl, args=None):
 				proms_list=batch["proms"],
 				lang_list=batch["lang"],
 				task_list=batch["task"],
+				training=False,
 			)
 
 			if engine.hyper_config.experimental.hf:

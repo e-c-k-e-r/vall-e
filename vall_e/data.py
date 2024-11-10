@@ -508,6 +508,7 @@ def get_task_symmap():
 		"<eoe>": 7,
 		"<stt>": 8,
 
+		"<len>": 0, # fake
 		"<nse>": 6, # fake
 		"<cse>": 6, # fake
 	}
