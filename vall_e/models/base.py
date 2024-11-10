@@ -246,9 +246,6 @@ class AudioEmbedding(nn.Module):
 			# prom
 			if self.capabilities is None:
 				offset = 0
-			# resp
-			#elif "len" in self.capabilities:
-			#	offset = 1
 			elif "nar" not in self.capabilities:
 				offset = 0
 			elif quant_level > 0:
@@ -492,16 +489,6 @@ class Base(nn.Module):
 			# +1 to include the stop or mask token
 			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
 			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-		"""
-		elif "len" not in self.capabilities:
-			# +1 to include the stop token
-			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
-			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-		# NAR-len model
-		else:
-			n_resp_tokens = n_audio_tokens
-			l_tokens = [n_resp_tokens] * (self.n_resp_levels)
-		"""
 
 		self.unified_position_ids = unified_position_ids
 		self.interleave = interleave
@@ -561,11 +548,11 @@ class Base(nn.Module):
 		# this ***might*** let me also unify the proms_emb and resps_embedding
 		if self.version >= 5:
 			# "len" RVQ level-0 gets an additional token
-			self.rvq_l_emb = Embedding(self.n_resp_levels + (1 if "len" in self.capabilities else 0), d_model)
+			self.rvq_l_emb = Embedding(self.n_resp_levels, d_model)
 		
 			# experimental NAR-only mode
-			self.len_emb = Embedding(11, d_model) if "len" in self.capabilities else None
-			self.time_emb = TimeEmbedding(d_model) if "len" in self.capabilities else None
+			self.len_emb = Embedding(11, d_model)
+			self.time_emb = TimeEmbedding(d_model)
 
 		if attention_backend == "auto":
 			attention_backend = "sdpa"
@@ -645,7 +632,7 @@ class Base(nn.Module):
 					use_reentrant=False
 				))
 		elif self.arch_type == "llama":
-			LlamaClass = LlamaModel_Adapted if (self.layerskip or "len" in self.capabilities) else LlamaModel
+			LlamaClass = LlamaModel_Adapted # if (self.layerskip or "len" in self.capabilities) else LlamaModel
 
 			if n_experts <= 1:
 				self.model = LlamaClass(LlamaConfig(
@@ -668,12 +655,6 @@ class Base(nn.Module):
 				# replace with desired attention
 				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
-
-				# replace with modified Llama
-				"""
-				if "len" in self.capabilities:
-					self.model = ml.replace_attention( self.model, klass=LlamaDecoderLayer_Adapted, target=LlamaDecoderLayer, mode=attention_backend )
-				"""
 			else:
 				self.model = MixtralModel(MixtralConfig(
 					vocab_size =n_resp_tokens,
@@ -1012,6 +993,7 @@ class Base(nn.Module):
 		for i in range(batch_size):
 			quant_level = quant_levels[i] if quant_levels is not None else 0
 			task_type = task_list[i] if task_list is not None else "tts"
+			timestep = time_list[i] if time_list is not None else None
 
 			# insert task type as a string
 			inputs[i].append( ( "task", task_type ) )
@@ -1023,12 +1005,6 @@ class Base(nn.Module):
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
 			# prom /may/ include <task> tokens inside to help guide things, per SpeechX
 			if f'<{task_type}>' in get_task_symmap() and task_type not in self.special_tasks:
-				# pick a random timestep
-				if "len" in self.capabilities and quant_level == 0:
-					timestep = random.random()
-				else:
-					timestep = 1.0
-
 				# insert the text prompt
 				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
@@ -1045,7 +1021,7 @@ class Base(nn.Module):
 				if "tone" in self.capabilities and tone_list is not None and tone_list[i] is not None:
 					inputs[i].append( ( "tone", tone_list[i] ) )
 				# insert timestep token
-				if "len" in self.capabilities and quant_level == 0:
+				if timestep is not None:
 					# store timestep information
 					inputs[i].append( ("timestep", torch.tensor([timestep], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
 				# insert the current output response
@@ -1053,7 +1029,7 @@ class Base(nn.Module):
 					inputs[i].append( ( "resp", resps_list[i] ) )
 
 					# store dropout mask
-					if "len" in self.capabilities and quant_level == 0:
+					if timestep is not None:
 						dropout_mask = _dropout_mask( resps_list[i], p=math.cos(timestep * math.pi * 0.5) )
 						inputs[i].append( ("dropout_mask", dropout_mask ) )
 		
@@ -1072,9 +1048,7 @@ class Base(nn.Module):
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				# technically will always be level 0 but for the sake of keeing the input formatting coherent...
 				if self.rvq_l_emb is not None:
-					# override to 0 (I don't know if this change propagates, I'm not familiar with when python passes by (copied) value or reference)
-					quant_levels[i] = 0
-					inputs[i].append( ( "quant_level", torch.tensor([ self.n_resp_levels ], device=device, dtype=torch.int16) ) )
+					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert input audio prompt
 				if proms_list is not None and proms_list[i] is not None:
 					inputs[i].append( ( "prom", proms_list[i] ) )
@@ -1195,7 +1169,7 @@ class Base(nn.Module):
 						embedding = _interleave_sequence_reshape( embeddings )
 
 					# if training NAR-len RVQ level 0
-					elif "len" in self.capabilities and quant_level == 0 and dropout_mask is not None:
+					elif dropout_mask is not None:
 						embedding = self.resps_emb(
 							# if masked use masked token, else original token
 							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, 0] ),
@@ -1220,10 +1194,6 @@ class Base(nn.Module):
 							)
 						else:
 							offset = 0
-							"""
-							if "len" in self.capabilities:
-								offset = 1
-							"""
 							if "nar" not in self.capabilities:
 								offset = 0
 							elif quant_level > 0:
@@ -1264,14 +1234,21 @@ class Base(nn.Module):
 		name,
 		at=None,
 	):
+		find_all = at is None
+		res = [] if at is None else None
+		
 		for batch_index, batch_input in enumerate(inputs):
-			if at is not None and batch_index != at:
+			if not find_all and batch_index != at:
 				continue
 
 			for n, input in batch_input:
-				if n == name:
+				if n != name:
+					continue
+				if not find_all:
 					return input
-		return None
+				res.append( input )
+		
+		return res
 
 	# creates position ids from a given input list
 	# if not unified_position_ids, then each input segment will have its own sequence
@@ -1401,15 +1378,7 @@ class Base(nn.Module):
 			for i in range(batch_size):
 				quant_level = quant_levels[i]
 				task_name = task_list[i]
-
-				causal = False
-
-				if "len" in self.capabilities:
-					causal = task_name == "len"
-					if quant_level >= self.n_resp_levels:
-						quant_level = 0
-				else:
-					causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities)
+				causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities) or (task_name in ["len", "stt"])
 
 				if causal:
 					l = self.causal_size
@@ -1487,14 +1456,8 @@ class Base(nn.Module):
 
 				logit = logits[i][it:it+seq_len]
 				it += seq_len + 1 # +1 to incorporate the separator
-				
-				causal = False
-				if "len" in self.capabilities:
-					causal = task_name == "len"
-					if quant_level >= self.n_resp_levels:
-						quant_level = 0
-				else:
-					causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities)
+
+				causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities) or (task_name in ["len", "stt"])				
 				
 				# for the AR, shift sequence so that it predicts the next token
 				#	 (the NAR predicts the next token in place, so it's not necessary to do any modifications for it)
@@ -1854,15 +1817,9 @@ class Base(nn.Module):
 				res = [ Categorical(logits=logit).sample() for logit in logits ]
 
 			# calculate token probabilities
-			if "len" in self.capabilities:
-				scores = [
-					[ F.softmax(logit[i, :], dim=-1)[token].item() for i, token in enumerate(tokens) ]
-					for logit, tokens in zip(logits, res)
-				]
-			else:
-				scores = [ 
-					[ F.softmax(logit[-1, :], dim=-1)[token].item() for token in tokens ]
-					for logit, tokens in zip(logits, res)
-				]
+			scores = [
+				[ F.softmax(logit[i, :], dim=-1)[token].item() for i, token in enumerate(tokens) ]
+				for logit, tokens in zip(logits, res)
+			]
 
 		return Sampled(res, logits, scores, entropy)

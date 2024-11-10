@@ -1199,6 +1199,10 @@ class Dataset(_Dataset):
 				task
 			]
 
+		# Duration prediction (<text><prompt> => len(<resp>))
+		elif task == "len":
+			proms = self.sample_prompts(spkr_name, reference=path)
+
 		# noise suppression (<text>? <resp+noise> => <resp>)
 		# speech removal (<text>?<resp+noise> => <noise>)
 		elif task == "ns" or task == "sr":

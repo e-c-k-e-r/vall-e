@@ -47,8 +47,8 @@ def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=F
 			start = i + 1
 			# apply either up to limit tokens, or to the end
 			end = start + limit if limit > 0 else seq_len
-			start = clamp(0, seq_len - 1, start)
-			end   = clamp(0, seq_len - 1, end)
+			start = clamp(start, 0, seq_len - 1)
+			end   = clamp(end, 0, seq_len - 1)
 			for j in range( start, end ):
 				distance = j - i
 				logits[j, token] /= factor * (distance ** decay)

@@ -49,11 +49,8 @@ class TTS():
 		else:
 			raise Exception(f"Unknown config passed: {config}")		
 
-		try:
-			cfg.format( training=False )
-			cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
-		except Exception as e:
-			raise e # throw an error because I'm tired of silent errors messing things up for me
+		cfg.format( training=False )
+		cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 
 		if amp is None:
 			amp = cfg.inference.amp
@@ -268,7 +265,7 @@ class TTS():
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_ar is not None:
 					text_list = model_ar(
-						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], max_steps=max_ar_steps,
+						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], max_steps=max_ar_steps, task_list=["stt"],
 						sampling_temperature=ar_temp,
 						sampling_min_temperature=min_ar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
@@ -318,7 +315,7 @@ class TTS():
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_ar is not None:
 					resps_list = model_ar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps,
+						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, task_list=["tts"],
 						input_prompt_prefix=input_prompt_prefix,
 						prefix_silence=prefix_silence,
 						sampling_temperature=ar_temp,
@@ -343,7 +340,7 @@ class TTS():
 						use_lora=use_lora,
 					)
 					resps_list = model_nar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list,
+						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list, task_list=["tts"],
 						input_prompt_prefix=input_prompt_prefix,
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
@@ -359,8 +356,8 @@ class TTS():
 						use_lora=use_lora,
 					)
 				elif model_len is not None:
-					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=5, disable_tqdm=not tqdm ) # don't need more than that
-					len_list = [ clamp(1, max_ar_steps, l) for l in len_list ]
+					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], max_steps=5, disable_tqdm=not tqdm ) # don't need more than that
+					len_list = [ clamp(l, 1, max_ar_steps) for l in len_list ]
 					
 					kwargs = {}
 					
@@ -375,7 +372,7 @@ class TTS():
 
 						kwargs["resps_list"] = [ resp[:, :1] ]
 
-					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list,
+					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list, task_list=["tts"],
 						max_steps=max_ar_steps,
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,

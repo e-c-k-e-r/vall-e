@@ -233,33 +233,12 @@ This script aims to implement everything as required per VALL-E agnostically, to
 
 ## `models/ar_nar.py`
 
-This script implements VALL-E as a unified autoregressive and non-autoregressive model, where RVQ-level 0 is inferenced autoregressively, the remaining levels are infereneced non-autoregressively.
-
-By default, this is the default model, but is used through `cfg.model.capabilities = ["ar", "nar"]`.
+This script implements VALL-E as a unified autoregressive and non-autoregressive model, where RVQ-level 0 is inferenced autoregressively, the remaining levels are infereneced non-autoregressively, if requested.
+* Since one model can be trained AR-ly and NAR-ly, RVQ-level 0 can also be trained non-autoregressively with diffusion-like masking.
 
 For training, this model handles preparing the batch provided through the dataloader according to a randomly sampled targetted RVQ-level.
 
 For inferencing, this will dynamically inference depending on the arguments provided.
-
-## `models/ar.py`
-
-This script implements VALL-E as a pure autoregressive (AR) model.
-
-If `cfg.model.experimental.interleave=True`, this makes use of interleaving its audio codes, instead of inferencing per-codebook level. If not, this simply attends to RVQ level 0.
-
-This model serves as an experiment that failed, and might be revisited in the future.
-
-Use of this is governed through `cfg.model.capabilities = ["ar"]`
-
-## `models/nar.py`
-
-This script implements VALL-E as a mostly-pure non-autoregresive model, where it infers the duration autoregressively (if `"len" in cfg.model.capabilities`). If not, this simply attends to RVQ levels 1+.
-
-This makes use of training an additional `len` task that can infer the duration of a requested input, as well as (maybe) using special tokens as the initial input for RVQ-level 0 (the level the AR attends to).
-
-This model serves as an experiment that failed, and might be revisited in the future.
-
-Use of this is governed through `cfg.model.capabilities = ["nar"]`
 
 ## `models/experimental.py`
 

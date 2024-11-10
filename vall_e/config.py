@@ -255,13 +255,13 @@ class ModelExperimentalSettings:
 	# it just seems like a bitch to try and train something worthwhile with it, since there's crackles every other token
 	# RetNet's chunked inferencing might be a better place for this
 
-	len_train_p: float = 0.05 # odds of injecting a "len" task within the model for NAR-len
-	# to-to: just incorporate this as a task instead
+	masking_train_p: float = 0.0 # odds of training with masking
+	masking_train_rvq_levels: list = field(default_factory=lambda: [0,0]) # determines which levels to do mask training on
 
 	# classifier-free guidance shit
-	cfg_cond_dropout_p: float = 0.2 # probability to drop out text and audio during training
-	cfg_text_dropout_p: float = 0.0  # probability to drop out input audio prompt during training
-	cfg_prom_dropout_p: float = 0.3  # probability to drop out input audio prompt during training
+	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
+	cfg_text_dropout_p: float = 0.0 # 0.0  # probability to drop out input audio prompt during training
+	cfg_prom_dropout_p: float = 0.0 # 0.3  # probability to drop out input audio prompt during training
 
 	layerskip: bool = False # layerskip compatible model (or training for)
 	#layerskip_rvq_levels: list = field(default_factory=lambda: []) # RVQ levels to train / inference layerskip for (to-do: implement, see if it matters)
@@ -757,6 +757,7 @@ class Config(BaseConfig):
 	device: str = "cuda" # target device
 	mode: str = "training" # "inferencing"
 	experimental: bool = False # debug flag
+	silent_errors: bool = False # if False, raise exceptions on errors that could silently lead to problems, if True ignore them
 
 	dataset: Dataset = field(default_factory=lambda: Dataset)
 	models: dict | list | None = field(default_factory=lambda: [])
@@ -879,7 +880,12 @@ class Config(BaseConfig):
 		if data_parent.exists():
 			return [ path.parent / child.name for child in Path(data_parent).glob(path.name) ]
 		
-		return path
+		# return an empty list
+		if self.silent_errors:
+			return []
+
+		# raise an error to avoid headaches
+		raise Exception(f'Cannot unglob requested path: {path}')
 
 
 	def format( self, training=True ):
@@ -957,10 +963,6 @@ class Config(BaseConfig):
 				model["experimental"]["rvq_levels_p"] = model["experimental"]["p_rvq_levels"]
 				del model["experimental"]["p_rvq_levels"]
 
-			if "p_len_train" in model["experimental"]:
-				model["experimental"]["len_train_p"] = model["experimental"]["p_len_train"]
-				del model["experimental"]["p_len_train"]
-
 		self.models = [ Model(**model) if isinstance(model, dict) else model for model in self.models ]
 		self.loras = [ LoRA(**lora)  if isinstance(lora, dict) else lora for lora in self.loras ]
 
@@ -999,22 +1001,17 @@ class Config(BaseConfig):
 		if self.tokenizer == "naive":
 			self.tokenizer = NaiveTokenizer()
 		else:
-			# ick...
-			try:
-				from transformers import PreTrainedTokenizerFast
+			from transformers import PreTrainedTokenizerFast
 
-				tokenizer_path = self.rel_path / self.tokenizer_path
-				if tokenizer_path and not tokenizer_path.exists():
-					tokenizer_path = Path("./data/") / self.tokenizer_path
-				
-				if tokenizer_path and tokenizer_path.exists():
-					self.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
-				else:
-					self.tokenizer = NaiveTokenizer()
-			except Exception as e:
-				self.tokenizer = NaiveTokenizer()
-				_logger.warning(f"Error while parsing tokenizer: {str(e)}")
-				pass
+			tokenizer_path = self.rel_path / self.tokenizer_path
+			# deduce path if a local copy is not provided
+			if not tokenizer_path.exists():
+				tokenizer_path = Path("./data/") / self.tokenizer_path
+			
+			if not self.silent_errors and not tokenizer_path.exists():
+				raise Exception(f'Tokenizer path not found: {tokenizer_path}')
+
+			self.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
 
 
 # Preserves the old behavior
@@ -1071,8 +1068,9 @@ cfg = Config.from_cli()
 try:
 	cfg.format()
 except Exception as e:
+	if not cfg.silent_errors:
+		raise e # throw an error because I'm tired of silent errors messing things up for me
 	_logger.error(f"Error while parsing config YAML: {str(e)}")
-	raise e # throw an error because I'm tired of silent errors messing things up for me
 
 if __name__ == "__main__":
 	print(cfg)

@@ -60,25 +60,7 @@ def download_model( save_path=DEFAULT_MODEL_PATH, chunkSize = 1024 ):
 def get_model(config, training=True, **model_kwargs):
 	name = config.name
 
-	if "len" in config.capabilities:
-		from .nar import NAR
-		model = NAR(
-			n_text_tokens=config.text_tokens,
-			n_audio_tokens=config.audio_tokens,
-			d_model=config.dim,
-			n_heads=config.heads,
-			n_layers=config.layers,
-			n_experts=config.experts,
-			
-			p_dropout=config.dropout,
-			
-			l_padding = config.input_alignment,
-			
-			training = training,
-			config = config,
-			**model_kwargs
-		)
-	elif config.experimental.hf:
+	if config.experimental.hf:
 		from .experimental import Model as Experimental
 		model = Experimental(
 			n_text_tokens=config.text_tokens,
