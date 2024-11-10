@@ -8,8 +8,7 @@ from torch import Tensor, einsum, nn
 from einops import rearrange
 from dataclasses import asdict, dataclass, field
 
-def clamp(n, lo, hi):
-	return max(lo, min(n, hi))
+from .utils import clamp
 
 # Simple filter to modify a token's probability if it shows up in the past
 # `one_time` will only apply the penalty once

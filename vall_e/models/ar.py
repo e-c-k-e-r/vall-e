@@ -19,12 +19,9 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+from ..utils import clamp
 from ..emb.qnt import trim, encode_as_embedding
-
 from .lora import enable_lora
-
-def clamp(n, lo, hi):
-	return max(lo, min(n, hi))
 
 class AR(Base):
 	def forward(

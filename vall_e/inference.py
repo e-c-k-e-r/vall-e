@@ -3,6 +3,7 @@ import torchaudio
 import soundfile
 import time
 import logging
+import numpy as np
 
 _logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ from pathlib import Path
 
 from .emb import g2p, qnt
 from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio
-from .utils import to_device, set_seed, wrapper as ml
+from .utils import to_device, set_seed, clamp, wrapper as ml
 
 from .config import cfg, Config
 from .models import get_models
@@ -229,6 +230,9 @@ class TTS():
 		refine_on_stop=False,
 		#
 		seed = None,
+		#
+		load_from_artifact = None,
+		denoise_start = 0.0,
 
 		out_path=None,
 
@@ -355,17 +359,34 @@ class TTS():
 						use_lora=use_lora,
 					)
 				elif model_len is not None:
-					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=10, disable_tqdm=not tqdm ) # don't need more than that
-					len_list = [ min(l, max_ar_steps) for l in len_list ]
+					len_list = model_len( text_list=[phns], proms_list=[prom], max_steps=5, disable_tqdm=not tqdm ) # don't need more than that
+					len_list = [ clamp(1, max_ar_steps, l) for l in len_list ]
+					
+					kwargs = {}
+					
+					# nasty hardcode to load a reference file and have that as the input target
+					if load_from_artifact and load_from_artifact.exists():
+						artifact = np.load(load_from_artifact, allow_pickle=True)[()]
+
+						phns = torch.tensor( cfg.tokenizer.encode( artifact["metadata"]["phonemes"] ) ).to(dtype=torch.uint8, device=self.device)
+						resp = torch.from_numpy(artifact["codes"].astype(np.int16))[0, :, :].t().to(dtype=torch.int16, device=self.device)
+						prom = resp[:75*3, :]
+						len_list = [ resp.shape[0] ]
+
+						kwargs["resps_list"] = [ resp[:, :1] ]
+
 					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list,
+						max_steps=max_ar_steps,
 						max_levels=max_nar_levels,
 						sampling_temperature=nar_temp,
 						sampling_min_temperature=min_nar_temp,
 						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
 						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
+						denoise_start=denoise_start,
 
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
+						**kwargs,
 					)
 				else:
 					raise Exception("!")

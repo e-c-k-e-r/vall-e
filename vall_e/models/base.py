@@ -30,9 +30,8 @@ from torch.utils.checkpoint import checkpoint
 from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, MulticlassPrecision
 
 from .arch import *
-from ..utils import wrapper as ml
+from ..utils import wrapper as ml, clamp
 from ..samplers import *
-
 from ..emb.qnt import encode_as_embedding
 
 # yuck, kind of needed
@@ -56,9 +55,6 @@ def _dropout_mask( input, p=None ):
 	seq = [ random.random() < p for _ in range( input.shape[0] ) ]
 	mask = torch.tensor( seq, dtype=torch.bool, device=input.device )
 	return mask
-
-def clamp(n, lo, hi):
-	return max(lo, min(n, hi))
 
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
@@ -1853,19 +1849,19 @@ class Base(nn.Module):
 		else:
 			# argmax instead
 			if temperature <= 0.0:
-				res = [ logit.argmax(dim=1) for logit in logits ]
+				res = [ logit.argmax(dim=-1) for logit in logits ]
 			else:
 				res = [ Categorical(logits=logit).sample() for logit in logits ]
 
 			# calculate token probabilities
 			if "len" in self.capabilities:
 				scores = [
-					[ F.softmax(logit[i, :], dim=0)[token].item() for i, token in enumerate(tokens) ]
+					[ F.softmax(logit[i, :], dim=-1)[token].item() for i, token in enumerate(tokens) ]
 					for logit, tokens in zip(logits, res)
 				]
 			else:
 				scores = [ 
-					[ F.softmax(logit[-1, :], dim=0)[token].item() for token in tokens ]
+					[ F.softmax(logit[-1, :], dim=-1)[token].item() for token in tokens ]
 					for logit, tokens in zip(logits, res)
 				]
 

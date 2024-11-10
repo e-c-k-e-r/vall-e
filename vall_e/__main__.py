@@ -52,6 +52,10 @@ def main():
 	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=0.1)
 	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=0.1)
 	parser.add_argument("--refine-on-stop", action="store_true")
+
+	# experimental settings
+	parser.add_argument("--load-from-artifact", type=Path, default=None)
+	parser.add_argument("--denoise-start", type=float, default=0.0)
 	
 	parser.add_argument("--seed", type=int, default=None)
 
@@ -92,6 +96,10 @@ def main():
 		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
 		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
 		refine_on_stop=args.refine_on_stop,
+		
+		load_from_artifact=args.load_from_artifact,
+		denoise_start=args.denoise_start,
+
 		seed=args.seed,
 	)
 	

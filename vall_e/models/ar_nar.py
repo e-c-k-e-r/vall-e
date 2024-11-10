@@ -24,12 +24,9 @@ import logging
 _logger = logging.getLogger(__name__)
 
 from ..emb.qnt import trim, encode_as_embedding, get_silence
-from ..utils import get_devices, setup_logging, timer
+from ..utils import get_devices, setup_logging, timer, clamp
 
 from .lora import enable_lora
-
-def clamp(n, lo, hi):
-	return max(lo, min(n, hi))
 
 class AR_NAR(Base):
 	def forward(
@@ -490,32 +487,19 @@ def example_usage():
 	"""
 	# cfg.model.loss_factors = {}
 
-	def tokenize(content):
-		return torch.tensor( cfg.tokenizer.encode(content) )
+	def load_artifact( path ):
+		artifact = np.load(path, allow_pickle=True)[()]
 
-	def _load_quants(path) -> Tensor:
-		qnt = np.load(path, allow_pickle=True)[()]
-		return torch.from_numpy(qnt["codes"].astype(np.int16))[0, :cfg.model.resp_levels, :].t().to(torch.int16)
+		text = torch.tensor( cfg.tokenizer.encode( artifact["metadata"]["phonemes"] ) ).to(dtype=torch.uint8, device=device)
+		audio = torch.from_numpy(artifact["codes"].astype(np.int16))[0, :, :].t().to(dtype=torch.int16, device=device)
 
-	qnt = _load_quants(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
-	noise = _load_quants(f"./data/noise.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
+		return text, audio
 
-	text_list = [
-		tokenize("ˈaɪ wɪl nˌɑːt ˈæsk ɐ sˈɛkənd tˈaɪm").to(device),
-		#tokenize("ˈaɪ wɪl nˌɑːt ˈæsk").to(device),
-	]
-	proms_list = [
-		qnt[:cfg.dataset.frames_per_second, :].to(device),
-		#qnt[:cfg.dataset.frames_per_second, :].to(device),
-	]
-	resps_list = [
-		qnt[:, :].to(device),
-		#qnt[:cfg.dataset.frames_per_second, :].to(device),
-	]
+	text, audio = load_artifact(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 
-	text_list = text_list[:1]
-	proms_list = proms_list[:1]
-	resps_list = resps_list[:1]
+	text_list = [ text ]
+	proms_list = [ audio[:cfg.dataset.frames_per_second, :] ]
+	resps_list = [ audio ]
 
 	batch_size = len(text_list)
 
@@ -721,7 +705,7 @@ def example_usage():
 			resps = engine( texts, proms, resps, task_list=tasks, sampling_temperature=0.2 )
 
 		for i, o in enumerate(resps):
-			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{task}.{name}.wav", device=device)
+			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.wav", device=device)
 
 		unload_model()
 

@@ -49,6 +49,9 @@ def prune_missing( source, dest, recurse=True, path=[], parent_is_obj=None, retu
 			missing += m
 	return (keep, missing) if return_missing else keep
 
+def clamp(n, lo, hi):
+	return max(lo, min(n, hi))
+
 class timer:
 	def __init__(self, msg="Elapsed time:", callback=None):
 		self.msg = msg
