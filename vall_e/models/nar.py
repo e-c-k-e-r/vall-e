@@ -196,7 +196,7 @@ class NAR(Base):
 							...
 
 					# apply CFG (should probably only apply to NAR quant level 0)
-					if task not in text_task:
+					if task not in text_task + ["len"]:
 						drop_text = False
 						drop_audio = False
 
