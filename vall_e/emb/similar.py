@@ -282,7 +282,7 @@ def main():
 				dtype=args.dtype,
 				amp=args.amp,
 
-				verbose=False,
+				verbose=True,
 			)
 			
 			if not similarities:

@@ -148,13 +148,14 @@ def run_eval(engines, eval_name, dl, args=None):
 			elif "len" in engine.hyper_config.capabilities:
 				kwargs = base_kwargs | cfg.evaluation.ar_kwargs
 				max_steps = kwargs.pop("max_steps", 500)
-				len_list = engine( max_steps=5, **kwargs )
-				len_list = [ min( l, max_steps ) for l in len_list ]
 
 				if True:
 					len_list = [ resp.shape[0] for resp in batch["resps"] ]
 					kwargs["resps_list"] = [ resp[:, :1] for resp in batch["resps"] ]
 					kwargs["denoise_start"] = 0.5
+				else:
+					len_list = engine( max_steps=5, **kwargs )
+					len_list = [ min( l, max_steps ) for l in len_list ]
 				
 				kwargs = base_kwargs | cfg.evaluation.nar_kwargs
 				resps_list = engine( **kwargs, len_list=len_list )
