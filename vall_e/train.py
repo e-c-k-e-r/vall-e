@@ -108,7 +108,15 @@ def run_eval(engines, eval_name, dl, args=None):
 	
 	processed = 0
 	while processed < cfg.evaluation.size:
-		batch = to_device(next(iter(dl)), cfg.device)
+		# directly randomly sample
+		if eval_name == "subtrain":
+			# sample from dataset
+			# to-do: derive from current iteration
+			samples = [ to_device(dl.dataset[random.randint( 0, len( dl.dataset ) )], cfg.device) for sample in range( cfg.evaluation.batch_size ) ]
+			# collate manually
+			batch = {k: [s[k] for s in samples] for k in samples[0]}
+		else:
+			batch = to_device(next(iter(dl)), cfg.device)
 
 		# limit to eval batch size in the event we somehow have a weird dataloader
 		for key in batch.keys():
@@ -209,14 +217,14 @@ def train():
 	if cfg.yaml_path is not None and is_global_leader():
 		shutil.copy( cfg.yaml_path, cfg.log_dir / "config.yaml" )
 	# create dataloaders
-	train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
+	train_dl, val_dl = create_train_val_dataloader()
 	# evaluation lambda
 	def eval_fn(engines):
 		do_gc()
 		engines.eval()
 		# wrapped in a try block because it's sometimes prone to breaking
 		try:
-			run_eval(engines, "subtrain", subtrain_dl, args)
+			run_eval(engines, "subtrain", train_dl, args)
 			run_eval(engines, "val", val_dl, args)
 		except Exception as e:
 			_logger.warning(f"Error occurred while performing eval: {str(e)}")

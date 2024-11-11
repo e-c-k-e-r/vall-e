@@ -9,11 +9,12 @@ from .distributed import global_rank, local_rank, world_size
 
 # Randomly picks an index from an array of indices
 class PoolSampler():
-	def __init__( self, pool = [], keep_all = False, shuffle = False ):
+	def __init__( self, pool = [], keep_all = False, shuffle = False, dataset_hash = None ):
 		self.length = len(pool)
 		self.shuffle = shuffle
 		self.global_pool = pool if keep_all else None
 		self.global_indices = [ i for i in range(self.length) ]
+		self.dataset_hash = dataset_hash
 		self.reset()
 
 	def reset(self):
@@ -45,21 +46,25 @@ class PoolSampler():
 		return self.sample(*args, **kwargs)
 
 	def get_state(self):
-		return { "length": self.length, "global_pool": self.global_pool, "global_indices": self.global_indices, "current_pool": self.current_pool }
+		return { "length": self.length, "global_pool": self.global_pool, "global_indices": self.global_indices, "current_pool": self.current_pool, "dataset_hash": self.dataset_hash }
 	
 	def set_state(self, state):
 		self.length = state["length"]
 		self.global_pool = state["global_pool"]
 		self.global_indices = state["global_indices"]
 		self.current_pool = state["current_pool"]
+		# could .pop()
+		if "dataset_hash" in state:
+			self.dataset_hash = state["dataset_hash"]
 
 # "Samples" through a fixed sequence from 0 to length
 # Necessary for our "shuffle+sort by duration+interleave" sampling method
 # Allows saving and loading state
 class OrderedSampler(Sampler):
-	def __init__( self, length ):
+	def __init__( self, length, dataset_hash=None ):
 		self.position = 0
 		self.length = length
+		self.dataset_hash = dataset_hash
 
 	def __len__(self):
 		return self.length
@@ -73,18 +78,22 @@ class OrderedSampler(Sampler):
 			self.position += 1
 
 	def get_state(self):
-		return { "position": self.position, "length": self.length }
+		return { "position": self.position, "length": self.length, "dataset_hash": self.dataset_hash }
 	
 	def set_state(self, state):
 		self.position = state["position"]
 		self.length = state["length"]
+		# could .pop()
+		if "dataset_hash" in state:
+			self.dataset_hash = state["dataset_hash"]
 
 # Like the above, but will batch based on token count
 class BatchedOrderedSampler(Sampler):
-	def __init__( self, buckets, max_duration=0, max_batch_size=0, shuffle=False ):
+	def __init__( self, buckets, max_duration=0, max_batch_size=0, shuffle=False, dataset_hash=None ):
 		self.position = 0
 		self.batches = []
 		self.shuffle = shuffle
+		self.dataset_hash = dataset_hash
 
 		assert max_duration != 0 and max_batch_size != 0, "max_duration and max_batch_size cannot both be 0"
 
@@ -126,18 +135,22 @@ class BatchedOrderedSampler(Sampler):
 			self.position += 1
 
 	def get_state(self):
-		return { "position": self.position, "batches": self.batches }
+		return { "position": self.position, "batches": self.batches, "dataset_hash": self.dataset_hash }
 	
 	def set_state(self, state):
 		self.position = state["position"]
 		self.batches = state["batches"]
+		# could .pop()
+		if "dataset_hash" in state:
+			self.dataset_hash = state["dataset_hash"]
 
 # Randomly samples indices from a given sequence from 0 to length
 # Allows saving and loading state
 class RandomSampler(Sampler):
-	def __init__( self, length ):
+	def __init__( self, length, dataset_hash=None ):
 		self.position = 0
 		self.length = length
+		self.dataset_hash = dataset_hash
 
 		self.generator = torch.Generator()
 		self.perm = torch.randperm(self.length, generator=self.generator)
@@ -155,10 +168,13 @@ class RandomSampler(Sampler):
 			self.position += 1
 
 	def get_state(self):
-		return { "position": self.position, "length": self.length, "perm": self.perm, "generator": self.generator.get_state() }
+		return { "position": self.position, "length": self.length, "perm": self.perm, "generator": self.generator.get_state(), "dataset_hash": self.dataset_hash }
 	
 	def set_state(self, state):
 		self.position = state["position"]
 		self.length = state["length"]
 		self.perm = state["perm"]
 		self.generator.set_state(state["generator"])
+		# could .pop()
+		if "dataset_hash" in state:
+			self.dataset_hash = state["dataset_hash"]

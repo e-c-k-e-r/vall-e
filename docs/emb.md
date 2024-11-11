@@ -60,7 +60,7 @@ Descript-Audio-Codec was thoroughly tested for promising much, much cleaner outp
 
 However, due to the nature of the codec, simply throwing it at an attention-based transformer proves to be painful, as a unified AR+NAR model *heavily* suffers from noisy output in the NAR.
 
-Ironically, testing through mal-encoded audio (feeding 24KHz audio without upsampling to 44.1KHz) proved to have "cleaner" but bad utterances.
+Ironically, testing through erroneously encoded audio (feeding 24KHz audio without upsampling to 44.1KHz) proved to have "cleaner" but bad utterances.
 
 I'm uncertain on how to remedy this, as my options are:
 * train under a RetNet, if an attention-based transformer is simply the problem

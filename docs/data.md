@@ -61,7 +61,12 @@ The dataloader handles some simple yet effective features, such as:
 	* picking an input prompt from the same speaker as the sample, if the above is not requested
 	* preparing the input sequence for the given task (such as non-TTS tasks)
 
-The initial list of paths is cached through `diskcache`, if `cfg.dataset.cache == True`. Be sure to delete the resultant `.cache` folder, as well as the `sampler.*` state dicts alongside checkpoints, if you plan to modify the dataloader settings between training sessions.
+If `cfg.dataset.cache == True`, the initial list of paths and duration metadata (used for sorting/bucketing) is cached ~~through `diskcache`~~ under `{YAML_PATH}/.cache/{DATASET_HASH}/`. To allow for seamless modifications to the loaded dataset, the `DATASET_HASH` relies on:
+* duration range
+* folders/groups in the dataset
+* if using HDF5 (due to the key format differing)
+
+Be sure to delete the resultant `.cache` folder, as well as the `sampler.*` state dicts alongside checkpoints, if you plan to modify the dataloader settings between training sessions.
 
 ## Tasks
 
@@ -95,7 +100,7 @@ This section may be covered elsewhere in the documentation, but coverage here sh
 * `nse`: noisy speech editing.
 	* the above, but injects some noise throughout the sampled utterances.
 
-A mystical `rvc` for emulating RVC speech-to-speech synthesis is possible, but requires a dataset to do so.
+A mystical `vc` for performing voice conversion is possible, but either requires a dataset to do so, or abusing an emergent property.
 
 ## `__main__`
 

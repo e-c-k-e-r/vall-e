@@ -534,8 +534,11 @@ _durations_map = {}
 def _get_duration_map( type="training" ):
 	return _durations_map[type] if type in _durations_map else {}
 
-def _load_paths(dataset, type="training", silent=False):
-	cached_dir = cfg.cache_dir / cfg.dataset.hash_key(sorted(dataset))
+def _load_paths(dataset, type="training", silent=False, dataset_hash_key=None):
+	if not dataset_hash_key:
+		dataset_hash_key = cfg.dataset.hash_key(sorted(dataset))
+
+	cached_dir = cfg.cache_dir / dataset_hash_key
 	
 	cached_durations_path = cached_dir / f"durations[{type}].json"
 	cached_paths_path = cached_dir / f"dataloader[{type}].json"
@@ -691,10 +694,12 @@ class Dataset(_Dataset):
 
 		self.training = training
 		self.dataset_type = "training" if self.training else "validation"
-		self.dataset = cfg.dataset.training if self.training else cfg.dataset.validation
+		self.dataset = sorted(cfg.dataset.training if self.training else cfg.dataset.validation)
 		self.sampler_type = cfg.dataset.sample_type if self.dataset_type == "training" else "path"
 		self.sampler_order = cfg.dataset.sample_order
 		self.sampler_shuffle = cfg.dataset.sample_shuffle if self.dataset_type == "training" else True
+
+		self.dataset_hash_key = cfg.dataset.hash_key(sorted(self.dataset))
 
 		# to-do: do not do validation if there's nothing in the validation
 		# this just makes it be happy
@@ -706,7 +711,7 @@ class Dataset(_Dataset):
 			raise Exception(f'Requesting sample_type={self.sampler_type} with sample_order={self.sampler_order}, yet combination will not give expected results.')
 		
 		# dict of paths keyed by speaker names
-		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type)
+		self.paths_by_spkr_name = _load_paths(self.dataset, self.dataset_type, dataset_hash_key=self.dataset_hash_key)
 		# do it here due to the above
 		self.duration = 0
 		self.duration_map = _get_duration_map( self.dataset_type )
@@ -779,10 +784,6 @@ class Dataset(_Dataset):
 		else:
 			# just interleave
 			self.paths = [*_interleaved_reorder(self.paths, self.get_speaker)]
-
-		# dereference buckets
-		self.duration_map = None
-		self.duration_buckets = None
 		
 		# dict of speakers keyed by speaker group
 		self.spkrs_by_spkr_group = {}
@@ -830,16 +831,21 @@ class Dataset(_Dataset):
 					self.duration_buckets if not self.sampler_state_dict_path.exists() else {}, # pass nothing if we're just going to load from a state anyways
 					max_duration=cfg.dataset.sample_max_duration_batch,
 					max_batch_size=cfg.hyperparameters.batch_size if self.training else cfg.evaluation.batch_size,
-					shuffle=self.sampler_shuffle
+					shuffle=self.sampler_shuffle,
+					dataset_hash=self.dataset_hash_key,
 				)
 			else:
-				self.sampler = OrderedSampler( len(self) ) if not self.sampler_shuffle else RandomSampler( len(self) )
+				self.sampler = OrderedSampler( len(self), dataset_hash=self.dataset_hash_key ) if not self.sampler_shuffle else RandomSampler( len(self), dataset_hash=self.dataset_hash_key )
 			self.samplers = {}
 			self.spkr_samplers = {}
 		else:
-			self.sampler = RandomSampler( len(self) )
-			self.samplers = { name: PoolSampler( paths, keep_all=True, shuffle=self.sampler_shuffle ) for name, paths in self.paths_by_spkr_name.items() }
-			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True, shuffle=self.sampler_shuffle ) for name, speakers in self.spkrs_by_spkr_group.items() }
+			self.sampler = RandomSampler( len(self), dataset_hash=self.dataset_hash_key )
+			self.samplers = { name: PoolSampler( paths, keep_all=True, shuffle=self.sampler_shuffle, dataset_hash=self.dataset_hash_key ) for name, paths in self.paths_by_spkr_name.items() }
+			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True, shuffle=self.sampler_shuffle, dataset_hash=self.dataset_hash_key ) for name, speakers in self.spkrs_by_spkr_group.items() }
+
+		# dereference buckets
+		self.duration_map = None
+		self.duration_buckets = None
 
 		self.load_state_dict()
 
@@ -903,6 +909,7 @@ class Dataset(_Dataset):
 			return
 
 		state_dict = torch_load(path)
+
 		if self.sampler_type == "path":
 			state_dict = self.sampler.set_state(state_dict)
 		else:
@@ -1461,16 +1468,8 @@ def create_val_dataloader():
 # to-do, use the above two, then create the subtrain dataset
 def create_train_val_dataloader():
 	train_dataset, val_dataset = create_datasets()
-
-	# deepcopy is slow
-	subtrain_dataset = Dataset( training=True ) 
-
-	if subtrain_dataset.sampler_type == "path":
-		subtrain_dataset.head_(cfg.evaluation.size)
-
 	train_dl = _create_dataloader(train_dataset, training=True)
 	val_dl = _create_dataloader(val_dataset, training=False)
-	subtrain_dl = _create_dataloader(subtrain_dataset, training=False)
 
 	_logger.info(str(train_dataset.phone_symmap))
 	_logger.info(str(train_dataset.spkr_symmap))
@@ -1478,18 +1477,14 @@ def create_train_val_dataloader():
 
 	_logger.info(f"#samples (train): {len(train_dataset)}.")
 	_logger.info(f"#samples (val): {len(val_dataset)}.")
-	_logger.info(f"#samples (subtrain): {len(subtrain_dataset)}.")
 
 	_logger.info(f"#duration (train): {str(train_dataset.duration)}.")
 	_logger.info(f"#duration (val): {str(val_dataset.duration)}.")
-	_logger.info(f"#duration (subtrain): {str(subtrain_dataset.duration)}.")
-
-	assert isinstance(subtrain_dl.dataset, Dataset)
 
 	# remove duration map (it gets bloated)
 	_durations_map = {}
 
-	return train_dl, subtrain_dl, val_dl
+	return train_dl, val_dl
 
 # parse metadata from an numpy file (.enc/.dac) and validate it
 def process_artifact_metadata( artifact ):
