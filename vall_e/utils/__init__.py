@@ -13,5 +13,6 @@ from .utils import (
     truncate_json,
     timer,
     prune_missing,
-    clamp
+    clamp,
+    md5_hash
 )

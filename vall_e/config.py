@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .utils.distributed import world_size
 from .utils.io import torch_load
-from .utils import set_seed, prune_missing
+from .utils import set_seed, prune_missing, md5_hash
 
 @dataclass()
 class BaseConfig:
@@ -199,6 +199,9 @@ class Dataset:
 	retokenize_text: bool = False
 
 	_frames_per_second: int = 0 # allows setting your own hint
+
+	def hash_key(self, *args):
+		return md5_hash([ self.use_hdf5, self.min_duration, self.max_duration ] + [*args])
 
 	@cached_property
 	def frames_per_second(self):

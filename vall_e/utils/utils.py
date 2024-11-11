@@ -15,6 +15,7 @@ import time
 import psutil
 import math
 import logging
+import hashlib
 
 _logger = logging.getLogger(__name__)
 
@@ -30,6 +31,11 @@ from time import perf_counter
 from datetime import datetime
 
 T = TypeVar("T")
+
+def md5_hash( x ):
+	if isinstance( x, list ):
+		return md5_hash(":".join([ md5_hash( _ ) for _ in x ]))
+	return hashlib.md5(str(x).encode("utf-8")).hexdigest()
 
 def prune_missing( source, dest, recurse=True, path=[], parent_is_obj=None, return_missing=True ):
 	is_obj = hasattr( source, "__dict__" )
@@ -69,12 +75,14 @@ class timer:
 
 		print(f'[{datetime.now().isoformat()}] {msg}')
 
-def truncate_json( str ):
+def truncate_json( x ):
+	if isinstance( x, bytes ):
+		return truncate_json( x.decode('utf-8') ).encode()
 
 	def fun( match ):
 		return "{:.4f}".format(float(match.group()))
 
-	return re.sub(r"\d+\.\d{8,}", fun, str)
+	return re.sub(r"\d+\.\d{8,}", fun, x)
 
 def do_gc():
 	gc.collect()
