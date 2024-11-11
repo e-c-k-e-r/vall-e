@@ -948,6 +948,7 @@ class Config(BaseConfig):
 			if not isinstance( model, dict ):
 				continue
 
+			# to-do: prune unused keys in here too automatically
 			if "experimental" not in model or not model["experimental"]:
 				model["experimental"] = {}
 
@@ -962,6 +963,9 @@ class Config(BaseConfig):
 			if "p_rvq_levels" in model["experimental"]:
 				model["experimental"]["rvq_levels_p"] = model["experimental"]["p_rvq_levels"]
 				del model["experimental"]["p_rvq_levels"]
+			
+			if "p_len_train" in model["experimental"]:
+				del model["experimental"]["p_len_train"]
 
 		self.models = [ Model(**model) if isinstance(model, dict) else model for model in self.models ]
 		self.loras = [ LoRA(**lora)  if isinstance(lora, dict) else lora for lora in self.loras ]

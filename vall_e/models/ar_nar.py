@@ -275,9 +275,9 @@ class AR_NAR(Base):
 			_super = super()
 			# to-do: allow for batch processing (it should probably work batched anyways)
 			def demask_sampling( batch_index, seq_len ):
-				# overrides
+				# overrides, to be user-controllable soonTM
 				max_steps = 10
-				temperature = 0.3
+				temperature = 1.0
 				cfg_strength = 1.0
 				sampling_repetition_penalty = 1.0 # force rep pen off, because this caused false positives due to how rep pen was being naively applied......
 				sampling_top_p = 0.9 # a lot of demasking samplers use a top-k of seq_len * 0.9
