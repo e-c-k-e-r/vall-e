@@ -233,6 +233,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=kwargs["layer-skip-varentropy-threshold"])
 	parser.add_argument("--refine-on-stop", action="store_true")
 	parser.add_argument("--denoise-start", type=float, default=0.0)
+	parser.add_argument("--cfg-strength", type=float, default=kwargs['cfg-strength'])
 	args, unknown = parser.parse_known_args()
 
 	if is_windows:
@@ -280,6 +281,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		prefix_silence=args.prefix_silence,
 		input_prompt_prefix=args.input_prompt_prefix,
 		input_prompt_length=args.input_prompt_length,
+		cfg_strength=args.cfg_strength,
 	)
 	
 	with timer("Inferenced in", callback=lambda msg: gr.Info( msg )) as t:
