@@ -19,6 +19,31 @@ def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=F
 	if factor == 1.0 or previous is None:
 		return logits
 
+	unique = set()
+	priors = reversed(previous)
+	for distance, token in enumerate(priors):
+		# rep-pen range
+		if limit and distance >= limit:
+			continue
+		# skip if we're only applying the decay once
+		if one_time and token in unique:
+			continue
+
+		distance += 1
+		logits[:, token] /= factor * (distance ** decay)
+		
+		# add to set if we care about it
+		if one_time:
+			unique.add(token)
+
+	return logits
+
+"""
+# I do not know why this is a regression...
+def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=False, limit=75 ):
+	if factor == 1.0 or previous is None:
+		return logits
+
 	seq_len = logits.shape[0]
 	prev_len = len( previous )
 	
@@ -55,6 +80,7 @@ def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=F
 
 
 	return logits
+"""
 
 # Simple "filter" that modifies the logit for the stop token, based on the sequence length
 # `length` is the length of the sequence currently
