@@ -6,6 +6,14 @@ Most of these settings live under `cfg.dataset`.
 
 ## Dataset
 
+The provided reference model was trained on `?`k hours of audio with a mix of:
+* LibriTTS-R's entire dataset
+* `small`+`medium`+`duplicate` portions of LibriVox
+* Emilia's German, French, and Japanese dataset
+* 12K hours of a privately sourced corpus of 425 audiobooks
+* a small portion of Emilia's English dataset
+* a personal small corpus of transcribed utterances from a selection of video games
+
 ### Leverage Your Own Dataset
 
 If you already have a dataset you want, for example, your own large corpus or for finetuning, you can use your own dataset instead.

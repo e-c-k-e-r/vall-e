@@ -832,16 +832,15 @@ class Dataset(_Dataset):
 					max_duration=cfg.dataset.sample_max_duration_batch,
 					max_batch_size=cfg.hyperparameters.batch_size if self.training else cfg.evaluation.batch_size,
 					shuffle=self.sampler_shuffle,
-					dataset_hash=self.dataset_hash_key,
 				)
 			else:
-				self.sampler = OrderedSampler( len(self), dataset_hash=self.dataset_hash_key ) if not self.sampler_shuffle else RandomSampler( len(self), dataset_hash=self.dataset_hash_key )
+				self.sampler = OrderedSampler( len(self) ) if not self.sampler_shuffle else RandomSampler( len(self) )
 			self.samplers = {}
 			self.spkr_samplers = {}
 		else:
-			self.sampler = RandomSampler( len(self), dataset_hash=self.dataset_hash_key )
-			self.samplers = { name: PoolSampler( paths, keep_all=True, shuffle=self.sampler_shuffle, dataset_hash=self.dataset_hash_key ) for name, paths in self.paths_by_spkr_name.items() }
-			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True, shuffle=self.sampler_shuffle, dataset_hash=self.dataset_hash_key ) for name, speakers in self.spkrs_by_spkr_group.items() }
+			self.sampler = RandomSampler( len(self) )
+			self.samplers = { name: PoolSampler( paths, keep_all=True, shuffle=self.sampler_shuffle ) for name, paths in self.paths_by_spkr_name.items() }
+			self.spkr_samplers = { name: PoolSampler( [*set(speakers)], keep_all=True, shuffle=self.sampler_shuffle ) for name, speakers in self.spkrs_by_spkr_group.items() }
 
 		# dereference buckets
 		self.duration_map = None
@@ -896,6 +895,10 @@ class Dataset(_Dataset):
 				"samplers": { name: sampler.get_state() for name, sampler in self.samplers.items() },
 				"spkr_samplers": { name: sampler.get_state() for name, sampler in self.spkr_samplers.items() },
 			}
+
+		if "dataset_hash_key" not in state_dict:
+			 state_dict["dataset_hash_key"] = self.dataset_hash_key
+
 		torch_save(state_dict, path)
 
 	def load_state_dict(self, path = None):
@@ -909,6 +912,9 @@ class Dataset(_Dataset):
 			return
 
 		state_dict = torch_load(path)
+		if "dataset_hash_key" in state_dict:
+			if self.dataset_hash_key != state_dict["dataset_hash_key"]:
+				return
 
 		if self.sampler_type == "path":
 			state_dict = self.sampler.set_state(state_dict)
