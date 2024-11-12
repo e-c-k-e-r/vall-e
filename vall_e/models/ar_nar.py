@@ -222,6 +222,8 @@ class AR_NAR(Base):
 
 		max_length = sampling_kwargs.pop("max_duration", 500)
 		max_steps = sampling_kwargs.get("max_steps", 25)
+		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
+		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
 
 		temperature = sampling_kwargs.pop("temperature", 1.0)
 		cfg_strength = sampling_kwargs.get("cfg_strength", 0.0)
@@ -299,7 +301,7 @@ class AR_NAR(Base):
 				prev_list=prev_list,
 				quant_levels=quant_levels,
 
-				temperature=temperature * (steps_until_x0 / max_steps) ,
+				temperature=temperature * (steps_until_x0 / max_steps),
 				**sampling_kwargs,
 			)
 
@@ -317,13 +319,67 @@ class AR_NAR(Base):
 
 			# sample with gumbelnoise
 			# This actually lobotomizes things
-			#sampled_ids = [ gumbel_sample( logits, temperature=temperature, dim=-1 ) for logits in filtered_sampled.logits[0] ]
+			#sampled_ids = [ gumbel_sample( logits, temperature=temperature * (steps_until_x0 / max_steps), dim=-1 ) for logits in filtered_sampled.logits[0] ]
 			sampled_ids = filtered_sampled[0]
 
 			# keep unmasked tokens
 			resps_list = [ torch.where( masked, input_ids, resps ) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
 			# update scores (conjugated to put the worst scores at the top)
-			scores = [ 1.0 - torch.tensor([score for score in scores], device=device) for scores in filtered_sampled.scores ]
+			scores = [ 1.0 - torch.tensor([score for score in scores], device=device) for scores in unfiltered_sampled.scores ]
+
+		# refinement step
+		if refine_on_stop:
+			inputs = super().inputs(
+				text_list=text_list,
+				proms_list=proms_list,
+				resps_list=resps_list,
+				lang_list=lang_list,
+				tone_list=tone_list,
+				quant_levels=quant_levels,
+			)
+			output = super().forward(
+				inputs=inputs,
+				quant_levels=quant_levels,
+				#layer_skip_variables=sampling_layer_skip_variables,
+			)
+
+			logits = output.logits
+
+			if cfg_strength > 0:
+				null_inputs = super().inputs(
+					text_list=null_text,
+					proms_list=null_prom,
+					resps_list=resps_list,
+					lang_list=lang_list,
+					tone_list=tone_list,
+					quant_levels=quant_levels,
+				)
+				null_output = super().forward(
+					inputs=null_inputs,
+					quant_levels=quant_levels,
+					#layer_skip_variables=sampling_layer_skip_variables,
+				)
+				for seq_len, logit, null_logit in zip(len_list, output.logits, null_output.logits):
+					logit[-seq_len:] = null_logit[-seq_len:] + ( logit[-seq_len:] - null_logit[-seq_len:] ) * cfg_strength
+
+			sampled = super().sample(
+				logits=logits,
+				prev_list=[ resps_list[i] if task not in text_task else text_list[i] for i, task in enumerate( task_list ) ],
+				**(sampling_kwargs | {"attentions": output.attentions if entropix_sampling else None}),
+			)
+
+			# remove stop token
+			resps_list = [self._prune(r, self.stop_token) for i, r in enumerate(resps_list)]
+
+			# get how much we need to slice from the end
+			slice_lengths = [ sequence.shape[-1] for sequence in resps_list ]
+			# -1 for the stop token
+			logits = [ logit[-length-1:-1] for logit, length in zip(logits, slice_lengths) ]
+			# greedy sample from the sequence
+			refined_list = [ logit.argmax(dim=-1) for logit in logits ]
+			# to-do: compare scores
+			# set the "refined" list as the output
+			resps_list = refined_list	
 
 		if cfg.experimental and max_steps > 0:
 			print( timestep, steps_until_x0, noise_p, resps_list, scores )

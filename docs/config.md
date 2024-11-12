@@ -72,7 +72,11 @@ This class governs the behavior during the evaluation / validation pass during t
 
 If `cfg.evaluation.size > 0`, then the evaluation / validation passes are triggered every `cfg.evaluation.frequency` iteration steps.
 
-During evaluation, a separate copy of the training dataset will be sampled and the inputs will be inferenced to generate an output, while during validation, the validation dataset is sampled from instead.
+During evaluation:
+* for the `subtrain` evaluation pass, the training dataset is directly sampled through indices, rather than the iterator, to avoid having to duplicate the dataset.
+	* in the future, the samples during this pass should sample around the training dataloader's current position.
+* for the `val` validation pass, the validation dataset is sampled through the dataloader's iterator.
+	* currently, the validation dataloader's sampler is not stored.
 
 A total of `cfg.evaluation.size` samples are inferenced in no more than `cfg.evaluation.batch_size`-sized batches (no more than, because batched samplers may return different sized batches).
 

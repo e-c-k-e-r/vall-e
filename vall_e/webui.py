@@ -306,19 +306,12 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
-	parser.add_argument("--text", type=str, default=kwargs["text"])
 	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
+	parser.add_argument("--max-duration", type=int, default=0)
 	parser.add_argument("--language", type=str, default=kwargs["language"])
-	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
-	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
-	parser.add_argument("--max-duration", type=int, default=int(kwargs["max-duration"]*cfg.dataset.frames_per_second))
-	parser.add_argument("--max-levels", type=int, default=kwargs["max-levels"])
 	parser.add_argument("--ar-temperature", type=float, default=kwargs["ar-temperature"])
-	parser.add_argument("--nar-temperature", type=float, default=kwargs["nar-temperature"])
 	parser.add_argument("--min-ar-temperature", type=float, default=kwargs["min-ar-temperature"])
-	parser.add_argument("--min-nar-temperature", type=float, default=kwargs["min-nar-temperature"])
-	parser.add_argument("--prefix-silence", type=float, default=kwargs["prefix-silence"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
 	parser.add_argument("--min-p", type=float, default=kwargs["min-p"])
@@ -331,15 +324,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--dry-multiplier", type=float, default=kwargs["dry-multiplier"])
 	parser.add_argument("--dry-base", type=float, default=kwargs["dry-base"])
 	parser.add_argument("--dry-allowed-length", type=int, default=kwargs["dry-allowed-length"])
-	parser.add_argument("--entropix-sampling", action="store_true")
-	parser.add_argument("--layer-skip", action="store_true")
-	parser.add_argument("--layer-skip-exit-layer", type=int, default=kwargs["layer-skip-exit-layer"])
-	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=kwargs["layer-skip-entropy-threshold"])
-	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=kwargs["layer-skip-varentropy-threshold"])
-	parser.add_argument("--refine-on-stop", action="store_true")
-	parser.add_argument("--cfg-strength", type=float, default=kwargs["cfg-strength"])
 	args, unknown = parser.parse_known_args()
-
 
 	"""
 	if not args.references:
@@ -361,21 +346,14 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	sampling_kwargs = dict(
 		max_duration=args.max_duration,
-		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
-		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
+		ar_temperature=args.ar_temperature,
+		min_ar_temperature=args.min_ar_temperature,
 		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
-		entropix_sampling=args.entropix_sampling,
-		layer_skip=args.layer_skip,
-		layer_skip_exit_layer=args.layer_skip_exit_layer,
-		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
-		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
-		refine_on_stop=args.refine_on_stop,
-		denoise_start=args.denoise_start,
 	)
 	
 	gr.Info("Inferencing...")

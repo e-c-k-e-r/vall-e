@@ -56,19 +56,26 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 The implemented solution follows a similar paradigm to diffusion, but with masking instead of noise.
 * incidentally, [this paper](https://arxiv.org/abs/2406.05478) demonstrates this in the use of a NAR transformer for image generation
 
+The reference model provided has *some* NAR demasking (mock diffusion) aware training to faciliate a pure NAR model, but:
+* Sampling absolutely requires rep pen, or the output degenerates.
+* Output isn't so great, as there's artifacting from either an underbaked model or a naive sampler.
+
 To-do: fill out this more when it works. Getting this to work is a huge pain.
 * Some masked transformers do not "inject" any timestep information (Text-To-Image Muse as far as I can tell)
 * Others "expose" it by applying a timestep embedding after pre/post attention normalization
   * Except F5-TTS only does this pre for its DiTS, but not UnetT
   * MaskGCT does it both pre and post
   * the test trainier actually degrades the output immensely when doing this
-* I'm sure I've seen a masked transformer not have CFG, but most of them seem to do (and all seem to be poorly documentated on specifically how its doing it for my dumb brain)
+* I'm sure I've seen a masked transformer not have CFG, but most of them seem to do.
+  * This helps the base AR+NAR tasks and provides CFG sampling for such tasks anyways.
 
 ## Embeddings
 
 The "magic" of subjugating a transformer for audio use lies within the ensemble of the embeddings. This is necessary as each piece of a sequence is fundamentally different, but a HF-compatible model can geta way with treating each sequence as separate ranges within a total token sequence.
 
 While embeddings *can* be tied to the output head, testing showed that the model ***really*** does not like to do this, although my implementation could very well be flawed.
+
+With attention-based transformers, most embeddings can serve as a token itself and have the attention mechanism attend to it. Theoretically, there should be little to no functional differences between "tokenizing" an embedding, and summing a modifying embedding, but experimentation is needed for this assertion.
 
 ### Text Embeddings
 
@@ -85,10 +92,10 @@ This embedding provides the requested language for the model to be aware of.
 
 This *mostly* isn't necessary, but VALL-E X's paper mentions needing a token for the language itself, and other solutions like XTTS2 provides a language token as well.
 
-In practice, this seems to help govern the accent general mannerisms associated with that language. For example, prompting French or German with the language set to `en` will give typical foreigner speech of trying to speak a language they don't know.
-* Consequently, since this does tie to accents more, ***extreme*** attention is to be paid to the dialects being trained against, instead of naively grouping, say, all of Spansih to one language code.
+In practice, this seems to help govern the accent / general mannerisms associated with that language. For example, prompting French or German with the language set to `en` will give typical foreigner speech of trying to speak a language they don't know.
+* Consequently, since this does tie to accents more, ***extreme*** attention is to be paid to the dialects being trained against, instead of naively grouping, say, all of Spanish to one language code.
 
-This embedding probably helps the model with being able to perform cross-lingual outputs, but I did not do any experimentations on a model without this, as the reference `ar+nar-llama-8` was trained with this from the beginning (and maybe the `ar+nar-retnet-8` experiment).
+This embedding probably helps the model with being able to perform cross-lingual outputs, but I did not do any experimentations on a model without this, as the reference `ar+nar-llama-8` was trained with this from the beginning with the small Japanese in my dataset anyhow (and maybe the `ar+nar-retnet-8` experiment).
 
 #### Tone Embedding
 
@@ -113,6 +120,7 @@ Howver, the `resp` requires some extra care, as the model needs to both causally
   * In other words, embedding level 1 => RVQ level 0, embedding level 2 => RVQ level 1, etc...
 * I believe this is because the model needs to "know" whether to predict ~~the next token in the sequence, or the token in the same position of the next RVQ level~~ which tokens of a given embedding.
   * In other words, the AR's RVQ level 0 embedding predicts itself, while the NAR's embeddings predict the next level's embeddings.
+  * This is evident on how RVQ level 0 can be trained causally and in parallel with its own embeddings, rather than having limiting issues when reusing the embedding across the two.
   * Unfortunately, providing a token for the current/target RVQ level within the input sequence doesn't seem to help? I don't remember if I experimented with this or not, but testing of a "sane" `resp` embedding proved to be unfruitful.
 
 The `prom` and `resp` are split since, in theory, it helps the model know better what audio to source from, and what audio is part of the output sequence. In theory.
@@ -127,7 +135,7 @@ Finally, the model *may* then sum each embedding level back down to one sequence
   * It *could* be beneficial to train a model under mixed modes, but requires experimentation.
   * The reference model was trained originally without summing, then trained with summing.
 
-Additionally, it's *technically* possible to instead use the embeddings from the core model used to encode the audio, but in theory this may exclude specific features the model has encoded within the embeddings.
+Additionally, it's *technically* possible to instead use the embeddings from the model used to encode the audio (for example, EnCodec's embeddings), but in theory this may exclude specific features the model has encoded within the embeddings.
 
 #### RVQ Level Embedding
 
@@ -204,7 +212,7 @@ This task will follow a reverse sequence of `<audio><language><RVQ level><output
 
 The model can be prompted in creative ways to yield some interesting behaviors:
 * prompting without an input audio prompt will have the model generate a random voice at the "cost" of some unintelligible utterance at the beginning of the output response (despite doing no promptless training).
-  * finetunes / LoRAs can benefit from this by having input audio promptless synthesis, while opting to have an input audio prompt for guidance.
+  * classifier-free-guidance-aware training does fix this, but this property emerges without it.
 * prompting with an input text prompt being the transcription of the input audio prompt will have the response follow very closely to the input prompt  (despite not doing input=output training).
   * this should allow for easy transcription editing without much fuss.
 

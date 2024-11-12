@@ -587,6 +587,8 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		phones = entry['phones'] if "phones" in entry else 0
 		duration = entry['duration'] if "duration" in entry else 0
 
+		#print( id, duration )
+
 		# add to duration bucket
 		k = key(id, entry)
 		if type not in _durations_map:
@@ -1579,7 +1581,7 @@ def create_dataset_metadata( skip_existing=False ):
 
 					utterance_metadata = process_artifact_metadata( artifact )
 					# to-do: derive duration from codes if duration is malformed because this happened to me with LibriTTS-R
-					#utterance_metadata["duration"] = qnt.shape[0] / cfg.dataset.frames_per_second
+					utterance_metadata["duration"] = qnt.shape[0] / cfg.dataset.frames_per_second
 
 				for k, v in utterance_metadata.items():
 					metadata[id][k] = v

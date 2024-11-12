@@ -17,6 +17,7 @@ Synthesizing speech is simple:
 * `Inference`: Button to start generating the audio.
 * `Basic Settings`: Basic sampler settings for most uses.
 * `Sampler Settings`: Advanced sampler settings that are common for most text LLMs, but needs experimentation.
+* `Experimental Settings`: Settings used for testing. `cfg.experimental=True` enables this tab.
 
 All the additional knobs have a description that can be correlated to the inferencing CLI flags.
 
@@ -30,4 +31,4 @@ In the future, this *should* contain the necessary niceties to process raw audio
 
 ## Settings
 
-So far, this only allows you to load a different model without needing to restart. The previous model should seamlessly unload, and the new one will load in place.
+So far, this only allows you to load a different model under a different dtype, device, and/or attention mechanism. without needing to restart. The previous model should seamlessly unload, and the new one will load in place.

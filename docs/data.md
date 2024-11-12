@@ -7,12 +7,17 @@ Most of these settings live under `cfg.dataset`.
 ## Dataset
 
 The provided reference model was trained on `?`k hours of audio with a mix of:
-* LibriTTS-R's entire dataset
-* `small`+`medium`+`duplicate` portions of LibriVox
-* Emilia's German, French, and Japanese dataset
-* 12K hours of a privately sourced corpus of 425 audiobooks
-* a small portion of Emilia's English dataset
-* a personal small corpus of transcribed utterances from a selection of video games
+* 490.151 hours (out of 585 hours) of LibriTTS-R's entire dataset
+* 8362.304 hours (out of 10270 hours) of `small`+`medium`+`duplicate` portions of LibriLight
+* 4467.611 hours (out of `?` hours) of Emilia's German, French, and Japanese dataset
+* 2927.186 hours (out of `?` hours) of a privately sourced corpus of 425 audiobooks
+* 2364.799 hours (out of `?` hours) of Emilia's English dataset
+* 54.775 hours of a personal small corpus of transcribed utterances from a selection of video games
+
+These durations were reported from the training script directly.
+* Utterances under 3 seconds or above 32 seconds were culled from the duration count.
+* Metadata was *mostly* derived from the transcription metadata, mostly.
+	* LibriTTS-R's duration metadata was derived from the quantized audio size.
 
 ### Leverage Your Own Dataset
 

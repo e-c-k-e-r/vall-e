@@ -8,7 +8,7 @@ Most of these sampler functions do what's written on the tin, but for clarity:
 
 ## Samplers
 
-When sampling, the output logits are picked for sampling according to the current inference mode. For the AR, only the last token (or last `causal_size` tokens) are used for sampling, while the NAR relies on the previous RVQ level's sequence to determine how many tokens to sample in parallel.
+When sampling, the output logits are picked for sampling according to the current inference mode. For the AR, only the last token (or last `causal_size` tokens) are used for sampling, while the NAR relies on the previous sequence to determine how many tokens to sample in parallel.
 
 As the model is trained more, low temperatures are preferred over high temperatures for the AR, while greedy sampling is almost always preferred for the NAR.
 
@@ -18,7 +18,8 @@ Greedy sampling is enabled when the sampling temperature is <= 0, where the most
 
 This function (`reptition_penalize`) applies a penalty to target logits to avoid repetitive output.
 
-This is implemented by iterating through a list of past tokens, and penalizing that token's probability score by the requested amount.
+This is implemented by penalizing tokens in the future from repeating the currently iterated token.
+* This distinction is required to penalize for the NAR, while the AR only penalizes the single token being inferenced.
 
 An optional value can also be passed to factor in how far away that token is.
 
