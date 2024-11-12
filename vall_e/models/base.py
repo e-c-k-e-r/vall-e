@@ -39,7 +39,7 @@ from ..data import get_task_symmap
 
 # these seem more elegant than a dict
 Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions', 'hidden_states', 'exited_layer'])
-Sampled = namedtuple('Sampled', ['out', 'logits', 'scores', 'entropy'])
+Sampled = namedtuple('Sampled', ['ids', 'logits', 'scores', 'entropy'])
 LossStats = namedtuple('LossStats', ['loss', 'stats'])
 
 """
@@ -1028,8 +1028,8 @@ class Base(nn.Module):
 				if resps_list is not None and resps_list[i] is not None:
 					inputs[i].append( ( "resp", resps_list[i] ) )
 
-					# store dropout mask
-					if timestep is not None:
+					# store dropout mask (if training)
+					if timestep is not None and self.training:
 						dropout_mask = _dropout_mask( resps_list[i], p=math.cos(timestep * math.pi * 0.5) )
 						inputs[i].append( ("dropout_mask", dropout_mask ) )
 		
@@ -1558,6 +1558,10 @@ class Base(nn.Module):
 
 			return early
 
+		# derive quant levels from inputs if not provided
+		if quant_levels is None:
+			quant_levels = self.get_input( inputs, "quant_level" )
+
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		
 		x, mask = list_to_tensor(x_list)
@@ -1680,7 +1684,7 @@ class Base(nn.Module):
 		self,
 		logits: list[Tensor], # logit scores
 		prev_list: list[Tensor] | None = None, # previous tokens
-		quant_levels: int | list[int] | Tensor | None = None,		
+		quant_levels: int | list[int] | Tensor | None = None, # to-do: derive this from the prev_list
 		**sampling_kwargs,
 	):
 		# yikes
@@ -1767,12 +1771,7 @@ class Base(nn.Module):
 
 		# perform repetition penalizing	
 		if prev_list is not None and repetition_penalty != 1.0:
-			# penalize non-autoregressively
-			if quant_levels is not None:
-				logits = [ reptition_penalize(logit, previous=prevs, factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
-			# penalize autoregressively
-			else:
-				logits = [ reptition_penalize(logit, previous=prevs, factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
+			logits = [ reptition_penalize(logit, previous=prevs, factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
