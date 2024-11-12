@@ -292,6 +292,7 @@ class Model:
 	#loss_factors: dict = field(default_factory=lambda: { "text": 0.1, "prom": 1.0, "resp": 1.0 }) # disable it by default since it causes a little more harm than good
 	loss_factors: dict = field(default_factory=lambda: {})
 	capabilities: list = field(default_factory=lambda: ["ar", "nar"]) # + ["lang", "tone"] if you have your dataset labeled for such
+	kwargs: dict = field(default_factory=lambda: {})
 	
 	experimental: dict | ModelExperimentalSettings | None = None # experimental settings
 
@@ -410,6 +411,11 @@ class Model:
 
 		return dict(include=include, exclude=exclude)
 
+	# to-do: derive default arguments from here
+	@property
+	def get_kwargs(self, type):
+		return self.kwargs
+
 # should be renamed to Adapters
 @dataclass()
 class LoRA:
@@ -466,32 +472,30 @@ class Evaluation:
 	# necessary in order to make it not confusing with requiring not-directyl exposed arguments passed to the model
 	@cached_property
 	def ar_kwargs( self ):
-		kwargs = {} | self.kwargs
 		return dict(
-			max_steps=kwargs.pop("max_ar_steps", 500),
-			sampling_temperature=kwargs.pop("ar_temp", 0.5),
-			sampling_min_temperature=kwargs.pop("min_ar_temp", -1),
-			sampling_top_p=kwargs.pop("top_p", 1.0), sampling_top_k=kwargs.pop("top_k", 0), sampling_min_p=kwargs.pop("min_p", 0.0),
-			sampling_repetition_penalty=kwargs.pop("repetition_penalty", 1.125), sampling_repetition_penalty_decay=kwargs.pop("repetition_penalty_decay", 0),
-			sampling_length_penalty=kwargs.pop("length_penalty", 0),
-			sampling_beam_width=kwargs.pop("beam_width", 0),
-			sampling_mirostat_tau=kwargs.pop("mirostat_tau", 0),
-			sampling_mirostat_eta=kwargs.pop("mirostat_eta", 0),
-			sampling_dry_multiplier=kwargs.pop("dry_multiplier", 0),
-			sampling_dry_base=kwargs.pop("dry_base", 0),
-			sampling_dry_allowed_length=kwargs.pop("dry_allowed_length", 0),
-			sampling_entropix=kwargs.pop("entropix_sampling", False),
+			max_steps=self.kwargs.get("max_ar_steps", 500),
+			temperature=self.kwargs.get("ar_temperature", 1.0),
+			min_temperature=self.kwargs.get("min_ar_temperature", -1),
+			top_p=self.kwargs.get("top_p", 1.0), top_k=self.kwargs.get("top_k", 0), min_p=self.kwargs.get("min_p", 0.0),
+			repetition_penalty=self.kwargs.get("repetition_penalty", 1.0), repetition_penalty_decay=self.kwargs.get("repetition_penalty_decay", 0),
+			length_penalty=self.kwargs.get("length_penalty", 0),
+			beam_width=self.kwargs.get("beam_width", 0),
+			mirostat_tau=self.kwargs.get("mirostat_tau", 0),
+			mirostat_eta=self.kwargs.get("mirostat_eta", 0),
+			dry_multiplier=self.kwargs.get("dry_multiplier", 0),
+			dry_base=self.kwargs.get("dry_base", 0),
+			dry_allowed_length=self.kwargs.get("dry_allowed_length", 0),
+			entropix=self.kwargs.get("entropix_sampling", False),
 		)
 
 	@cached_property
 	def nar_kwargs( self ):
-		kwargs = {} | self.kwargs
 		return dict(
-			max_levels=kwargs.pop("max_nar_levels", 0),
-			sampling_temperature=kwargs.pop("nar_temp", 0.0),
-			sampling_min_temperature=kwargs.pop("min_nar_temp", -1),
-			sampling_top_p=kwargs.pop("top_p", 1.0), sampling_top_k=kwargs.pop("top_k", 0.0), sampling_min_p=kwargs.pop("min_p", 0.0),
-			sampling_repetition_penalty=kwargs.pop("repetition_penalty", 1.0), sampling_repetition_penalty_decay=kwargs.pop("repetition_penalty_decay", 0.0),
+			max_levels=self.kwargs.get("max_nar_levels", 0),
+			temperature=self.kwargs.get("nar_temperature", 0.0),
+			min_temperature=self.kwargs.get("min_nar_temp", -1),
+			top_p=self.kwargs.get("top_p", 1.0), top_k=self.kwargs.get("top_k", 0.0), min_p=self.kwargs.get("min_p", 0.0),
+			repetition_penalty=self.kwargs.get("repetition_penalty", 1.0), repetition_penalty_decay=self.kwargs.get("repetition_penalty_decay", 0.0),
 		)
 
 @dataclass()

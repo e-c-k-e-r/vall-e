@@ -32,11 +32,27 @@ from datetime import datetime
 
 T = TypeVar("T")
 
+# removes prefix from key in a dict
+# useful for mapping args like ar_temperature => temperature
+def convert_kwargs( kwargs, prefix ):
+	copied = {} | kwargs
+
+	for key, value in copied.items():
+		if not key.startswith( prefix ):
+			continue
+
+		kwargs.pop(key)
+		kwargs[key[len(prefix):]] = value
+
+	return kwargs
+
+# hashes values or a list of values
 def md5_hash( x ):
 	if isinstance( x, list ):
 		return md5_hash(":".join([ md5_hash( _ ) for _ in x ]))
 	return hashlib.md5(str(x).encode("utf-8")).hexdigest()
 
+# removes entries from a dict if that key is missing from the source
 def prune_missing( source, dest, recurse=True, path=[], parent_is_obj=None, return_missing=True ):
 	is_obj = hasattr( source, "__dict__" )
 	if parent_is_obj is None:

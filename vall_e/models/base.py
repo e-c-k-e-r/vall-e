@@ -1680,29 +1680,31 @@ class Base(nn.Module):
 		self,
 		logits: list[Tensor], # logit scores
 		prev_list: list[Tensor] | None = None, # previous tokens
-		quant_levels: int | list[int] | Tensor | None = None,
-		# base sampling parameters
-		temperature: float = 1.0,
-		min_temperature: float = -1.0, # activates dynamic temperature sampling
-		top_k: int = -100,
-		top_p: float = 1.0,
-		min_p: float = 0.0,
-		# repetition penalty parameters
-		repetition_penalty: float = 1.0,
-		repetition_penalty_decay: float = 0.0,
-		# length penalty parameters
-		length_penalty: float = 0.0,
-		# beam sampling parameters
-		beam_width: int = 0,
-		# mirostat sampling parameters
-		mirostat: list[dict] | None = None,
-		# DRY sampling parameters
-		dry_multiplier=0.0,
-		dry_base=1.75,
-		dry_allowed_length=2,
-		# other
-		attentions=None,
+		quant_levels: int | list[int] | Tensor | None = None,		
+		**sampling_kwargs,
 	):
+		# yikes
+		temperature = sampling_kwargs.get("temperature", 1.0)
+		min_temperature = sampling_kwargs.get("min_temperature", -1.0)
+		top_k = sampling_kwargs.get("top_k", -100)
+		top_p = sampling_kwargs.get("top_p", 1.0)
+		min_p = sampling_kwargs.get("min_p", 0.0)
+		# repetition penalty parameters
+		repetition_penalty = sampling_kwargs.get("repetition_penalty", 1.0)
+		repetition_penalty_decay = sampling_kwargs.get("repetition_penalty_decay", 0.0)
+		# length penalty parameters
+		length_penalty = sampling_kwargs.get("length_penalty", 0.0)
+		# beam sampling parameters
+		beam_width = sampling_kwargs.get("beam_width", 0)
+		# mirostat sampling parameters
+		mirostat = sampling_kwargs.get("mirostat", None)
+		# DRY sampling parameters
+		dry_multiplier = sampling_kwargs.get("dry_multiplier", 0.0)
+		dry_base = sampling_kwargs.get("dry_base", 1.75)
+		dry_allowed_length = sampling_kwargs.get("dry_allowed_length", 2)
+		
+		attentions = sampling_kwargs.get("attentions", None)
+
 		batch_size = len( logits )
 
 		if min_temperature < 0:

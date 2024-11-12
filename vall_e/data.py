@@ -571,7 +571,7 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 	_fn = _get_hdf5_paths if cfg.dataset.use_hdf5 else _get_paths_of_extensions
 
 	def key( id, entry=None ):
-		return f"/{type}/{_get_hdf5_path(data_dir)}/{id}" if cfg.dataset.use_hdf5 else data_dir / id
+		return f"/{type}/{_get_hdf5_path(data_dir)}/{id}" if cfg.dataset.use_hdf5 else str(data_dir / id)
 
 	metadata_path = cfg.metadata_dir / f'{group_name}.json'
 	metadata = {}
@@ -628,21 +628,8 @@ def _get_hdf5_paths( data_dir, type="training", validate=False ):
 def _get_paths_of_extensions( path, extensions=_get_quant_extension(), validate=False ):
 	if isinstance(path, str):
 		path = Path(path)
-
-	def _validate(path):
-		if "".join(path.suffixes) not in extensions:
-			return False
-		if not _get_phone_path(path).exists() or not _get_quant_path(path).exists():
-			return False
-		if not validate:
-			return True
-		# to-do: find an easy way to determine size from pickled quants without loading
-		# to-do: find a consistent way to derive phoneme count from filesize (probably can't due to utf-8)
-		phones = len(_get_phones(_get_phone_path(path))) # _get_phone_path(path).stat().st_size // 2 + 1
-		return cfg.dataset.min_phones <= phones and phones <= cfg.dataset.max_phones
-
-
-	return [ p for p in list(path.iterdir()) if _validate(p) ] if path.exists() and path.is_dir() else []
+	
+	return [ p for p in list(path.iterdir()) ] if path.exists() and path.is_dir() else []
 
 def _load_quants(path, return_metadata=False) -> Tensor:
 	qnt = np.load(_get_quant_path(path), allow_pickle=True)[()]

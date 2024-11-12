@@ -192,11 +192,11 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		raise Exception("No model loaded.")
 
 	if kwargs.pop("dynamic-sampling", False):
-		kwargs['min-ar-temp'] = 0.01 if kwargs['ar-temp'] > 0.01 else 0.0
-		kwargs['min-nar-temp'] = 0.0 # 0.85 if kwargs['nar-temp'] > 0.85 else 0.0 # should probably disable it for the NAR
+		kwargs['min-ar-temperature'] = 0.01 if kwargs['ar-temperature'] > 0.01 else 0.0
+		kwargs['min-nar-temperature'] = 0.0 # 0.85 if kwargs['nar-temperature'] > 0.85 else 0.0 # should probably disable it for the NAR
 	else:
-		kwargs['min-ar-temp'] = -1
-		kwargs['min-nar-temp'] = -1
+		kwargs['min-ar-temperature'] = -1
+		kwargs['min-nar-temperature'] = -1
 
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
@@ -205,14 +205,15 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
-	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"] if cfg.experimental else False)
-	parser.add_argument("--max-ar-steps", type=int, default=int(kwargs["max-seconds"]*cfg.dataset.frames_per_second))
-	parser.add_argument("--max-nar-levels", type=int, default=kwargs["max-nar-levels"] if cfg.experimental else 0)
-	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
-	parser.add_argument("--nar-temp", type=float, default=kwargs["nar-temp"])
-	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
-	parser.add_argument("--min-nar-temp", type=float, default=kwargs["min-nar-temp"])
-	parser.add_argument("--prefix-silence", type=float, default=kwargs["prefix-silence"] if cfg.experimental else 0)
+	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
+	parser.add_argument("--max-duration", type=int, default=int(kwargs["max-duration"]*cfg.dataset.frames_per_second))
+	parser.add_argument("--max-levels", type=int, default=kwargs["max-levels"])
+	parser.add_argument("--max-steps", type=int, default=kwargs["max-steps"])
+	parser.add_argument("--ar-temperature", type=float, default=kwargs["ar-temperature"])
+	parser.add_argument("--nar-temperature", type=float, default=kwargs["nar-temperature"])
+	parser.add_argument("--min-ar-temperature", type=float, default=kwargs["min-ar-temperature"])
+	parser.add_argument("--min-nar-temperature", type=float, default=kwargs["min-nar-temperature"])
+	parser.add_argument("--prefix-silence", type=float, default=kwargs["prefix-silence"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
 	parser.add_argument("--min-p", type=float, default=kwargs["min-p"])
@@ -227,10 +228,11 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--dry-allowed-length", type=int, default=kwargs["dry-allowed-length"])
 	parser.add_argument("--entropix-sampling", action="store_true")
 	parser.add_argument("--layer-skip", action="store_true")
-	parser.add_argument("--layer-skip-exit-layer", type=int, default=kwargs["layer-skip-exit-layer"] if cfg.experimental else -1)
-	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=kwargs["layer-skip-entropy-threshold"] if cfg.experimental else 0.1)
-	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=kwargs["layer-skip-varentropy-threshold"] if cfg.experimental else 0.1)
+	parser.add_argument("--layer-skip-exit-layer", type=int, default=kwargs["layer-skip-exit-layer"])
+	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=kwargs["layer-skip-entropy-threshold"])
+	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=kwargs["layer-skip-varentropy-threshold"])
 	parser.add_argument("--refine-on-stop", action="store_true")
+	parser.add_argument("--denoise-start", type=float, default=0.0)
 	args, unknown = parser.parse_known_args()
 
 	if is_windows:
@@ -255,6 +257,27 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	tts = init_tts()
 	
 	gr.Info("Inferencing...")
+
+	sampling_kwargs = dict(
+		max_duration=args.max_duration,
+		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
+		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
+		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
+		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
+		length_penalty=args.length_penalty,
+		beam_width=args.beam_width,
+		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
+		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
+		entropix_sampling=args.entropix_sampling,
+		layer_skip=args.layer_skip,
+		layer_skip_exit_layer=args.layer_skip_exit_layer,
+		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
+		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
+		refine_on_stop=args.refine_on_stop,
+		denoise_start=args.denoise_start,
+		prefix_silence=args.prefix_silence,
+		input_prompt_prefix=args.input_prompt_prefix,
+	)
 	
 	with timer("Inferenced in", callback=lambda msg: gr.Info( msg )) as t:
 		wav, sr = tts.inference(
@@ -262,34 +285,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			language=args.language,
 			task=args.task,
 			references=args.references.split(";") if args.references is not None else [],
-			out_path=tmp.name,
-			max_ar_steps=args.max_ar_steps,
-			max_nar_levels=args.max_nar_levels,
-			input_prompt_length=args.input_prompt_length,
-			input_prompt_prefix=args.input_prompt_prefix,
-			prefix_silence=args.prefix_silence,
-			ar_temp=args.ar_temp,
-			nar_temp=args.nar_temp,
-			min_ar_temp=args.min_ar_temp,
-			min_nar_temp=args.min_nar_temp,
-			top_p=args.top_p,
-			top_k=args.top_k,
-			min_p=args.min_p,
-			beam_width=args.beam_width,
-			repetition_penalty=args.repetition_penalty,
-			repetition_penalty_decay=args.repetition_penalty_decay,
-			length_penalty=args.length_penalty,
-			mirostat_tau=args.mirostat_tau,
-			mirostat_eta=args.mirostat_eta,
-			dry_multiplier=args.dry_multiplier,
-			dry_base=args.dry_base,
-			dry_allowed_length=args.dry_allowed_length,
-			entropix_sampling=args.entropix_sampling,
-			
-			layer_skip=args.layer_skip,
-			layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
-			layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
-			refine_on_stop=args.refine_on_stop,
+			**sampling_kwargs,
 		)
 	
 	wav = wav.squeeze(0).cpu().numpy()
@@ -301,20 +297,28 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		raise Exception("No model loaded.")
 
 	if kwargs.pop("dynamic-sampling", False):
-		kwargs['min-ar-temp'] = 0.85 if kwargs['ar-temp'] > 0.85 else 0.0
+		kwargs['min-ar-temperature'] = 0.85 if kwargs['ar-temperature'] > 0.85 else 0.0
 	else:
-		kwargs['min-ar-temp'] = -1
+		kwargs['min-ar-temperature'] = -1
 
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
+	parser.add_argument("--text", type=str, default=kwargs["text"])
+	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
-	parser.add_argument("--max-ar-steps", type=int, default=0)
-	parser.add_argument("--ar-temp", type=float, default=kwargs["ar-temp"])
-	parser.add_argument("--min-ar-temp", type=float, default=kwargs["min-ar-temp"])
+	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
+	parser.add_argument("--input-prompt-prefix", action='store_true', default=kwargs["input-prompt-prefix"])
+	parser.add_argument("--max-duration", type=int, default=int(kwargs["max-duration"]*cfg.dataset.frames_per_second))
+	parser.add_argument("--max-levels", type=int, default=kwargs["max-levels"])
+	parser.add_argument("--ar-temperature", type=float, default=kwargs["ar-temperature"])
+	parser.add_argument("--nar-temperature", type=float, default=kwargs["nar-temperature"])
+	parser.add_argument("--min-ar-temperature", type=float, default=kwargs["min-ar-temperature"])
+	parser.add_argument("--min-nar-temperature", type=float, default=kwargs["min-nar-temperature"])
+	parser.add_argument("--prefix-silence", type=float, default=kwargs["prefix-silence"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
-	parser.add_argument("--min-p", type=int, default=kwargs["min-p"])
+	parser.add_argument("--min-p", type=float, default=kwargs["min-p"])
 	parser.add_argument("--repetition-penalty", type=float, default=kwargs["repetition-penalty"])
 	parser.add_argument("--repetition-penalty-decay", type=float, default=kwargs["repetition-penalty-decay"])
 	parser.add_argument("--length-penalty", type=float, default=kwargs["length-penalty"])
@@ -325,6 +329,12 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--dry-base", type=float, default=kwargs["dry-base"])
 	parser.add_argument("--dry-allowed-length", type=int, default=kwargs["dry-allowed-length"])
 	parser.add_argument("--entropix-sampling", action="store_true")
+	parser.add_argument("--layer-skip", action="store_true")
+	parser.add_argument("--layer-skip-exit-layer", type=int, default=kwargs["layer-skip-exit-layer"])
+	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=kwargs["layer-skip-entropy-threshold"])
+	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=kwargs["layer-skip-varentropy-threshold"])
+	parser.add_argument("--refine-on-stop", action="store_true")
+	parser.add_argument("--cfg-strength", type=float, default=kwargs["cfg-strength"])
 	args, unknown = parser.parse_known_args()
 
 
@@ -334,17 +344,36 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	"""
 
 	args.references = args.references.split(";") if args.references is not None else []
-	if args.max_ar_steps == 0:
+	if args.max_duration == 0:
 		for i, path in enumerate( args.references ):
 			metadata = torchaudio.info(path)
 			duration = metadata.num_frames / metadata.sample_rate
-			args.max_ar_steps += duration
-		args.max_ar_steps = math.floor( args.max_ar_steps * 20 ) # assume 20 tokens per second
+			args.max_duration += duration
+		args.max_duration = math.floor( args.max_duration * 20 ) # assume 20 tokens per second
 	
 	if kwargs.pop("entropix-sampling", False):
 		args.entropix_sampling = True
 
 	tts = init_tts()
+
+	sampling_kwargs = dict(
+		max_duration=args.max_duration,
+		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
+		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
+		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
+		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
+		length_penalty=args.length_penalty,
+		beam_width=args.beam_width,
+		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
+		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
+		entropix_sampling=args.entropix_sampling,
+		layer_skip=args.layer_skip,
+		layer_skip_exit_layer=args.layer_skip_exit_layer,
+		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
+		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
+		refine_on_stop=args.refine_on_stop,
+		denoise_start=args.denoise_start,
+	)
 	
 	gr.Info("Inferencing...")
 	with timer("Inferenced in") as t:
@@ -353,21 +382,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			language=args.language,
 			task="stt",
 			references=args.references,
-			max_ar_steps=args.max_ar_steps,
-			ar_temp=args.ar_temp,
-			min_ar_temp=args.min_ar_temp,
-			top_p=args.top_p,
-			top_k=args.top_k,
-			min_p=args.min_p,
-			repetition_penalty=args.repetition_penalty,
-			repetition_penalty_decay=args.repetition_penalty_decay,
-			length_penalty=args.length_penalty,
-			mirostat_tau=args.mirostat_tau,
-			mirostat_eta=args.mirostat_eta,
-			dry_multiplier=args.dry_multiplier,
-			dry_base=args.dry_base,
-			dry_allowed_length=args.dry_allowed_length,
-			entropix_sampling=args.entropix_sampling,
+			**sampling_kwargs,
 		)
 	
 	return text
@@ -424,12 +439,13 @@ with ui:
 				with gr.Column(scale=7):
 					with gr.Tab("Basic Settings"):
 						with gr.Row():
-							layout["inference_tts"]["inputs"]["max-seconds"] = gr.Slider(value=12, minimum=1, maximum=32, step=0.1, label="Maximum Seconds", info="Limits how many steps to perform in the AR pass.")
+							layout["inference_tts"]["inputs"]["max-duration"] = gr.Slider(value=12, minimum=1, maximum=32, step=0.1, label="Maximum Seconds", info="Limits how many steps to perform in the AR pass.")
 							layout["inference_tts"]["inputs"]["input-prompt-length"] = gr.Slider(value=5.0, minimum=0.0, maximum=12.0, step=0.05, label="Input Prompt Repeat/Trim Length", info="Repeats and trims the input prompt down to X seconds. Set 0 to disable.")
 						with gr.Row():
-							layout["inference_tts"]["inputs"]["ar-temp"] = gr.Slider(value=0.5, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy* sample)")
-							layout["inference_tts"]["inputs"]["nar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR. (0 to greedy sample)")
+							layout["inference_tts"]["inputs"]["ar-temperature"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy* sample)")
+							layout["inference_tts"]["inputs"]["nar-temperature"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR. (0 to greedy sample)")
 						with gr.Row():
+							layout["inference_tts"]["inputs"]["cfg-strength"] = gr.Slider(value=0.0, minimum=0.0, maximum=3.0, step=0.05, label="CFG Strength", info="Classifier Free Guidance scale")
 							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
@@ -438,7 +454,7 @@ with ui:
 							layout["inference_tts"]["inputs"]["min-p"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Min P")
 							layout["inference_tts"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 						with gr.Row():
-							layout["inference_tts"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.5, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")
+							layout["inference_tts"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.0, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")
 							layout["inference_tts"]["inputs"]["repetition-penalty-decay"] = gr.Slider(value=0.0, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty Length Decay", info="Modifies the reptition penalty based on how far back in time the token appeared in the sequence.")
 							layout["inference_tts"]["inputs"]["length-penalty"] = gr.Slider(value=0.0, minimum=-2.0, maximum=2.0, step=0.05, label="Length Penalty", info="(AR only) Modifies the probability of a stop token based on the current length of the sequence.")
 						with gr.Row():
@@ -448,24 +464,24 @@ with ui:
 							layout["inference_tts"]["inputs"]["dry-multiplier"] = gr.Slider(value=0.0, minimum=0.0, maximum=8.0, step=0.05, label="DRY Multiplier", info="The multiplying factor for the DRY score penalty (0 to disable DRY sampling).")
 							layout["inference_tts"]["inputs"]["dry-base"] = gr.Slider(value=1.75, minimum=0.0, maximum=8.0, step=0.05, label="DRY Base", info="The base of the exponent in the DRY score penalty")
 							layout["inference_tts"]["inputs"]["dry-allowed-length"] = gr.Slider(value=2, minimum=0, maximum=75, step=1, label="Allowed Length", info="The maximimum length a token can be to perform DRY penalty with.")
-					if cfg.experimental:
-						with gr.Tab("Experimental Settings"):
-							with gr.Row():
-								layout["inference_tts"]["inputs"]["max-nar-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
-								layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
-							with gr.Row():
-								layout["inference_tts"]["inputs"]["prefix-silence"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Silence Prefix Duration", info="Amount of silence to prefix to the output response before beginning inference.")
-							with gr.Row():
-								layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
-								layout["inference_tts"]["inputs"]["entropix-sampling"] = gr.Checkbox(label="Entropix Sampling", info="Dynamically samples based on entropy/varentropy values from the logits / attention scores.")
-							with gr.Row():
-								layout["inference_tts"]["inputs"]["layer-skip"] = gr.Checkbox(label="Layer Skip", info="Performs self-speculative early exit 'sampling'")
-								layout["inference_tts"]["inputs"]["refine-on-stop"] = gr.Checkbox(label="Refine on <stop>", info="Uses the last step's logits for the AR sequence instead.")
-							with gr.Row():
-								layout["inference_tts"]["inputs"]["layer-skip-exit-layer"] = gr.Slider(value=11, minimum=0, maximum=11, step=1, label="Layer Skip Exit Layer", info="Maximum model layer to exit early from.")
-								layout["inference_tts"]["inputs"]["layer-skip-entropy-threshold"] = gr.Slider(value=0.1, minimum=0, maximum=1.0, step=0.01, label="Layer Skip Entropy Threshold", info="Entropy threshold for early-exit")
-								layout["inference_tts"]["inputs"]["layer-skip-varentropy-threshold"] = gr.Slider(value=0.1, minimum=0, maximum=1.0, step=0.01, label="Layer Skip Varentropy Threshold", info="Varentropy threshold for early-exit")
-						
+					with gr.Tab("Experimental Settings", visible=cfg.experimental):
+						with gr.Row():
+							layout["inference_tts"]["inputs"]["max-steps"] = gr.Slider(value=25, minimum=1, maximum=50, step=1, label="Max NAR Steps", info="Limits how many steps to perform in the NAR (demask) pass.")
+							layout["inference_tts"]["inputs"]["max-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
+							layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
+						with gr.Row():
+							layout["inference_tts"]["inputs"]["prefix-silence"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Silence Prefix Duration", info="Amount of silence to prefix to the output response before beginning inference.")
+						with gr.Row():
+							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
+							layout["inference_tts"]["inputs"]["entropix-sampling"] = gr.Checkbox(label="Entropix Sampling", info="Dynamically samples based on entropy/varentropy values from the logits / attention scores.")
+						with gr.Row():
+							layout["inference_tts"]["inputs"]["layer-skip"] = gr.Checkbox(label="Layer Skip", info="Performs self-speculative early exit 'sampling'")
+							layout["inference_tts"]["inputs"]["refine-on-stop"] = gr.Checkbox(label="Refine on <stop>", info="Uses the last step's logits for the AR sequence instead.")
+						with gr.Row():
+							layout["inference_tts"]["inputs"]["layer-skip-exit-layer"] = gr.Slider(value=11, minimum=0, maximum=11, step=1, label="Layer Skip Exit Layer", info="Maximum model layer to exit early from.")
+							layout["inference_tts"]["inputs"]["layer-skip-entropy-threshold"] = gr.Slider(value=0.1, minimum=0, maximum=1.0, step=0.01, label="Layer Skip Entropy Threshold", info="Entropy threshold for early-exit")
+							layout["inference_tts"]["inputs"]["layer-skip-varentropy-threshold"] = gr.Slider(value=0.1, minimum=0, maximum=1.0, step=0.01, label="Layer Skip Varentropy Threshold", info="Varentropy threshold for early-exit")
+					
 
 		layout["inference_tts"]["buttons"]["inference"].click(
 			fn=do_inference_tts,
@@ -485,7 +501,7 @@ with ui:
 				with gr.Column(scale=7):
 					with gr.Tab("Basic Settings"):
 						with gr.Row():
-							layout["inference_stt"]["inputs"]["ar-temp"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy sample)")
+							layout["inference_stt"]["inputs"]["ar-temperature"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy sample)")
 						with gr.Row():
 							layout["inference_stt"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
 							layout["inference_stt"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
@@ -496,7 +512,7 @@ with ui:
 							layout["inference_stt"]["inputs"]["min-p"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Min P")
 							layout["inference_stt"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 						with gr.Row():
-							layout["inference_stt"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.25, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")
+							layout["inference_stt"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.0, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")
 							layout["inference_stt"]["inputs"]["repetition-penalty-decay"] = gr.Slider(value=0.0, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty Length Decay", info="Modifies the reptition penalty based on how far back in time the token appeared in the sequence.")
 							layout["inference_stt"]["inputs"]["length-penalty"] = gr.Slider(value=0.0, minimum=-2.0, maximum=2.0, step=0.05, label="Length Penalty", info="(AR only) Modifies the probability of a stop token based on the current length of the sequence.")
 						with gr.Row():

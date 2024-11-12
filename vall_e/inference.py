@@ -186,55 +186,15 @@ class TTS():
 		references,
 		language="en",
 		task="tts",
-		#
-		max_ar_steps=6 * cfg.dataset.frames_per_second,
-		max_nar_levels=7,
-		#
-		input_prompt_length=0.0,
-		input_prompt_prefix=False,
-		prefix_silence=0.0,
-		#
-		ar_temp=0.0,
-		nar_temp=0.0,
-		#
-		min_ar_temp=0.0,
-		min_nar_temp=0.0,
-		#
-		top_p=1.0,
-		top_k=0,
-		min_p=0.0,
-		#
-		repetition_penalty=1.0,
-		repetition_penalty_decay=0.0,
-		length_penalty=0.0,
-		#
-		beam_width=0,
-		#
-		mirostat_tau=0,
-		mirostat_eta=0.1,
-		#
-		dry_multiplier=0.0,
-		dry_base=1.75,
-		dry_allowed_length=2,
-		#
-		entropix_sampling=False,
-		#
-		layer_skip=False,
-		layer_skip_exit_layer=-1,
-		layer_skip_entropy_threshold=-1,
-		layer_skip_varentropy_threshold=-1,
-		#
-		refine_on_stop=False,
-		#
+
+		input_prompt_length = 0,
+		load_from_artifact = False,
+
 		seed = None,
-		#
-		load_from_artifact = None,
-		denoise_start = 0.0,
-
 		out_path=None,
-
 		tqdm=True,
 		use_lora=None,
+		**sampling_kwargs,
 	):
 		lines = text.split("\n")
 
@@ -265,25 +225,10 @@ class TTS():
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_ar is not None:
 					text_list = model_ar(
-						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], max_steps=max_ar_steps, task_list=["stt"],
-						sampling_temperature=ar_temp,
-						sampling_min_temperature=min_ar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
-						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-						sampling_length_penalty=length_penalty,
-						sampling_beam_width=beam_width,
-						sampling_mirostat_tau=mirostat_tau,
-						sampling_mirostat_eta=mirostat_eta,
-						sampling_dry_multiplier=dry_multiplier,
-						sampling_dry_base=dry_base,
-						sampling_dry_allowed_length=dry_allowed_length,
-						sampling_entropix=entropix_sampling,
-						sampling_layer_skip=layer_skip,
-						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
-						sampling_refine_on_stop=refine_on_stop,
-
+						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=["stt"],
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
+						**sampling_kwargs,
 					)
 				else:
 					raise Exception("!")
@@ -291,10 +236,6 @@ class TTS():
 				text_list = [ cfg.tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
 
 			return text_list[0]
-
-		# validate settings here
-		if not references and ar_temp < 0.5:
-			_logger.warning(f'Audio-promptless inferencing fails with low AR temperatures.')
 
 		for line in lines:
 			if out_path is None:
@@ -315,52 +256,21 @@ class TTS():
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_ar is not None:
 					resps_list = model_ar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], max_steps=max_ar_steps, task_list=["tts"],
-						input_prompt_prefix=input_prompt_prefix,
-						prefix_silence=prefix_silence,
-						sampling_temperature=ar_temp,
-						sampling_min_temperature=min_ar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
-						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-						sampling_length_penalty=length_penalty,
-						sampling_beam_width=beam_width,
-						sampling_mirostat_tau=mirostat_tau,
-						sampling_mirostat_eta=mirostat_eta,
-						sampling_dry_multiplier=dry_multiplier,
-						sampling_dry_base=dry_base,
-						sampling_dry_allowed_length=dry_allowed_length,
-						sampling_entropix=entropix_sampling,
-						sampling_layer_skip=layer_skip,
-						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
-						sampling_layer_skip_entropy_threshold=layer_skip_entropy_threshold,
-						sampling_layer_skip_varentropy_threshold=layer_skip_varentropy_threshold,
-						sampling_refine_on_stop=refine_on_stop,
-
+						text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
+						**sampling_kwargs,
 					)
 					resps_list = model_nar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list, task_list=["tts"],
-						input_prompt_prefix=input_prompt_prefix,
-						max_levels=max_nar_levels,
-						sampling_temperature=nar_temp,
-						sampling_min_temperature=min_nar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
-						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-						sampling_layer_skip=layer_skip,
-						sampling_layer_skip_exit_layer=layer_skip_exit_layer,
-						sampling_layer_skip_entropy_threshold=layer_skip_entropy_threshold,
-						sampling_layer_skip_varentropy_threshold=layer_skip_varentropy_threshold,
-
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
+						**sampling_kwargs,
 					)
 				elif model_len is not None:
-					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], max_steps=5, disable_tqdm=not tqdm ) # don't need more than that
-					len_list = [ clamp(l, 1, max_ar_steps) for l in len_list ]
+					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_steps": 5} ) # don't need more than that
 					
 					kwargs = {}
-					
 					# nasty hardcode to load a reference file and have that as the input target
 					if load_from_artifact and load_from_artifact.exists():
 						artifact = np.load(load_from_artifact, allow_pickle=True)[()]
@@ -373,17 +283,9 @@ class TTS():
 						kwargs["resps_list"] = [ resp[:, :1] ]
 
 					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list, task_list=["tts"],
-						max_steps=max_ar_steps,
-						max_levels=max_nar_levels,
-						sampling_temperature=nar_temp,
-						sampling_min_temperature=min_nar_temp,
-						sampling_top_p=top_p, sampling_top_k=top_k, sampling_min_p=min_p,
-						sampling_repetition_penalty=repetition_penalty, sampling_repetition_penalty_decay=repetition_penalty_decay,
-						denoise_start=denoise_start,
-
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
-						**kwargs,
+						**(sampling_kwargs | kwargs),
 					)
 				else:
 					raise Exception("!")

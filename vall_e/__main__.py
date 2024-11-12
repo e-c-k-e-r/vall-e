@@ -20,20 +20,23 @@ def main():
 	parser.add_argument("--model", type=Path, default=None)
 	parser.add_argument("--lora", type=Path, default=None)
 
-	parser.add_argument("--max-ar-steps", type=int, default=12 * cfg.dataset.frames_per_second)
-	parser.add_argument("--max-nar-levels", type=int, default=7)
+	parser.add_argument("--max-duration", type=int, default=12 * cfg.dataset.frames_per_second)
+	parser.add_argument("--max-steps", type=int, default=25)
+	parser.add_argument("--max-levels", type=int, default=7)
 
-	parser.add_argument("--ar-temp", type=float, default=0.5)
-	parser.add_argument("--nar-temp", type=float, default=0.0)
-	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
-	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
+	parser.add_argument("--ar-temperature", type=float, default=1.0)
+	parser.add_argument("--nar-temperature", type=float, default=0.0)
+	parser.add_argument("--min-ar-temperature", type=float, default=-1.0)
+	parser.add_argument("--min-nar-temperature", type=float, default=-1.0)
 	parser.add_argument("--input-prompt-length", type=float, default=3.0)
 	parser.add_argument("--input-prompt-prefix", action="store_true")
+	parser.add_argument("--prefix-silence", type=float, default=0.0)
+	parser.add_argument("--cfg-strength", type=float, default=0.0)
 
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
 	parser.add_argument("--min-p", type=float, default=0.0)
-	parser.add_argument("--repetition-penalty", type=float, default=1.5)
+	parser.add_argument("--repetition-penalty", type=float, default=1.0)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)
 	parser.add_argument("--beam-width", type=int, default=0)
@@ -73,17 +76,13 @@ def main():
 		config = args.model
 
 	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
-	output = tts.inference(
-		text=args.text,
-		references=args.references,
-		language=args.language,
-		task=args.task,
-		out_path=args.out_path,
-		input_prompt_length=args.input_prompt_length,
-		input_prompt_prefix=args.input_prompt_prefix,
-		max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
-		ar_temp=args.ar_temp, nar_temp=args.nar_temp,
-		min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
+
+	sampling_kwargs = dict(
+		max_steps=args.max_steps,
+		max_levels=args.max_levels,
+		max_duration=args.max_duration,
+		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
+		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
 		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
@@ -96,9 +95,23 @@ def main():
 		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
 		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
 		refine_on_stop=args.refine_on_stop,
-		
-		load_from_artifact=args.load_from_artifact,
 		denoise_start=args.denoise_start,
+		input_prompt_prefix=args.input_prompt_prefix,
+		prefix_silence=args.prefix_silence,
+		cfg_strength=args.cfg_strength,
+	)
+
+	output = tts.inference(
+		text=args.text,
+		references=args.references,
+		language=args.language,
+		task=args.task,
+		out_path=args.out_path,
+
+		input_prompt_length=args.input_prompt_length,
+		load_from_artifact=args.load_from_artifact,
+
+		sampling_kwargs=sampling_kwargs,
 
 		seed=args.seed,
 	)
