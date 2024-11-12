@@ -96,6 +96,7 @@ def main():
 		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
 		refine_on_stop=args.refine_on_stop,
 		denoise_start=args.denoise_start,
+		input_prompt_length=args.input_prompt_length,
 		input_prompt_prefix=args.input_prompt_prefix,
 		prefix_silence=args.prefix_silence,
 		cfg_strength=args.cfg_strength,

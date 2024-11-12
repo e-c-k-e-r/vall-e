@@ -277,6 +277,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		denoise_start=args.denoise_start,
 		prefix_silence=args.prefix_silence,
 		input_prompt_prefix=args.input_prompt_prefix,
+		input_prompt_length=args.input_prompt_length,
 	)
 	
 	with timer("Inferenced in", callback=lambda msg: gr.Info( msg )) as t:
