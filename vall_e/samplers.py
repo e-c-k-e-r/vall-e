@@ -13,15 +13,17 @@ from .utils import clamp
 # Simple filter to modify a token's probability if it shows up in the past
 # `one_time` will only apply the penalty once
 # `decay` is a factor that will exponentially apply to how far away it is
-
-# this is split between applying autoregressively (applying to the last token, starting from the end), and applying non-autoregressively (starting from the beginning, and applying to tokens in the future)
-def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=False, limit=75 ):
+def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=True, limit=0 ):
 	if factor == 1.0 or previous is None:
 		return logits
 
+
 	unique = set()
-	priors = reversed(previous)
-	for distance, token in enumerate(priors):
+	is_nar = previous.shape[0] == logits.shape[0]
+
+	for i, token in enumerate( previous ):
+		distance = previous.shape[0] - i
+
 		# rep-pen range
 		if limit and distance >= limit:
 			continue
@@ -29,58 +31,20 @@ def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=F
 		if one_time and token in unique:
 			continue
 
-		distance += 1
-		logits[:, token] /= factor * (distance ** decay)
+		start = None
+		end = None
+
+		# apply only to future tokens
+		if is_nar and i < logits.shape[0]:
+			start = i + 1
+
+		logits[start:end, token] /= factor * (distance ** decay)
 		
 		# add to set if we care about it
 		if one_time:
 			unique.add(token)
 
 	return logits
-
-"""
-# I do not know why this is a regression...
-def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=False, limit=75 ):
-	if factor == 1.0 or previous is None:
-		return logits
-
-	seq_len = logits.shape[0]
-	prev_len = len( previous )
-	
-	# apply autoregressively
-	if prev_len < seq_len:
-		unique = set()
-		priors = reversed(previous)
-		for i, token in enumerate(priors):
-			# rep-pen range
-			if limit and i >= limit:
-				continue
-			# skip if we're only applying the decay once
-			if one_time and token in unique:
-				continue
-
-			distance = i + 1		
-			logits[-1, token] /= factor * (distance ** decay)
-
-			# add to set if we care about it
-			if one_time:
-				unique.add(token)
-	# apply non-autoregressively
-	else:
-		for i, token in enumerate( previous ):
-			# apply to next token
-			start = i + 1
-			# apply either up to limit tokens, or to the end
-			end = start + limit if limit > 0 else seq_len
-			start = clamp(start, 0, seq_len - 1)
-			end   = clamp(end, 0, seq_len - 1)
-			for j in range( start, end ):
-				distance = j - i
-				logits[j, token] /= factor * (distance ** decay)
-
-
-	return logits
-"""
 
 # Simple "filter" that modifies the logit for the stop token, based on the sequence length
 # `length` is the length of the sequence currently

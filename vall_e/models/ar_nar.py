@@ -316,9 +316,9 @@ class AR_NAR(Base):
 			prev_list = resps_list
 
 			# sample with gumbelnoise
-			# I actually feel like this doesn't matter? it's hard to judge with a partially trained NAR-len model
-			sampled_ids = [ gumbel_sample( logits, temperature=temperature, dim=-1 ) for logits in filtered_sampled.logits[0] ]
-			#sampled_ids = filtered_sampled[0]
+			# This actually lobotomizes things
+			#sampled_ids = [ gumbel_sample( logits, temperature=temperature, dim=-1 ) for logits in filtered_sampled.logits[0] ]
+			sampled_ids = filtered_sampled[0]
 
 			# keep unmasked tokens
 			resps_list = [ torch.where( masked, input_ids, resps ) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
@@ -447,7 +447,8 @@ class AR_NAR(Base):
 				logits=logits,
 				prev_list=prev_list,
 				quant_levels=quant_levels,
-				**sampling_kwargs,
+				#temperature=0.0,
+				**(sampling_kwargs | {"temperature": 0.0}),
 			)
 
 			resps_list = sampled[0]

@@ -1710,6 +1710,10 @@ class Base(nn.Module):
 		if min_temperature < 0:
 			min_temperature = temperature
 
+		# pick last RVQ level
+		if prev_list is not None:
+			prev_list = [ prevs if prevs.dim() == 1 else prevs[:, -1] for prevs in prev_list ]
+
 		scores = None
 		entropy = None
 		#logits = [ logit.to(device="cpu", dtype=logit.dtype if logit.dtype != torch.float16 else torch.float32) for logit in logits ]
@@ -1763,15 +1767,12 @@ class Base(nn.Module):
 
 		# perform repetition penalizing	
 		if prev_list is not None and repetition_penalty != 1.0:
-			# to-do: figure out a faster way to handle tolist()
-
 			# penalize non-autoregressively
 			if quant_levels is not None:
-				#logits = [ reptition_penalize(logit, previous=logit.argmax(dim=1).tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit in logits ]
-				logits = [ reptition_penalize(logit, previous=prevs.tolist() if prevs.dim() == 1 else prevs[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
+				logits = [ reptition_penalize(logit, previous=prevs, factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 			# penalize autoregressively
 			else:
-				logits = [ reptition_penalize(logit, previous=prevs.tolist() if prevs.dim() == 1 else prevs[:, -1].tolist(), factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
+				logits = [ reptition_penalize(logit, previous=prevs, factor=repetition_penalty, decay=repetition_penalty_decay) for logit, prevs in zip( logits, prev_list ) ]
 
 		# (AR) perform length penalizing
 		if quant_levels is None and self.causal and prev_list is not None and length_penalty != 0.0:
@@ -1794,7 +1795,7 @@ class Base(nn.Module):
 
 		# do DRY sampling
 		if dry_multiplier > 0.0 and prev_list is not None:
-			logits = [ dry_sampling(logit, previous=prevs[:, -1].tolist(), factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, prevs in zip( logits, prev_list ) ]
+			logits = [ dry_sampling(logit, previous=prevs, factor=dry_multiplier, base=dry_base, allowed_length=dry_allowed_length) for logit, prevs in zip( logits, prev_list ) ]
 
 		# do mirostat sampling
 		# currently incompatible with beam searching with the way the two are implemented, perhaps a night of brain bashing can make the two work

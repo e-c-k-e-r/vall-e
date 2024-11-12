@@ -259,6 +259,8 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	gr.Info("Inferencing...")
 
 	sampling_kwargs = dict(
+		max_steps=args.max_steps,
+		max_levels=args.max_levels,
 		max_duration=args.max_duration,
 		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
 		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
@@ -467,7 +469,7 @@ with ui:
 							layout["inference_tts"]["inputs"]["dry-allowed-length"] = gr.Slider(value=2, minimum=0, maximum=75, step=1, label="Allowed Length", info="The maximimum length a token can be to perform DRY penalty with.")
 					with gr.Tab("Experimental Settings", visible=cfg.experimental):
 						with gr.Row():
-							layout["inference_tts"]["inputs"]["max-steps"] = gr.Slider(value=25, minimum=1, maximum=50, step=1, label="Max NAR Steps", info="Limits how many steps to perform in the NAR (demask) pass.")
+							layout["inference_tts"]["inputs"]["max-steps"] = gr.Slider(value=25, minimum=1, maximum=500, step=1, label="Max NAR Steps", info="Limits how many steps to perform in the NAR (demask) pass.")
 							layout["inference_tts"]["inputs"]["max-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
 							layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
 						with gr.Row():
