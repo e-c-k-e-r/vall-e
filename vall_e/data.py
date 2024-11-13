@@ -1383,6 +1383,9 @@ class Dataset(_Dataset):
 	def training_(self, value):
 		self.training = value
 
+	def index(self):
+		return self.sampler.index() if self.sampler is not None else -1
+
 	def __len__(self):
 		if self.sampler_type == "group":
 			return min(len(self.spkr_groups), self._head or len(self.spkr_groups))

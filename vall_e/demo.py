@@ -57,37 +57,54 @@ def main():
 	
 	parser.add_argument("--language", type=str, default="en")
 
-	parser.add_argument("--max-ar-steps", type=int, default=12 * cfg.dataset.frames_per_second)
-	parser.add_argument("--max-nar-levels", type=int, default=7)
+	parser.add_argument("--language", type=str, default="en")
+	parser.add_argument("--task", type=str, default="tts")
+	parser.add_argument("--out-path", type=Path, default=None)
 
-	parser.add_argument("--ar-temp", type=float, default=0.0)
-	parser.add_argument("--nar-temp", type=float, default=0.0)
-	parser.add_argument("--min-ar-temp", type=float, default=-1.0)
-	parser.add_argument("--min-nar-temp", type=float, default=-1.0)
-	parser.add_argument("--input-prompt-length", type=float, default=0.0)
+	parser.add_argument("--yaml", type=Path, default=None)
+	parser.add_argument("--model", type=Path, default=None)
+	parser.add_argument("--lora", type=Path, default=None)
+
+	parser.add_argument("--max-duration", type=int, default=12 * cfg.dataset.frames_per_second)
+	parser.add_argument("--max-steps", type=int, default=25)
+	parser.add_argument("--max-levels", type=int, default=7)
+
+	parser.add_argument("--ar-temperature", type=float, default=1.0)
+	parser.add_argument("--nar-temperature", type=float, default=0.0)
+	parser.add_argument("--min-ar-temperature", type=float, default=-1.0)
+	parser.add_argument("--min-nar-temperature", type=float, default=-1.0)
+	parser.add_argument("--input-prompt-length", type=float, default=3.0)
+	parser.add_argument("--input-prompt-prefix", action="store_true")
+	parser.add_argument("--prefix-silence", type=float, default=0.0)
+	parser.add_argument("--cfg-strength", type=float, default=0.0)
 
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
+	parser.add_argument("--top-no", type=float, default=0.0)
 	parser.add_argument("--min-p", type=float, default=0.0)
-	parser.add_argument("--repetition-penalty", type=float, default=1.125)
+	parser.add_argument("--repetition-penalty", type=float, default=1.0)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
 	parser.add_argument("--length-penalty", type=float, default=0.0)
 	parser.add_argument("--beam-width", type=int, default=0)
 	
 	parser.add_argument("--mirostat-tau", type=float, default=0)
 	parser.add_argument("--mirostat-eta", type=float, default=0)
-
+	
 	parser.add_argument("--dry-multiplier", type=float, default=0)
 	parser.add_argument("--dry-base", type=float, default=1.75)
 	parser.add_argument("--dry-allowed-length", type=int, default=2)
 	
 	parser.add_argument("--entropix-sampling", action="store_true")
-
+	
 	parser.add_argument("--layer-skip", action="store_true")
 	parser.add_argument("--layer-skip-exit-layer", type=int, default=None)
 	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=0.1)
 	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=0.1)
 	parser.add_argument("--refine-on-stop", action="store_true")
+
+	# experimental settings
+	parser.add_argument("--load-from-artifact", type=Path, default=None)
+	parser.add_argument("--denoise-start", type=float, default=0.0)
 	
 	parser.add_argument("--seed", type=int, default=None)
 
@@ -135,19 +152,19 @@ def main():
 		comparison_kwargs["titles"] = ["LoRA", "No LoRA"]
 
 		comparison_kwargs["disabled"]["use_lora"] = True
-		comparison_kwargs["disabled"]["ar_temp"] = 0.0
+		comparison_kwargs["disabled"]["ar_temperature"] = 0.0
 		comparison_kwargs["enabled"]["use_lora"] = False
-		comparison_kwargs["enabled"]["ar_temp"] = 0.95
+		comparison_kwargs["enabled"]["ar_temperature"] = 0.95
 	elif args.comparison == "entropix-sampling":
 		comparison_kwargs["suffix"] = "entropix_sampling"
 		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]	
 
 		comparison_kwargs["disabled"]["entropix_sampling"] = False
-		comparison_kwargs["disabled"]["ar_temp"] = args.ar_temp
+		comparison_kwargs["disabled"]["ar_temperature"] = args.ar_temperature
 		comparison_kwargs["disabled"]["top_k"] = args.top_k
 		comparison_kwargs["disabled"]["top_p"] = args.top_p
 		comparison_kwargs["enabled"]["entropix_sampling"] = True
-		comparison_kwargs["enabled"]["ar_temp"] = 0.666
+		comparison_kwargs["enabled"]["ar_temperature"] = 0.666
 		comparison_kwargs["enabled"]["top_k"] = 27
 		comparison_kwargs["enabled"]["top_p"] = 0.9
 	elif args.comparison == "layerskip":
@@ -163,14 +180,14 @@ def main():
 		comparison_kwargs["disabled"]["refine_on_stop"] = False
 		comparison_kwargs["enabled"]["refine_on_stop"] = True
 	elif args.comparison == "ar-temp":
-		current_temp = args.ar_temp
-		other_temp = 1.0
+		current_temperature = args.ar_temperature
+		other_temperature = 1.0
 
 		comparison_kwargs["suffix"] = "temperature"
-		comparison_kwargs["titles"] = [f"Temp: {current_temp:.2f}", f"Temp: {other_temp:.2f}"]
+		comparison_kwargs["titles"] = [f"Temp: {current_temperature:.2f}", f"Temp: {other_temperature:.2f}"]
 
-		comparison_kwargs["disabled"]["ar_temp"] = current_temp
-		comparison_kwargs["enabled"]["ar_temp"] = other_temp
+		comparison_kwargs["disabled"]["ar_temperature"] = current_temperature
+		comparison_kwargs["enabled"]["ar_temperature"] = other_temperature
 	elif args.comparison == "input-prompt-length":
 		current_length = args.input_prompt_length
 		other_length = 3.0
@@ -209,21 +226,34 @@ def main():
 	# read html template
 	html = open(args.demo_dir / "index.template.html", "r", encoding="utf-8").read()
 
-	# replace values in our template
-	html = html.replace(r"${PREAMBLE}", args.preamble )
-	html = html.replace(r"${SETTINGS}", str(dict(
-		input_prompt_length=args.input_prompt_length,
-		max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
-		ar_temp=args.ar_temp, nar_temp=args.nar_temp,
-		min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
-		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
+	sampling_kwargs = dict(
+		max_steps=args.max_steps,
+		max_levels=args.max_levels,
+		max_duration=args.max_duration,
+		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
+		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
+		top_p=args.top_p, top_k=args.top_k, top_no=args.top_no,min_p=args.min_p,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
 		entropix_sampling=args.entropix_sampling,
-	)) )
+		layer_skip=args.layer_skip,
+		layer_skip_exit_layer=args.layer_skip_exit_layer,
+		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
+		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
+		refine_on_stop=args.refine_on_stop,
+		denoise_start=args.denoise_start,
+		input_prompt_length=args.input_prompt_length,
+		input_prompt_prefix=args.input_prompt_prefix,
+		prefix_silence=args.prefix_silence,
+		cfg_strength=args.cfg_strength,
+	)
+
+	# replace values in our template
+	html = html.replace(r"${PREAMBLE}", args.preamble )
+	html = html.replace(r"${SETTINGS}", str(sampling_kwargs))
 
 	# pull from provided samples
 	samples_dirs = {
@@ -324,18 +354,9 @@ def main():
 				references=[prompt],
 				language=language,
 				input_prompt_length=args.input_prompt_length,
-				max_ar_steps=args.max_ar_steps, max_nar_levels=args.max_nar_levels,
-				ar_temp=args.ar_temp, nar_temp=args.nar_temp,
-				min_ar_temp=args.min_ar_temp, min_nar_temp=args.min_nar_temp,
-				top_p=args.top_p, top_k=args.top_k,
-				repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
-				length_penalty=args.length_penalty,
-				beam_width=args.beam_width,
-				mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
-				dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
-				entropix_sampling=args.entropix_sampling,
 				seed=seed,
 				tqdm=False,
+				**sampling_kwargs,
 			)
 
 			def safe_inference( out_path=out_path ):

@@ -159,6 +159,19 @@ def top_k_logits_list( logits_list, k ):
 		candidates[i] = tuple(t)
 	return candidates
 
+# top-nσ logit processing
+# from https://arxiv.org/abs/2411.07641
+def top_no_logits_processing( logits, n = 1.0 ):
+	M = torch.max(logits, dim=-1, keepdim=True).values
+	σ = torch.std(logits, dim=-1, keepdim=True)
+	
+	mask = logits >= M - n * σ
+	n_inf = torch.full_like( logits, -float("inf") ) 
+	logits = torch.where( mask, logits, n_inf )
+
+	return logits
+
+
 
 # Credit to: https://github.com/basusourya/mirostat/
 # performs mirostat-based sampling

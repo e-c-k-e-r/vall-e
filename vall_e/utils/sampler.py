@@ -44,6 +44,9 @@ class PoolSampler():
 	def __call__(self, *args, **kwargs):
 		return self.sample(*args, **kwargs)
 
+	def index(self):
+		return len(self.global_indices) - len(self.current_pool)
+
 	def get_state(self):
 		return { "length": self.length, "global_pool": self.global_pool, "global_indices": self.global_indices, "current_pool": self.current_pool }
 	
@@ -71,6 +74,9 @@ class OrderedSampler(Sampler):
 		while self.position < self.length:
 			yield self.position
 			self.position += 1
+
+	def index(self):
+		return self.position
 
 	def get_state(self):
 		return { "position": self.position, "length": self.length }
@@ -125,6 +131,9 @@ class BatchedOrderedSampler(Sampler):
 			yield self.batches[self.position]
 			self.position += 1
 
+	def index(self):
+		return self.position
+
 	def get_state(self):
 		return { "position": self.position, "batches": self.batches }
 	
@@ -153,6 +162,9 @@ class RandomSampler(Sampler):
 		while self.position < self.length:
 			yield self.perm[self.position]
 			self.position += 1
+
+	def index(self):
+		return self.position
 
 	def get_state(self):
 		return { "position": self.position, "length": self.length, "perm": self.perm, "generator": self.generator.get_state() }

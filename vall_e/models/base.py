@@ -1706,7 +1706,9 @@ class Base(nn.Module):
 		dry_multiplier = sampling_kwargs.get("dry_multiplier", 0.0)
 		dry_base = sampling_kwargs.get("dry_base", 1.75)
 		dry_allowed_length = sampling_kwargs.get("dry_allowed_length", 2)
-		
+		#
+		top_no = sampling_kwargs.get("top_no", 1.0)
+		#
 		attentions = sampling_kwargs.get("attentions", None)
 
 		batch_size = len( logits )
@@ -1791,6 +1793,10 @@ class Base(nn.Module):
 			logits = [ dynamic_temperature(logit, temperature=temperature, min_temperature=min_temperature) for logit in logits ]
 		elif temperature > 0.0:
 			logits = [ logit / temperature for logit in logits ]
+
+		# do top-no logit processing
+		if top_no > 0.0:
+			logits = [ top_no_logits_processing(logit) for logit in logits ]
 
 		# do DRY sampling
 		if dry_multiplier > 0.0 and prev_list is not None:

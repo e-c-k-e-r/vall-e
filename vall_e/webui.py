@@ -216,6 +216,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--prefix-silence", type=float, default=kwargs["prefix-silence"])
 	parser.add_argument("--top-p", type=float, default=kwargs["top-p"])
 	parser.add_argument("--top-k", type=int, default=kwargs["top-k"])
+	parser.add_argument("--top-no", type=float, default=kwargs["top-no"])
 	parser.add_argument("--min-p", type=float, default=kwargs["min-p"])
 	parser.add_argument("--repetition-penalty", type=float, default=kwargs["repetition-penalty"])
 	parser.add_argument("--repetition-penalty-decay", type=float, default=kwargs["repetition-penalty-decay"])
@@ -265,7 +266,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		max_duration=args.max_duration,
 		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
 		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
-		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
+		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p, top_no=args.top_no,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
@@ -434,8 +435,8 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")
 							layout["inference_tts"]["inputs"]["top-k"] = gr.Slider(value=0, minimum=0, maximum=1024, step=1, label="Top K", info="Limits the samples to the top K of probabilities.")
+							layout["inference_tts"]["inputs"]["top-no"] = gr.Slider(value=1, minimum=0, maximum=2, step=0.05, label="Top-nσ", info="Performs top-nσ logits processing.")
 							layout["inference_tts"]["inputs"]["min-p"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Min P")
-							layout["inference_tts"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["repetition-penalty"] = gr.Slider(value=1.0, minimum=0.0, maximum=5.0, step=0.05, label="Repetition Penalty", info="Incurs a penalty to tokens based on how often they appear in a sequence.")
 							layout["inference_tts"]["inputs"]["repetition-penalty-decay"] = gr.Slider(value=0.0, minimum=-2.0, maximum=2.0, step=0.05, label="Repetition Penalty Length Decay", info="Modifies the reptition penalty based on how far back in time the token appeared in the sequence.")
@@ -451,10 +452,11 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["max-steps"] = gr.Slider(value=25, minimum=1, maximum=500, step=1, label="Max NAR Steps", info="Limits how many steps to perform in the NAR (demask) pass.")
 							layout["inference_tts"]["inputs"]["max-levels"] = gr.Slider(value=7, minimum=0, maximum=7, step=1, label="Max NAR Levels", info="Limits how many steps to perform in the NAR pass.")
-							layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
 						with gr.Row():
+							layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
 							layout["inference_tts"]["inputs"]["prefix-silence"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Silence Prefix Duration", info="Amount of silence to prefix to the output response before beginning inference.")
 						with gr.Row():
+							layout["inference_tts"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
 							layout["inference_tts"]["inputs"]["entropix-sampling"] = gr.Checkbox(label="Entropix Sampling", info="Dynamically samples based on entropy/varentropy values from the logits / attention scores.")
 						with gr.Row():

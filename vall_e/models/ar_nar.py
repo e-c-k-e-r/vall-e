@@ -31,6 +31,8 @@ from .lora import enable_lora
 text_task = [ "stt" ]
 
 class AR_NAR(Base):
+	# parse inputs for training
+	# a lot of this could be delegated back to the dataloader, but it's just easier to keep the task of the dataloader to provide sufficient data, and the model to process the data for training
 	def forward_train(
 		self,
 		text_list: list[Tensor],
@@ -62,19 +64,17 @@ class AR_NAR(Base):
 		token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
 		# RVQ levels to apply masking training on
 		masking_train_rvq_levels = self.config.experimental.masking_train_rvq_levels
-
-		# force set mask training
-		if "len" not in self.capabilities:
-			masking_train_rvq_levels = 0.0
-		elif "ar" not in self.capabilities:
-			masking_train_rvq_levels = 1.0
-
 		# CFG
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
 		cfg_prom_dropout_p = self.config.experimental.cfg_prom_dropout_p if self.config is not None else 0.0
 		# rate to train RVQ level AR-ly or NAR-ly
 		masking_train_p = self.config.experimental.masking_train_p if self.config is not None else 0.5
+		# force set mask training
+		if "len" not in self.capabilities:
+			masking_train_p = 0.0
+		elif "ar" not in self.capabilities:
+			masking_train_p = 1.0
 		# implicitly set it to all levels
 		if not token_dropout_rvq_levels:
 			token_dropout_rvq_levels = [0, self.resp_levels - 1]
@@ -116,9 +116,11 @@ class AR_NAR(Base):
 		text_stop_sequence = torch.tensor([2], device=device, dtype=torch.int16)
 		text_start_stop_sequence = torch.tensor([1, 2], device=device, dtype=torch.int16)
 		audio_stop_sequence = torch.tensor([[self.stop_token]], device=device, dtype=torch.int16)
-		# I hate python's value/reference semantics so much
+
+		# final validations and stuff
 		for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
 			# cap quant_level if it exceeds its corresponding resp/prom
+			# this was needed for when my DAC-encoded audio was erroneously trimmed to 8 RVQ levels instead of 9
 			if quant_level >= resps.shape[-1]:
 				quant_levels[i] = resps.shape[-1] - 1
 

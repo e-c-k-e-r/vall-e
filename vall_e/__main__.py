@@ -35,6 +35,7 @@ def main():
 
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
+	parser.add_argument("--top-no", type=float, default=0.0)
 	parser.add_argument("--min-p", type=float, default=0.0)
 	parser.add_argument("--repetition-penalty", type=float, default=1.0)
 	parser.add_argument("--repetition-penalty-decay", type=float, default=0.0)
@@ -83,7 +84,7 @@ def main():
 		max_duration=args.max_duration,
 		ar_temperature=args.ar_temperature, nar_temperature=args.nar_temperature,
 		min_ar_temperature=args.min_ar_temperature, min_nar_temperature=args.min_nar_temperature,
-		top_p=args.top_p, top_k=args.top_k, min_p=args.min_p,
+		top_p=args.top_p, top_k=args.top_k, top_no=args.top_no,min_p=args.min_p,
 		repetition_penalty=args.repetition_penalty, repetition_penalty_decay=args.repetition_penalty_decay,
 		length_penalty=args.length_penalty,
 		beam_width=args.beam_width,
