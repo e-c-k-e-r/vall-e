@@ -883,6 +883,10 @@ def example_usage():
 	
 	import numpy as np
 	import re
+	
+	cfg.model.experimental.masking_train_p = 0.5
+	cfg.hyperparameters.batch_size = 1
+	cfg.hyperparameters.gradient_accumulation_steps = 1
 
 	setup_logging()
 
@@ -896,7 +900,6 @@ def example_usage():
 
 	text, audio = load_artifact(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 	batch_size = cfg.hyperparameters.batch_size
-	cfg.model.experimental.masking_train_p = 1.0
 
 	text_list = [ text ] * batch_size
 	proms_list = [ audio[:cfg.dataset.frames_per_second, :] ] * batch_size

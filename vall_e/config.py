@@ -260,7 +260,7 @@ class ModelExperimentalSettings:
 
 	masking_train_p: float = 0.0 # odds of training with masking
 	masking_train_rvq_levels: list = field(default_factory=lambda: [0,0]) # determines which levels to do mask training on
-	masking_separate_embeddings: bool = False
+	masking_separate_embeddings: bool = False # to-do: explain
 
 	# classifier-free guidance shit
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
