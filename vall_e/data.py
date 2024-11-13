@@ -903,6 +903,7 @@ class Dataset(_Dataset):
 		state_dict = torch_load(path)
 		if "dataset_hash_key" in state_dict:
 			if self.dataset_hash_key != state_dict["dataset_hash_key"]:
+				_logger.warning(f'Mismatched dataset hash key for {self.dataset_type} dataloader, ignoring loading of state dict.')
 				return
 
 		if self.sampler_type == "path":
