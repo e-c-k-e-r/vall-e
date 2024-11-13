@@ -1020,17 +1020,26 @@ class Base(nn.Module):
 				# insert tone token if we're trained for it
 				if "tone" in self.capabilities and tone_list is not None and tone_list[i] is not None:
 					inputs[i].append( ( "tone", tone_list[i] ) )
+				# it does not seem to matter whether this is provided or not, I assume the model attends more to the amount of masked tokens in the sequence
+				"""
 				# insert timestep token
 				if timestep is not None:
 					# store timestep information
 					inputs[i].append( ("timestep", torch.tensor([timestep], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
+				"""
 				# insert the current output response
 				if resps_list is not None and resps_list[i] is not None:
 					inputs[i].append( ( "resp", resps_list[i] ) )
 
-					# store dropout mask (if training)
+					# store dropout mask (if training, as this gets used later to mask the input embeddings if provided)
 					if timestep is not None and self.training:
-						dropout_mask = _dropout_mask( resps_list[i], p=math.cos(timestep * math.pi * 0.5) )
+						# a paper said to use a fixed masking ratio for training
+						"""
+						# cosine scheduled timestep => masking ratio
+						p = math.cos(timestep * math.pi * 0.5)
+						"""
+						p = 0.8
+						dropout_mask = _dropout_mask( resps_list[i], p )
 						inputs[i].append( ("dropout_mask", dropout_mask ) )
 		
 			# Audio length prediction task
