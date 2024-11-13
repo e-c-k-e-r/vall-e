@@ -1174,9 +1174,9 @@ class Base(nn.Module):
 						# we do a manual sum because I trained it to use the AR embeddings + NAR embeddings for STT......
 						embedding = sum([ self.resps_emb(
 							input[:, :l+1],
-							#offset = 0 if l == 0 else 1, # or maybe set to 1
-							#quant_level = l,
-							name = 'AR:0:0' if l == 0 else f'NAR:{l-1}:{l}',
+							offset = 0 if l == 0 else 1, # or maybe set to 1
+							quant_level = l,
+							#name = 'AR:0:0' if l == 0 else f'NAR:{l-1}:{l}',
 							sums = False
 						) for l in range( input.shape[-1] - 1 ) ])
 					else:
