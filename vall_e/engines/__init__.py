@@ -204,6 +204,17 @@ def load_engines(training=True, **model_kwargs):
 						continue
 					state[k] = ml.resize_weight( state[k], tokens )
 
+				"""
+				if model.config.experimental.masking_separate_embeddings and "resps_emb.embeddings.8.weight" not in state:
+					state['classifiers.proj.9.weight'] = state['classifiers.proj.8.weight'].clone()
+					state['classifiers.proj.9.bias'] = state['classifiers.proj.8.bias'].clone()
+
+					del state['classifiers.proj.8.weight']
+					del state['classifiers.proj.8.bias']
+					
+					state['resps_emb.embeddings.8.weight'] = state['resps_emb.embeddings.0.weight'].clone()
+				"""
+
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
 			# load lora weights if exists

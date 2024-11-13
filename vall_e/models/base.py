@@ -476,6 +476,8 @@ class Base(nn.Module):
 		layerskip_p_max = self.config.experimental.layerskip_p_max if self.config is not None else 0.1
 		layerskip_e_scale = self.config.experimental.layerskip_e_scale if self.config is not None else 0.1
 
+		masking_separate_embeddings = self.config.experimental.masking_separate_embeddings if self.config is not None else False
+
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
 		n_tones = self.config.tones if self.config is not None else 1
@@ -484,7 +486,12 @@ class Base(nn.Module):
 		if "nar" not in self.capabilities:
 			n_resp_tokens = n_audio_tokens + 1
 			l_tokens = [n_resp_tokens] * self.n_resp_levels
-		# AR+NAR model / NAR-len model
+		# NAR-len model
+		elif "len" in self.capabilities and masking_separate_embeddings:
+			# +1 to include the stop or mask token
+			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
+			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
+		# AR+NAR model
 		else:
 			# +1 to include the stop or mask token
 			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
@@ -495,6 +502,7 @@ class Base(nn.Module):
 		self.layerskip = layerskip
 		self.special_tasks = [ "len", "stt" ]
 		self.inject_timestep_embedding = False # results in bad output
+		self.masking_separate_embeddings = masking_separate_embeddings
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -1182,7 +1190,7 @@ class Base(nn.Module):
 						embedding = self.resps_emb(
 							# if masked use masked token, else original token
 							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, 0] ),
-							offset = 0,
+							offset = -1 if self.masking_separate_embeddings else 0, # pick last
 							quant_level = 0,
 						)
 					# cheat-y way to handle performing STT across all levels
@@ -1325,10 +1333,9 @@ class Base(nn.Module):
 		device = logits[0].device
 		batch_size = len(logits)
 		summed_embeddings_task = [ "stt" ]
-		#classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if inputs[i][0][-1] in self.special_tasks else l for i, l in enumerate( quant_levels ) ] 
-
 		tasks = [ self.get_input(inputs, "task", at=i) for i in range( batch_size ) ]
-		classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if tasks[i] in self.special_tasks else l for i, l in enumerate( quant_levels ) ]  
+		is_nar_len = [ self.get_input(inputs, "dropout_mask", at=i) is not None and self.masking_separate_embeddings for i in range( batch_size ) ]
+		classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if tasks[i] in self.special_tasks else (-2 if is_nar_len[i] else l) for i, l in enumerate( quant_levels ) ]  
 
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
@@ -1623,14 +1630,14 @@ class Base(nn.Module):
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 
 		tasks = [ self.get_input(inputs, "task", at=i) for i in range( batch_size ) ]
-		
+		is_nar_len = [ self.get_input(inputs, "dropout_mask", at=i) is not None and self.masking_separate_embeddings for i in range( batch_size ) ]
+		classifier_quant_levels = quant_levels if self.classifier is not None else [ -1 if tasks[i] in self.special_tasks else (-2 if is_nar_len[i] else l) for i, l in enumerate( quant_levels ) ]  
+
 		if self.inject_timestep_embedding:
 			timesteps = [ self.get_input(inputs, "timestep", at=i) for i in range( batch_size ) ]
 			timesteps = [ self.time_emb(timestep) if timestep is not None else None for i, timestep in enumerate(timesteps) ]
 		else:
 			timesteps = []
-
-		classifier_quant_levels = [ -1 if tasks[i] in self.special_tasks else l for i, l in enumerate( quant_levels ) ] 
 
 		output = self._forward(
 			inputs=x,

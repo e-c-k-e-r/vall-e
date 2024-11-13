@@ -108,7 +108,7 @@ class AR_NAR(Base):
 				#p = math.acos(r) / (math.pi * 0.5)
 				#timesteps[i] = 1.0 - clamp(p, 0.0, 1.0)
 				timesteps[i] = random.random()
-		
+
 		# trim resps to only contain all levels below the target level
 		resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
 
@@ -896,7 +896,7 @@ def example_usage():
 
 	text, audio = load_artifact(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
 	batch_size = cfg.hyperparameters.batch_size
-	cfg.model.experimental.masking_train_p = 0.5
+	cfg.model.experimental.masking_train_p = 1.0
 
 	text_list = [ text ] * batch_size
 	proms_list = [ audio[:cfg.dataset.frames_per_second, :] ] * batch_size
