@@ -1345,12 +1345,14 @@ class Base(nn.Module):
 		if not self.config.loss_factors:
 			target_list = []
 			task_list = []
+			is_causal = []
 
 			for batch_index, batch in enumerate(inputs):
 				quant_level = quant_levels[batch_index]
 				target = []
 				task_type = "tts"
 
+				causal = False
 				dropout_mask = None
 				for name, input in batch:
 					if name == "dropout_mask":
@@ -1364,13 +1366,14 @@ class Base(nn.Module):
 						proms = [ input ] if isinstance(input, torch.Tensor) else input
 						target.append( torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms if input is not None ] ) )
 					elif name == "resp":
+						causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities) or (task_type in ["len", "stt"])
 						# mask found, apply it
 						if dropout_mask is not None:
 							# if mask use original token, else ignore
+							causal = False
 							target.append( torch.where( dropout_mask, input if input.dim() == 1 else input[:, 0], self.ignore_index ) )
 						elif self.interleave:
 							target.append( _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] ) )
-
 						elif task_type in summed_embeddings_task:
 							target.append( torch.full_like(input[..., 0], self.ignore_index) )
 						else:
@@ -1380,14 +1383,15 @@ class Base(nn.Module):
 					elif name in ["text", "quant_level", "lang", "tone", "len"]:
 						target.append( input )
 
+				is_causal.append( causal )
 				target_list.append( _join( target, torch.tensor(self.ignore_index, device=target[-1].device) ) )
 
 			batch_size = len(target_list)
-			# modify only for the AR so it can properly behave like a transformer
+			# modify only causal sequences so it can properly behave like a transformer
 			for i in range(batch_size):
 				quant_level = quant_levels[i]
 				task_name = task_list[i]
-				causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities) or (task_name in ["len", "stt"])
+				causal = is_causal[i]
 
 				if causal:
 					l = self.causal_size
