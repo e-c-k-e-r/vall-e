@@ -534,7 +534,7 @@ _durations_map = {}
 def _get_duration_map( type="training" ):
 	return _durations_map[type] if type in _durations_map else {}
 
-def _load_paths(dataset, type="training", silent=False, dataset_hash_key=None):
+def _load_paths(dataset, type="training", silent=not is_global_leader(), dataset_hash_key=None):
 	if not dataset_hash_key:
 		dataset_hash_key = cfg.dataset.hash_key(sorted(dataset))
 
@@ -750,11 +750,11 @@ class Dataset(_Dataset):
 				self.duration_buckets[bucket] = []
 			self.duration_buckets[bucket].append( ( Path(path), duration ) )
 
-		# ensure they're ordered
-		self.duration_buckets = dict(sorted(self.duration_buckets.items()))
-
 		# sort by duration
 		if self.sampler_order == "duration":
+			# ensure they're ordered
+			self.duration_buckets = dict(sorted(self.duration_buckets.items()))
+
 			flattened = {}
 			# sort and interleave
 			for bucket in self.duration_buckets:

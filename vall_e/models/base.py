@@ -1117,10 +1117,12 @@ class Base(nn.Module):
 			
 			# pre-iterate
 			for name, input in batch_input:
-				if name == "dropout_mask":
-					dropout_mask = input
-				elif name == "classifier_level":
+				if name == "classifier_level":
 					classifier_level = input
+				elif name == "dropout_mask":
+					dropout_mask = input
+				elif name == "timestep":
+					timestep = input
 
 			for name, input in batch_input:
 				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
@@ -1165,6 +1167,15 @@ class Base(nn.Module):
 						embedding = self.resps_emb(
 							# if masked use masked token, else original token
 							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, 0] ),
+							#offset = -1 if self.masking_separate_embeddings else 0, # pick last
+							#quant_level = 0,
+							name = classifier_level,
+						)
+					# NAR-len
+					elif classifier_level == "NAR:0:0":
+						embedding = self.resps_emb(
+							# if masked use masked token, else original token
+							input if input.dim() == 1 else input[:, 0],
 							#offset = -1 if self.masking_separate_embeddings else 0, # pick last
 							#quant_level = 0,
 							name = classifier_level,
@@ -1215,7 +1226,7 @@ class Base(nn.Module):
 									continue
 								
 								embedding[i] = self.dropout_token
-				elif name == "timestep" and self.time_emb is not None:
+				elif name == "timestep" and self.time_emb is not None and False:
 					embedding = self.time_emb( input )
 				elif name == "len" and self.len_emb is not None:
 					embedding = self.len_emb( input )
