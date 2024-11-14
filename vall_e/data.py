@@ -36,7 +36,7 @@ from tqdm.auto import tqdm
 _logger = logging.getLogger(__name__)
 
 @cache
-def get_random_prompts( validation=True, min_length=0, tokenized=False ):
+def get_random_prompts( validation=False, min_length=0, tokenized=False ):
 	duration_range = [ 5.5, 12.0 ] # to-do: pull from cfg.dataset.duration_range
 	sentences = [
 		"The birch canoe slid on the smooth planks.",

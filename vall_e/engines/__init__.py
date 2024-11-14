@@ -205,14 +205,24 @@ def load_engines(training=True, **model_kwargs):
 					state[k] = ml.resize_weight( state[k], tokens )
 
 				"""
-				if model.config.experimental.masking_separate_embeddings and "resps_emb.embeddings.8.weight" not in state:
+				if True:
+					# move STT one over
 					state['classifiers.proj.9.weight'] = state['classifiers.proj.8.weight'].clone()
 					state['classifiers.proj.9.bias'] = state['classifiers.proj.8.bias'].clone()
-
-					del state['classifiers.proj.8.weight']
-					del state['classifiers.proj.8.bias']
-					
-					state['resps_emb.embeddings.8.weight'] = state['resps_emb.embeddings.0.weight'].clone()
+					# copy from AR:0:0 classifier
+					if False:
+						state['classifiers.proj.8.weight'] = state['classifiers.proj.0.weight'].clone()
+						state['classifiers.proj.8.bias'] = state['classifiers.proj.0.bias'].clone()
+						# copy from AR:0:0 embeddings
+						state['resps_emb.embeddings.8.weight'] = state['resps_emb.embeddings.0.weight'].clone()
+					# remove
+					else:
+						if 'classifiers.proj.8.weight' in state:
+							del state['classifiers.proj.8.weight']
+						if 'classifiers.proj.8.bias' in state:
+							del state['classifiers.proj.8.bias']
+						if 'resps_emb.embeddings.8.weight' in state:
+							del state['resps_emb.embeddings.8.weight']
 				"""
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)

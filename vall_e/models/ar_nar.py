@@ -148,7 +148,7 @@ class AR_NAR(Base):
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 			# only apply stop token for RVQ level 0
-			if quant_level <= 0:
+			if quant_level <= 0 and timesteps[i] is not None:
 				# append stop tokens for AR
 				if task in text_task:
 					#text_list[i] = torch.cat([ resps, text_stop_sequence ])
