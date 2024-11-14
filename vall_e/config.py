@@ -558,6 +558,8 @@ class DeepSpeed:
 			"fp16": {
 				"enabled": cfg.trainer.weight_dtype.lower() == "float16",
 				"auto_cast": True, # ???
+				"loss_scale_window": 100, # raise every 100 consecutive good steps
+				"min_loss_scale": 32768.0, # loss scale hitting 8K fries the model, 16K is fine but 32K is comfy
 				"loss_scale": 0.0 if cfg.trainer.scale_loss else 1.0,
 			},
 			"bf16": {
