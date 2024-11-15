@@ -471,9 +471,9 @@ class Base(nn.Module):
 			resp_l_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
 
 		classifier_l_tokens = l_tokens + [ n_text_tokens ]
-		classifier_l_names = resp_l_names + [ "len" ]
+		classifier_l_names = resp_l_names + [ "stt" ]
 
-		if "len" in self.capabilities and False:
+		if "len" in self.capabilities:
 			classifier_l_tokens += [ n_text_tokens ]
 			classifier_l_names += ["len"]
 
