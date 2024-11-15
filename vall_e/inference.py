@@ -269,7 +269,6 @@ class TTS():
 					)
 				elif model_len is not None:
 					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_steps": 5} ) # don't need more than that
-					
 					kwargs = {}
 					# nasty hardcode to load a reference file and have that as the input target
 					if load_from_artifact and load_from_artifact.exists():

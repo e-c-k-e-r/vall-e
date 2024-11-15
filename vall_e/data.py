@@ -1761,12 +1761,12 @@ if __name__ == "__main__":
 	elif args.action == "metadata":
 		create_dataset_metadata()
 	elif args.action == "sample":
-		train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
+		train_dl, val_dl = create_train_val_dataloader()
 
 		samples = {
 			"training": [ next(iter(train_dl)),  next(iter(train_dl)) ],
-			"evaluation": [ next(iter(subtrain_dl)),  next(iter(subtrain_dl)) ],
-			#"validation": [ next(iter(val_dl)),  next(iter(val_dl)) ],
+			#"evaluation": [ next(iter(subtrain_dl)),  next(iter(subtrain_dl)) ],
+			"validation": [ next(iter(val_dl)),  next(iter(val_dl)) ],
 		}
 
 		Path("./data/sample-test/").mkdir(parents=True, exist_ok=True)
@@ -1784,8 +1784,8 @@ if __name__ == "__main__":
 						decode_to_file( v[i]['resps'][j], f"./data/sample-test/{k}.{i}.{j}.resps.wav", device="cpu" )
 					except Exception as e:
 						_logger.info(f"Error while decoding resp {k}.{i}.{j}.wav: {str(e)}")
-					v[i]['proms'][j] = v[i]['proms'][j].shape
-					v[i]['resps'][j] = v[i]['resps'][j].shape
+					#v[i]['proms'][j] = v[i]['proms'][j].shape
+					#v[i]['resps'][j] = v[i]['resps'][j].shape
 		
 		for k, v in samples.items():
 			for i in range(len(v)):

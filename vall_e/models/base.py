@@ -48,6 +48,12 @@ from ..utils.pattern import DelayedPatternProvider, VALLEPattern
 
 summed_embeddings_task = [ "stt" ]
 special_tasks = [ "len", "stt" ]
+non_tokened_names = ["task", "dropout_mask", "classifier_level"]
+task_outputs = {
+	"tts": "resp",
+	"stt": "text",
+	"len": "len",
+}
 
 def _dropout_mask( input, p=None ):
 	# cosine scheduling
@@ -200,13 +206,14 @@ class AudioEmbedding(nn.Module):
 	def forward(self, xi: Tensor, offset: int | None = None, quant_level: int | None = None, name: str | None = None, sums = None ) -> Tensor:
 		if sums is None:
 			sums = self.sums
+		
+		if quant_level is None:
+			quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
 
 		# handle mapping from name
 		if name in self.names:
 			offset = self.names.index( name )
-
-		if quant_level is None:
-			quant_level = 0 if xi.dim() == 1 else xi.shape[-1] - 1
+			offset -= quant_level # offset by quant level since it'll iterate up that many levels
 		
 		if self.sums and quant_level > 0:
 			x = sum( [ self.embeddings[k + offset]( xi[:, k] ) for k in range( quant_level ) ] )
@@ -322,7 +329,7 @@ class Base(nn.Module):
 	def loss_factor(self, k):
 		if self.config is None:
 			return 1.0
-		return self.config.loss_factors[k] if k in self.config.loss_factors else 1.0
+		return self.config.loss_factor(k)
 
 	def _prune(self, l: Tensor, stop = None):
 		if stop is None:
@@ -429,12 +436,13 @@ class Base(nn.Module):
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
 		
+		masking_ratio_fixed = self.config.experimental.masking_ratio_fixed if self.config is not None else False
+		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
+		
 		layerskip = self.config.experimental.layerskip if self.config is not None else False
 		layerskip_r = self.config.experimental.layerskip_r if self.config is not None else 2
 		layerskip_p_max = self.config.experimental.layerskip_p_max if self.config is not None else 0.1
 		layerskip_e_scale = self.config.experimental.layerskip_e_scale if self.config is not None else 0.1
-
-		masking_separate_embeddings = self.config.experimental.masking_separate_embeddings if self.config is not None else False
 
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
@@ -446,15 +454,15 @@ class Base(nn.Module):
 			l_tokens = [n_resp_tokens] * self.n_resp_levels
 			resp_l_names = [f'AR:{i}:{i}' for i in range( self.n_resp_levels )]
 		# NAR-len model
-		elif "len" in self.capabilities and masking_separate_embeddings:
+		elif "len" in self.capabilities:
 			# +1 to include the stop or mask token
 			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
-			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-			resp_l_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
-			
-			if masking_separate_embeddings:
-				l_tokens += [n_resp_tokens]
-				resp_l_names += ['NAR:0:0']
+			if "ar" in self.capabilities:
+				l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
+				resp_l_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )] + ['NAR:0:0']
+			else:
+				l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+				resp_l_names = ['NAR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
 		# AR+NAR model
 		else:
 			# +1 to include the stop or mask token
@@ -462,13 +470,19 @@ class Base(nn.Module):
 			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 			resp_l_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
 
-		classifier_l_names = resp_l_names + ["stt"]
+		classifier_l_tokens = l_tokens + [ n_text_tokens ]
+		classifier_l_names = resp_l_names + [ "len" ]
+
+		if "len" in self.capabilities and False:
+			classifier_l_tokens += [ n_text_tokens ]
+			classifier_l_names += ["len"]
 
 		self.unified_position_ids = unified_position_ids
 		self.interleave = interleave
 		self.layerskip = layerskip
 		self.inject_timestep_embedding = False # results in bad output
-		self.masking_separate_embeddings = masking_separate_embeddings
+		self.masking_ratio_fixed = masking_ratio_fixed
+		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -805,10 +819,10 @@ class Base(nn.Module):
 			self.metrics = None
 		else:
 			self.classifier = None
-			self.classifiers = Classifiers( l_tokens + [ n_text_tokens ], d_model, l_names=classifier_l_names )
+			self.classifiers = Classifiers( classifier_l_tokens, d_model, l_names=classifier_l_names )
 			self.accuracy_metric = None
 			self.precision_metric = None
-			self.metrics = Metrics( l_tokens + [ n_text_tokens ] )
+			self.metrics = Metrics( classifier_l_tokens )
 
 			"""
 			if tie_classifier_to_embedding:
@@ -996,24 +1010,22 @@ class Base(nn.Module):
 					inputs[i].append( ( "tone", tone_list[i] ) )
 				# insert timestep token
 				if timestep is not None:
-					# store timestep information
-					inputs[i].append( ("timestep", torch.tensor([timestep], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
 					# force set to use this classifier level
-					classifier_level = "NAR:0:0" if self.masking_separate_embeddings else "AR:0:0"
+					classifier_level = "NAR:0:0"
+					# a paper said to use a fixed masking ratio for training
+					p = 0.8
+					# store timestep information
+					if not self.masking_ratio_fixed:
+						# cosine scheduled timestep => masking ratio
+						p = math.cos(timestep * math.pi * 0.5)
+						inputs[i].append( ("timestep", torch.tensor([timestep], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
+					# store dropout mask (if training, as this gets used later to mask the input embeddings if provided)
+					if self.training:
+						dropout_mask = _dropout_mask( resps_list[i], p )
+						inputs[i].append( ("dropout_mask", dropout_mask ) )
 				# insert the current output response
 				if resps_list is not None and resps_list[i] is not None:
 					inputs[i].append( ( "resp", resps_list[i] ) )
-
-					# store dropout mask (if training, as this gets used later to mask the input embeddings if provided)
-					if timestep is not None and self.training:
-						"""
-						# a paper said to use a fixed masking ratio for training
-						p = 0.8
-						"""
-						# cosine scheduled timestep => masking ratio
-						p = math.cos(timestep * math.pi * 0.5)
-						dropout_mask = _dropout_mask( resps_list[i], p )
-						inputs[i].append( ("dropout_mask", dropout_mask ) )
 		
 				inputs[i].append( ("classifier_level", classifier_level) )
 			# Audio length prediction task
@@ -1047,7 +1059,7 @@ class Base(nn.Module):
 					# yes this could be encoded better
 					inputs[i].append( ( "len", torch.tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ], device=device, dtype=torch.int16) ) )
 				
-				inputs[i].append( ("classifier_level", "stt") )
+				inputs[i].append( ("classifier_level", "len") )
 			# Speech-to-Text prediction task
 			# Sequence: <resp><sep><rvq lvl><sep><text>
 			elif task_type == "stt":
@@ -1125,6 +1137,7 @@ class Base(nn.Module):
 			for name, input in batch_input:
 				# technically can provide a map for input_name => embedding, but some embedding requires additional processing
 				embedding = None
+
 				# is already an embedding		
 				if name == "task":
 					# noop
@@ -1165,7 +1178,6 @@ class Base(nn.Module):
 						embedding = self.resps_emb(
 							# if masked use masked token, else original token
 							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, 0] ),
-							#offset = -1 if self.masking_separate_embeddings else 0, # pick last
 							#quant_level = 0,
 							name = classifier_level,
 						)
@@ -1174,7 +1186,6 @@ class Base(nn.Module):
 						embedding = self.resps_emb(
 							# if masked use masked token, else original token
 							input if input.dim() == 1 else input[:, 0],
-							#offset = -1 if self.masking_separate_embeddings else 0, # pick last
 							#quant_level = 0,
 							name = classifier_level,
 						)
@@ -1212,7 +1223,8 @@ class Base(nn.Module):
 
 							embedding = self.resps_emb(
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
-								offset = 0 if classifier_level.startswith("AR:") else 1,
+								#offset = 0 if classifier_level.startswith("AR:") else 1,
+								name = classifier_level,
 								quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
 							)
 
@@ -1277,29 +1289,33 @@ class Base(nn.Module):
 		# there's a better way
 		if not self.unified_position_ids:
 			x_list = []
-			non_tokens = ["task", "dropout_mask", "classifier_level"]
-			last_input = ["resp", "len"]
 
-			def get_input_token_length( name, input ):
+			def get_input_token_length( name, input, task ):
 				# task token
 				if isinstance(input, str):
 					return 1
 
 				# list of tokens
 				if not isinstance(input, torch.Tensor):
-					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] ) + 1
+					return sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] )
 
 				# interleaved model
 				if self.interleave and name == "resp":
 					return input.shape[0] * input.shape[1]
 
 				# ending input will not have a separator later
-				return input.shape[0] + (0 if name in last_input else 1)
+				return input.shape[0]
 
 			for batch_index, batch_input in enumerate(inputs):
+				# pre-iterate
+				task = "tts"
+				for name, input in batch_input:
+					if name == "task":
+						task = input
+
 				batch = torch.cat( [
-					torch.tensor([*range(get_input_token_length(name, input))], device=device, dtype=torch.int32)
-					for name, input in batch_input if name not in non_tokens
+					torch.tensor([*range(get_input_token_length(name, input, task) + (1 if name != task_outputs.get(task, name) else 0))], device=device, dtype=torch.int32)
+					for name, input in batch_input if name not in non_tokened_names
 				] )
 
 				delta = ids[batch_index].shape[0] - batch.shape[0]
@@ -1319,8 +1335,8 @@ class Base(nn.Module):
 		
 		quant_levels: list[int] | None = None,
 	):
-		loss = dict(ce = dict())
-		stats = dict(acc = dict())
+		loss = {}
+		stats = {}
 
 		device = logits[0].device
 		batch_size = len(logits)
@@ -1328,6 +1344,12 @@ class Base(nn.Module):
 
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
+			"""
+			if isinstance(input, str):
+				return torch.tensor( [ self.ignore_index ], device=device, dtype=torch.int16)
+			
+			return torch.tensor( [ self.ignore_index ] * input.shape[0], device=device, dtype=torch.int16)
+			"""
 			if isinstance(input, str):
 				return torch.tensor( [ get_task_symmap()[f'<{input}>'] ], device=device, dtype=torch.int16)
 
@@ -1336,192 +1358,143 @@ class Base(nn.Module):
 				return torch.full_like(input[..., 0], self.ignore_index)
 				
 			return input if input.dim() == 1 else input[:, quant_level]
-
-		# old, "naive" way, no loss factoring
-		if not self.config.loss_factors:
-			target_list = []
-			task_list = []
-			is_causal = []
-
-			for batch_index, batch in enumerate(inputs):
-				quant_level = quant_levels[batch_index]
-				target = []
-				task_type = "tts"
-
-				causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities)
-				dropout_mask = None
-				for name, input in batch:
-					if name == "dropout_mask":
-						dropout_mask = input
-
-				for name, input in batch:
-					if name == "task":
-						task_type = input
-						task_list.append( input )
-						if task_type in special_tasks:
-							causal = True
-					elif name == "prom":
-						proms = [ input ] if isinstance(input, torch.Tensor) else input
-						target.append( torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms if input is not None ] ) )
-					elif name == "resp":
-						# mask found, apply it
-						if dropout_mask is not None:
-							# if mask use original token, else ignore
-							causal = False
-							target.append( torch.where( dropout_mask, input if input.dim() == 1 else input[:, 0], self.ignore_index ) )
-						elif self.interleave:
-							target.append( _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] ) )
-						elif task_type in summed_embeddings_task:
-							target.append( torch.full_like(input[..., 0], self.ignore_index) )
-						else:
-							target.append( input if input.dim() == 1 else input[:, quant_level] )
-					elif name == "timestep":
-						target.append( torch.tensor([self.ignore_index], device=input.device) )
-					elif name in ["text", "quant_level", "lang", "tone", "len"]:
-						target.append( input )
-
-				is_causal.append( causal )
-				target_list.append( _join( target, torch.tensor(self.ignore_index, device=target[-1].device) ) )
-
-			batch_size = len(target_list)
-			# modify only causal sequences so it can properly behave like a transformer
-			for i in range(batch_size):
-				quant_level = quant_levels[i]
-				task_name = task_list[i]
-				causal = is_causal[i]
-
-				if causal:
-					l = self.causal_size
-					logits[i] = logits[i][..., :-l, :] # shift the target so that token n...
-					target_list[i] = target_list[i][..., l:] # predicts token n + 1
-
-			for batch_index, target in enumerate( target_list ):
-				logit = logits[batch_index]
-
-				max_classes = logit.shape[-1]
-				max_token = torch.max( target ).item()
-
-				if max_token > max_classes:
-					task = self.get_input(inputs, "task", at=batch_index)
-					print( batch_index, task, target, max_token, max_classes, inputs[batch_index] )
-
-			# see comments for the split-loss calc cross_entropy call
-			if False:
-				target = torch.cat( target_list )
-				inputs = torch.cat( logits )
-				loss = dict(
-					nll = F.cross_entropy( inputs, target, ignore_index=self.ignore_index )
-				)
-				stats = self.metrics( inputs, targets, classifier_levels ) if self.metrics is not None else dict(
-					acc = self.accuracy_metric( inputs, target ),
-					# precision = self.precision_metric( inputs, target ),
-				)
-			else:
-				# nll being natural log likelihood :)))) (I don't know why this completely escaped me originally with thinking it meant something else)
-				loss = dict(
-					nll = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) for targets, inputs in zip( target_list, logits ) ]) / batch_size
-				)
-				stats = self.metrics( logits, target_list, self.classifiers.indices( classifier_levels ) ) if self.metrics is not None else dict(
-					acc = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( target_list, logits ) ] ) / batch_size
-				)
-
-			return LossStats(loss, stats)
-
-		"""
-		# considerations:
-		# * split losses does not maintain the entire sequence
-		# * the first token is ignored for all pieces, rather than just the first text token (which is always provided)
-		#	 + the other way at least should keep it intact this way
-		#	 + extra logic might be required to instead offset from the end for the resp, rather than fit snuggly
-		#	 + this might just be a spook since the odds the very first token of the AR mattering is slim (although I swear I hear a very brief audio pop sometimes)
-		"""
-
-		# to-do: use NAR-len training and better causal-awareness
-		info = {}
-		batch_size = len( inputs )
-
-		for i, batch in enumerate( inputs ):
-			it = 0
-			quant_level = quant_levels[i]
-			task_name = None
-
-			causal = (quant_level == 0 and "ar" in self.capabilities) or ("nar" not in self.capabilities)
+		
+		for batch_index, batch in enumerate(inputs):
+			quant_level = quant_levels[batch_index]
+			target = []
+			causal = True
+			task_type = "tts"
 			dropout_mask = None
-			for name, input in batch:
-				if name == "dropout_mask":
-					dropout_mask = input
+			classifier_level = None
 
 			for name, input in batch:
-				# meta-input, no corresponding token at the moment
 				if name == "task":
-					task_name = input
-					if task_type in special_tasks:
-						causal = True
+					task_type = input
+				elif name == "dropout_mask":
+					dropout_mask = input
+				elif name == "classifier_level":
+					classifier_level = input
+
+			# autoregressive, causal
+			if classifier_level.startswith("AR:"):
+				causal = True
+			# nonautoregressive, parallel
+			elif classifier_level.startswith("NAR:"):
+				causal = False
+
+			it = 0
+			for name, input in batch:
+				token = None
+				ignored = False
+
+				# non-tokened tasks
+				if name in non_tokened_names:
 					continue
-				# do not use resp as-is
-				if name == "resp":
+				# prom can either be a tensor itself or a list of tensors and strings
+				if name == "prom":
+					# expand to list if not a list
+					proms = [ input ] if isinstance(input, torch.Tensor) else input
+					# iterate over the list to inject their tokens
+					token = torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms if input is not None ] )
+				elif name == "resp":
+					# mask found, apply it
 					if dropout_mask is not None:
 						# if mask use original token, else ignore
-						causal = False
-						target.append( torch.where( dropout_mask, input if input.dim() == 1 else input[:, 0], self.ignore_index ) )
+						token = torch.where( dropout_mask, input if input.dim() == 1 else input[:, 0], self.ignore_index )
+					# flatten
 					elif self.interleave:
-						input = _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] )
-					elif task_type in summed_embeddings_task:
-						input = torch.full_like(input[..., 0], self.ignore_index)
+						token = _interleave_sequence_flatten( [ input[:, l] for l in range( input.shape[-1] ) ] )
+					# use resps as-is
 					else:
-						input = input if input.dim() == 1 else input[:, quant_level]
-				# select prom level
-				elif name == "prom":
-					proms = [ input ] if isinstance(input, torch.Tensor) else input
-					input = torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms ] )
-
-				seq_len = input.shape[0]
-
-				logit = logits[i][it:it+seq_len]
-				it += seq_len + 1 # +1 to incorporate the separator
-				
-				# for the AR, shift sequence so that it predicts the next token
-				#	 (the NAR predicts the next token in place, so it's not necessary to do any modifications for it)
-				if causal and seq_len > 1:
-					l = self.causal_size
-					logit = logit[..., :-l, :]
-					input = input[..., l:] # shift sequence to the right by one (or causal chunk size)
-
-				if name not in info:
-					info[name] = {
-						"targets": [],
-						"logits": [],
-					}
-
-				# modeling_llama.py has some comment about requiring .contiguous() but I feel it's a spook since that incurs a memory allocation
-				info[name]["targets"].append( input.long() )
-				info[name]["logits"].append( logit )
-
-		for name, batch in info.items():
-			loss_factor = self.loss_factor(name)
-
-			if name not in ["text", "prom", "resp", "len"]:
-				continue
-
-			if loss_factor == 0.0:
-				continue
-
-			# "faster" if cross_entropy has speedups for processing an entire batch, but torch.cat allocates new tensors
-			# to-do: set this to a var
-			if False:
-				targets = torch.cat( batch["targets"] ).long()
-				inputs = torch.cat( batch["logits"] )
-				loss[name] = F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor
-				stats["acc"][name] = self.accuracy_metric( inputs, targets )
-			# probably consumes less memory due to not having to allocate memory
-			# this method also opens the way to scale loss per RVQ level (although it shouldn't really be needed)
-			else:
-				loss[name] = sum([ F.cross_entropy( inputs, targets, ignore_index=self.ignore_index ) * loss_factor for targets, inputs in zip( batch["targets"], batch["logits"] ) ]) / batch_size
-				if self.metrics is not None:
-					metrics = self.metrics( batch["logits"], batch["targets"], self.classifiers.indices( classifier_levels ) )
-					stats["acc"][name] = metrics["acc"]
+						token = input if input.dim() == 1 else input[:, quant_level]
+				# not a special input, inject as-is
 				else:
-					stats["acc"][name] = sum( [ self.accuracy_metric( inputs, targets ) for targets, inputs in zip( batch["targets"], batch["logits"] ) ] ) / batch_size
+					token = input
+
+				if not isinstance(token, torch.Tensor):
+					continue
+
+				if token.is_floating_point():
+					ignored = True
+
+				# grab range of our logits for later
+				seq_len = token.shape[0]
+				start, end = it, it+seq_len
+				it += seq_len + 1 # +1 to incorporate the separator
+
+				# deduce if a name for a task is an input or output
+				if self.ignore_inputs_for_loss and name != task_outputs.get(task_type, name):
+					ignored = True
+
+				if ignored:
+					# pruned
+					if self.config.loss_factors:
+						continue
+					# fill with ignored out tensor
+					token = torch.tensor( [ self.ignore_index ] * input.shape[0], device=device, dtype=torch.int16)
+					
+				# perform loss calculation on the individual piece
+				if self.config.loss_factors:
+					loss_factor = self.loss_factor(name)
+
+					if loss_factor == 0.0:
+						continue
+
+					logit = logits[batch_index][start:end]
+
+					if causal and seq_len > 1:
+						l = self.causal_size
+						logit = logit[..., :-l, :]
+						token = token[..., l:] # shift sequence to the right by one (or causal chunk size)
+
+					if f'{name}.nll' not in loss:
+						loss[f'{name}.nll'] = []
+					
+					if f'{name}.acc' not in stats:
+						stats[f'{name}.acc'] = []
+					
+					nll = F.cross_entropy( logit, token.long(), ignore_index=self.ignore_index ) * loss_factor
+					if self.metrics is not None:
+						metrics = self.metrics.calc_accuracy( [ logit ], [ token ], self.classifiers.indices([ classifier_level ]) )
+					else:
+						metrics = self.accuracy_metric( logit, token )
+
+					loss[f'{name}.nll'].append( nll )
+					stats[f'{name}.acc'].append( metrics )
+				# add to list
+				else:
+					target.append( token )
+			
+			# perofrm loss calculation on the entire sequence
+			if not self.config.loss_factors:
+				target = _join( target, torch.tensor(self.ignore_index, device=target[-1].device) )
+				logit = logits[batch_index]
+
+				# shift if causal
+				if causal:
+					l = self.causal_size
+					logit = logit[..., :-l, :] # shift the target so that token n...
+					target = target[..., l:] # ...predicts token n + 1
+
+				nll = F.cross_entropy( logit, target, ignore_index=self.ignore_index )
+
+				if self.metrics is not None:
+					metrics = self.metrics.calc_accuracy( [ logit ], [ target ], self.classifiers.indices([ classifier_level ]) )
+				else:
+					metrics = self.accuracy_metric( logit, target )
+
+				if 'nll' not in loss:
+					loss['nll'] = []
+				
+				if 'acc' not in stats:
+					stats['acc'] = []
+
+				loss["nll"].append( nll )
+				stats["acc"].append( metrics )
+
+		# average
+		loss = { name: sum( loss[name] ) / len( loss[name] ) for name in loss.keys() }
+		stats = { name: sum( stats[name] ) / len( stats[name] ) for name in stats.keys() }
 
 		return LossStats(loss, stats)
 

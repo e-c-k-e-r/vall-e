@@ -48,17 +48,11 @@ One problem exhibited from a NAR is producing arfifacts ("crust") in the final w
 The pure NAR (`nar-len`) model is a model-type that inferences audio tokens purely non-autoregressively. Despite being called a pure NAR, duration is then inferred by autoregressively decoding for its length (as the AR+NAR model shows that you can mix both types).
 
 However, having a pure NAR is challenging, as you need to both explicitly provide the duration and provide a "good enough" starting sequence of tokens for the initial sequence.
-* The former problem is easily "solved" by training a `len` inferencing task, where the given input predicts the requested duration for a given utterance autoregressively.
-* The latter however proves to be challenging, as generating tokens from nothing in one step is not possible.
-  * diffusion solves this, but requires additional steps at best and a separate model at worse, just for one RVQ level.
-  * the normal NAR (RVQ level 1+) does not face this problem, as it's already given a sufficient initial sequence of tokens to work with, and thus only requires one step.
-
-The implemented solution follows a similar paradigm to diffusion, but with masking instead of noise.
-* incidentally, [this paper](https://arxiv.org/abs/2406.05478) demonstrates this in the use of a NAR transformer for image generation
-
-The reference model provided has *some* NAR demasking (mock diffusion) aware training to faciliate a pure NAR model, but:
-* Sampling absolutely requires rep pen, or the output degenerates.
-* Output isn't so great, as there's artifacting from either an underbaked model or a naive sampler.
+* The former problem is easily "solved" by training a `len` classification task.
+* The latter however proves to be challenging, as generating tokens from nothing in one step is not possible (but can be done in multiple steps).
+  * diffusion solves this, but requires a different underliny model architecture
+  * masking to emulate diffusion noising is best working solution, but has a lot of training challenges.
+    * existing solutions like Muse (text to image) and MaskGCT (text to speech) do this
 
 To-do: fill out this more when it works. Getting this to work is a huge pain.
 * Some masked transformers do not "inject" any timestep information (Text-To-Image Muse as far as I can tell)
@@ -67,22 +61,28 @@ To-do: fill out this more when it works. Getting this to work is a huge pain.
   * MaskGCT does it both pre and post
   * the test trainier actually degrades the output immensely when doing this
 * I'm sure I've seen a masked transformer not have CFG, but most of them seem to do.
-  * This helps the base AR+NAR tasks and provides CFG sampling for such tasks anyways.
+* ***Extreme*** care is required.
 
-## Embeddings
+## Embeddings (and Classifiers)
 
-The "magic" of subjugating a transformer for audio use lies within the ensemble of the embeddings. This is necessary as each piece of a sequence is fundamentally different, but a HF-compatible model can geta way with treating each sequence as separate ranges within a total token sequence.
+The "magic" of subjugating a transformer for audio use lies within the ensemble of the embeddings. This is necessary as each piece of a sequence is fundamentally different, but a HF-compatible model can get away with treating each sequence as separate ranges within a total token sequence.
 
 While embeddings *can* be tied to the output head, testing showed that the model ***really*** does not like to do this, although my implementation could very well be flawed.
 
 With attention-based transformers, most embeddings can serve as a token itself and have the attention mechanism attend to it. Theoretically, there should be little to no functional differences between "tokenizing" an embedding, and summing a modifying embedding, but experimentation is needed for this assertion.
 
+### Classifiers
+
+Classifiers are the final output head / projection layer that processes the last hidden states of a model into a probability distribution for each token. 
+
+Out of paranoia, each head is split for each macro-task (RVQ level) and an auxiliary head for tasks `stt` and `len`, even though the core half of the model's training was with a single output head.
+
 ### Text Embeddings
 
 The input text phonemes (or output for STT) are passed through an embedding head (`text`), similar to how a normal text LLM would. Nothing fancy is required, as it's very straightforward.
 
-Technically, due to how the audio embeddings are implemented, it's possible to offer "language specific" embeddings, rather than one unified IPA-based embedding + a language embedding (`lang`).
-* Such an implementation *could* in fact inference from normal text rather than IPA phonemes.
+Technically, due to how the audio embeddings are implemented, it's possible to offer "language specific" text embeddings, rather than one unified IPA-based embedding + a language embedding (`lang`).
+* Such an implementation *could* in fact inference from normal text rather than IPA phonemes, as language-specific pure text embeddings can be trained.
 
 These embeddings *could* instead be added on top of the input prompt embedding instead of serving as additional tasks (similar to injecting position embeddings), but additional experimentation is required to see if the model both can work under this and/or benefits from this.
 
@@ -115,16 +115,15 @@ As EnCodec encodes audio across eight codebooks (and DAC's 44Khz audio under nin
 For the `prom` embedding, we can simply use each embedding for each layer. Each embedding level maps to its respective RVQ level.
 
 Howver, the `resp` requires some extra care, as the model needs to both causally (AR) and parallel-ly (NAR) decode tokens.
-* The first embedding level pertains to RVQ level 0 for the AR.
-* The remaining embedding levels maps to RVQ level 0 + n for the NAR.
+* The first embedding level pertains to RVQ level 0 for the AR (`AR:0:0`).
+  * This embedding predicts tokens within its own embedding.
+* The remaining embedding levels maps to RVQ level 0 + n for the NAR (`NAR:L-1:L`).
   * In other words, embedding level 1 => RVQ level 0, embedding level 2 => RVQ level 1, etc...
-* I believe this is because the model needs to "know" whether to predict ~~the next token in the sequence, or the token in the same position of the next RVQ level~~ which tokens of a given embedding.
-  * In other words, the AR's RVQ level 0 embedding predicts itself, while the NAR's embeddings predict the next level's embeddings.
-  * This is evident on how RVQ level 0 can be trained causally and in parallel with its own embeddings, rather than having limiting issues when reusing the embedding across the two.
-  * Unfortunately, providing a token for the current/target RVQ level within the input sequence doesn't seem to help? I don't remember if I experimented with this or not, but testing of a "sane" `resp` embedding proved to be unfruitful.
+* I believe this is required because the model encodes which task to perform (rather than the attention heads), and which tokens to predict (rather than the classifiers)
+  * In other words, each embedding needs to be separated based on what tokens they do predict.
 
 The `prom` and `resp` are split since, in theory, it helps the model know better what audio to source from, and what audio is part of the output sequence. In theory.
-* I have yet to conduct tests with interchanging the `prom` and `resp`, and the model definitely exhibits being able to map from the `prom` directly, and being able to inference from the `prom` being prefixed in the `resp`.
+* The `text` embedding's robustness not only for reusing between each RVQ level, but as STT task as well is a mystery.
 
 Finally, the model *may* then sum each embedding level back down to one sequence, as defined under `cfg.model.experimental.audio_embedding_sums`.
 * The resulant sum is not normalized by the length.

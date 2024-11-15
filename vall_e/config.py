@@ -260,7 +260,9 @@ class ModelExperimentalSettings:
 
 	masking_train_p: float = 0.0 # odds of training with masking
 	masking_train_rvq_levels: list = field(default_factory=lambda: [0,0]) # determines which levels to do mask training on
-	masking_separate_embeddings: bool = False # to-do: explain
+
+	masking_ratio_fixed: bool = False
+	ignore_inputs_for_loss: bool = False
 
 	# classifier-free guidance shit
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
@@ -301,7 +303,7 @@ class Model:
 		return [ self ] if not name or self.name == name else []
 	
 	def loss_factor(self, k):
-		return self.loss_factors[k] if k in self.loss_factors else 1.0
+		return self.loss_factors.get(k, 0.0)
 
 	@property
 	def max_levels(self):
@@ -508,6 +510,9 @@ class DeepSpeed:
 	
 	amp: bool = False # use DeepSpeed's AMP (requires some other package installed apparently)
 
+	loss_scale_window: int = 100
+	min_loss_scale: float = 8192.0
+
 	config: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 
 	@cached_property
@@ -558,8 +563,8 @@ class DeepSpeed:
 			"fp16": {
 				"enabled": cfg.trainer.weight_dtype.lower() == "float16",
 				"auto_cast": True, # ???
-				"loss_scale_window": 100, # raise every 100 consecutive good steps
-				"min_loss_scale": 32768.0, # loss scale hitting 8K fries the model, 16K is fine but 32K is comfy
+				"loss_scale_window": self.loss_scale_window, # raise every 100 consecutive good steps
+				"min_loss_scale": self.min_loss_scale, # loss scale hitting 8K fries the model, 16K is fine but 32K is comfy
 				"loss_scale": 0.0 if cfg.trainer.scale_loss else 1.0,
 			},
 			"bf16": {

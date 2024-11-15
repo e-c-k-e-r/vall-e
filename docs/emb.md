@@ -67,6 +67,8 @@ I'm uncertain on how to remedy this, as my options are:
 * train an AR, and train a NAR, if the codec itself is at fault
 * use an SSM like Mamba, if transformers entirely cannot model the codec
 * train a separate model that simply converts from EnCodec to DAC
+* train *all* NAR levels as independent masking sequences.
+  * if this works, then it means that there's little to no mappable relation between DAC's RVQ levels
 
 ## `transcribe.py`
 

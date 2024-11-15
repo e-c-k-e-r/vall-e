@@ -148,7 +148,7 @@ class AR_NAR(Base):
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 			# only apply stop token for RVQ level 0
-			if quant_level <= 0 and timesteps[i] is not None:
+			if quant_level <= 0 and timesteps[i] is None:
 				# append stop tokens for AR
 				if task in text_task:
 					#text_list[i] = torch.cat([ resps, text_stop_sequence ])
@@ -254,9 +254,8 @@ class AR_NAR(Base):
 		null_prom = [ None for _ in range(batch_size) ]
 		prev_list = resps_list
 
-		for timestep, steps_until_x0 in tqdm(zip(torch.linspace(start_noise, end_noise, max_steps), reversed(range(max_steps))), desc="NAR Masked", disable=disable_tqdm, total=max_steps):
-		#for noise_p, annealed_temperature, temperature, cfg_strength in zip( manual_ratios, manual_temp, manual_samp_temp, manual_cfg ):
-			annealing = (steps_until_x0 / max_steps)
+		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
+			annealing = 1.0 - timestep
 			# get noise level, per cosine scheduling
 			noise_p = math.cos( timestep * math.pi * 0.5 )
 			# pick the worst scoring tokens to mask off
@@ -267,6 +266,13 @@ class AR_NAR(Base):
 			is_masked = [ resps == self.stop_token for resps in resps_list ]
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
+
+			"""
+			sampling_temperature = temperature * annealing
+			sampling_cfg = cfg_strength * timestep
+			"""
+			sampling_temperature = temperature
+			sampling_cfg = cfg_strength
 
 			# setup inputs
 			inputs = super().inputs(
@@ -302,7 +308,7 @@ class AR_NAR(Base):
 					#layer_skip_variables=sampling_layer_skip_variables,
 				)
 				for seq_len, logit, null_logit in zip(len_list, output.logits, null_output.logits):
-					logit[-seq_len:] = null_logit[-seq_len:] + ( logit[-seq_len:] - null_logit[-seq_len:] ) * (cfg_strength * timestep)
+					logit[-seq_len:] = null_logit[-seq_len:] + ( logit[-seq_len:] - null_logit[-seq_len:] ) * sampling_cfg
 
 			# sample with sampler settings
 			filtered_sampled = super().sample(
@@ -310,7 +316,7 @@ class AR_NAR(Base):
 				prev_list=prev_list,
 				quant_levels=quant_levels,
 
-				temperature=temperature * annealing,
+				temperature=sampling_temperature,
 				**sampling_kwargs,
 			)
 
@@ -884,7 +890,7 @@ def example_usage():
 	import numpy as np
 	import re
 	
-	cfg.model.experimental.masking_train_p = 0.5
+	# cfg.model.experimental.masking_train_p = 0.5
 	cfg.hyperparameters.batch_size = 1
 	cfg.hyperparameters.gradient_accumulation_steps = 1
 
@@ -903,7 +909,7 @@ def example_usage():
 
 	text_list = [ text ] * batch_size
 	proms_list = [ audio[:cfg.dataset.frames_per_second, :] ] * batch_size
-	resps_list = [ audio ] * batch_size
+	resps_list = [ audio[:cfg.dataset.frames_per_second * 4, :] ] * batch_size
 
 	kwargs = {
 		'n_text_tokens': 256,
@@ -922,10 +928,10 @@ def example_usage():
 	}
 
 	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
-	available_tasks = ["tts-ar", "tts-nar"]
+	available_tasks = [] + (["tts-ar"] if "ar" in cfg.model.capabilities else []) + (["tts-nar"] if "len" in cfg.model.capabilities else [])
 
 	model = AR_NAR(**kwargs).to(cfg.device)
-	steps = 500 // batch_size
+	steps = 1000 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -1035,7 +1041,7 @@ def example_usage():
 			if task == "stt":
 				prom = [ task ]
 			else:
-				task = "tts" if random.random() > 0.1 else "len"
+				task = "tts" if random.random() > 0.1 or "len" not in cfg.model.capabilities else "len"
 
 			texts.append( text )
 			proms.append( prom )
@@ -1053,7 +1059,7 @@ def example_usage():
 		if task == "tts-nar":
 			len_list = engine(text_list, proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
 			len_list = [ resp_list[0].shape[0] for l in len_list ]
-			resps_list = engine( text_list, proms_list, len_list=len_list, temperature=0.0 )
+			resps_list = engine( text_list, proms_list, len_list=len_list )
 		else:
 			resps_list = engine( text_list, proms_list, task_list=["tts"], max_duration=steps, temperature=1.0 )
 			resps_list = engine( text_list, proms_list, resps_list=resps_list, temperature=0.0 )

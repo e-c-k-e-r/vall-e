@@ -27,8 +27,20 @@ Some additional flags can be passed as well:
 
 A training paradigm that works for me is:
 * setting the dataloader to sort by duration, then training one epoch, so the model starts with small utterances then trains to larger ones.
+  * the daring can wait until coherent speech emerges, then move to the next step
 * some additional training using a shuffled dataloader, as the model will be fixated towards whatever duration range it was trained under.
 * additional training for sampling per speaker, to better help diversify how well it can perform for a range of speakers, rather than just speaking itself
+  * I don't think this is crucial, but speaker-based sampling seems to be a huge placebo if anything.
+
+I don't remember the exact numbers off the top of my head, but a good loss/accuracy/gradient norm to look out for when coherent speech emergies are:
+* loss <3.0
+* acc >0.7
+* grad_norm <0.2
+
+Training under `float16` should be fairly simple, but care is required to keep the loss scaling factor above 8K, and probably even 16K.
+* At the very least for pre-trained models, low enough loss scales will irreparably fry the model, and no amount of training afterwards seems to "fix" it.
+* The current DeepSpeed configuration should keep the loss scale capped to 32K, but this so far is only validated for pre-trained models.
+* Training under `bfloat16` does not have to worry about this as there's no need for loss scaling, but I feel the model performs better when trained under `float16`+AMP rather than `bfloat16` (with or without AMP).
 
 ## Try Me
 
