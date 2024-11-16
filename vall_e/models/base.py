@@ -417,7 +417,7 @@ class Base(nn.Module):
 		self.stop_token = self.n_audio_tokens # id 1024
 		self.causal = "ar" in self.capabilities or "len" in self.capabilities
 		self.version = self.config.version if self.config is not None else 5
-		self.causal_size = self.config.experimental.causal_size if self.config is not None else (1 if "ar" in self.capabilities else 0)
+		self.causal_size = self.config.experimental.causal_size if self.config is not None else (1 if self.causal else 0)
 
 		self.arch_type = self.config.arch_type if self.config is not None else "llama"
 
@@ -1220,6 +1220,9 @@ class Base(nn.Module):
 								quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
 							)
 							"""
+
+							if classifier_level == "AR:0:0":
+								classifier_level = "NAR:0:0"
 
 							embedding = self.resps_emb(
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],

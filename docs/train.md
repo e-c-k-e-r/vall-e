@@ -3,44 +3,42 @@
 Training is very dependent on:
 * the quality of your dataset.
   * clean utterances and accurate transcriptions go a long way.
-  * a diverse dataset in prosidy and speakers help a ton.
+  * a diverse dataset in prosody and speakers help a ton.
 * how much data you have.
-  * training from scratch requires upwards of 15K hours.
+  * training from scratch requires upwards of 15K hours at minimum.
   * training new languages from the base model simply requires maybe ~2K hours each.
 * the bandwidth you quantized your audio to, as this affects the how many tokens are processed per step.
 * the underlying model architecture used.
   * some models behave better than others for a unified approach, others do not.
 
-For single GPUs, simply running `python3 -m vall_e.train --yaml="./training/config.yaml`.
-
-For multiple GPUs, or exotic distributed training:
-* with `deepspeed` backends, simply running `deepspeed --module vall_e.train --yaml="./training/config.yaml"` should handle the gory details.
-* with `local` backends, simply run `torchrun --nnodes=1 --nproc-per-node={NUMOFGPUS} -m vall_e.train --yaml="./training/config.yaml"`
-
-You can enter `save` to save the state at any time, or `quit` to save and quit training.
-
-The `lr` command will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
-
-Some additional flags can be passed as well:
-* `--eval`: only run the evaluation / validation pass, then exit afterwards.
-* `--eval-random-text-prompts`: use random text prompts for the evaluation pass, rather than the provided text prompts in the dataset.
-
 A training paradigm that works for me is:
-* setting the dataloader to sort by duration, then training one epoch, so the model starts with small utterances then trains to larger ones.
-  * the daring can wait until coherent speech emerges, then move to the next step
-* some additional training using a shuffled dataloader, as the model will be fixated towards whatever duration range it was trained under.
+* setting the dataloader to sort by duration, then training until coherent speech emerges, so the model can start with the bulk of learning on small, insignificant utterances, then working its way up to larger ones.
+  * ~80% of the epoch from duratio ranges 1.0seconds to 0.8seconds is good enough, as most of the training from this part is just to train the model to speak at all.
+* additional training using a shuffled dataloader, as the model will be fixated towards whatever duration range it was trained under.
+  * the remaining bulk is to try and have the model better adhere to the prompt as well.
 * additional training for sampling per speaker, to better help diversify how well it can perform for a range of speakers, rather than just speaking itself
-  * I don't think this is crucial, but speaker-based sampling seems to be a huge placebo if anything.
-
-I don't remember the exact numbers off the top of my head, but a good loss/accuracy/gradient norm to look out for when coherent speech emergies are:
-* loss <3.0
-* acc >0.7
-* grad_norm <0.2
+  * I don't think this is crucial, but speaker-based sampling seems to be a placebo if anything.
 
 Training under `float16` should be fairly simple, but care is required to keep the loss scaling factor above 8K, and probably even 16K.
 * At the very least for pre-trained models, low enough loss scales will irreparably fry the model, and no amount of training afterwards seems to "fix" it.
-* The current DeepSpeed configuration should keep the loss scale capped to 32K, but this so far is only validated for pre-trained models.
+* The current DeepSpeed configuration should keep the loss scale capped to 32K; normal training does not seem to have the loss scale ever want to dip below this at least.
 * Training under `bfloat16` does not have to worry about this as there's no need for loss scaling, but I feel the model performs better when trained under `float16`+AMP rather than `bfloat16` (with or without AMP).
+
+When training from scratch, maybe 30% of the time spent training is getting coherent speech, with a loose following of the prompt. The remaining bulk of the work is getting the model to closely-er resemble the input prompt.
+* an accuracy of at least 50% seems to be where coherent speech emerges.
+* an accuracy of at least 68% is about where it's a good enough model that adheres to the prompt, but requires quite a lot of work to get there.
+
+As far as typical hyperparameters go:
+* as I'm using a batched dataloader, I don't have a uniform size amongst the batches, but I believe my average batch size is between 96 to 128 samples per batch (24-32 samples per GPU for 4 GPUs) per step.
+* the gradient accumulation factor gets adjusted where I feel is best, where I keep it to 1 (no gradient accumulation) for the first milestone of getting coherent speech, and then ramping it up to 2 then 4 as training further goes on, to try and smooth out the gradients.
+  * more effective samples per update step is technically better, but getting coherent speech as fast as possible is preferable, so prioritizing many updates until then is the goal.
+  * afterwards, reducing the gradient norm is the goal, increasing the amount of samples per update step.
+* as I primarily use prodigyopt, I don't need to worry about the learning rate. Sure, you can lower the `d_coef` (which the trainer will adjust in lieu of the learning rate itself), but I don't feel like it effects things moreso than just adjusting the gradient accumulation factor.
+
+With the other "hyperparameters" such as ratios for RVQ levels, tasks, etc:
+* `rvq_levels_p` to `auto` is fine. The primary level is RVQ level 0, so having it majorly represented is fine.
+  * it might be needed to later prefer a more balanced distribution (such as `[0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7]`) to get rid of any confidence issues in RVQ levels 1+, but I felt naively doing this harms the RVQ 0.
+* `prompt_similar_p` can be pretty much whatever > `0.5`. I've stuck with either `0.75` or `0.825` to prioritize adhering closely-er to the prompt, but still have random prompts used to help the model interanlly "model" what a speaker should sound like. In theory.
 
 ## Try Me
 
@@ -80,3 +78,17 @@ For the most part, this handles:
 * feeding the model a batch from the dataloader
 * performing evaluation / validation when requested
 * unloading the `emb.qnt` model when its not needed anymore
+
+For single GPUs, simply running `python3 -m vall_e.train --yaml="./training/config.yaml`.
+
+For multiple GPUs, or exotic distributed training:
+* with `deepspeed` backends, simply running `deepspeed --module vall_e.train --yaml="./training/config.yaml"` should handle the gory details.
+* with `local` backends, simply run `torchrun --nnodes=1 --nproc-per-node={NUMOFGPUS} -m vall_e.train --yaml="./training/config.yaml"`
+
+You can enter `save` to save the state at any time, or `quit` to save and quit training.
+
+The `lr` command will also let you adjust the learning rate on the fly. For example: `lr 1.0e-3` will set the learning rate to `0.001`.
+
+Some additional flags can be passed as well:
+* `--eval`: only run the evaluation / validation pass, then exit afterwards.
+* `--eval-random-text-prompts`: use random text prompts for the evaluation pass, rather than the provided text prompts in the dataset.

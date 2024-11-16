@@ -154,28 +154,27 @@ def run_eval(engines, eval_name, dl, args=None):
 			if engine.hyper_config.experimental.hf:
 				resps_list = engine( **base_kwargs )
 			elif "len" in engine.hyper_config.capabilities:
-				kwargs = base_kwargs | cfg.evaluation.ar_kwargs
+				kwargs = base_kwargs | cfg.evaluation.kwargs
 				max_steps = kwargs.pop("max_steps", 500)
 
-				if True:
+				if "denoise_start" in kwargs:
 					len_list = [ resp.shape[0] for resp in batch["resps"] ]
 					kwargs["resps_list"] = [ resp[:, :1] for resp in batch["resps"] ]
-					kwargs["denoise_start"] = 0.5
 				else:
 					len_list = engine( max_steps=5, **kwargs )
 					len_list = [ min( l, max_steps ) for l in len_list ]
 				
-				kwargs = base_kwargs | cfg.evaluation.nar_kwargs
+				kwargs = base_kwargs | cfg.evaluation.kwargs
 				resps_list = engine( **kwargs, len_list=len_list )
 			else:
 				if "ar" in engine.hyper_config.capabilities:
-					kwargs = base_kwargs | cfg.evaluation.ar_kwargs
+					kwargs = base_kwargs | cfg.evaluation.wargs
 					resps_list = engine( **kwargs )
 				else:
 					resps_list = [ resp[:, 0] for resp in batch["resps"] ]
 
 				if "nar" in engine.hyper_config.capabilities:
-					kwargs = base_kwargs | cfg.evaluation.nar_kwargs
+					kwargs = base_kwargs | cfg.evaluation.kwargs
 					resps_list = engine( **kwargs, resps_list=resps_list )
 
 			process( name, batch, resps_list )

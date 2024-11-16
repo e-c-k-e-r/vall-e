@@ -9,7 +9,7 @@ The beauty of a transformer, I feel, is that you can easily define any task at i
 
 The inputs are sequenced in a way that the given task requires automatically, and the outputs are handled as per the class that extends the base model.
 
-While the original paper called for a separate AR model and a NAR model, and by treating the AR and the NAR as unique tasks, you can actually train a unified model for effectively free, as the internal states of the two should overlap quite a lot.
+While the original paper called for a separate AR model and a NAR model, and by treating the AR and the NAR as unique tasks, you can actually train a unified model (`AR+NAR`) for effectively free, as the internal states of the two should overlap quite a lot.
 
 ## The AR (Autoregressive) Model
 
@@ -45,7 +45,7 @@ One problem exhibited from a NAR is producing arfifacts ("crust") in the final w
 
 ### Pure NAR
 
-The pure NAR (`nar-len`) model is a model-type that inferences audio tokens purely non-autoregressively. Despite being called a pure NAR, duration is then inferred by autoregressively decoding for its length (as the AR+NAR model shows that you can mix both types).
+The pure NAR (`NAR-len`) model is a model-type that inferences audio tokens purely non-autoregressively. Despite being called a pure NAR, duration is then inferred by autoregressively decoding for its length (as the AR+NAR model shows that you can mix both types).
 
 However, having a pure NAR is challenging, as you need to both explicitly provide the duration and provide a "good enough" starting sequence of tokens for the initial sequence.
 * The former problem is easily "solved" by training a `len` classification task.
@@ -54,14 +54,22 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
   * masking to emulate diffusion noising is best working solution, but has a lot of training challenges.
     * existing solutions like Muse (text to image) and MaskGCT (text to speech) do this
 
-To-do: fill out this more when it works. Getting this to work is a huge pain.
-* Some masked transformers do not "inject" any timestep information (Text-To-Image Muse as far as I can tell)
-* Others "expose" it by applying a timestep embedding after pre/post attention normalization
-  * Except F5-TTS only does this pre for its DiTS, but not UnetT
-  * MaskGCT does it both pre and post
-  * the test trainier actually degrades the output immensely when doing this
-* I'm sure I've seen a masked transformer not have CFG, but most of them seem to do.
-* ***Extreme*** care is required.
+The NAR-len model keeps things simple by:
+* training with a fixed masking ratio (80% of the tokens are masked and trained to predict the remaining tokens)
+  * [this paper](https://arxiv.org/abs/2406.05478v1) mentions a fixed ratio during training yields better results than randomly picking a masking ratio.
+* not including any specific timestep embedding information
+  * some solutions add in the (sinusoidal position'd) timestep embedding, either on top of the input embeddings, or as some normalization weight around the attention head (before and after).
+  * it does not seem to be necessary what-so-ever to require this, especially training under a fixed masking ratio.
+    * in reality, the model shouldn't really need to reference this anyways, as training NAR RVQ level 0 is simply to refine a noised/masked off sequence of tokens.
+* predicting the "duration" (the output audio token window) is kept within the model itself, by autoregressievly inferencing the duration for a given input prompt (text + audio).
+  * the model can already "know" the duration for a given prompt already from an AR RVQ level 0, by predicting when to output the stop token, so it makes sense to re-use the model for this.
+  * the output length is a simple tokenized sequence where each token is a base-10 digit.
+    * it could be in any base, but it's simple to just treat each token ID as a digit, then cast the string to an int.
+* inferencing is a simple loop that simply takes the best masked-off k tokens per step, and remasks the remaining.
+
+In theory, demasking for the NAR's RVQ level 0 can also be applied to the remaining RVQ levels to further improve the output from the remaining levels.
+* this isn't necessary as the model already has a strong enough relationship between the prompt, the prior levels, and the targeted level.
+* this is technically already offered with `cfg.model.experimental.token_dropout_rate` which mirrors masking, but experimentation has not been done to a large degree.
 
 ## Embeddings (and Classifiers)
 

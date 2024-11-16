@@ -218,27 +218,31 @@ class AR_NAR(Base):
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
+		"""
+		# to-do: check if gumbel sampling works / helps
 		def log(x, eps = 1e-20):
 			return torch.log(x.clamp(min = eps))
 
 		def gumbel_sample(x, temperature = 1., dim = -1):
 			return ((x / max(temperature, 1e-10)) + -log(-log(torch.zeros_like(x).uniform_(0, 1)))).argmax(dim = dim)
+		"""
 
 		# convert (N)AR specific args
 		sampling_kwargs = convert_kwargs( sampling_kwargs, "ar_" )
 
+		min_length = sampling_kwargs.pop("min_duration", 1)
 		max_length = sampling_kwargs.pop("max_duration", 500)
 		max_steps = sampling_kwargs.get("max_steps", 25)
 		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
 		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
 
 		temperature = sampling_kwargs.pop("temperature", 1.0)
-		cfg_strength = sampling_kwargs.get("cfg_strength", 0.0)
+		cfg_strength = sampling_kwargs.get("cfg_strength", 3.0) # this really helps keep audio coherent so far
 		start_noise = sampling_kwargs.get("denoise_start", 0.0)
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
-		len_list = [ clamp(l, 1, max_length) for l in len_list ]
+		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
 
 		# if we're denoising from an existing sequence
 		if start_noise > 0.0 and resps_list is not None:
@@ -255,6 +259,7 @@ class AR_NAR(Base):
 		prev_list = resps_list
 
 		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
+			# ramp down over time
 			annealing = 1.0 - timestep
 			# get noise level, per cosine scheduling
 			noise_p = math.cos( timestep * math.pi * 0.5 )
