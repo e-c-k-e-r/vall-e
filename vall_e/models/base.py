@@ -1221,8 +1221,10 @@ class Base(nn.Module):
 							)
 							"""
 
+							"""
 							if classifier_level == "AR:0:0":
 								classifier_level = "NAR:0:0"
+							"""
 
 							embedding = self.resps_emb(
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
