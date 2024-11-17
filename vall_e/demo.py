@@ -76,7 +76,7 @@ def main():
 	parser.add_argument("--input-prompt-length", type=float, default=3.0)
 	parser.add_argument("--input-prompt-prefix", action="store_true")
 	parser.add_argument("--prefix-silence", type=float, default=0.0)
-	parser.add_argument("--cfg-strength", type=float, default=0.0)
+	parser.add_argument("--cfg-strength", type=float, default=3.0)
 
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
@@ -220,6 +220,15 @@ def main():
 
 		comparison_kwargs["disabled"]["amp"] = current_amp
 		comparison_kwargs["enabled"]["amp"] = other_amp
+	elif args.comparison == "cfg-strength":
+		current_cfg_strength = 3.0
+		other_cfg_strength = 0.0
+
+		comparison_kwargs["suffix"] = f"no_cfg_strength"
+		comparison_kwargs["titles"] = [f"CFG {current_cfg_strength}", f"CFG {other_cfg_strength}"]
+
+		comparison_kwargs["disabled"]["cfg_strength"] = current_cfg_strength
+		comparison_kwargs["enabled"]["cfg_strength"] = other_cfg_strength
 	elif args.comparison:
 		raise Exception(f"Unrecognized comparison flag: {args.comparison}")
 

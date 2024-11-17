@@ -537,7 +537,7 @@ class Base(nn.Module):
 		
 			# experimental NAR-only mode
 			self.len_emb = Embedding(11, d_model)
-			self.time_emb = TimeEmbedding(d_model)
+			self.time_emb = TimeEmbedding(d_model) # if not masking_ratio_fixed else None
 
 		if attention_backend == "auto":
 			attention_backend = "sdpa"

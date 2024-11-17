@@ -168,7 +168,7 @@ def run_eval(engines, eval_name, dl, args=None):
 				resps_list = engine( **kwargs, len_list=len_list )
 			else:
 				if "ar" in engine.hyper_config.capabilities:
-					kwargs = base_kwargs | cfg.evaluation.wargs
+					kwargs = base_kwargs | cfg.evaluation.kwargs
 					resps_list = engine( **kwargs )
 				else:
 					resps_list = [ resp[:, 0] for resp in batch["resps"] ]

@@ -105,9 +105,9 @@ def _make_infinite_epochs(dl):
 	while True:
 		if dl.dataset.index() == 0:
 			_logger.info("New epoch starts.")
-		yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader())
+		#yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader())
 		# this number may jump from the dataloader sampling before the actual training step happens
-		#yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader(), initial=dl.dataset.index(), total=len(dl.dataset))
+		yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader(), initial=dl.dataset.index())
 
 
 @local_leader_only(default=None)
