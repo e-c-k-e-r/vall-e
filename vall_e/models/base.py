@@ -436,7 +436,7 @@ class Base(nn.Module):
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
 		
-		masking_ratio_fixed = self.config.experimental.masking_ratio_fixed if self.config is not None else False
+		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else False
 		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
 		
 		layerskip = self.config.experimental.layerskip if self.config is not None else False
@@ -481,7 +481,7 @@ class Base(nn.Module):
 		self.interleave = interleave
 		self.layerskip = layerskip
 		self.inject_timestep_embedding = False # results in bad output
-		self.masking_ratio_fixed = masking_ratio_fixed
+		self.masking_ratio = masking_ratio
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
@@ -537,7 +537,7 @@ class Base(nn.Module):
 		
 			# experimental NAR-only mode
 			self.len_emb = Embedding(11, d_model)
-			self.time_emb = TimeEmbedding(d_model) # if not masking_ratio_fixed else None
+			self.time_emb = TimeEmbedding(d_model) # if not masking_ratio else None
 
 		if attention_backend == "auto":
 			attention_backend = "sdpa"
@@ -840,7 +840,6 @@ class Base(nn.Module):
 		state = None,
 		
 		layer_skip_lambda = None,
-		timesteps = None,
 
 		output_attentions = False,
 		output_hidden_states = False,
@@ -870,9 +869,6 @@ class Base(nn.Module):
 
 			if self.layerskip and layer_skip_lambda is not None:
 				kwargs["layer_skip_lambda"] = layer_skip_lambda
-
-			if "len" in self.capabilities and timesteps is not None:
-				kwargs["timesteps"] = timesteps
 
 			output = self.model(**kwargs)
 			x = output["last_hidden_state"]
@@ -1012,13 +1008,18 @@ class Base(nn.Module):
 				if timestep is not None:
 					# force set to use this classifier level
 					classifier_level = "NAR:0:0"
-					# a paper said to use a fixed masking ratio for training
-					p = 0.8
 					# store timestep information
-					if not self.masking_ratio_fixed:
+					if self.masking_ratio in ["random", "rand"]:
 						# cosine scheduled timestep => masking ratio
 						p = math.cos(timestep * math.pi * 0.5)
-						inputs[i].append( ("timestep", torch.tensor([timestep], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
+						# I don't think is is necessary as the timestep is encoded in the sequence by the number of masked tokens, probably.
+						if self.inject_timestep_embedding:
+							inputs[i].append( ("timestep", torch.tensor([timestep], device=device, dtype=self.time_emb.mlp[0].weight.dtype) ) )
+					else:
+						# a paper said to use a fixed masking ratio of 0.8 for training
+						# ...but I want to make it user adjustable
+						p = self.masking_ratio
+
 					# store dropout mask (if training, as this gets used later to mask the input embeddings if provided)
 					if self.training:
 						dropout_mask = _dropout_mask( resps_list[i], p )
@@ -1597,12 +1598,6 @@ class Base(nn.Module):
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		classifier_levels = self.get_input( inputs, name="classifier_level" )
 
-		if self.inject_timestep_embedding:
-			timesteps = [ self.get_input(inputs, "timestep", at=i) for i in range( batch_size ) ]
-			timesteps = [ self.time_emb(timestep) if timestep is not None else None for i, timestep in enumerate(timesteps) ]
-		else:
-			timesteps = []
-
 		output = self._forward(
 			inputs=x,
 			mask=mask,
@@ -1611,7 +1606,6 @@ class Base(nn.Module):
 			output_attentions = output_attentions,
 			output_hidden_states = output_hidden_states,
 			layer_skip_lambda = layer_skip_lambda if self.layerskip and layer_skip_variables else None,
-			timesteps=timesteps,
 		)
 
 		logits = output.logits

@@ -56,14 +56,8 @@ def main():
 	parser.add_argument("--output-filename", type=str, default="index.html")
 	
 	parser.add_argument("--language", type=str, default="en")
-
-	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--out-path", type=Path, default=None)
-
-	parser.add_argument("--yaml", type=Path, default=None)
-	parser.add_argument("--model", type=Path, default=None)
-	parser.add_argument("--lora", type=Path, default=None)
 
 	parser.add_argument("--max-duration", type=int, default=12 * cfg.dataset.frames_per_second)
 	parser.add_argument("--max-steps", type=int, default=25)
@@ -362,7 +356,6 @@ def main():
 				text=text,
 				references=[prompt],
 				language=language,
-				input_prompt_length=args.input_prompt_length,
 				seed=seed,
 				tqdm=False,
 				**sampling_kwargs,

@@ -70,6 +70,7 @@ class AR_NAR(Base):
 		cfg_prom_dropout_p = self.config.experimental.cfg_prom_dropout_p if self.config is not None else 0.0
 		# rate to train RVQ level AR-ly or NAR-ly
 		masking_train_p = self.config.experimental.masking_train_p if self.config is not None else 0.5
+		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else "random"
 		# force set mask training
 		if "len" not in self.capabilities:
 			masking_train_p = 0.0
@@ -108,6 +109,10 @@ class AR_NAR(Base):
 				#p = math.acos(r) / (math.pi * 0.5)
 				#timesteps[i] = 1.0 - clamp(p, 0.0, 1.0)
 				timesteps[i] = random.random()
+				
+				# instead make it between [0.2, 0.8]
+				if masking_ratio == "rand":
+					timesteps[i] = (timesteps[i] * 0.6) + 0.2
 
 		# trim resps to only contain all levels below the target level
 		resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
