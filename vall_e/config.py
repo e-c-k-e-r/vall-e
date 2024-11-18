@@ -171,6 +171,7 @@ class Dataset:
 	cache: bool = True # use diskcache to cache the dataset
 
 	min_utterances: int = 2 # minimum number of utterances a speaker can have
+	max_utterances: int = 0 # max number of utterances a speaker can have (0 to disable)
 	duration_range: list[float] = field(default_factory=lambda: [1.0, 12.0]) # the duration range an utterance can be to be included in the dataset
 	
 	sample_type: str = "path" # path | speaker
