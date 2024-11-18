@@ -1185,7 +1185,6 @@ class Base(nn.Module):
 					# NAR-len
 					elif classifier_level == "NAR:0:0":
 						embedding = self.resps_emb(
-							# if masked use masked token, else original token
 							input if input.dim() == 1 else input[:, 0],
 							#quant_level = 0,
 							name = classifier_level,
@@ -1220,11 +1219,6 @@ class Base(nn.Module):
 								offset = offset,
 								quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
 							)
-							"""
-
-							"""
-							if classifier_level == "AR:0:0":
-								classifier_level = "NAR:0:0"
 							"""
 
 							embedding = self.resps_emb(

@@ -277,12 +277,12 @@ class AR_NAR(Base):
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
 
-			"""
 			sampling_temperature = temperature * annealing
 			sampling_cfg = cfg_strength * timestep
 			"""
 			sampling_temperature = temperature
 			sampling_cfg = cfg_strength
+			"""
 
 			# setup inputs
 			inputs = super().inputs(

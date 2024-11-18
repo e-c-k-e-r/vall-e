@@ -261,7 +261,7 @@ class ModelExperimentalSettings:
 	masking_train_p: float = 0.0 # odds of training with masking
 	masking_train_rvq_levels: list = field(default_factory=lambda: [0,0]) # determines which levels to do mask training on
 
-	masking_ratio: str | float = 0.0 # sets a masking ratio, "random" will randomly pick
+	masking_ratio: str | float = 0.8 # sets a masking ratio, "random" will randomly pick
 	ignore_inputs_for_loss: bool = True # only calculate the loss on the outputs since thats what matters, as the inputs that do have loss calculated upon affects the loss for the entire sequence
 
 	# classifier-free guidance shit

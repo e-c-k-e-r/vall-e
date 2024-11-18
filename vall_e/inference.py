@@ -223,8 +223,9 @@ class TTS():
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-				if model_ar is not None:
-					text_list = model_ar(
+				model = model_ar if model_ar is not None else model_nar
+				if model is not None:
+					text_list = model(
 						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=["stt"],
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
@@ -254,20 +255,7 @@ class TTS():
 
 			# to-do: add in case for experimental.hf model
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
-				if model_ar is not None:
-					resps_list = model_ar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
-						disable_tqdm=not tqdm,
-						use_lora=use_lora,
-						**sampling_kwargs,
-					)
-					resps_list = model_nar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list, task_list=["tts"],
-						disable_tqdm=not tqdm,
-						use_lora=use_lora,
-						**sampling_kwargs,
-					)
-				elif model_len is not None:
+				if model_len is not None:
 					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_steps": 5} ) # don't need more than that
 					kwargs = {}
 					# nasty hardcode to load a reference file and have that as the input target
@@ -285,6 +273,19 @@ class TTS():
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
 						**(sampling_kwargs | kwargs),
+					)
+				elif model_ar is not None:
+					resps_list = model_ar(
+						text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
+						disable_tqdm=not tqdm,
+						use_lora=use_lora,
+						**sampling_kwargs,
+					)
+					resps_list = model_nar(
+						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list, task_list=["tts"],
+						disable_tqdm=not tqdm,
+						use_lora=use_lora,
+						**sampling_kwargs,
 					)
 				else:
 					raise Exception("!")

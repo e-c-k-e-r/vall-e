@@ -57,6 +57,8 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 The NAR-len model keeps things simple by:
 * training with a fixed masking ratio (80% of the tokens are masked and trained to predict the remaining tokens)
   * [this paper](https://arxiv.org/abs/2406.05478v1) mentions a fixed ratio during training yields better results than randomly picking a masking ratio.
+  * randomly picking a duration is actually very ungood and harms the model during trainng.
+    * this may only matter if swapping from a training on a fixed masking ratio to a random ratio without any timestep information being added.
 * not including any specific timestep embedding information
   * some solutions add in the (sinusoidal position'd) timestep embedding, either on top of the input embeddings, or as some normalization weight around the attention head (before and after).
   * it does not seem to be necessary what-so-ever to require this, especially training under a fixed masking ratio.
