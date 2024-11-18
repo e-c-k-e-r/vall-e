@@ -263,6 +263,8 @@ class AR_NAR(Base):
 		null_prom = [ None for _ in range(batch_size) ]
 		prev_list = resps_list
 
+		# to-do: only do the Nth first tokens, then the Nth seconds tokens, etc. until the last window
+		# because for longer utterances it absolutely degrades
 		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
 			# ramp down over time
 			annealing = 1.0 - timestep

@@ -714,6 +714,7 @@ class Dataset(_Dataset):
 			for key in keys:
 				if len(self.paths_by_spkr_name[key]) < cfg.dataset.min_utterances:
 					del self.paths_by_spkr_name[key]
+					continue
 
 				# slice away extraneous utterances
 				if cfg.dataset.max_utterances:
