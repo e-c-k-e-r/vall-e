@@ -341,7 +341,7 @@ class Engines(dict[str, Engine]):
 		for name, engine in self.items():
 			module = engine.module.state_dict()
 			lora = None
-			save_path = cfg.ckpt_dir / name / f"fp32.{format}"
+			save_path = cfg.ckpt_dir / name / f"{cfg.weights_name}.{format}"
 			config = engine.module.config if hasattr(engine.module, "config") else engine.hyper_config
 
 			# safety
@@ -350,7 +350,7 @@ class Engines(dict[str, Engine]):
 
 			if cfg.lora is not None:				
 				lora, module = lora_get_state_dict( module, split = True )
-				save_path = cfg.ckpt_dir / cfg.lora.full_name / f"fp32.{format}"
+				save_path = cfg.ckpt_dir / cfg.lora.full_name / f"{cfg.weights_name}.{format}"
 
 			state_dict = {
 				'module': module,

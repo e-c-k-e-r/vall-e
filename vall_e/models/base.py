@@ -1588,7 +1588,6 @@ class Base(nn.Module):
 			mask = torch.cat([mask, padding], dim=1)
 
 		# needs to be done here as we still have our raw inputs
-		#position_ids = self.inputs_to_position_ids( inputs, mask=m.squeeze(-1).int() ) if not self.unified_position_ids else None
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		classifier_levels = self.get_input( inputs, name="classifier_level" )
 

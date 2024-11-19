@@ -46,7 +46,7 @@ def load_engines(training=True, **model_kwargs):
 
 		checkpoint_path = cfg.ckpt_dir / name / "latest"
 		# automatically load from state dict if one is provided, but no DeepSpeed checkpoint is present
-		load_path = pick_path( cfg.ckpt_dir / name / f"fp32.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
+		load_path = pick_path( cfg.ckpt_dir / name / f"{cfg.weights_name}.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
 		# actually use the lora-specific checkpoint if available
 		if cfg.lora is not None:			

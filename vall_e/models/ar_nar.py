@@ -278,23 +278,6 @@ class AR_NAR(Base):
 		null_prom = [ None for _ in range(batch_size) ]
 		prev_list = resps_list
 
-		# to-do: only do the Nth first tokens, then the Nth seconds tokens, etc. until the last window
-		# because for longer utterances it absolutely degrades
-		"""
-		buckets = max([ l // 75 for l in len_list ])
-		original_len_list = [ l for l in len_list ]
-		for bucket in range(1,buckets+1):
-			len_list = [ int(l * bucket / buckets) for l in original_len_list ]
-			if bucket == 1:
-				resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.stop_token for seq_len in len_list ]
-			else:
-				start_noise = 0.5
-				resps_list = [ torch.concat([ resps, torch.ones((seq_len - resps.shape[0],), dtype=torch.int16, device=device) * self.stop_token ]) for resps, seq_len in zip( resps_list, len_list ) ]
-
-			scores = [ torch.zeros((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
-			prev_list = resps_list
-		"""
-
 		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
 			# ramp down over time
 			annealing = 1.0 - timestep
@@ -310,12 +293,9 @@ class AR_NAR(Base):
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
 
+			# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
 			sampling_temperature = temperature * annealing
 			sampling_cfg = cfg_strength * timestep
-			"""
-			sampling_temperature = temperature
-			sampling_cfg = cfg_strength
-			"""
 
 			# setup inputs
 			inputs = super().inputs(
@@ -364,7 +344,6 @@ class AR_NAR(Base):
 			)
 
 			# retrieves unfiltered logits
-			"""
 			unfiltered_sampled = super().sample(
 				logits=logits,
 				prev_list=prev_list,
@@ -373,29 +352,21 @@ class AR_NAR(Base):
 				temperature=0.0,
 				**sampling_kwargs,
 			)
-			"""
 			# update previous list of tokens
 			prev_list = resps_list
 			# get sampled tokens
 			sampled_ids = filtered_sampled.ids
 			# keep unmasked tokens
 			resps_list = [ torch.where( masked, input_ids, resps ) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
-			# get probability scores (conjugate to have worse scoring tokens picked for topk)
-			scores = [ 1.0 - torch.tensor([score for score in scores], device=device) for scores in filtered_sampled.scores ]
-
-			"""
-			# maskgct does some funny stuff but it doesn't amount to anything
-			if annealing < 1.0e-3:
-				sampled_ids = filtered_sampled.ids
-			else:
-				sampled_ids = [ gumbel_sample( logits, temperature=temperature * annealing, dim=-1 ) for logits in filtered_sampled.logits ]
-
-			# keep unmasked tokens
-			resps_list = [ torch.where( masked, input_ids, resps ) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
-			# update scores (conjugated to put the worst scores at the top)
-			scores = [ torch.tensor([score for score in scores], device=device) for scores in filtered_sampled.scores ]
-			scores = [ 1.0 - (choice_temperature * annealing * gumbel_noise( score ) + score) for score in scores ]
-			"""
+			# get probability scores
+			scores = [ 
+				# conjugate to have worse scoring tokens picked for topk
+				1.0 - 
+					# only keep scores of tokens we are predicting (and ignore the tokens previously finalized)
+					torch.where( masked, torch.tensor([score for index, score in enumerate(scores)], device=device), torch.ones(masked.shape, device=device) )
+					# use unmodified logit scores for this, as it offers better stability
+				for scores, masked in zip( unfiltered_sampled.scores, is_masked )
+			]
 
 		return resps_list
 
