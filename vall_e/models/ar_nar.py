@@ -258,6 +258,7 @@ class AR_NAR(Base):
 			resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.stop_token for seq_len in len_list ]
 
 		scores = [ torch.zeros((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
+
 		quant_levels = [ level for _ in range(batch_size) ]
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
@@ -265,6 +266,21 @@ class AR_NAR(Base):
 
 		# to-do: only do the Nth first tokens, then the Nth seconds tokens, etc. until the last window
 		# because for longer utterances it absolutely degrades
+		"""
+		buckets = max([ l // 75 for l in len_list ])
+		original_len_list = [ l for l in len_list ]
+		for bucket in range(1,buckets+1):
+			len_list = [ int(l * bucket / buckets) for l in original_len_list ]
+			if bucket == 1:
+				resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.stop_token for seq_len in len_list ]
+			else:
+				start_noise = 0.5
+				resps_list = [ torch.concat([ resps, torch.ones((seq_len - resps.shape[0],), dtype=torch.int16, device=device) * self.stop_token ]) for resps, seq_len in zip( resps_list, len_list ) ]
+
+			scores = [ torch.zeros((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
+			prev_list = resps_list
+		"""
+
 		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
 			# ramp down over time
 			annealing = 1.0 - timestep

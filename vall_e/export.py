@@ -131,7 +131,7 @@ def main():
 	parser = argparse.ArgumentParser("Save trained model to path.")
 	parser.add_argument("--module-only", action='store_true')
 	parser.add_argument("--hf", action='store_true', default=None) # convert to HF-style
-	parser.add_argument("--lora", action='store_true', default=None) # exports LoRA
+	parser.add_argument("--export-lora", action='store_true', default=None) # exports LoRA
 	parser.add_argument("--split-classifiers", action='store_true', default=None) # splits classifier heads
 	parser.add_argument("--moe-ify", action='store_true', default=None) # splits classifier heads
 	parser.add_argument("--experts", type=int, default=8) # set target dtype to export to
@@ -146,7 +146,7 @@ def main():
 		cfg.trainer.load_module_only = True
 
 
-	if args.hf and args.lora:
+	if args.hf and args.export_lora:
 		raise Exception("Requesting more than one callback")
 
 	if args.dtype != "auto":
@@ -160,7 +160,7 @@ def main():
 	callback = None
 	if args.hf:
 		callback = convert_to_hf
-	elif args.lora:
+	elif args.export_lora:
 		callback = extract_lora
 	elif args.split_classifiers:
 		callback = split_classifier_heads

@@ -73,6 +73,14 @@ In theory, demasking for the NAR's RVQ level 0 can also be applied to the remain
 * this isn't necessary as the model already has a strong enough relationship between the prompt, the prior levels, and the targeted level.
 * this is technically already offered with `cfg.model.experimental.token_dropout_rate` which mirrors masking, but experimentation has not been done to a large degree.
 
+Unfortunately, this model does not seem to prove stable for longer utterances, and the following bandaid copes do not solve this:
+* training for longer durations
+* iterative inferencing (inference the first n seconds, then the next n seconds, etc.)
+* more demasking steps in inferencing
+* training explicitly for NAR level 0
+
+Despite being trained "flawlessly" (without any implementation issues), it seems to still exhibit the same issues as if it were trained erroneously (to predict the next token rather than the token in place).
+
 ## Embeddings (and Classifiers)
 
 The "magic" of subjugating a transformer for audio use lies within the ensemble of the embeddings. This is necessary as each piece of a sequence is fundamentally different, but a HF-compatible model can get away with treating each sequence as separate ranges within a total token sequence.

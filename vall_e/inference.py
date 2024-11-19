@@ -206,11 +206,11 @@ class TTS():
 		model_nar = None
 
 		for name, engine in self.engines.items():
-			if "ar" in engine.hyper_config.capabilities:
+			if model_ar is None and "ar" in engine.hyper_config.capabilities:
 				model_ar = engine.module
-			if "len" in engine.hyper_config.capabilities:
+			if model_len is None and "len" in engine.hyper_config.capabilities:
 				model_len = engine.module
-			if "nar" in engine.hyper_config.capabilities:
+			if model_nar is None and "nar" in engine.hyper_config.capabilities:
 				model_nar = engine.module
 		
 		seed = set_seed(seed)
