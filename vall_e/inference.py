@@ -179,6 +179,12 @@ class TTS():
 			sums = False
 		) for l in range( input.shape[-1] - 1 ) ])
 
+	def modality( self, modality ):
+		# cringe to handle the best default mode for a given model
+		if modality == "auto" and cfg.model.name in ["ar+nar", "nar-len"]:
+			modality = cfg.model.name
+		return modality
+
 	@torch.inference_mode()
 	def inference(
 		self,
@@ -186,6 +192,7 @@ class TTS():
 		references,
 		language="en",
 		task="tts",
+		modality="auto",
 
 		input_prompt_length = 0,
 		load_from_artifact = False,
@@ -214,6 +221,14 @@ class TTS():
 				model_nar = engine.module
 		
 		seed = set_seed(seed)
+
+		modality = self.modality( modality )
+		# force AR+NAR
+		if modality == "ar+nar":
+			model_len = None
+		# force NAR-len
+		elif modality == "nar-len":
+			model_ar = None
 
 		if task == "stt":
 			resp = self.encode_audio( references )

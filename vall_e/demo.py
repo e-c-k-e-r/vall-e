@@ -57,6 +57,7 @@ def main():
 	
 	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--task", type=str, default="tts")
+	parser.add_argument("--modality", type=str, default="auto")
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--max-duration", type=int, default=12 * cfg.dataset.frames_per_second)
@@ -230,6 +231,8 @@ def main():
 	html = open(args.demo_dir / "index.template.html", "r", encoding="utf-8").read()
 
 	sampling_kwargs = dict(
+		task=args.task,
+		modality=args.modality,
 		max_steps=args.max_steps,
 		max_levels=args.max_levels,
 		max_duration=args.max_duration,

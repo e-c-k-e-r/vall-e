@@ -262,14 +262,15 @@ class ModelExperimentalSettings:
 	masking_train_p: float = 0.0 # odds of training with masking
 	masking_train_rvq_levels: list = field(default_factory=lambda: [0,0]) # determines which levels to do mask training on
 
-	masking_ratio: str | float = 0.8 # sets a masking ratio, "random" will randomly pick
+	masking_ratio: str | float = 0.8 # sets a masking ratio, "random" will randomly pick, "rand" will pick between [0.2, 0.8]
 	ignore_inputs_for_loss: bool = True # only calculate the loss on the outputs since thats what matters, as the inputs that do have loss calculated upon affects the loss for the entire sequence
 
-	# classifier-free guidance shit
+	# classifier-free guidance training settings
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
 	cfg_text_dropout_p: float = 0.0 # 0.0  # probability to drop out input audio prompt during training
 	cfg_prom_dropout_p: float = 0.0 # 0.3  # probability to drop out input audio prompt during training
 
+	# failed experiment
 	layerskip: bool = False # layerskip compatible model (or training for)
 	#layerskip_rvq_levels: list = field(default_factory=lambda: []) # RVQ levels to train / inference layerskip for (to-do: implement, see if it matters)
 	layerskip_r: int = 2 # number of layers to factor into early-exit loss calc

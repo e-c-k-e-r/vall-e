@@ -14,6 +14,7 @@ def main():
 	parser.add_argument("references", type=path_list, default=None)
 	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--task", type=str, default="tts")
+	parser.add_argument("--modality", type=str, default="auto")
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--yaml", type=Path, default=None)
@@ -108,6 +109,7 @@ def main():
 		references=args.references,
 		language=args.language,
 		task=args.task,
+		modality=args.modality,
 		out_path=args.out_path,
 
 		input_prompt_length=args.input_prompt_length,

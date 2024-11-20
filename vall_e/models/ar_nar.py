@@ -254,9 +254,11 @@ class AR_NAR(Base):
 		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
 		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
 
-		temperature = sampling_kwargs.pop("temperature", 1.0)
-		cfg_strength = sampling_kwargs.get("cfg_strength", 3.0) # this really helps keep audio coherent so far
-		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.7)
+		# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
+		temperature = sampling_kwargs.pop("temperature", 0.0)
+		# this really helps keep audio coherent so far
+		cfg_strength = sampling_kwargs.get("cfg_strength", 2.0)
+		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.75)
 		start_noise = sampling_kwargs.get("denoise_start", 0.0)
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
@@ -283,7 +285,6 @@ class AR_NAR(Base):
 			annealing = 1.0 - timestep
 			# get noise level, per cosine scheduling
 			noise_p = math.cos( timestep * math.pi * 0.5 )
-			#noise_p = annealing
 			# pick the worst scoring tokens to mask off
 			masked_indices = [ score.topk( max(int( noise_p * seq_len ), 1), dim=-1 ).indices for score, seq_len in zip(scores, len_list) ]
 			# mask off inputs
@@ -293,7 +294,6 @@ class AR_NAR(Base):
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
 
-			# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
 			sampling_temperature = temperature * annealing
 			sampling_cfg = cfg_strength * timestep
 
@@ -364,7 +364,7 @@ class AR_NAR(Base):
 				1.0 - 
 					# only keep scores of tokens we are predicting (and ignore the tokens previously finalized)
 					torch.where( masked, torch.tensor([score for index, score in enumerate(scores)], device=device), torch.ones(masked.shape, device=device) )
-					# use unmodified logit scores for this, as it offers better stability
+				# use unmodified logit scores for this, as it offers better stability
 				for scores, masked in zip( unfiltered_sampled.scores, is_masked )
 			]
 
@@ -394,7 +394,6 @@ class AR_NAR(Base):
 			default_task = "stt"
 			device = resps_list[0].device
 			batch_size = len(resps_list)
-
 
 		# convert NAR specific args
 		sampling_kwargs = convert_kwargs( sampling_kwargs, "nar_" )
@@ -430,19 +429,6 @@ class AR_NAR(Base):
 				len_list=len_list,
 				**sampling_kwargs,				
 			)
-
-			"""
-			resps_list = self.forward_nar_masked(
-				text_list=text_list,
-				proms_list=proms_list,
-				resps_list=resps_list,
-				task_list=task_list,
-				lang_list=lang_list,
-				tone_list=tone_list,
-				len_list=len_list,
-				**(sampling_kwargs|{"denoise_start": 0.5}),
-			)
-			"""
 
 		# expand if given a raw 1D tensor
 		for i, resp in enumerate(resps_list):

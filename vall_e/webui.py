@@ -202,6 +202,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--text", type=str, default=kwargs["text"])
 	parser.add_argument("--task", type=str, default="tts")
+	parser.add_argument("--modality", type=str, default=kwargs["modality"])
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
@@ -258,16 +259,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	tts = init_tts()
 	
-	gr.Info("Inferencing...")
-
-	# icky
-	modality = kwargs.get("modality")
-	if modality:
-		for name, engine in tts.engines.items():
-			if modality == "AR+NAR":
-				engine.hyper_config.capabilities = ["ar", "nar"]
-			elif modality == "NAR-len":
-				engine.hyper_config.capabilities = ["nar", "len"]
+	gr.Info(f"Inferencing... (Modality: {tts.modality(args.modality.lower())})")
 
 	sampling_kwargs = dict(
 		max_steps=args.max_steps,
@@ -293,12 +285,13 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		input_prompt_length=args.input_prompt_length,
 		cfg_strength=args.cfg_strength,
 	)
-	
+
 	with timer("Inferenced in", callback=lambda msg: gr.Info( msg )) as t:
 		wav, sr = tts.inference(
 			text=args.text,
 			language=args.language,
 			task=args.task,
+			modality=args.modality.lower(),
 			references=args.references.split(";") if args.references is not None else [],
 			**sampling_kwargs,
 		)
@@ -438,8 +431,9 @@ with ui:
 							layout["inference_tts"]["inputs"]["ar-temperature"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR)", info="Modifies the randomness from the samples in the AR. (0 to greedy* sample)")
 							layout["inference_tts"]["inputs"]["nar-temperature"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (NAR)", info="Modifies the randomness from the samples in the NAR. (0 to greedy sample)")
 						with gr.Row():
-							layout["inference_tts"]["inputs"]["cfg-strength"] = gr.Slider(value=3.0, minimum=0.0, maximum=14.0, step=0.05, label="CFG Strength", info="Classifier Free Guidance scale")
+							layout["inference_tts"]["inputs"]["cfg-strength"] = gr.Slider(value=1.0, minimum=0.0, maximum=14.0, step=0.05, label="CFG Strength", info="Classifier Free Guidance scale")
 							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
+							layout["inference_tts"]["inputs"]["modality"] = gr.Dropdown(value="Auto", choices=["Auto", "AR+NAR", "NAR-len"], label="Modality", info="Whether to inference with the AR+NAR or through the NAR-len.")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["top-p"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.0, step=0.05, label="Top P", info=r"Limits the samples that are outside the top P% of probabilities.")
@@ -464,7 +458,6 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["input-prompt-prefix"] = gr.Checkbox(label="Input Prompt as Prefix", info="Treats the input prompt clip as the prefix of the generated sequence.")
 							layout["inference_tts"]["inputs"]["prefix-silence"] = gr.Slider(value=0.0, minimum=0.0, maximum=1.0, step=0.05, label="Silence Prefix Duration", info="Amount of silence to prefix to the output response before beginning inference.")
-							layout["inference_tts"]["inputs"]["modality"] = gr.Dropdown(value="Auto", choices=["Auto", "AR+NAR", "NAR-len"], label="Modality", info="Whether to inference with the AR+NAR or through the NAR-len.")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["beam-width"] = gr.Slider(value=0, minimum=0, maximum=32, step=1, label="Beam Width", info="Number of branches to search through for beam search sampling.")
 							layout["inference_tts"]["inputs"]["dynamic-sampling"] = gr.Checkbox(label="Dynamic Temperature", info="Dynamically adjusts the temperature based on the highest confident predicted token per sampling step.")
