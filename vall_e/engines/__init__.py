@@ -1,6 +1,6 @@
 from ..config import cfg
 
-from ..utils.distributed import fix_unset_envs, ddp_model
+from ..utils.distributed import fix_unset_envs, ddp_model, world_size
 fix_unset_envs()
 
 if cfg.trainer.backend == "deepspeed":
@@ -286,7 +286,15 @@ def load_engines(training=True, **model_kwargs):
 
 		# setup wandb
 		if engine._training and cfg.trainer.wandb and wandb is not None:
-			engine.wandb = wandb.init(project=name)
+			key_name = name
+			kwargs = {}
+			if cfg.lora is not None:			
+				key_name = cfg.lora.full_name
+
+			if world_size() > 1:
+				kwargs["group"] = "DDP"
+
+			engine.wandb = wandb.init(project=key_name, **kwargs)
 			engine.wandb.watch(engine.module)
 		else:
 			engine.wandb = None

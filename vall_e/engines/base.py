@@ -466,6 +466,10 @@ class Engines(dict[str, Engine]):
 	def quit(self):
 		cleanup_distributed()
 
+		for name, engine in self.items():
+			if engine.wandb is not None:
+				engine.wandb.finish()
+
 	def step(self, batch, feeder: TrainFeeder = default_feeder):
 		total_elapsed_time = 0
 
@@ -568,7 +572,11 @@ class Engines(dict[str, Engine]):
 			if engine.wandb is not None:
 				engine.wandb.log(model_stats)
 
-			stats.update(flatten_dict({name.split("-")[0]: model_stats}))
+			key_name = name
+			if cfg.lora is not None:			
+				key_name = cfg.lora.full_name
+
+			stats.update(flatten_dict({key_name.split("-")[0]: model_stats}))
 
 		self._update()
 
