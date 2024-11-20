@@ -29,6 +29,8 @@ Additional global-states can be found here, such as:
 	* the end user should not touch this, as this not only depends on the model used, but also governs what audio codec to store processed audio under for the dataset.
 * `weights_format`: the default weights format to save and load state dicts to
 	* the end user shouldn't worry about this, as SafeTensors are primarily used, but the program can easily handle any pickled dicts if requested.
+* `weights_name`: the name (without the extension) to load the weights from directly. Defaults to `fp32`.
+	* the end user shouldn't worry about this, but it makes regression testing much easier without needing to juggle renaming files.
 
 On initialization, this class then validates its member variables to ensure they're instances of the below classes, rather than dicts.
 * Backwards compatibility validation may be performed during this step as well.

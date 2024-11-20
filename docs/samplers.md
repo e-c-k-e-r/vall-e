@@ -82,3 +82,11 @@ The huge caveat is that this requires tuning the parameters and thresholds per m
 Additionally, one state requires injecting a CoT token, which doesn't have an analog in the audio domain. 
 
 However, this does seem to serve as a good basis to expand upon this and sample according to the entropy/varentropy of the model's current state.
+
+### Classifier-Free Guidance
+
+While this isn't a direct sampler type used, a helper function is provided to perform classifier-free guidance, given a positive (the primary) logits, and a negative (the null) logits. While the `NAR-len` modality requires this at the moment, it can easily be adapted everything else.
+
+Rescaling is also applied to avoid clipping the logits.
+
+Due to the logits being the full sequence, and the input lengths differing, a list of lengths are required to be passed to only modify the last N logits.

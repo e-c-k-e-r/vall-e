@@ -7,9 +7,10 @@ The underlying model is a robust transformer, where:
 
 The beauty of a transformer, I feel, is that you can easily define any task at it, and it should follow through with it very well.
 
-The inputs are sequenced in a way that the given task requires automatically, and the outputs are handled as per the class that extends the base model.
+The inputs are automatically sequenced in a way that a given task requires, and the outputs are handled as per the class that extends the base model.
 
 While the original paper called for a separate AR model and a NAR model, and by treating the AR and the NAR as unique tasks, you can actually train a unified model (`AR+NAR`) for effectively free, as the internal states of the two should overlap quite a lot.
+* Additionally, you can even train a `NAR-len` model on top of an existing model.
 
 ## The AR (Autoregressive) Model
 
@@ -33,7 +34,7 @@ The NAR is responsible for generating the remaining RVQ levels of the audio code
 
 As decoding is done non-autoregressively, the model can process tokens "in place" and have them attended to one another in the past and future, thus speeding up output and allowing for "more accurate" outputs.
 
-Non-autoregressive trainng is performed by having the input tokens from the previous RVQ level predict the next level's token in place. The output logits are in the same position, and do not require further modifications as required for the AR.
+Non-autoregressive training is performed by having the input tokens from the previous RVQ level predict the next level's token in place. The output logits are in the same position, and do not require further modifications as required for the AR.
 
 One problem exhibited from a NAR is producing arfifacts ("crust") in the final waveform. I believe this is a confidence problem where the wrong token is inferred.
 * Unfortunately, one solution is to simply train a separate NAR, as this should help bolster the model's NAR capabilities without the AR influencing things, as I imagine being able to both causally and parallel-ly decode tokens harms things.
@@ -57,8 +58,7 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 The NAR-len model keeps things simple by:
 * training with a fixed masking ratio (80% of the tokens are masked and trained to predict the remaining tokens)
   * [this paper](https://arxiv.org/abs/2406.05478v1) mentions a fixed ratio during training yields better results than randomly picking a masking ratio.
-  * randomly picking a duration is actually very ungood and harms the model during trainng.
-    * this may only matter if swapping from a training on a fixed masking ratio to a random ratio without any timestep information being added.
+  * randomly picking a duration ~~is actually very ungood and harms the model during training~~ actually doesn't matter much.
 * not including any specific timestep embedding information
   * some solutions add in the (sinusoidal position'd) timestep embedding, either on top of the input embeddings, or as some normalization weight around the attention head (before and after).
   * it does not seem to be necessary what-so-ever to require this, especially training under a fixed masking ratio.
@@ -69,15 +69,21 @@ The NAR-len model keeps things simple by:
     * it could be in any base, but it's simple to just treat each token ID as a digit, then cast the string to an int.
 * inferencing is a simple loop that simply takes the best masked-off k tokens per step, and remasks the remaining.
 
+Because the model already leverages the magic of attention to derive phoneme-alignment, such annotations are still not required (but they probably help with a naive sampler).
+
 In theory, demasking for the NAR's RVQ level 0 can also be applied to the remaining RVQ levels to further improve the output from the remaining levels.
 * this isn't necessary as the model already has a strong enough relationship between the prompt, the prior levels, and the targeted level.
 * this is technically already offered with `cfg.model.experimental.token_dropout_rate` which mirrors masking, but experimentation has not been done to a large degree.
+* there is a bit of a problem with properly implementing this, as the tokens aren't predicting themselves.
+  * it may be a simple thing to implement anyways.
 
 It is ***crucial*** to:
 * avoid re-masking tokens that are already "good" enough (this can easily be done by "banning" them in the scoring process)
   * without this, you ***will*** get stuttering and unaligned utterances. I do not know why this is such a big problem but I imagine this "interleaves" many different sequences between each step.
 * use unfiltered/unprocessed logit scores:
   * not that crucial, but helps stability.
+
+It is not required to train a model from scratch to use this modality, as using existing weights works just as well, if not better (as it can piggyback off the original model).
 
 ## Embeddings (and Classifiers)
 

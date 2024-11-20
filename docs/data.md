@@ -162,6 +162,8 @@ This entry in the config YAML handles knobs and features related to the dataload
 * `workers`: number of worker processes to handle dataloading under PyTorch.
 * `cache`: use diskcache when requested to not require subsequent processing. This handles *all* `diskcache` requests throughout the program if requested, but should only really be used under this script.
 * `min_utterances`: number of utterances to treat a speaker as valid.
+* `max_utterances`: maximum number of utterances a speaker can have. The remaining utterances are sliced off.
+	* This is beneficial if you happen to have a section of your dataset with a ton of speakers, but you want to train on a plethora of speakers instead to balance out speaker.
 * `duration_range`: a list of two values to denote the acceptable duration ranges a sample is valid for the dataloader. 
 * `sample_type`: type of sampler to use. Currently accepts `path` (an epoch is all paths in the dataset, and each index maps to each sample) or `speaker` (an epoch is all speakers in the dataset, and each index maps to each speaker)
 * `sample_order`: order to keep the dataloader sample. Currently accepts `interleaved` (tries to balance per speaker) and `duration` (orders by duration to keep throughput and VRAM usage consistent).
