@@ -554,22 +554,21 @@ class Engines(dict[str, Engine]):
 			if grad_norm is not None:
 				grad_norm /= loss_scale
 
-			stats.update(
-				flatten_dict(
-					{
-						name.split("-")[0]: dict(
-							**engine_stats,
-							lr=engine.get_lr()[0],
-							grad_norm=grad_norm.item() if isinstance( grad_norm, torch.Tensor ) else grad_norm,
-							loss_scale=loss_scale if loss_scale != 1 else None,
-							elapsed_time=elapsed_time,
-							engine_step=engine.global_step,
-							samples_processed=engine.global_samples,
-							tokens_processed=engine.tokens_processed,
-						)
-					}
-				),
+			model_stats = dict(
+				**engine_stats,
+				lr=engine.get_lr()[0],
+				grad_norm=grad_norm.item() if isinstance( grad_norm, torch.Tensor ) else grad_norm,
+				loss_scale=loss_scale if loss_scale != 1 else None,
+				elapsed_time=elapsed_time,
+				engine_step=engine.global_step,
+				samples_processed=engine.global_samples,
+				tokens_processed=engine.tokens_processed,
 			)
+		
+			if engine.wandb is not None:
+				engine.wandb.log(model_stats)
+
+			stats.update(flatten_dict({name.split("-")[0]: model_stats}))
 
 		self._update()
 

@@ -28,6 +28,12 @@ try:
 except Exception as e:
 	pass
 
+try:
+	import wandb
+except Exception as e:
+	_logger.warning(f'Failed to import wandb: {str(e)}')
+	wandb = None
+
 from functools import cache
 
 @cache
@@ -277,5 +283,12 @@ def load_engines(training=True, **model_kwargs):
 		# split models over requested devices
 		if cfg.optimizations.model_offloading:
 			engine.module = ml.offload_model( engine.module, policy=cfg.optimizations.model_offloading )
+
+		# setup wandb
+		if engine._training and cfg.trainer.wandb and wandb is not None:
+			engine.wandb = wandb.init(project=name)
+			engine.wandb.watch(engine.module)
+		else:
+			engine.wandb = None
 
 	return engines
