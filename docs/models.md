@@ -15,6 +15,7 @@ While the original paper called for a separate AR model and a NAR model, and by 
 ## The AR (Autoregressive) Model
 
 The AR is responsible for generating the first RVQ level of the audio codes for a given output. References to "outputs from the AR" refers to this level, as it contibutes to the final waveform the most.
+* Some models may refer to this level as the "coarse" level.
 * The benefit of autoregressively decoding for this code is that it offers better output while also "encoding" the duration within the sequence itself, as the stop token will depend on the length of the sequence.
 * The downside is that it does take most of the compute time to iterate through the sequence one step at a time.
 
@@ -22,15 +23,22 @@ Autoregressive training is performed by having each token predict the next token
 
 One way to work around the time cost is to instead decode more than one token at a time.
 * In theory, for a unified AR+NAR model, this *should* be an easy task, as the model can already decode tokens in parallel.
-* In reality, this isn't the case. Specifying a `cfg.model.experimental.causal_size > 1`  will have the output sound *fine* every Nth timestep, as the following tokens aren't predictable enough.
+* In reality, this isn't the case. Specifying a `cfg.model.experimental.causal_size > 1` with adequate training will have the output sound *fine* every Nth timestep and every other timestep not so fine, as the following tokens aren't predictable enough.
   + *However*, this may simply be a sampling problem, as this experiment was done with outdated ideas on how to sample the AR, and should be worth revisiting.
 * VALL-E 2's paper proposes merging code sequences together into one embedded token for a speedup, but their solution seems rather complex to warrant a fundamental retrain.
 
-I personally feel that autoregressive encoding offers a specific-yet-hard-to-quantify expressive quality that the NAR (and pure NAR solutions) does not offer, but further testing is required to substantiate the claim.
+Sampling the AR does not necessarily require a specific sampling temperature, as:
+* lower temperatures follow the prompt better, at the cost of variety in the outputs, and the need to either use classifier-free guidance or repetition penalty to wrangle the output.
+* higher temperatures are possible, but are more prone to not adhere to the prompt.
+
+Traditional samplers for text-gen models can apply to the AR (especially rep/len pen), but more exotic samplers (mirostat, DRY, etc.) don't seem to offer much besides serving as bandaid solutions for a lacking AR.
+
+Compared to non-autoregressive decoding, I personally feel that autoregressive encoding offers a specific-yet-hard-to-quantify expressive quality that the NAR (and pure NAR solutions) does not offer.
 
 ## The NAR (Non-autoregressive) Model
 
 The NAR is responsible for generating the remaining RVQ levels of the audio codes for a given output. References to the "outputs from the NAR" refers to the underlying "levels" for a given waveform, as each further levels contributes to the final waveform less significantly than the previous.
+* Some models may refer to this level as the "fine" level.
 
 As decoding is done non-autoregressively, the model can process tokens "in place" and have them attended to one another in the past and future, thus speeding up output and allowing for "more accurate" outputs.
 
@@ -44,9 +52,13 @@ One problem exhibited from a NAR is producing arfifacts ("crust") in the final w
   * `token_dropout_error`: This will randomly nudge a small percentage of tokens from the prior RVQ level to simulate wrong tokens being predicted.
   * `token_dropout_rate`: This will randomly mask off tokens from the prior RVQ level with a mask token, to try and have the model not-strongly-rely on the given input.
 
+Sampling from the NAR absolutely necessitates a low temperature or to be greedily sampled, as higher temperatures lead to the aforementioned artifacts in the final waveform.
+
+Traditional samplers do not seem to offer much effect in the output, as it seems the output from the NAR are decent enough.
+
 ### Pure NAR
 
-The pure NAR (`NAR-len`) model is a model-type that inferences audio tokens purely non-autoregressively. Despite being called a pure NAR, duration is then inferred by autoregressively decoding for its length (as the AR+NAR model shows that you can mix both types).
+The pure NAR (`NAR-len`) model is a modality that inferences audio tokens purely non-autoregressively.
 
 However, having a pure NAR is challenging, as you need to both explicitly provide the duration and provide a "good enough" starting sequence of tokens for the initial sequence.
 * The former problem is easily "solved" by training a `len` classification task.
@@ -59,14 +71,16 @@ The NAR-len model keeps things simple by:
 * training with a fixed masking ratio (80% of the tokens are masked and trained to predict the remaining tokens)
   * [this paper](https://arxiv.org/abs/2406.05478v1) mentions a fixed ratio during training yields better results than randomly picking a masking ratio.
   * randomly picking a duration ~~is actually very ungood and harms the model during training~~ actually doesn't matter much.
+    * theoretically, it should help later stages in demasking to better rely on the non-masked tokens, but who knows.
 * not including any specific timestep embedding information
   * some solutions add in the (sinusoidal position'd) timestep embedding, either on top of the input embeddings, or as some normalization weight around the attention head (before and after).
   * it does not seem to be necessary what-so-ever to require this, especially training under a fixed masking ratio.
-    * in reality, the model shouldn't really need to reference this anyways, as training NAR RVQ level 0 is simply to refine a noised/masked off sequence of tokens.
+    * in reality, the model shouldn't really need to reference this anyways.
 * predicting the "duration" (the output audio token window) is kept within the model itself, by autoregressievly inferencing the duration for a given input prompt (text + audio).
   * the model can already "know" the duration for a given prompt already from an AR RVQ level 0, by predicting when to output the stop token, so it makes sense to re-use the model for this.
   * the output length is a simple tokenized sequence where each token is a base-10 digit.
     * it could be in any base, but it's simple to just treat each token ID as a digit, then cast the string to an int.
+  * some checkpoints of the model seems to adhere well to outputting silence at the end if the requested duration exceeds the actual duration.
 * inferencing is a simple loop that simply takes the best masked-off k tokens per step, and remasks the remaining.
 
 Because the model already leverages the magic of attention to derive phoneme-alignment, such annotations are still not required (but they probably help with a naive sampler).
@@ -83,7 +97,8 @@ It is ***crucial*** to:
 * use unfiltered/unprocessed logit scores:
   * not that crucial, but helps stability.
 
-It is not required to train a model from scratch to use this modality, as using existing weights works just as well, if not better (as it can piggyback off the original model).
+It is not required to train a model from scratch to use this modality, as training from existing weights works just as well, if not better (as it can piggyback off the original model).
+* additional training is still required to help confidence issues and to condition the model to not fall apart for longer durations.
 
 ## Embeddings (and Classifiers)
 
@@ -97,7 +112,7 @@ With attention-based transformers, most embeddings can serve as a token itself a
 
 Classifiers are the final output head / projection layer that processes the last hidden states of a model into a probability distribution for each token. 
 
-Out of paranoia, each head is split for each macro-task (RVQ level) and an auxiliary head for tasks `stt` and `len`, even though the core half of the model's training was with a single output head.
+Out of paranoia, each head is split for each macro-task (RVQ level, `stt`, and `len`), even though the core half of the model's training was with a single output head.
 
 ### Text Embeddings
 
@@ -236,6 +251,7 @@ The model can be prompted in creative ways to yield some interesting behaviors:
   * classifier-free-guidance-aware training does fix this, but this property emerges without it.
 * prompting with an input text prompt being the transcription of the input audio prompt will have the response follow very closely to the input prompt  (despite not doing input=output training).
   * this should allow for easy transcription editing without much fuss.
+  * the `NAR-len` greatly exhibits this property, although it sometimes does keep any noise in the background.
 
 # `models/*`
 

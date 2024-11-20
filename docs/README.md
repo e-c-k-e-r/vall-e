@@ -9,7 +9,7 @@ At the time, state-of-the-art neural-based TTS solutions were sparing. TorToiSe 
 # Why this VALL-E?
 
 Unlike the paper, this VALL-E aims to:
-* be lightweight as possible, only requiring one model to load and use (and EnCodec/Vocos).
+* be lightweight as possible, only requiring one model to load and use (and EnCodec/Vocos as an audio encoder/decoder).
 	+ Even the original VALL-E requires a separate AR and a NAR.
 * keep training and finetuning (be it the base model or through LoRAs) accessible to anyone.
 	+ Bark was needlessly complex in providing even additional voices to use.
@@ -17,19 +17,7 @@ Unlike the paper, this VALL-E aims to:
 * provide decent zero-shot text-to-speech synthesis, both without requiring sampling adjustments and providing thorough sampler settings.
 * provide additional, easy to use functionality, that other solutions don't offer.
 
-## Caveats
-
-Despite how lightweight it is in comparison to other TTS's I've meddled with, there are still some caveats, be it with the implementation or model weights:
-* the audio embeddings have some quirks to having the AR's RVQ level 0 separate from the NAR's RVQ level 0 (sharing them caused some problems in testing)
-* the trainer / dataloader assumes there are zero variations between a speaker's utterances, and thus it can extract the basics of a speaker's features rather than deeper features (like prosidy, tone, etc.) when performing inferences.
-  + ~~however, trying to work around this would require training under `tts-c` (VALL-E continuous) mode or modifying an input prompt enough to where its quantized representation differs enough from the output response the prompt derives from.~~
-  + to remedy this, training benefits from calculating the most similar utterances for each utterance, and using that as the input prompt for training.
-* the trainer's default RVQ level distribution prioritizes lower RVQ levels over higher RVQ levels, as the lower levels contribute to the final waveform more; however, this leaves some minor artifacting that rises in the higher RVQ levels due to inaccuracy issues.
-  + summing the audio embeddings for later RVQ levels seems to help?
-  + `model.experimental.p_rvq_levels: [0,0,0,0,0,0,0,1,2,3,4,5,6,7]` seems to help?
-* speakers that aren't similar to an audiobook narrator voice has similarity issues due to the majority of training used `path`-based dataloader sampling instead of `speaker`-based (or `group`-based) dataloader sampling.
-  + although LoRAs help a ton for fixing results for a single voice.
-  + a diverse dataset in prosidy and speaker (such as a corpus sourced from dramatic media like video games) helps a ton, but still has issues for speakers not similar to any seen speakers.
+However, at this point and time, the implementation is rather divorced from VALL-E and its derivating papers, but the core principle is still followed.
 
 ## To-Do
 
@@ -57,8 +45,7 @@ Despite how lightweight it is in comparison to other TTS's I've meddled with, th
 * [ ] speed up inferencing
   - KV caching both yields broken output and quadratically slow output, unless I'm doing something grossly wrong.
     - A pure HF model is the only way to fix this, but converting the model to one is a bit of a chore.
-  - Speculative sampling seems overkill for small models (and in reality seems like it's better to just train a larger model).
-  - Self-speculation through layer-skipping doesn't offer any tangible speedups, sadly.
+  * [x] provide a pure NAR model that foregoes most of the inferencing slowdowns a regular AR+NAR model will provide.
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   * [ ] train the model to handle text => phoneme (without a hit to the rest of the model)
     * [ ] ...and phonemes => text

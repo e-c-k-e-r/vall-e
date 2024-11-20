@@ -264,23 +264,42 @@ class AR_NAR(Base):
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
 		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
+		
 
 		# if we're denoising from an existing sequence
 		if start_noise > 0.0 and resps_list is not None:
+			# flatten if needed
+			resps_list = [ resps if resps.dim() == 1 else resps[:, 0] for resps in resps_list ]
+			# gen masking ratio
 			noise_p = math.cos( start_noise * math.pi * 0.5 )
-			mask = [ torch.tensor( [ random.random() < noise_p for _ in range( seq_len ) ], dtype=torch.bool, device=device ) for seq_len in len_list ]
-			resps_list = [ torch.where( is_masked, self.stop_token, resps if resps.dim() == 1 else resps[:, 0] ) for is_masked, seq_len, resps in zip( mask, len_list, resps_list ) ]
+			# generate scoring mask (because the above mask will get masked off per the scores, so we do not need to mask beforehand)
+			scores = [ torch.tensor( [ 1.0 if random.random() < noise_p else 0.0 for _ in range( seq_len ) ], dtype=torch.float32, device=device ) for seq_len in len_list ]
+		# deduce that this is a prefix
+		elif resps_list is not None:
+			# number of remaining tokens
+			tokens_to_mask = [ l - resps.shape[0] for resps, l in zip( resps_list, len_list ) ]
+			# pad with masked tokens
+			resps_list = [ torch.concat([ resps if resps.dim() == 1 else resps[:, 0], torch.tensor( [ self.stop_token ] * l, dtype=resps.dtype, device=resps.device ) ]) for resps, l in zip( resps_list, tokens_to_mask ) ]
+			# update scores to ignore the prefix
+			scores = [ torch.concat( [ torch.zeros((resps.shape[0],), dtype=torch.int16, device=device), torch.ones((l), dtype=torch.int16, device=device) ] ) for resps, l in zip( resps_list, tokens_to_mask ) ]
+			# set start noise
+			# only the first because we do not have variable noising at the moment
+			# *technically* the prefix can be a fixed portion for all inputs in a batch, rather than a fixed length
+			# this will set the starting noise_p with the right ratio
+			start_noise = 2 / math.pi * math.acos(resps_list[0].shape[0] / len_list[0])
 		else:
+			# fill with masked tokens (even though they get masked anyways)
 			resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.stop_token for seq_len in len_list ]
-
-		scores = [ torch.zeros((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
+			# fill scores
+			scores = [ torch.ones((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
 
 		quant_levels = [ level for _ in range(batch_size) ]
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
-		prev_list = resps_list
 
 		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
+			# update previous list of tokens
+			prev_list = resps_list
 			# ramp down over time
 			annealing = 1.0 - timestep
 			# get noise level, per cosine scheduling
@@ -352,8 +371,6 @@ class AR_NAR(Base):
 				temperature=0.0,
 				**sampling_kwargs,
 			)
-			# update previous list of tokens
-			prev_list = resps_list
 			# get sampled tokens
 			sampled_ids = filtered_sampled.ids
 			# keep unmasked tokens

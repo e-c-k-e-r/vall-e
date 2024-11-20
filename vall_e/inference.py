@@ -196,6 +196,7 @@ class TTS():
 
 		input_prompt_length = 0,
 		load_from_artifact = False,
+		nar_len_prefix_length = 0,
 
 		seed = None,
 		out_path=None,
@@ -271,7 +272,7 @@ class TTS():
 			# to-do: add in case for experimental.hf model
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_len is not None:
-					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_steps": 5} ) # don't need more than that
+					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # don't need more than that
 					kwargs = {}
 					# nasty hardcode to load a reference file and have that as the input target
 					if load_from_artifact and load_from_artifact.exists():
@@ -283,6 +284,15 @@ class TTS():
 						len_list = [ resp.shape[0] ]
 
 						kwargs["resps_list"] = [ resp[:, :1] ]
+					# kludge experiment
+					elif nar_len_prefix_length > 0:
+						resps_list = model_nar(
+							text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
+							disable_tqdm=not tqdm,
+							use_lora=use_lora,
+							**(sampling_kwargs | {"max_duration": nar_len_prefix_length}),
+						)
+						kwargs["resps_list"] = [ resp if resp.dim() == 1 else resp[:, 0] for resp in resps_list ]
 
 					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list, task_list=["tts"],
 						disable_tqdm=not tqdm,
