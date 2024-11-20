@@ -1,5 +1,5 @@
 import copy
-import diskcache
+#import diskcache
 import h5py
 import json
 import os
@@ -853,11 +853,13 @@ class Config(BaseConfig):
 	def get_spkr_group(self):
 		return eval(self.dataset.speaker_group_getter)
 
+	"""
 	@cached_property
 	def diskcache(self):
 		if self.yaml_path is not None and self.dataset.cache:
 			return diskcache.Cache(self.cache_dir).memoize
 		return lambda: lambda x: x
+	"""
 
 	# this gets called from vall_e.inference
 	def load_yaml( self, config_path ):

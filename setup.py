@@ -40,14 +40,14 @@ setup(
         ["deepspeed>=0.7.7"] if not sys.platform.startswith("win") else ["psutil"])
         + [
         # logging niceties
-        "coloredlogs>=15.0.1",
-        "humanize>=4.4.0",
-        "matplotlib>=3.6.0",
-        "pandas>=1.5.0",
+        "coloredlogs>=15.0.1", # barely required
+        "humanize>=4.4.0", # not really required
+        "matplotlib>=3.6.0", # only required for plotting
+        "pandas>=1.5.0", # not really required
 
         # boiler plate niceties
-        "diskcache>=5.4.0",
-        "einops>=0.6.0",
+        #"diskcache>=5.4.0",
+        "einops>=0.6.0", # could be replaced
         "tqdm",
 
         # HF bloat
@@ -70,11 +70,9 @@ setup(
         "phonemizer>=2.1.0",
         "encodec>=0.1.1",
         "vocos",
-        "descript-audio-codec",
 
-        # gradio web UI (my linux install doesn't like 5.x, windows is fine)
-        f"gradio{'<5.0.0' if not sys.platform.startswith('win') else ''}"
-        
+        # for the web UI
+        "gradio",
     ],
     extras_require = {
         "all": [
@@ -89,6 +87,9 @@ setup(
             # attention helpers
             "xformers",
             # "flash-attn" --no-build-isolation # commented out right now because I want to query this for Volta freaks like me who can't use it
+            
+            # other audio backend that doesn't prove fruitful
+            "descript-audio-codec",
         ]
     },
     url="https://git.ecker.tech/mrq/vall-e",
