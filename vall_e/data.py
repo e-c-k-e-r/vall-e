@@ -69,7 +69,12 @@ def get_random_prompts( validation=False, min_length=0, tokenized=False ):
 		"The colt reared and threw the tall rider.",
 		"It snowed, rained, and hailed the same morning.",
 		"Read verse out loud for pleasure.",
+		"Perfect. Please move quickly to the chamber lock, as the effect of prolonged exposure to the button are not part of this test.",
 	]
+
+	harvard_sentences_path = Path("./data/harvard_sentences.txt")
+	if harvard_sentences_path.exists():
+		sentences = open( harvard_sentences_path, "r", encoding="utf-8" ).read().split("\n")
 
 	# Pull from validation dataset if existing + requested
 	if validation and cfg.dataset.validation:

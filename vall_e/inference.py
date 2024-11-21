@@ -278,7 +278,7 @@ class TTS():
 					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # don't need more than that
 
 					# add an additional X seconds
-					len_list = [ l * duration_padding * cfg.dataset.frames_per_second for l in len_list ]
+					len_list = [ int(l * duration_padding) for l in len_list ]
 
 					kwargs = {}
 					# nasty hardcode to load a reference file and have that as the input target
