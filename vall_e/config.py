@@ -326,7 +326,7 @@ class Model:
 		if isinstance(self.size, dict):
 			if hasattr(self.size, "label") and self.size['label']:
 				name.append(f"{self.size['label']}")
-		elif isinstance(self.size, str) and self.size != "full":
+		elif isinstance(self.size, str) and self.size not in ["full","extended"]:
 			name.append(self.size)
 
 		if self.experts > 1:
@@ -392,6 +392,8 @@ class Model:
 
 		if self.size == "double":
 			return 24
+		if self.size == "extended":
+			return 16
 		return 12
 
 	@property
