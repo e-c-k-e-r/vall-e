@@ -71,7 +71,8 @@ def main():
 	parser.add_argument("--input-prompt-length", type=float, default=3.0)
 	parser.add_argument("--input-prompt-prefix", action="store_true")
 	parser.add_argument("--prefix-silence", type=float, default=0.0)
-	parser.add_argument("--cfg-strength", type=float, default=3.0)
+	parser.add_argument("--cfg-strength", type=float, default=1.0)
+	parser.add_argument("--cfg-rescale", type=float, default=0.75)
 
 	parser.add_argument("--top-p", type=float, default=1.0)
 	parser.add_argument("--top-k", type=int, default=0)
@@ -255,6 +256,7 @@ def main():
 		input_prompt_prefix=args.input_prompt_prefix,
 		prefix_silence=args.prefix_silence,
 		cfg_strength=args.cfg_strength,
+		cfg_rescale=args.cfg_rescale,
 	)
 
 	# replace values in our template

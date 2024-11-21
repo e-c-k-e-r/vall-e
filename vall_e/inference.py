@@ -196,7 +196,6 @@ class TTS():
 
 		input_prompt_length = 0,
 		load_from_artifact = False,
-		nar_len_prefix_length = 0,
 
 		seed = None,
 		out_path=None,
@@ -272,7 +271,15 @@ class TTS():
 			# to-do: add in case for experimental.hf model
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_len is not None:
+					# extra kwargs
+					duration_padding = sampling_kwargs.pop("duration_padding", 1)
+					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
+
 					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # don't need more than that
+
+					# add an additional X seconds
+					len_list = [ l + duration_padding * cfg.dataset.frames_per_second for l in len_list ]
+
 					kwargs = {}
 					# nasty hardcode to load a reference file and have that as the input target
 					if load_from_artifact and load_from_artifact.exists():
@@ -280,10 +287,9 @@ class TTS():
 
 						phns = torch.tensor( cfg.tokenizer.encode( artifact["metadata"]["phonemes"] ) ).to(dtype=torch.uint8, device=self.device)
 						resp = torch.from_numpy(artifact["codes"].astype(np.int16))[0, :, :].t().to(dtype=torch.int16, device=self.device)
-						prom = resp[:75*3, :]
 						len_list = [ resp.shape[0] ]
 
-						kwargs["resps_list"] = [ resp[:, :1] ]
+						kwargs["resps_list"] = [ resp[:, 0] ]
 					# kludge experiment
 					elif nar_len_prefix_length > 0:
 						resps_list = model_nar(
