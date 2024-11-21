@@ -272,13 +272,13 @@ class TTS():
 			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
 				if model_len is not None:
 					# extra kwargs
-					duration_padding = sampling_kwargs.pop("duration_padding", 1)
+					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
 
 					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # don't need more than that
 
 					# add an additional X seconds
-					len_list = [ l + duration_padding * cfg.dataset.frames_per_second for l in len_list ]
+					len_list = [ l * duration_padding * cfg.dataset.frames_per_second for l in len_list ]
 
 					kwargs = {}
 					# nasty hardcode to load a reference file and have that as the input target
