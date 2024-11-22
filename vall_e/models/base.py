@@ -704,87 +704,26 @@ class Base(nn.Module):
 				))
 
 			self.model = RetNetDecoder(RetNetConfig(**kwargs))
-		elif self.arch_type == "retnet-hf":
-			kwargs = dict(
+		elif self.arch_type in ["mamba2"]:
+			self.model = Mamba2Model(Mamba2Config(
 				vocab_size=n_resp_tokens,
-				decoder_embed_dim=d_model,
-				decoder_value_embed_dim =d_model * 2,
-				decoder_retention_heads=n_heads,
-				decoder_ffn_embed_dim=d_model * 4,
-				decoder_layers=n_layers,
-				dropout=p_dropout if training else 0.0,
-				checkpoint_activations=self.gradient_checkpointing,
-				activation_fn="gelu",
-				use_glu=False, # self.version >= 3,
-
-				recurrent_chunk_size=self.causal_size if self.causal else 0,
-				decoder_normalize_before=True,
-
-				deepnorm=False,
-				subln=True,
-			)
-
-			self.model = RetNetDecoder_HF(RetNetConfig_HF(**kwargs))
-
-			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
-					use_reentrant=False
-				))
-		elif self.arch_type == "bitnet":
-			self.model = BitNetTransformer(
-				num_tokens=n_resp_tokens,
-				dim=d_model,
-				depth=n_layers,
-				heads=n_heads,
-				ff_mult=4,
-				gradient_checkpointing=self.gradient_checkpointing,
-			)
-		elif self.arch_type in ["mamba","mamba2"]:
-			self.model = MambaMixelModel(
-				vocab_size=n_resp_tokens,
-				d_model=d_model,
-				n_layer=n_layers*2,
-				d_intermediate=0, #d_model*2,
-				ssm_cfg={"layer": "Mamba2", "use_mem_eff_path": True} if self.arch_type == "mamba2" else {},
-				rms_norm=True,
-				fused_add_norm=True,
+				hidden_size=d_model,
+				expand=2,
+				num_hidden_layers=n_layers*2,
 				residual_in_fp32=True,
-				#attn_layer_idx=attn_layer_idx,
-				#attn_cfg=attn_cfg,
-				#initializer_cfg=initializer_cfg,
-			)
-			self.model.gradient_checkpointing = self.gradient_checkpointing
-		elif self.arch_type in ["mamba2-hf"]:
-			self.model = Mamba2Model_HF(Mamba2Config_HF(
-				vocab_size=n_resp_tokens,
-				hidden_size=d_model,
-				max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
-				expand=4,
-				num_hidden_layers=n_layers,
-				is_encoder_decoder=False,
-				is_decoder=True,
-				use_triton_kernels=False, # the entire reason is to NOT use triton (because V100s hate it)
-				residual_in_fp32=True, # breaks for AMP inference
 			))
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
 				))
-		elif self.arch_type == "mmfreelm":
-			self.model = HGRNBitModel(HGRNBitConfig(
+		elif self.arch_type in ["mamba"]:
+			self.model = MambaModel(MambaConfig(
 				vocab_size=n_resp_tokens,
 				hidden_size=d_model,
-				max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
-				intermediate_size=d_model*4,
-				num_hidden_layers=n_layers,
-				num_heads=n_heads,
-				#hidden_act="gelu",
-				#is_encoder_decoder=False,
-				#is_decoder=True,
-				attn_mode=hf_attention,
-				#gradient_checkpointing=self.gradient_checkpointing,
+				expand=2,
+				num_hidden_layers=n_layers*2,
+				residual_in_fp32=True,
 			))
-
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
 				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
 					use_reentrant=False
@@ -794,7 +733,6 @@ class Base(nn.Module):
 
 		if hasattr( self.model, "embeddings" ):
 			del self.model.embeddings
-
 
 		if not split_classifiers:
 			self.classifier = nn.Linear(d_model, n_resp_tokens)
@@ -854,8 +792,8 @@ class Base(nn.Module):
 		# HF transformer derived model
 		if self.arch_type in ["llama", "mistral", "mixtral"]:
 			kwargs = dict(
-				#attention_mask=m,
 				inputs_embeds=x,
+				attention_mask=m,
 				past_key_values=state,
 				position_ids=position_ids,
 				use_cache=False, # not self.training,
@@ -901,46 +839,31 @@ class Base(nn.Module):
 			x, _ = self.model(x, incremental_state=state, token_embeddings=x, features_only=True)
 			if _ is not None and "l_aux" in _ and self.n_experts > 1:
 				aux_loss = torch.sum(torch.stack([ t for t in _["l_aux"] if t is not None])) * 0.001
-		elif self.arch_type == "retnet-hf":
-			first = state is None or len(state) == 0
-
-			kwargs = dict(
-				attention_mask=m,
-				inputs_embeds=x if first else x[:, -1, :].unsqueeze(1),
-				past_key_values=None if first else state,
-				use_cache=True,
-				forward_impl='parallel' if first else 'recurrent',
-				return_dict=True,
-			)
-
-			out = self.model(**kwargs)
-			x = out.last_hidden_state
-			if state is not None:
-				state = out.past_key_values
 		elif self.arch_type in ["mamba","mamba2"]:
-			x = self.model( hidden_states=x )
-		elif self.arch_type == "mamba2-hf":
-			first = state is None or len(state) == 0
-
 			kwargs = dict(
+				#attention_mask=m,
 				inputs_embeds=x,
-				cache_params=state,
+				#cache_params=state,
+				use_cache=False, # not self.training,
+				#position_ids=position_ids,
+				#output_attentions=output_attentions,
+				output_hidden_states=output_hidden_states,
 				return_dict=True,
 			)
 
-			out = self.model(**kwargs)
-			x = out.last_hidden_state
+			output = self.model(**kwargs)
+			x = output["last_hidden_state"]
+			
+			# to-do: figure out why KV caching doesn't work
+			#if not self.training:
 			if state is not None:
-				state = out.cache_params 
-		elif self.arch_type == "bitnet":
-			x = self.model(x)
-		elif self.arch_type == "mmfreelm":
-			x = self.model(
-				attention_mask=m,
-				inputs_embeds=x,
-			)
+				state = output["cache_params"]
 
-			x = x[0]
+			if output_attentions:
+				attentions = output["attentions"]
+			
+			if output_hidden_states:
+				hidden_states = output["hidden_states"]
 
 		# process it into a format that I like
 		if output_hidden_states:
@@ -1559,7 +1482,6 @@ class Base(nn.Module):
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		
 		x, mask = list_to_tensor(x_list)
-		m = mask.unsqueeze(dim=-1)
 
 		training = self.training
 		device = x.device
@@ -1584,8 +1506,10 @@ class Base(nn.Module):
 
 			# pad mask
 			shape[2] = 1
-			padding = torch.zeros(shape, dtype=x.dtype, device=x.device)
+			padding = torch.zeros(shape[:2], dtype=x.dtype, device=x.device)
 			mask = torch.cat([mask, padding], dim=1)
+		
+		m = mask.unsqueeze(dim=-1)
 
 		# needs to be done here as we still have our raw inputs
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None

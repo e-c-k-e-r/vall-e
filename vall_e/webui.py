@@ -99,8 +99,7 @@ def get_model_paths( paths=[Path("./training/"), Path("./models/"), Path("./data
 				continue
 			configs.append( sft )
 
-	if is_windows:
-		configs = [ str(p) for p in configs ]
+	configs = [ str(p) for p in configs ]
 
 	return configs
 

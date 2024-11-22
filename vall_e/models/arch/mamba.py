@@ -1,3 +1,11 @@
+
+from transformers.models.mamba.modeling_mamba import MambaModel
+from transformers.models.mamba2.modeling_mamba2 import Mamba2Model
+
+from transformers.models.mamba.configuration_mamba import MambaConfig
+from transformers.models.mamba2.configuration_mamba2 import Mamba2Config
+
+"""
 # https://github.com/state-spaces/mamba
 from torch.utils.checkpoint import checkpoint
 
@@ -30,3 +38,4 @@ def MambaMixelModel_forward(self, input_ids=None, hidden_states=None, inference_
 	return hidden_states
 
 MambaMixelModel.forward = MambaMixelModel_forward
+"""

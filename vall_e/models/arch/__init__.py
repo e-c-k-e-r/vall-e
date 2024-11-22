@@ -15,6 +15,7 @@ except Exception as e:
 	ERROR_ARCHES["retnet"] = e
 	pass
 
+"""
 try:
 	from .retnet_syncdoth.retnet_ts import RetNetDecoder as RetNetDecoder_TS, RetNetConfig as RetNetConfig_TS
 	AVAILABLE_ARCHES.append("retnet-ts")
@@ -28,6 +29,7 @@ try:
 except Exception as e:
 	ERROR_ARCHES["retnet-hf"] = e
 	pass
+"""
 
 try:
 	from .llama import LlamaModel, LlamaModel_Adapted, LlamaConfig, AVAILABLE_ATTENTIONS, LlamaAttention, LlamaAttention_Adapted, LlamaDecoderLayer, LlamaDecoderLayer_Adapted, LlamaForCausalLM
@@ -51,6 +53,15 @@ except Exception as e:
 	ERROR_ARCHES["mixtral"] = e
 
 try:
+	from .mamba import MambaModel, Mamba2Model, MambaConfig, Mamba2Config
+	AVAILABLE_ARCHES.append("mamba")
+	AVAILABLE_ARCHES.append("mamba2")
+except Exception as e:
+	ERROR_ARCHES["mamba"] = e
+	ERROR_ARCHES["mamba2"] = e
+
+"""
+try:
 	from .mamba import MambaMixelModel, MambaLMHeadModel, MambaConfig
 	AVAILABLE_ARCHES.append("mamba")
 	AVAILABLE_ARCHES.append("mamba2")
@@ -63,3 +74,4 @@ try:
 	AVAILABLE_ARCHES.append("mamba2-hf")
 except Exception as e:
 	ERROR_ARCHES["mamba2-hf"] = e
+"""
