@@ -435,6 +435,7 @@ class Base(nn.Module):
 		audio_embedding_mode = self.config.experimental.audio_embedding_mode if self.config is not None else ""
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
+		noncausal_masks = self.config.experimental.noncausal_masks if self.config is not None else False
 		
 		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else False
 		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
@@ -483,6 +484,11 @@ class Base(nn.Module):
 		self.inject_timestep_embedding = False # results in bad output
 		self.masking_ratio = masking_ratio
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
+		self.noncausal_masks = noncausal_masks
+
+		# use internal attention mechanism for now because I dont have a better way to handle mixed causal/noncausal masks for other attention backends
+		if noncausal_masks:
+			attention_backend = "default"
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
@@ -773,6 +779,7 @@ class Base(nn.Module):
 		self,
 		inputs,
 		mask = None,
+		is_causal = None,
 		position_ids = None,
 		
 		state = None,
@@ -800,6 +807,7 @@ class Base(nn.Module):
 				output_attentions=output_attentions,
 				output_hidden_states=output_hidden_states,
 				return_dict=True,
+				is_causal=is_causal,
 			)
 
 			if self.n_experts > 1 and self.training:
@@ -1514,11 +1522,16 @@ class Base(nn.Module):
 		# needs to be done here as we still have our raw inputs
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		classifier_levels = self.get_input( inputs, name="classifier_level" )
+		casual_levels = [ "AR:0:0", "stt", "len" ]
+
+		# right now limit to new versions because I need to retrain the model for noncausal masks...
+		is_causal = [ l in casual_levels for l in classifier_levels ] if self.noncausal_masks else None
 
 		output = self._forward(
 			inputs=x,
 			mask=mask,
 			state=state,
+			is_causal=is_causal,
 			position_ids=position_ids,
 			output_attentions = output_attentions,
 			output_hidden_states = output_hidden_states,

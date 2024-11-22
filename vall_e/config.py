@@ -265,6 +265,8 @@ class ModelExperimentalSettings:
 	masking_ratio: str | float = 0.8 # sets a masking ratio, "random" will randomly pick, "rand" will pick between [0.2, 0.8]
 	ignore_inputs_for_loss: bool = True # only calculate the loss on the outputs since thats what matters, as the inputs that do have loss calculated upon affects the loss for the entire sequence
 
+	noncausal_masks: bool = False # to correct an oversight with Llama always using causal masks......
+
 	# classifier-free guidance training settings
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
 	cfg_text_dropout_p: float = 0.0 # 0.0  # probability to drop out input audio prompt during training
