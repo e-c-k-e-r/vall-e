@@ -805,7 +805,10 @@ class Dataset(_Dataset):
 		self.task_symmap = self._get_task_symmap()
 
 		# grab IDs for bos, space, and eos for easy input creation later
-		self.empty_text = [ cfg.tokenizer._bos_token, cfg.tokenizer.get_vocab()[" "], cfg.tokenizer._eos_token ]
+		try:
+			self.empty_text = [ cfg.tokenizer._bos_token, cfg.tokenizer.get_vocab()[" "], cfg.tokenizer._eos_token ]
+		except Exception as e:
+			self.empty_text = [None, None, None]
 
 		# have it fetch at training time if any is invalid, because the tokenizer obj might not have it easily fetchable ahead of itme
 		# encoding before parallelizing things causes things to whine

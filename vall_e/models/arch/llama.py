@@ -109,6 +109,7 @@ try:
 except Exception as e:
 	_logger.warning(f"Error while querying for `flash_attn` support: {str(e)}")
 
+"""
 try:
 	from xformers.ops.fmha import memory_efficient_attention
 	from xformers.ops.fmha.attn_bias import LowerTriangularFromBottomRightMask, LowerTriangularMask
@@ -116,6 +117,7 @@ try:
 	AVAILABLE_ATTENTIONS.append("xformers")
 except Exception as e:
 	_logger.warning(f"Error while importing `xformers`: {str(e)}")
+"""
 
 # to-do: find a better way to query for if there's available kernels since these return true regardless
 if torch.backends.cuda.flash_sdp_enabled():

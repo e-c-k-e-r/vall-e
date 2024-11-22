@@ -697,7 +697,7 @@ class Trainer:
 	check_for_oom: bool = True # checks for OOMs thrown during forward/backwards
 	gc_mode: str | None = None # deprecated, but marks when to do GC
 
-	wandb: bool = True # use wandb, if available
+	wandb: bool = False # use wandb, if available
 
 	weight_dtype: str = "float16" # dtype to have the model under
 
