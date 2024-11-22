@@ -487,8 +487,10 @@ class Base(nn.Module):
 		self.noncausal_masks = noncausal_masks
 
 		# use internal attention mechanism for now because I dont have a better way to handle mixed causal/noncausal masks for other attention backends
+		"""
 		if noncausal_masks:
 			attention_backend = "default"
+		"""
 
 		self.text_emb = Embedding(n_text_tokens, d_model)
 		self.langs_emb = None
