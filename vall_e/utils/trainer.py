@@ -102,12 +102,18 @@ def _non_blocking_input():
 
 
 def _make_infinite_epochs(dl):
+	start = dl.dataset.index()
+	total = dl.dataset.batches()
+
 	while True:
 		if dl.dataset.index() == 0:
 			_logger.info("New epoch starts.")
-		#yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader())
-		# this number may jump from the dataloader sampling before the actual training step happens
-		yield from tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader(), initial=dl.dataset.index())
+
+		with tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader()) as pbar:
+			if start:
+				pbar.n = start
+				start = 0
+			yield from pbar
 
 
 @local_leader_only(default=None)

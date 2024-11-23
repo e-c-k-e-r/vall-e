@@ -23,6 +23,13 @@ AVAILABLE_ATTENTIONS = []
 LN_2 = 0.69314718056
 
 try:
+	from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+
+	AVAILABLE_ATTENTIONS.append("flex")
+except Exception as e:
+	_logger.warning(f"Error while querying for `flexattention` support: {str(e)}")
+
+try:
 	from transformers.utils import is_flash_attn_2_available
 
 	if is_flash_attn_2_available():

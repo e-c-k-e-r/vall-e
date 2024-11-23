@@ -1396,6 +1396,11 @@ class Dataset(_Dataset):
 
 	def index(self):
 		return (self.sampler.index() if self.sampler is not None else -1) // self.batch_size
+	
+	def batches(self):
+		if isinstance(self.sampler, BatchedOrderedSampler):
+			return len(self.sampler)
+		return len(self.sampler if self.sampler is not None else self) // self.batch_size
 
 	def __len__(self):
 		if self.sampler_type == "group":
