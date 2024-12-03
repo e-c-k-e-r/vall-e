@@ -334,6 +334,8 @@ A bulk of it pertains to modifying `LlamaAttention` and detecting available atte
   * `flash_attn`: uses the available `flash_attn` package (including `flash_attn==1.0.9` through a funny wrapper)
   * `flash_attn_v100`: uses [ZRayZzz/flash-attention-v100](https://github.com/ZRayZzz/flash-attention-v100/)'s Flash Attention for Volta (but doesn't work currently)
   * `fused_attn`: uses an implementation using `triton` (tested on my 7900XTX and V100s), but seems to introduce errors when used to train after a while
+  * `sageattn`: uses [SageAttention](https://github.com/thu-ml/SageAttention).
+    * training under this is untested, but dropout is not applied (yet).
   * `default`: uses the naive path for hte internal implementation (used for attention-debugging purposed)
 * `transformers` Llama\*Attention implementations:
   * `eager`: default `LlamaAttention`

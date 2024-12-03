@@ -23,6 +23,13 @@ AVAILABLE_ATTENTIONS = []
 LN_2 = 0.69314718056
 
 try:
+	from sageattention import sageattn
+	
+	AVAILABLE_ATTENTIONS.append("sageattn")
+except Exception as e:
+	_logger.warning(f"Error while querying for `sageattn` support: {str(e)}")
+
+try:
 	from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
 	AVAILABLE_ATTENTIONS.append("flex")
@@ -390,11 +397,15 @@ class LlamaAttention_Adapted(LlamaAttention):
 			key_states = key_states.contiguous()
 			value_states = value_states.contiguous()
 
-		# We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
-		# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
-		# is_causal = True if x_mask is None and q_len > 1 else False
-		
-		if mode in ["fused_attn"]:
+		if mode in ["sageattn"]:
+			attn_output = sageattn(
+				query_states,
+				key_states,
+				value_states,
+				tensor_layout="HND",
+				is_causal=is_causal
+			)
+		elif mode in ["fused_attn"]:
 			attn_output = fused_attn_func(
 				query_states,
 				key_states,
@@ -418,6 +429,9 @@ class LlamaAttention_Adapted(LlamaAttention):
 					f" {attn_output.size()}"
 				)
 		else:
+			# We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
+			# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
+			# is_causal = True if x_mask is None and q_len > 1 else False
 			is_causal = True if x_mask is None and q_len > 1 else False
 			with torch.nn.attention.sdpa_kernel(self.mode):
 				attn_output = torch.nn.functional.scaled_dot_product_attention(
