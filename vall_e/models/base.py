@@ -851,8 +851,8 @@ class Base(nn.Module):
 				aux_loss = torch.sum(torch.stack([ t for t in _["l_aux"] if t is not None])) * 0.001
 		elif self.arch_type in ["mamba","mamba2"]:
 			kwargs = dict(
-				#attention_mask=m,
 				inputs_embeds=x,
+				attention_mask=m,
 				#cache_params=state,
 				use_cache=False, # not self.training,
 				#position_ids=position_ids,
@@ -864,8 +864,6 @@ class Base(nn.Module):
 			output = self.model(**kwargs)
 			x = output["last_hidden_state"]
 			
-			# to-do: figure out why KV caching doesn't work
-			#if not self.training:
 			if state is not None:
 				state = output["cache_params"]
 

@@ -216,6 +216,15 @@ def main():
 
 		comparison_kwargs["disabled"]["amp"] = current_amp
 		comparison_kwargs["enabled"]["amp"] = other_amp
+	elif args.comparison == "modality":
+		comparison_kwargs["suffix"] = "modality"
+		comparison_kwargs["titles"] = [f"AR+NAR", f"NAR-len"]
+
+		comparison_kwargs["disabled"]["modality"] = "ar+nar"
+		comparison_kwargs["disabled"]["cfg_strength"] = 0.0
+
+		comparison_kwargs["enabled"]["modality"] = "nar-len"
+		comparison_kwargs["enabled"]["cfg_strength"] = 3.0
 	elif args.comparison == "cfg-strength":
 		current_cfg_strength = 3.0
 		other_cfg_strength = 0.0

@@ -42,10 +42,12 @@ However, at this point and time, the implementation is rather divorced from VALL
 * [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
-* [ ] speed up inferencing
+* [ ] speed up inferencing for the AR
   - KV caching both yields broken output and quadratically slow output, unless I'm doing something grossly wrong.
-    - A pure HF model is the only way to fix this, but converting the model to one is a bit of a chore.
   * [x] provide a pure NAR model that foregoes most of the inferencing slowdowns a regular AR+NAR model will provide.
+* [ ] HF-ify the model
+  - this might be easily possible by subjugating the tokenizer to handle all the embeddings / classifiers
+  - this will pave the way to use the model under an easy marriage of `llama.cpp` and `encodec.cpp`
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   * [ ] train the model to handle text => phoneme (without a hit to the rest of the model)
     * [ ] ...and phonemes => text
@@ -62,9 +64,26 @@ However, at this point and time, the implementation is rather divorced from VALL
   * mixing multiple speakers through summing input prompt embeddings
     * I do not expect this to work, but you never know...
 
+## "Postmortem"
+
+For the most part, the model is complete. With the `NAR-len` being crammed on, I'm satisifed with the performance-to-quality.
+
+However, while this solution boasts being lightweight, there are some caveats for its given size
+* its at capacity on what it *can* do without additional tasks to augment it further
+  * post-fixing it with additional layers glued on doesn't seem to offer very much work (12 => 16 layers)
+* wrangling it is a bit of a chore, as some voices work fine under the `AR` but not the `NAR-len`, and vice-versa
+  * some voices outright refuse to work without LoRA training
+  * some sampler settings works on some voices, but others need some tweaking
+* for short durations, it excels, but despite training on longer durations, stability is less guaranteed
+* subjugating an existing LLM architecture is a bit of a pain, as I would *love* to make full use of LLaMA niceties
+  * `hf`-ifying it is possible, but it'd be a chore to set up the tokenizer properly
+* it still seems like the phase of the moon matters with how it wants to cooperate
+  * some eval tests it seems fine, other times issues like word errors will crop up
+
+
 ## Notices and Citations
 
-Unless otherwise credited/noted in this repo or within the designated Python file, this repository is [licensed](LICENSE) under AGPLv3.
+Unless otherwise credited/noted in this repo or within the designated Python file, this repository is [licensed](/LICENSE) under AGPLv3.
 
 - [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.
 

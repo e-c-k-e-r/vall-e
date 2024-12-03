@@ -7,8 +7,13 @@ from transformers.models.mamba2.modeling_mamba2 import Mamba2Model
 from transformers.models.mamba2.configuration_mamba2 import Mamba2Config
 """
 
+"""
 from mamba2_torch.modeling.configuration_mamba2 import Mamba2Config
 from mamba2_torch.modeling.modeling_mamba2 import Mamba2Model
+"""
+
+from fla.models.mamba2.configuration_mamba2 import Mamba2Config
+from fla.models.mamba2.modeling_mamba2 import Mamba2Model
 
 """
 # https://github.com/state-spaces/mamba
