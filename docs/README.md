@@ -70,7 +70,7 @@ For the most part, the model is complete. With the `NAR-len` being crammed on, I
 
 However, while this solution boasts being lightweight, there are some caveats for its given size
 * its at capacity on what it *can* do without additional tasks to augment it further
-  * post-fixing it with additional layers glued on doesn't seem to offer very much work (12 => 16 layers)
+  * post-fixing it with additional layers glued on doesn't seem to offer very much improvement (12 => 16 layers)
 * wrangling it is a bit of a chore, as some voices work fine under the `AR` but not the `NAR-len`, and vice-versa
   * some voices outright refuse to work without LoRA training
   * some sampler settings works on some voices, but others need some tweaking
