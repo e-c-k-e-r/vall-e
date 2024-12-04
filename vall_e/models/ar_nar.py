@@ -265,6 +265,8 @@ class AR_NAR(Base):
 
 		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
 		
+		# force set CFG because too low / no CFG causes issues
+		cfg_strength = max( cfg_strength, 3.0 )
 
 		# if we're denoising from an existing sequence
 		if start_noise > 0.0 and resps_list is not None:
