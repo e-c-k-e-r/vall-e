@@ -96,6 +96,7 @@ It is ***crucial*** to:
   * without this, you ***will*** get stuttering and unaligned utterances. I do not know why this is such a big problem but I imagine this "interleaves" many different sequences between each step.
 * use unfiltered/unprocessed logit scores:
   * not that crucial, but helps stability.
+* use a CFG strength of at least 2
 
 It is not required to train a model from scratch to use this modality, as training from existing weights works just as well, if not better (as it can piggyback off the original model).
 * additional training is still required to help confidence issues and to condition the model to not fall apart for longer durations.
@@ -336,7 +337,7 @@ A bulk of it pertains to modifying `LlamaAttention` and detecting available atte
   * `fused_attn`: uses an implementation using `triton` (tested on my 7900XTX and V100s), but seems to introduce errors when used to train after a while
   * `sageattn`: uses [SageAttention](https://github.com/thu-ml/SageAttention).
     * training under this is untested, but dropout is not applied (yet).
-  * `default`: uses the naive path for hte internal implementation (used for attention-debugging purposed)
+  * `default`: uses the naive path for the internal implementation (used for attention-debugging purposed)
 * `transformers` Llama\*Attention implementations:
   * `eager`: default `LlamaAttention`
   * `sdpa`: integrated `LlamaSdpaAttention` attention model

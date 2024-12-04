@@ -79,6 +79,9 @@ However, while this solution boasts being lightweight, there are some caveats fo
   * `hf`-ifying it is possible, but it'd be a chore to set up the tokenizer properly
 * it still seems like the phase of the moon matters with how it wants to cooperate
   * some eval tests it seems fine, other times issues like word errors will crop up
+* the `NAR-len` requires CFGs > 2-ish to cooperate
+  * this isn't *so* much of an issue, but this can lead to user error, and CFG incurs an additional sampling step per step.
+  * guidance distillation would be nice, but distillation in general harms finetuning (assuming this just as likely harms it)
 
 
 ## Notices and Citations
