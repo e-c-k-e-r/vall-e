@@ -96,7 +96,7 @@ It is ***crucial*** to:
   * without this, you ***will*** get stuttering and unaligned utterances. I do not know why this is such a big problem but I imagine this "interleaves" many different sequences between each step.
 * use unfiltered/unprocessed logit scores:
   * not that crucial, but helps stability.
-* use a CFG strength of at least 2
+* use a CFG strength of at least 2 (or a prefix)
 
 It is not required to train a model from scratch to use this modality, as training from existing weights works just as well, if not better (as it can piggyback off the original model).
 * additional training is still required to help confidence issues and to condition the model to not fall apart for longer durations.

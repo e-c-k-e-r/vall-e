@@ -20,15 +20,14 @@ Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`
 
 Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install git+https://github.com/e-c-k-e-r/vall-e`.
 
-I've tested this repo under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
+This repo is tested under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
 ## Pre-Trained Model
 
-My pre-trained weights can be acquired from [here](https://huggingface.co/ecker/vall-e).
-
-A script to setup a proper environment and download the weights can be invoked with `./scripts/setup.sh`. This will automatically create a `venv`, and download the `ar+nar-llama-8` weights and config file to the right place.
-
-When inferencing, either through the web UI or CLI, if no model is passed, the default model will download automatically instead, and should automatically update.
+Pre-trained weights can be acquired from
+* [here](https://huggingface.co/ecker/vall-e) or automatically when either inferencing or running the web UI.
+* `./scripts/setup.sh`, a script to setup a proper environment and download the weights. This will also automatically create a `venv`.
+* when inferencing, either through the web UI or CLI, if no model is passed, the default model will download automatically instead, and should automatically update.
 
 ## Documentation
 

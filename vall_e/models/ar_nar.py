@@ -269,7 +269,14 @@ class AR_NAR(Base):
 		
 		# force set CFG because too low / no CFG causes issues
 		minimum_cfg_strength = sampling_kwargs.get("minimum_cfg_strength", 3.0)
+		original_cfg_strength = cfg_strength
 		cfg_strength = max( cfg_strength, minimum_cfg_strength )
+
+		prefix_context = sampling_kwargs.get("prefix_context", None)
+		# we can get away with just providing a list of resps to prefix later, and it will magically get removed anyways when masking and scoring
+		if prefix_context is not None:
+			text_list = [ torch.concat([prefix[:-1], text[1:]]) for prefix, text in zip( prefix_context[0], text_list ) ]
+			prefix_resps_list = [ resps if resps.dim() == 1 else resps[:, 0] for resps in prefix_context[1] ]
 
 		# if we're denoising from an existing sequence
 		if start_noise > 0.0 and resps_list is not None:
@@ -279,19 +286,6 @@ class AR_NAR(Base):
 			noise_p = math.cos( start_noise * math.pi * 0.5 )
 			# generate scoring mask (because the above mask will get masked off per the scores, so we do not need to mask beforehand)
 			scores = [ torch.tensor( [ 1.0 if random.random() < noise_p else 0.0 for _ in range( seq_len ) ], dtype=torch.float32, device=device ) for seq_len in len_list ]
-		# deduce that this is a prefix
-		elif resps_list is not None:
-			# number of remaining tokens
-			tokens_to_mask = [ l - resps.shape[0] for resps, l in zip( resps_list, len_list ) ]
-			# pad with masked tokens
-			resps_list = [ torch.concat([ resps if resps.dim() == 1 else resps[:, 0], torch.tensor( [ self.stop_token ] * l, dtype=resps.dtype, device=resps.device ) ]) for resps, l in zip( resps_list, tokens_to_mask ) ]
-			# update scores to ignore the prefix
-			scores = [ torch.concat( [ torch.zeros((resps.shape[0],), dtype=torch.int16, device=device), torch.ones((l), dtype=torch.int16, device=device) ] ) for resps, l in zip( resps_list, tokens_to_mask ) ]
-			# set start noise
-			# only the first because we do not have variable noising at the moment
-			# *technically* the prefix can be a fixed portion for all inputs in a batch, rather than a fixed length
-			# this will set the starting noise_p with the right ratio
-			start_noise = 2 / math.pi * math.acos(resps_list[0].shape[0] / len_list[0])
 		else:
 			# fill with masked tokens (even though they get masked anyways)
 			resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.stop_token for seq_len in len_list ]
@@ -302,7 +296,8 @@ class AR_NAR(Base):
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
 
-		for timestep in tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm):
+		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm)
+		for timestep in iterator:
 			# update previous list of tokens
 			prev_list = resps_list
 			# ramp down over time
@@ -327,11 +322,19 @@ class AR_NAR(Base):
 			if sampling_cfg < minimum_cfg_strength * 0.5:
 				sampling_cfg = 0
 
+			if prefix_context is not None:
+				input_resps_list = [ torch.concat( [ prefix, resps ] ) for prefix, resps in zip( prefix_resps_list, resps_list ) ]
+				# originally requested no CFG, safe to ignore if we have a prefix
+				if original_cfg_strength == 0:
+					sampling_cfg = 0
+			else:
+				input_resps_list = resps_list
+
 			# setup inputs
 			inputs = super().inputs(
 				text_list=text_list,
 				proms_list=proms_list,
-				resps_list=resps_list,
+				resps_list=input_resps_list,
 				lang_list=lang_list,
 				tone_list=tone_list,
 				time_list=time_list,
@@ -349,7 +352,7 @@ class AR_NAR(Base):
 				null_inputs = super().inputs(
 					text_list=null_text,
 					proms_list=null_prom,
-					resps_list=resps_list,
+					resps_list=input_resps_list,
 					lang_list=lang_list,
 					tone_list=tone_list,
 					time_list=time_list,
@@ -433,6 +436,17 @@ class AR_NAR(Base):
 		if max_levels == 0:
 			max_levels = self.n_max_levels - 1
 
+		# prefixed context provided
+		"""
+		prefix_context = sampling_kwargs.get("prefix_context", None)
+		if prefix_context is not None:
+			prefix_text, prefix_resps, _ = prefix_context
+			# to-do: check if we actually need to drop the middle "<eos><bos>"
+			text_list = [ torch.concat([prefix[:-1], text[1:]]) for prefix, text in zip( prefix_text, text_list ) ]
+			# feeding this into the NAR-len should automatically handle things
+			resps_list = [ resps for resps in prefix_resps ]
+		"""
+
 		"""
 		sampling_layer_skip_variables = {} if sampling_layer_skip else None
 
@@ -468,9 +482,11 @@ class AR_NAR(Base):
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
 
-		for n in trange( max_levels, desc="NAR", disable=disable_tqdm ):				
+		iterator = trange( max_levels, desc="NAR", disable=disable_tqdm )
+		for n in iterator:
 			level = prev_list[0].shape[-1]
 			if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
+				iterator.close()
 				break
 
 			if cfg.lora is not None:
@@ -578,7 +594,8 @@ class AR_NAR(Base):
 			task_list = [ "len" for _ in range(batch_size) ]
 			quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
 
-			for n in trange(10, desc="AR", disable=disable_tqdm):
+			iterator = trange(10, desc="AR", disable=disable_tqdm)
+			for n in iterator:
 				len_list = sequence_list
 
 				inputs = self.inputs(
@@ -613,6 +630,7 @@ class AR_NAR(Base):
 				# stop token found
 				stopped |= r == stop_token
 				if stopped.all().item():
+					iterator.close()
 					break
 
 			# convert tokens into int
@@ -660,11 +678,21 @@ class AR_NAR(Base):
 				sequence_list[i] = sequence_list[i][:, 0]
 				# start_slice[i] = sequence_list[i].shape[0]
 
+		# prefixed context provided
+		prefix_context = sampling_kwargs.get("prefix_context", None)
+		if prefix_context is not None:
+			prefix_text, prefix_resps, _ = prefix_context
+			# to-do: check if we actually need to drop the middle "<eos><bos>"
+			text_list = [ torch.concat([prefix[:-1], text[1:]]) for prefix, text in zip( prefix_text, text_list ) ]
+			# feeding this into the NAR-len should automatically handle things
+			sequence_list = [ resps if resps.dim() == 1 else resps[:, 0] for resps in prefix_resps ]
+
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
 
 		# get next in sequence
-		for n in trange(max_duration // max(1, self.causal_size), desc="AR", disable=disable_tqdm):
+		iterator = trange(max_duration // max(1, self.causal_size), desc="AR", disable=disable_tqdm)
+		for n in iterator:
 			# it would technically be faster to just append the new token's embedding to the inputs, but there's a VERY small performance gain from doing it, so it's not worth it
 			text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
 			resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
@@ -750,6 +778,7 @@ class AR_NAR(Base):
 			# stop token found
 			# stopped |= r == stop_token
 			if stopped.all().item():
+				iterator.close()
 				break
 
 		# to-do for layerskip / speculative sampling: rerun the last sequence again at max depth
@@ -785,7 +814,12 @@ class AR_NAR(Base):
 			refined_list = [ logit.argmax(dim=-1) for logit in logits ]
 			# to-do: compare scores
 			# set the "refined" list as the output
-			sequence_list = refined_list	
+			sequence_list = refined_list
+
+		# slice out prefix
+		if prefix_context is not None:
+			prefix_text, prefix_resps, prefix_lens = prefix_context
+			sequence_list = [ resps[l:] for resps, l in zip(sequence_list, prefix_lens) ]
 
 		return sequence_list
 
@@ -837,6 +871,8 @@ class AR_NAR(Base):
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
+				disable_tqdm=disable_tqdm,
+				use_lora=use_lora,
 			)
 
 		# is NAR
@@ -849,6 +885,8 @@ class AR_NAR(Base):
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
+				disable_tqdm=disable_tqdm,
+				use_lora=use_lora,
 				**sampling_kwargs,
 			)
 
@@ -861,6 +899,8 @@ class AR_NAR(Base):
 			lang_list=lang_list,
 			tone_list=tone_list,
 			len_list=len_list,
+			disable_tqdm=disable_tqdm,
+			use_lora=use_lora,
 			**sampling_kwargs,
 		)
 

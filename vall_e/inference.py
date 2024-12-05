@@ -19,7 +19,7 @@ from .config import cfg, Config
 from .models import get_models
 from .models.lora import enable_lora
 from .engines import load_engines, deepspeed_available
-from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize
+from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize, sentence_split
 from .models import download_model, DEFAULT_MODEL_PATH
 
 if deepspeed_available:
@@ -195,7 +195,6 @@ class TTS():
 		modality="auto",
 
 		input_prompt_length = 0,
-		load_from_artifact = False,
 
 		seed = None,
 		out_path=None,
@@ -203,7 +202,7 @@ class TTS():
 		use_lora=None,
 		**sampling_kwargs,
 	):
-		lines = text.split("\n")
+		lines = sentence_split(text, split_by=sampling_kwargs.get("split_text_by", "sentences"))
 
 		wavs = []
 		sr = None
@@ -253,6 +252,11 @@ class TTS():
 
 			return text_list[0]
 
+		# stuff for rolling context
+		prefix_context = None
+		prefix_contexts = []
+		context_history = sampling_kwargs.get("context_history", 0)
+
 		for line in lines:
 			if out_path is None:
 				output_dir = Path("./data/results/")
@@ -275,30 +279,14 @@ class TTS():
 					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
 
-					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # don't need more than that
+					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # "max_duration" is max tokens
 
 					# add an additional X seconds
 					len_list = [ int(l * duration_padding) for l in len_list ]
 
 					kwargs = {}
-					# nasty hardcode to load a reference file and have that as the input target
-					if load_from_artifact and load_from_artifact.exists():
-						artifact = np.load(load_from_artifact, allow_pickle=True)[()]
-
-						phns = torch.tensor( cfg.tokenizer.encode( artifact["metadata"]["phonemes"] ) ).to(dtype=torch.uint8, device=self.device)
-						resp = torch.from_numpy(artifact["codes"].astype(np.int16))[0, :, :].t().to(dtype=torch.int16, device=self.device)
-						len_list = [ resp.shape[0] ]
-
-						kwargs["resps_list"] = [ resp[:, 0] ]
-					# kludge experiment
-					elif nar_len_prefix_length > 0:
-						resps_list = model_nar(
-							text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
-							disable_tqdm=not tqdm,
-							use_lora=use_lora,
-							**(sampling_kwargs | {"max_duration": nar_len_prefix_length}),
-						)
-						kwargs["resps_list"] = [ resp if resp.dim() == 1 else resp[:, 0] for resp in resps_list ]
+					if prefix_context is not None:
+						kwargs["prefix_context"] = prefix_context
 
 					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list, task_list=["tts"],
 						disable_tqdm=not tqdm,
@@ -306,12 +294,17 @@ class TTS():
 						**(sampling_kwargs | kwargs),
 					)
 				elif model_ar is not None:
+					kwargs = {}
+					if prefix_context is not None:
+						kwargs["prefix_context"] = prefix_context
+
 					resps_list = model_ar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
 						disable_tqdm=not tqdm,
 						use_lora=use_lora,
-						**sampling_kwargs,
+						**(sampling_kwargs | kwargs),
 					)
+
 					resps_list = model_nar(
 						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list, task_list=["tts"],
 						disable_tqdm=not tqdm,
@@ -321,8 +314,25 @@ class TTS():
 				else:
 					raise Exception("!")
 
-			wav, sr = qnt.decode_to_file(resps_list[0], out_path, device=self.device)
+			# to-do: care about batching later
+			resps = resps_list[0]
+			
+			# store current context to use as the initial input for later
+			if context_history > 0:
+				# add to history
+				prefix_contexts.append(( phns, resps, resps.shape[0] ))
+				# then generate the prefix based on how much history to provide
+				prefix_context = (
+					[ torch.concat( [ x[0] for x in prefix_contexts[-context_history:] ] ) ],
+					[ torch.concat( [ x[1] for x in prefix_contexts[-context_history:] ] ) ],
+					[ sum([ x[2] for x in prefix_contexts[-context_history:] ]) ]
+				)
+
+			# write to file
+			wav, sr = qnt.decode_to_file(resps, out_path, device=self.device)
+			# add utterances
 			wavs.append(wav)
-		
+
+		# combine all utterances
 		return (torch.concat(wavs, dim=-1), sr)
 		

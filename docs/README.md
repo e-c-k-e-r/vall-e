@@ -46,6 +46,8 @@ However, at this point and time, the implementation is rather divorced from VALL
   - KV caching both yields broken output and quadratically slow output, unless I'm doing something grossly wrong.
   * [x] provide a pure NAR model that foregoes most of the inferencing slowdowns a regular AR+NAR model will provide.
 * [ ] HF-ify the model
+  * [x] write a weights converter
+  * [ ] implement a pure llama_HF implementation
   - this might be easily possible by subjugating the tokenizer to handle all the embeddings / classifiers
   - this will pave the way to use the model under an easy marriage of `llama.cpp` and `encodec.cpp`
 * [ ] replace the phonemizer with something that doesn't depend on espeak
@@ -55,7 +57,7 @@ However, at this point and time, the implementation is rather divorced from VALL
   - espeak is nice, but I can only really put my whole trust with phonemizing English.
   - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
 * [ ] smarter/clever inferencing, such as:
-  * [ ] "rolling" context, where the last generated sentence is the prefix for the next sentence.
+  * [x] "rolling" context, where the last generated sentence is the prefix for the next sentence.
 * [ ] explore exotic features like:
   * using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
   * interleaving by using summed embedding tokens:
@@ -79,9 +81,11 @@ However, while this solution boasts being lightweight, there are some caveats fo
   * `hf`-ifying it is possible, but it'd be a chore to set up the tokenizer properly
 * it still seems like the phase of the moon matters with how it wants to cooperate
   * some eval tests it seems fine, other times issues like word errors will crop up
-* the `NAR-len` requires CFGs > 2-ish to cooperate
+* the `NAR-len` requires CFGs > 2-ish to cooperate (or a prefix)
   * this isn't *so* much of an issue, but this can lead to user error, and CFG incurs an additional sampling step per step.
   * guidance distillation would be nice, but distillation in general harms finetuning (assuming this just as likely harms it)
+  * rolling context/prefix does solve this
+    * VALL-E Continuous (prefixing with the input prompt) could also fix this, but technically makes it one-shot and not zero-shot
 
 
 ## Notices and Citations

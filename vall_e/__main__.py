@@ -17,6 +17,9 @@ def main():
 	parser.add_argument("--modality", type=str, default="auto")
 	parser.add_argument("--out-path", type=Path, default=None)
 
+	parser.add_argument("--split-text-by", type=str, default="\n")
+	parser.add_argument("--context-history", type=int, default=0)
+
 	parser.add_argument("--yaml", type=Path, default=None)
 	parser.add_argument("--model", type=Path, default=None)
 	parser.add_argument("--lora", type=Path, default=None)
@@ -81,6 +84,8 @@ def main():
 	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
 
 	sampling_kwargs = dict(
+		split_text_by=args.split_text_by,
+		context_history=args.context_history,
 		max_steps=args.max_steps,
 		max_levels=args.max_levels,
 		max_duration=args.max_duration,

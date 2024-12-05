@@ -35,6 +35,34 @@ from tqdm.auto import tqdm
 
 _logger = logging.getLogger(__name__)
 
+# cringe
+try:
+	import nltk
+
+	if not Path(".nltk").exists():
+		nltk.download('punkt_tab', download_dir="./.nltk/")
+except Exception as e:
+	nltk = None
+	_logger.warning(f"Error while querying for NTLK: {str(e)}")
+
+def sentence_split( s, split_by="sentences", quote_placeholder="<QUOTE>" ):
+	if split_by is None:
+		return [s]
+
+	# NTLK is not available, fallback
+	if nltk is None:
+		split_by = "\n"
+
+	# split by delimiter instead
+	if split_by != "sentences":
+		return s.split(split_by)
+
+	# use NTLK to handle splitting by sentences, because I don't want to write my own parser to split by punctuation
+	# nltk does not split quotations all that nicely, so we coerce them into placeholders, then replace afterwards
+	s = s.replace('"', quote_placeholder)
+	sentences = nltk.sent_tokenize(s)
+	return [ sentence.replace(quote_placeholder, '"') for sentence in sentences ]
+
 @cache
 def get_random_prompts( validation=False, min_length=0, tokenized=False ):
 	duration_range = [ 5.5, 12.0 ] # to-do: pull from cfg.dataset.duration_range
