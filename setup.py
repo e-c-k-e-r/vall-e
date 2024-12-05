@@ -73,6 +73,8 @@ setup(
 
         # for the web UI
         "gradio",
+        "nltk",
+        "sageattention==1.0.6",
     ],
     extras_require = {
         "all": [
@@ -86,7 +88,6 @@ setup(
 
             # attention helpers
             "xformers",
-            "sageattention==1.0.6",
             # "flash-attn" --no-build-isolation # commented out right now because I want to query this for Volta freaks like me who can't use it
             
             # other audio backend that doesn't prove fruitful
