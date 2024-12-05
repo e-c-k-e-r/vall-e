@@ -38,7 +38,7 @@ _logger = logging.getLogger(__name__)
 # cringe
 try:
 	import nltk
-
+	nltk.data.path.append("./.nltk/")
 	if not Path(".nltk").exists():
 		nltk.download('punkt_tab', download_dir="./.nltk/")
 except Exception as e:
