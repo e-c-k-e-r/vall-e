@@ -38,7 +38,7 @@ from ..emb.qnt import encode_as_embedding
 from ..data import get_task_symmap
 
 # these seem more elegant than a dict
-Logits = namedtuple('Logits', ['logits', 'state', 'aux_loss', 'attentions', 'hidden_states', 'exited_layer'])
+Logits = namedtuple('Logits', ['logits', 'state', 'loss', 'attentions', 'hidden_states', 'exited_layer'])
 Sampled = namedtuple('Sampled', ['ids', 'logits', 'scores', 'entropy'])
 LossStats = namedtuple('LossStats', ['loss', 'stats'])
 
@@ -389,12 +389,13 @@ class Base(nn.Module):
 
 		l_padding: int = 0,
 
-		training = True, 
+		training = True,
 		attention = None,
 		config = None, 
 	):
 		super().__init__()
 		self.training = training
+		self.teaching = False
 		self.config = config
 
 		self.n_text_tokens = n_text_tokens
@@ -428,6 +429,11 @@ class Base(nn.Module):
 		if not attention:
 			attention = self.config.attention if self.config is not None else "auto"
 
+		# crunge
+		if self.config is not None and config.teacher:
+			self.teaching = True
+			self.training = False
+
 		attention_backend = attention
 		audio_embedding_sums = self.config.experimental.audio_embedding_sums if self.config is not None else False
 		split_classifiers = self.config.experimental.split_classifiers if self.config is not None else False
@@ -436,6 +442,7 @@ class Base(nn.Module):
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
 		noncausal_masks = self.config.experimental.noncausal_masks if self.config is not None else False
+		teacher_alpha = self.config.experimental.teacher_alpha if self.config is not None else 0.5
 		
 		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else False
 		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
@@ -485,6 +492,7 @@ class Base(nn.Module):
 		self.masking_ratio = masking_ratio
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 		self.noncausal_masks = noncausal_masks
+		self.teacher_alpha = teacher_alpha
 
 		# use internal attention mechanism for now because I dont have a better way to handle mixed causal/noncausal masks for other attention backends
 		"""
@@ -1265,6 +1273,8 @@ class Base(nn.Module):
 		logits,
 		
 		quant_levels: list[int] | None = None,
+		compute_hard_loss = True,
+		compute_acc = True,
 	):
 		loss = {}
 		stats = {}
@@ -1297,6 +1307,7 @@ class Base(nn.Module):
 			task_type = "tts"
 			dropout_mask = None
 			classifier_level = None
+			output_len = 0
 
 			for name, input in batch:
 				if name == "task":
@@ -1354,8 +1365,11 @@ class Base(nn.Module):
 				it += seq_len + 1 # +1 to incorporate the separator
 
 				# deduce if a name for a task is an input or output
-				if self.ignore_inputs_for_loss and name != task_outputs.get(task_type, name):
-					ignored = True
+				if name != task_outputs.get(task_type, name):
+					if self.ignore_inputs_for_loss:
+						ignored = True
+				else:
+					output_len = seq_len
 
 				if ignored:
 					# pruned
@@ -1378,20 +1392,20 @@ class Base(nn.Module):
 						logit = logit[..., :-l, :]
 						token = token[..., l:] # shift sequence to the right by one (or causal chunk size)
 
-					if f'{name}.nll' not in loss:
-						loss[f'{name}.nll'] = []
+					if compute_hard_loss:
+						nll = F.cross_entropy( logit, token.long(), ignore_index=self.ignore_index ) * loss_factor
+						if f'{name}.nll' not in loss:
+							loss[f'{name}.nll'] = []
+						loss[f'{name}.nll'].append( nll )
 					
-					if f'{name}.acc' not in stats:
-						stats[f'{name}.acc'] = []
-					
-					nll = F.cross_entropy( logit, token.long(), ignore_index=self.ignore_index ) * loss_factor
-					if self.metrics is not None:
-						metrics = self.metrics.calc_accuracy( [ logit ], [ token ], self.classifiers.indices([ classifier_level ]) )
-					else:
-						metrics = self.accuracy_metric( logit, token )
-
-					loss[f'{name}.nll'].append( nll )
-					stats[f'{name}.acc'].append( metrics )
+					if compute_acc:
+						if self.metrics is not None:
+							metrics = self.metrics.calc_accuracy( [ logit ], [ token ], self.classifiers.indices([ classifier_level ]) )
+						else:
+							metrics = self.accuracy_metric( logit, token )
+						if f'{name}.acc' not in stats:
+							stats[f'{name}.acc'] = []
+						stats[f'{name}.acc'].append( metrics )
 				# add to list
 				else:
 					target.append( token )
@@ -1407,21 +1421,21 @@ class Base(nn.Module):
 					logit = logit[..., :-l, :] # shift the target so that token n...
 					target = target[..., l:] # ...predicts token n + 1
 
-				nll = F.cross_entropy( logit, target, ignore_index=self.ignore_index )
+				if compute_hard_loss:
+					nll = F.cross_entropy( logit, target, ignore_index=self.ignore_index )
+					if 'nll' not in loss:
+						loss['nll'] = []
+					loss["nll"].append( nll )
 
-				if self.metrics is not None:
-					metrics = self.metrics.calc_accuracy( [ logit ], [ target ], self.classifiers.indices([ classifier_level ]) )
-				else:
-					metrics = self.accuracy_metric( logit, target )
+				if compute_acc:
+					if self.metrics is not None:
+						metrics = self.metrics.calc_accuracy( [ logit ], [ target ], self.classifiers.indices([ classifier_level ]) )
+					else:
+						metrics = self.accuracy_metric( logit, target )
 
-				if 'nll' not in loss:
-					loss['nll'] = []
-				
-				if 'acc' not in stats:
-					stats['acc'] = []
-
-				loss["nll"].append( nll )
-				stats["acc"].append( metrics )
+					if 'acc' not in stats:
+						stats['acc'] = []
+					stats["acc"].append( metrics )
 
 		# average
 		loss = { name: sum( loss[name] ) / len( loss[name] ) for name in loss.keys() }
@@ -1440,6 +1454,8 @@ class Base(nn.Module):
 
 		output_attentions: bool = False,
 		output_hidden_states: bool = False,
+
+		teacher = None,
 	):
 		# return early if it's "good" enough"
 		# lambda because we need to capture the classifier_levels and mask
@@ -1492,6 +1508,7 @@ class Base(nn.Module):
 		x, mask = list_to_tensor(x_list)
 
 		training = self.training
+		teaching = self.teaching
 		device = x.device
 		batch_size = len(x_list)
 
@@ -1566,8 +1583,14 @@ class Base(nn.Module):
 				hidden_states[i] = [ hi[:li] for hi, li in zip(hidden_states[i], map(len, x_list)) ]
 		
 		# compute loss if the target is given
-		if training:
-			loss, stats = self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels )
+		if not training:
+			loss = None
+			stats = None
+
+			self.loss = None
+			self.stats = None
+		else:
+			loss, stats = self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels, compute_hard_loss=training, compute_acc=training )
 
 			# compute it as an aux-loss
 			if self.layerskip:
@@ -1590,15 +1613,41 @@ class Base(nn.Module):
 				# to-do: instead make the cirriculum rely on samples processed instead of steps
 				self.training_steps += 1 # batch_size
 
+			# get soft targets from teacher
+			# it might be better to compute these once instead of per-engine, but realistically who is actually training multiple models
+			if teacher is not None:
+				with torch.no_grad():
+					teacher_output = teacher.forward_super(
+						inputs=inputs,
+						quant_levels=quant_levels,
+					)
+
+				soft_loss = [
+					F.kl_div( 
+						F.log_softmax( student, dim=-1 ).unsqueeze(0),
+						F.softmax( teacher, dim=-1 ).unsqueeze(0),
+						reduction='batchmean'
+					)
+					for student, teacher in zip( logits, teacher_output.logits )
+				]
+				soft_loss = torch.stack([*soft_loss]).sum() / batch_size
+
+				# mix if not nan
+				if not torch.isnan(soft_loss).any():
+					alpha = self.teacher_alpha
+					loss['kl'] = alpha * soft_loss
+					for k in loss.keys():
+						loss[k] *= (1.0 - alpha)
+
 			# include any additional losses (for example: MoE router)
-			if output.aux_loss is not None:
-				loss["aux_loss"] = output.aux_loss
+			if output.loss is not None:
+				loss["aux_loss"] = output.loss
 
 			self.loss = loss
 			self.stats = stats
 			
 		# rewrap, because we're modifying the logits here
-		return Logits(logits, output.state, output.aux_loss, output.attentions, hidden_states, exited_layer)
+		return Logits(logits, output.state, loss, output.attentions, hidden_states, exited_layer)
 
 	def sample(
 		self,

@@ -93,6 +93,10 @@ class Engine(DeepSpeedEngine):
 		return self.hyper_config.training
 
 	@property
+	def _teacher(self):
+		return self.hyper_config.teacher
+
+	@property
 	def global_step(self):
 		return self.global_steps
 

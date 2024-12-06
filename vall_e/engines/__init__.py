@@ -46,7 +46,7 @@ def load_engines(training=True, **model_kwargs):
 		stats = None
 		lora = None
 
-		inferencing = cfg.mode == "inferencing" or not model.config.training or not training
+		inferencing = cfg.mode == "inferencing" or not model.config.training or not training or model.config.teacher
 		backend = cfg.inference.backend if inferencing else cfg.trainer.backend
 		loads_state_dict = cfg.trainer.load_state_dict # or inferencing
 
@@ -326,6 +326,12 @@ def load_engines(training=True, **model_kwargs):
 		# split models over requested devices
 		if cfg.optimizations.model_offloading:
 			engine.module = ml.offload_model( engine.module, policy=cfg.optimizations.model_offloading )
+
+		# set to train/eval
+		if engine.hyper_config.training:
+			engine.module.train()
+		else:
+			engine.module.eval()
 
 		# setup wandb
 		if engine._training and cfg.trainer.wandb and wandb is not None:

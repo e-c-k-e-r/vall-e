@@ -115,7 +115,8 @@ class BaseConfig:
 			raise Exception(f'Model path does not exist: {model_path}')
 
 		# load state dict and copy its stored model config
-		model_state_dict = [ torch_load( model_path )["config"] | { "path": model_path, "attention": "auto" } ] if model_path and model_path.exists() else []
+		model_kwargs = { "attention": "auto", "training": False, "teacher": False }
+		model_state_dict = [ torch_load( model_path )["config"] | { "path": model_path } | model_kwargs ] if model_path and model_path.exists() else []
 		lora_state_dict = [ torch_load( lora_path )["config"] | { "path": lora_path } ] if lora_path and lora_path.exists() else []
 
 		state = { "models": model_state_dict, "loras": lora_state_dict, "trainer": { "load_state_dict": True } }
@@ -279,6 +280,8 @@ class ModelExperimentalSettings:
 	layerskip_p_max: float = 0.1 # maximum probabilty to dropout the last layer, used for calculating layer dropout probabilities
 	layerskip_e_scale: float = 0.2 # early-exit loss scalar value
 
+	teacher_alpha: float = 0.5 # mixing factor when performing knowledge distillation
+
 # I really need to clean this up
 @dataclass()
 class Model:
@@ -291,7 +294,9 @@ class Model:
 	tones: int = 1 # defined tones (unsued)
 	experts: int = 1 # for mixtral / retnet-ts
 	arch_type: str = "llama" # underling LM architecture used
-	training: bool = True # I really need to attend to this
+	training: bool = False # I really need to attend to this
+	teacher: bool = False # if this is to be treated as a teacher
+
 	frozen_params: list[str] = field(default_factory=lambda: []) # frozen parameters that are not updated when training
 	attention: str = "auto" # for llama arch_types: attention used
 	dropout: float = 0.1 # adjustable dropout value
@@ -1005,6 +1010,11 @@ class Config(BaseConfig):
 		for model in self.models:
 			if isinstance( model.experimental, dict ):
 				model.experimental = ModelExperimentalSettings(**model.experimental)
+
+			if model.teacher:
+				model.training = False
+			if model.training:
+				model.teacher = False
 
 		if self.hyperparameters.scheduler_type and not self.hyperparameters.scheduler:
 			self.hyperparameters.scheduler = self.hyperparameters.scheduler_type

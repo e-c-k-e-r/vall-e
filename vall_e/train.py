@@ -26,7 +26,7 @@ _logger = logging.getLogger(__name__)
 
 mel_stft_loss = auraloss.freq.MelSTFTLoss(cfg.sample_rate, device="cpu")
 
-def train_feeder(engine, batch):
+def train_feeder(engine, batch, teacher=None):
 	with torch.autocast("cuda", dtype=cfg.trainer.dtype, enabled=cfg.trainer.amp):
 		batch_size = len(batch["text"])
 		engine.current_batch_size = batch_size
@@ -40,6 +40,7 @@ def train_feeder(engine, batch):
 			task_list=batch["task"],
 
 			training=True,
+			teacher=teacher,
 		)
 
 		losses = engine.gather_attribute("loss")

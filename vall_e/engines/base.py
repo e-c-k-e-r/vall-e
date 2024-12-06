@@ -105,6 +105,12 @@ class Engine():
 		return self.hyper_config.training
 
 	@property
+	def _teacher(self):
+		if not hasattr(self, "hyper_config"):
+			return False
+		return self.hyper_config.teacher
+
+	@property
 	def global_step(self):
 		return self.global_steps
 
@@ -352,6 +358,9 @@ class Engines(dict[str, Engine]):
 				lora, module = lora_get_state_dict( module, split = True )
 				save_path = cfg.ckpt_dir / cfg.lora.full_name / f"{cfg.weights_name}.{format}"
 
+			config_dict = dict(**config.__dict__)
+			config_dict |= {"experimental": config.experimental.__dict__}
+
 			state_dict = {
 				'module': module,
 				'lora': lora,
@@ -362,7 +371,7 @@ class Engines(dict[str, Engine]):
 					"tokens_processed": engine.tokens_processed,
 				},
 				"userdata": userdata,
-				"config": config.__dict__ | {"experimental": config.experimental.__dict__} # i hate implicit aliasing rules
+				"config": config_dict
 			}
 
 			if lora is None:
@@ -478,8 +487,17 @@ class Engines(dict[str, Engine]):
 		if cfg.trainer.gc_mode == 'step':
 			do_gc()
 
+		# preiterate to get teacher
+		teacher = None
 		for name, engine in self.items():
-			if not engine._training:
+			if not engine._teacher:
+				continue
+			teacher = engine.module
+			break
+
+		for name, engine in self.items():
+			# only models that we're training
+			if not engine._training or engine._teacher:
 				continue
 
 			device = engine.device
@@ -493,10 +511,10 @@ class Engines(dict[str, Engine]):
 			n_ooms = torch.zeros([], device=device)
 
 			if not cfg.trainer.check_for_oom:
-				res = feeder( engine=engine, batch=batch )
+				res = feeder( engine=engine, batch=batch, teacher=teacher )
 			else:
 				try:
-					res = feeder( engine=engine, batch=batch )
+					res = feeder( engine=engine, batch=batch, teacher=teacher )
 				except RuntimeError as e:
 					_logger.error(f"Forward: {str(e)}")
 

@@ -32,6 +32,10 @@ from ..samplers import cfg_logits
 text_task = [ "stt" ]
 
 class AR_NAR(Base):
+	# yikes
+	def forward_super(self, *args, **kwargs):
+		return super().forward(*args, **kwargs)
+
 	# parse inputs for training
 	# a lot of this could be delegated back to the dataloader, but it's just easier to keep the task of the dataloader to provide sufficient data, and the model to process the data for training
 	def forward_train(
@@ -44,6 +48,8 @@ class AR_NAR(Base):
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
+
+		teacher = None,
 	):
 		# deduce batch_size
 		if text_list is not None:
@@ -198,6 +204,7 @@ class AR_NAR(Base):
 		return super().forward(
 			inputs=inputs,
 			quant_levels=quant_levels,
+			teacher=teacher,
 		)
 
 	def forward_nar_masked(
@@ -834,7 +841,8 @@ class AR_NAR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 
-		training: bool | int | None = None,
+		training: bool | None = None,
+		teacher = None,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -871,8 +879,8 @@ class AR_NAR(Base):
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
-				disable_tqdm=disable_tqdm,
-				use_lora=use_lora,
+
+				teacher=teacher,
 			)
 
 		# is NAR
