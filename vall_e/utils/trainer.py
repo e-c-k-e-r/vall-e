@@ -143,7 +143,7 @@ def train(
 	# validate if there's at least one model to train
 	found = False
 	for name, engine in engines.items():
-		if engine.training:
+		if engine._training:
 			found = True
 			break
 	if not found:

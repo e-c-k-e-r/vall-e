@@ -280,9 +280,6 @@ class ModelExperimentalSettings:
 	layerskip_p_max: float = 0.1 # maximum probabilty to dropout the last layer, used for calculating layer dropout probabilities
 	layerskip_e_scale: float = 0.2 # early-exit loss scalar value
 
-	teacher_alpha: float = 0.5 # mixing factor when performing knowledge distillation
-	teacher_temperature: float = 1.0
-
 # I really need to clean this up
 @dataclass()
 class Model:
@@ -454,7 +451,7 @@ class LoRA:
 		if not self.rvq_levels:
 			return True
 		return level in self.rvq_levels
-	
+
 @dataclass()
 class Hyperparameters:
 	batch_size: int = 8 # number of samples per training batch
@@ -476,6 +473,10 @@ class Hyperparameters:
 	
 	torch_optimizer: bool = False # if the requested optimizer is torch-derived rather than deepspeed supplied
 	torch_scheduler: bool = False # if the requested scheduler is torch-derived rather than deepspeed-supplied
+
+	teacher_alpha: float = 0.5 # mixing factor when performing knowledge distillation
+	teacher_temperature: float = 1.0
+	teacher_loss_fn: str = "kl" # kl | mse
 	
 @dataclass()
 class Evaluation:

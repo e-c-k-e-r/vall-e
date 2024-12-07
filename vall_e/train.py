@@ -31,7 +31,7 @@ def train_feeder(engine, batch, teacher=None):
 		batch_size = len(batch["text"])
 		engine.current_batch_size = batch_size
 
-		engine(
+		output = engine(
 			text_list=batch["text"],
 			proms_list=batch["proms"],
 			resps_list=batch["resps"],
@@ -40,8 +40,74 @@ def train_feeder(engine, batch, teacher=None):
 			task_list=batch["task"],
 
 			training=True,
-			teacher=teacher,
 		)
+
+		# get soft targets from teacher
+		if teacher is not None:
+			# extract inputs forwarded to model
+			inputs = output.inputs
+
+			# grab the teacher's logits
+			with torch.no_grad():
+				teacher_output = teacher.forward_super(
+					inputs=inputs,
+				)
+
+			# KD hyperparameters
+			T = cfg.hyperparameters.teacher_temperature
+			A = cfg.hyperparameters.teacher_alpha
+			L = cfg.hyperparameters.teacher_loss_fn
+
+			# I don't know what to call the last one
+			if L not in ["kl", "mse"]:
+				L = "kd"
+
+			# determine the output length for each batch (because blah blah some embeddings don't map to a discrete token anyways)
+			# we could recreate the target sequence with the ignore indices put in, but that's agony
+			if not engine.module.ignore_inputs_for_loss:
+				student_probs = [ F.log_softmax( student / T, dim=-1 ) for student in output.logits ]
+				teacher_probs = [ F.softmax( teacher / T, dim=-1 ) for teacher in teacher_output.logits ]
+			else:
+				task_outputs = {
+					"tts": "resp",
+					"stt": "text",
+					"len": "len",
+				}
+				output_lens = [ 0 for _ in range(batch_size) ]
+				for batch_index, _batch in enumerate(inputs):
+					task_type = "tts"
+					for name, input in _batch:
+						if name == "task":
+							task_type = input
+
+					for name, input in _batch:
+						if name == task_outputs.get(task_type, name):
+							output_lens[batch_index] = input.shape[0]
+
+				# create probability distributions (literature says to have the students already log'd but not the teacher)
+				student_probs = [ F.log_softmax( student[-l:] / T, dim=-1 ) for student, l in zip( output.logits, output_lens ) ]
+				teacher_probs = [ F.softmax( teacher[-l:] / T, dim=-1 ) for teacher, l in zip( teacher_output.logits, output_lens ) ]
+
+			# filter out logits that are / would inf
+			# this causes problems when computing the loss if there's any inherently never-ever probabilities (for example, NAR RVQ-0 demasking for the stop token, because I did not clip it from the classifier)
+			for batch_index in range( batch_size ):
+				mask_a = student_probs[batch_index] == -float("inf") # log(0) = -inf
+				mask_b = teacher_probs[batch_index] == 0.0 # this gets log'd, eventually creating -inf
+
+				mask = mask_a | mask_b
+				student_probs[batch_index] = torch.masked_select( student_probs[batch_index], ~mask )
+				teacher_probs[batch_index] = torch.masked_select( teacher_probs[batch_index], ~mask )
+
+			if L == "kl":
+				soft_losses = [ F.kl_div( student, teacher, reduction='sum' ) for student, teacher in zip( student_probs, teacher_probs ) ]
+			elif L == "mse":
+				soft_losses = [ F.mse_loss( student, teacher ) for student, teacher in zip( student_probs, teacher_probs ) ]
+			else:
+				soft_losses = [ torch.sum(teacher * (teacher.log() - student)) for student, teacher in zip( student_probs, teacher_probs ) ]
+
+			for k in engine.module.loss.keys():
+				engine.module.loss[k] *= (1.0 - A)
+			engine.module.loss[L] = torch.stack([*soft_losses]).sum() * A * (T ** 2) / batch_size
 
 		losses = engine.gather_attribute("loss")
 		stat = engine.gather_attribute("stats")

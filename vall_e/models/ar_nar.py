@@ -48,8 +48,6 @@ class AR_NAR(Base):
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
-
-		teacher = None,
 	):
 		# deduce batch_size
 		if text_list is not None:
@@ -204,7 +202,6 @@ class AR_NAR(Base):
 		return super().forward(
 			inputs=inputs,
 			quant_levels=quant_levels,
-			teacher=teacher,
 		)
 
 	def forward_nar_masked(
@@ -842,7 +839,6 @@ class AR_NAR(Base):
 		len_list: list[Tensor] | None = None,
 
 		training: bool | None = None,
-		teacher = None,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -879,8 +875,6 @@ class AR_NAR(Base):
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
-
-				teacher=teacher,
 			)
 
 		# is NAR
