@@ -58,16 +58,12 @@ def train_feeder(engine, batch, teacher=None):
 			A = cfg.hyperparameters.teacher_alpha
 			L = cfg.hyperparameters.teacher_loss_fn
 
-			# I don't know what to call the last one
-			if L not in ["kl", "mse"]:
-				L = "kl"
-
 			# determine the output length for each batch (because blah blah some embeddings don't map to a discrete token anyways)
 			# we could recreate the target sequence with the ignore indices put in, but that's agony
 			student_logits = [ logit / T for logit in output.logits ]
 			teacher_logits = [ logit / T for logit in teacher_output.logits ]
 
-			if engine.module.ignore_inputs_for_loss or True:
+			if engine.module.ignore_inputs_for_loss:
 				task_outputs = {
 					"tts": "resp",
 					"stt": "text",
@@ -88,38 +84,17 @@ def train_feeder(engine, batch, teacher=None):
 				student_logits = [ logit[-l:] for logit, l in zip( student_logits, output_lens ) ]
 				teacher_logits = [ logit[-l:] for logit, l in zip( teacher_logits, output_lens ) ]
 
-			# split even further because tensor shapes may change
-			# losses can be done per-token anyways so it's fine
-			student_logits = [ [ l for l in logit ] for logit in student_logits ]
-			teacher_logits = [ [ l for l in logit ] for logit in teacher_logits ]
-
-			# filter out logits that are / would inf
-			# this causes problems when computing the loss if there's any inherently never-ever probabilities (for example, NAR RVQ-0 demasking for the stop token, because I did not clip it from the classifier)
-			for batch_index in range( batch_size ):
-				for token_index in range( len( student_logits[batch_index] ) ):
-					filter = -float("inf") # for some unknown reason -inf is poisoning the logits
-					mask_a = student_logits[batch_index][token_index] == filter
-					mask_b = teacher_logits[batch_index][token_index] == filter
-					# remove them from both distributions to keep things synced
-					mask = mask_a | mask_b
-
-					student_logits[batch_index][token_index] = torch.masked_select( student_logits[batch_index][token_index], ~mask )
-					teacher_logits[batch_index][token_index] = torch.masked_select( teacher_logits[batch_index][token_index], ~mask )
-
-			# kl-divergence operates on probability distributions
-			# teacher doesn't need to be in logspace but it makes things easier to do so and just pass log_target=True
 			if L == "kl":
-				student_probs = [ [ F.log_softmax( l, dim=-1 ) for l in logit ] for logit in student_logits ]
-				teacher_probs = [ [ F.log_softmax( l, dim=-1 ) for l in logit ] for logit in teacher_logits ]
+				student_probs = [ F.log_softmax( logit, dim=-1 ) for logit in student_logits ]
+				teacher_probs = [ F.log_softmax( logit, dim=-1 ) for logit in teacher_logits ]
 
-				soft_losses = [ sum([ F.kl_div( s, t, reduction='sum', log_target=True ) for s, t in zip( student, teacher ) ]) / len(student) for student, teacher in zip( student_probs, teacher_probs ) ]
-			# mse shouldn't operate on probability distributions
-			elif L == "mse":
-				soft_losses = [ sum([ F.mse_loss( s, t ) for s, t in zip(student, teacher) ]) / len(student) for student, teacher in zip( student_logits, teacher_logits ) ]
+				soft_losses = [ F.kl_div( student, teacher, reduction='sum', log_target=True ) for student, teacher in zip( student_probs, teacher_probs ) ]
+			elif L == "mse":				
+				soft_losses = [ F.mse_loss( student, teacher ) for student, teacher in zip( student_logits, teacher_logits ) ]
 
 			for k in engine.module.loss.keys():
 				engine.module.loss[k] *= (1.0 - A)
-			engine.module.loss[L] = torch.stack([*soft_losses]).sum() * A * (T ** 2) / batch_size
+			engine.module.loss[L] = torch.stack(soft_losses).sum() * A * (T ** 2) / batch_size
 
 		losses = engine.gather_attribute("loss")
 		stat = engine.gather_attribute("stats")

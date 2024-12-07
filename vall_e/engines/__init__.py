@@ -205,6 +205,16 @@ def load_engines(training=True, **model_kwargs):
 					("classifiers.proj.0.weight" if model.config.experimental.split_classifiers else 'classifier.weight', model.config.audio_tokens + uses_stop_token ),
 					("classifiers.proj.0.bias" if model.config.experimental.split_classifiers else 'classifier.bias', model.config.audio_tokens + uses_stop_token ),
 				]
+
+				# correcting an oversight
+				if model.config.experimental.split_classifiers and "len" in model.capabilities:
+					len_idx, nar_0_idx = model.classifiers.indices(["len", "NAR:0:0"])
+					keys.append((f"classifiers.proj.{len_idx}.weight", 11))
+					keys.append((f"classifiers.proj.{len_idx}.bias", 11))
+
+					keys.append((f"classifiers.proj.{nar_0_idx}.weight", 1024))
+					keys.append((f"classifiers.proj.{nar_0_idx}.bias", 1024))
+
 				for k, tokens in keys:
 					if k not in state:
 						continue

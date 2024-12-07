@@ -265,7 +265,7 @@ class Classifiers(nn.Module):
 			return names
 		return [ self.names.index(name) for name in names ]
 
-	def forward(self, xi: Tensor, levels: list[int] | None = None, names: list[str] | None = None ) -> Tensor:
+	def forward(self, xi: Tensor, levels: list[int] | None = None, names: list[str] | None = None, stack = False ) -> Tensor:
 		dtype = xi.dtype
 		device = xi.device
 
@@ -278,8 +278,12 @@ class Classifiers(nn.Module):
 			levels = [ self.names.index(name) for name in names ]
 
 		xi = [ self.proj[l]( x ) for x, l in zip(xi, levels) ]
+		if not stack:
+			return xi
+
 		# pad if needed
 		# to-do: validate that this causes ZERO issues
+		# addendum: this does cause problems
 		max_size = max([ x.shape[-1] for x in xi ])
 		xi = [
 			#x if l == 0 else
@@ -460,15 +464,18 @@ class Base(nn.Module):
 			n_resp_tokens = n_audio_tokens + 1
 			l_tokens = [n_resp_tokens] * self.n_resp_levels
 			resp_l_names = [f'AR:{i}:{i}' for i in range( self.n_resp_levels )]
+			classifier_l_tokens = [n_resp_tokens] * self.n_resp_levels
 		# NAR-len model
 		elif "len" in self.capabilities:
 			# +1 to include the stop or mask token
 			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
 			if "ar" in self.capabilities:
 				l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
+				classifier_l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens - 1]
 				resp_l_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )] + ['NAR:0:0']
 			else:
 				l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+				classifier_l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 				resp_l_names = ['NAR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
 		# AR+NAR model
 		else:
@@ -476,12 +483,13 @@ class Base(nn.Module):
 			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
 			l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 			resp_l_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
+			classifier_l_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 
-		classifier_l_tokens = l_tokens + [ n_text_tokens ]
+		classifier_l_tokens += [ n_text_tokens ]
 		classifier_l_names = resp_l_names + [ "stt" ]
 
 		if "len" in self.capabilities:
-			classifier_l_tokens += [ n_text_tokens ]
+			classifier_l_tokens += [ 11 ]
 			classifier_l_names += ["len"]
 
 		self.unified_position_ids = unified_position_ids
@@ -1577,6 +1585,15 @@ class Base(nn.Module):
 		if hidden_states is not None:
 			for i, state in enumerate( hidden_states ):
 				hidden_states[i] = [ hi[:li] for hi, li in zip(hidden_states[i], map(len, x_list)) ]
+
+		# corrections
+		"""
+		for batch_index, classifier_level in enumerate( classifier_levels ):
+			if classifier_level == "len" and logits[batch_index].shape[1] > 11:
+				logits[batch_index] = logits[batch_index][:,:11]
+			elif classifier_level == "NAR:0:0" and logits[batch_index].shape[1] > 1024:
+				logits[batch_index] = logits[batch_index][:,:1024]
+		"""
 		
 		# compute loss if the target is given
 		if not training:
