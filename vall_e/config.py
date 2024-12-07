@@ -698,7 +698,7 @@ class Trainer:
 	strict_loading: bool = False # sets strict_loading=True when loading the state dict
 	load_module_only: bool = False # 
 	restart_step_count: bool = False # clears the training stats when loading a checkpoint
-	resize_modules: bool = False # automatically resizes 
+	resize_modules: bool = True # automatically resizes 
 
 	activation_checkpointing: bool | None = None # deprecated, should technically be used for only on activations and not the entire gradients, but HF only has gradient checkpointing
 	gradient_checkpointing: bool = True # enables gradient checkpointing to save VRAM at the cost of slightly reduced performance when training
