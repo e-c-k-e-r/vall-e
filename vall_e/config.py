@@ -281,6 +281,7 @@ class ModelExperimentalSettings:
 	layerskip_e_scale: float = 0.2 # early-exit loss scalar value
 
 	teacher_alpha: float = 0.5 # mixing factor when performing knowledge distillation
+	teacher_temperature: float = 1.0
 
 # I really need to clean this up
 @dataclass()

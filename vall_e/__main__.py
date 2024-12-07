@@ -12,6 +12,7 @@ def main():
 	parser = argparse.ArgumentParser("VALL-E TTS")
 	parser.add_argument("text")
 	parser.add_argument("references", type=path_list, default=None)
+	parser.add_argument("--text-language", type=str, default=None)
 	parser.add_argument("--language", type=str, default="en")
 	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--modality", type=str, default="auto")
@@ -114,6 +115,7 @@ def main():
 	output = tts.inference(
 		text=args.text,
 		references=args.references,
+		text_language=args.text_language,
 		language=args.language,
 		task=args.task,
 		modality=args.modality,

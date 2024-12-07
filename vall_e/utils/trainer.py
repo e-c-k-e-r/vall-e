@@ -104,6 +104,7 @@ def _non_blocking_input():
 def _make_infinite_epochs(dl):
 	start = dl.dataset.index()
 	total = dl.dataset.batches()
+	manual_update = False
 
 	while True:
 		if dl.dataset.index() == 0:
@@ -113,6 +114,10 @@ def _make_infinite_epochs(dl):
 			if start:
 				pbar.n = start
 				start = 0
+				manual_update = True
+			# for some reason this is required
+			if manual_update:
+				pbar.n += 1
 			yield from pbar
 
 

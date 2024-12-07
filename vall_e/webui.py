@@ -204,6 +204,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--modality", type=str, default=kwargs["modality"])
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
+	parser.add_argument("--text-language", type=str, default=kwargs["text-language"])
 	parser.add_argument("--split-text-by", type=str, default=kwargs["split-text-by"])
 	parser.add_argument("--context-history", type=int, default=kwargs["context-history"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
@@ -300,6 +301,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		wav, sr = tts.inference(
 			text=args.text,
 			language=args.language,
+			text_language=args.text_language,
 			task=args.task,
 			modality=args.modality.lower(),
 			references=args.references.split(";") if args.references is not None else [],
@@ -445,7 +447,8 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["cfg-strength"] = gr.Slider(value=1.0, minimum=0.0, maximum=14.0, step=0.05, label="CFG Strength", info="Classifier Free Guidance scale (AR needs 1, NAR-len needs 3).")
 							layout["inference_tts"]["inputs"]["cfg-rescale"] = gr.Slider(value=0.75, minimum=0.0, maximum=1.0, step=0.05, label="CFG Rescale (Phi)", info="Factor when rescaling for Classifier Free Guidance (0 to disable).")
-							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language", value="en")
+							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language (Output)", value="en", info="Target language/accent to output.")
+							layout["inference_tts"]["inputs"]["text-language"] = gr.Dropdown(choices=get_languages(), label="Language (Text)", value="en", info="Language the input text is in.")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["split-text-by"] = gr.Dropdown(choices=["sentences", "lines"], label="Text Delimiter", info="Splits the text into pieces.", value="sentences")
 							layout["inference_tts"]["inputs"]["context-history"] = gr.Slider(value=0, minimum=0, maximum=4, step=1, label="(Rolling) Context History", info="How many prior lines to serve as the context/prefix (0 to disable).")

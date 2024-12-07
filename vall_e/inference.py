@@ -190,6 +190,7 @@ class TTS():
 		self,
 		text,
 		references,
+		text_language=None,
 		language="en",
 		task="tts",
 		modality="auto",
@@ -202,6 +203,8 @@ class TTS():
 		use_lora=None,
 		**sampling_kwargs,
 	):
+		if not text_language:
+			text_language = language
 		lines = sentence_split(text, split_by=sampling_kwargs.get("split_text_by", "sentences"))
 
 		wavs = []
@@ -265,7 +268,7 @@ class TTS():
 				out_path = output_dir / f"{time.time()}.wav"
 
 			prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
-			phns = self.encode_text( line, language=language )
+			phns = self.encode_text( line, language=text_language )
 			lang = self.encode_lang( language )
 
 			prom = to_device(prom, device=self.device, dtype=torch.int16)
