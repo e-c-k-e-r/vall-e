@@ -476,7 +476,7 @@ class Hyperparameters:
 
 	teacher_alpha: float = 0.5 # mixing factor when performing knowledge distillation
 	teacher_temperature: float = 1.0
-	teacher_loss_fn: str = "kl" # kl | mse
+	teacher_loss_fn: str = "mse" # kl | mse, use either kl_div or mse_loss (most implementations use kl, some literature says you can use mse)
 	
 @dataclass()
 class Evaluation:
