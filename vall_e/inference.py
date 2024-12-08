@@ -351,12 +351,6 @@ class TTS():
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
-
-		if language == "auto":
-			language = g2p.detect_language( text )
-
-		if not text_language:
-			text_language = language
 		
 		lines = sentence_split(text, split_by=sampling_kwargs.get("split_text_by", "sentences"))
 
@@ -413,12 +407,22 @@ class TTS():
 		prefix_contexts = []
 		context_history = sampling_kwargs.get("context_history", 0)
 
+		auto_lang = not language or language == "auto"
+		auto_text_lang = not text_language or text_language == "auto"
 		for line in lines:
 			if out_path is None:
 				output_dir = Path("./data/results/")
 				if not output_dir.exists():
 					output_dir.mkdir(parents=True, exist_ok=True)
 				out_path = output_dir / f"{time.time()}.wav"
+
+			deduced_language = g2p.detect_language( line ) if auto_lang or auto_text_lang else language
+
+			if auto_lang:
+				language = deduced_language
+
+			if auto_text_lang:
+				text_language = deduced_language
 
 			prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
 			phns = self.encode_text( line, language=text_language )
