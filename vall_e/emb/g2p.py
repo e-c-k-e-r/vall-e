@@ -13,15 +13,32 @@ from tqdm import tqdm
 try:
 	import pykakasi
 except Exception as e:
+	pykakasi = None
+	print(f'Error while importing pykakasi: {str(e)}')
 	pass
 
+try:
+	import langdetect
+except Exception as e:
+	langdetect = None
+	print(f'Error while importing langdetect: {str(e)}')
+
 @cache
+def detect_language( text ):
+	if langdetect is None:
+		raise Exception('langdetect is not installed.')
+	return langdetect.detect( text )
+
 def _get_graphs(path):
 	with open(path, "r") as f:
 		graphs = f.read()
 	return graphs
 
+@cache
 def romanize( runes, sep="" ):	
+	if pykakasi is None:
+		raise Exception('pykakasi is not installed.')
+
 	kks = pykakasi.kakasi()
 	result = kks.convert( runes )
 	return sep.join([ res['hira'] for res in result ])
@@ -52,7 +69,10 @@ def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=T
 	return phonemizer
 
 
-def encode(text: str, language="en-us", backend="auto", punctuation=True, stress=True, strip=True) -> list[str]:
+def encode(text: str, language="auto", backend="auto", punctuation=True, stress=True, strip=True) -> list[str]:
+	if language == "auto":
+		language = detect_language( text )
+
 	language = coerce_language( language )
 
 	# Convert to kana because espeak does not like kanji...

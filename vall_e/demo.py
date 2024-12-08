@@ -70,7 +70,7 @@ def main():
 
 	parser.add_argument("--yaml", type=Path, default=None)
 	parser.add_argument("--model", type=Path, default=None)
-	parser.add_argument("--batch-size", type=int, default=0)
+	parser.add_argument("--batch-size", type=int, default=cfg.inference.batch_size)
 	
 	parser.add_argument("--demo-dir", type=Path, default=None)
 	parser.add_argument("--skip-existing", action="store_true")
@@ -83,7 +83,7 @@ def main():
 	parser.add_argument("--preamble", type=str, default=None)
 	parser.add_argument("--output-filename", type=str, default="index.html")
 	
-	parser.add_argument("--language", type=str, default="en")
+	parser.add_argument("--language", type=str, default="auto")
 	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--modality", type=str, default="auto")
 	parser.add_argument("--out-path", type=Path, default=None)
@@ -324,7 +324,7 @@ def main():
 		
 		samples = []
 		speakers = [ dir for dir in sample_dir.iterdir() if dir.is_dir() ]
-		sources = [ "ms_valle", "f5" ]
+		sources = [ "ms_valle", "f5" ] if k == "librispeech" else ["f5"]
 
 		# generate demo output
 		for dir in tqdm(speakers, desc=f"Generating demo for {k}"):

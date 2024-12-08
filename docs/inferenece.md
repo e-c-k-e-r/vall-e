@@ -11,7 +11,8 @@ For invoking this model in another Python package, refer to `webui.py` and `demo
 To synthesize speech: `python -m vall_e <text> <ref_path> <out_path> --yaml=<yaml_path>` (or `--model=<model_path>`)
 
 Some additional flags you can pass are:
-* `--language`: specifies the language for phonemizing the text, and helps guide inferencing when the model is trained against that language.
+* `--language`: specifies the language for guiding guide inferencing when the model is trained against that language. Use `auto` to automatically deduce this.
+* `--text-language`: the language to phonemize the input text under. Leave blank to tie it to the above value.
 * `--task`: task to perform. Defaults to `tts`, but accepts `stt` for transcriptions.
 * `--max-duration`: maximum token-duration for inferencing through the AR aspect of the model. Every second corresponds to 75 steps.
 * `--max-steps`: maximum steps for inferencing through the NAR-len aspect of the model.
@@ -44,13 +45,6 @@ And some experimental sampling flags you can use too (your mileage will ***defin
 * `--dry-multiplier`: (AR only) performs DRY sampling, the scalar factor.
   * `--dry-base`: (AR only) for DRY sampling, the base of the exponent factor.
   * `--dry-allowed-length`: (AR only) for DRY sampling, the window to perform DRY sampling within.
-* `--layer-skip` enables early-exit layer skipping if the model is confident enough (for compatible models)
-  * `--layer-skip-exit-layer`: maximum layer to use
-  * `--layer-skip-entropy-threshold`: the maximum the logits' entropy (confidence) needs to be before exiting early
-  * `--layer-skip-varentropy-threshold`: the maximum the logits' varentropy (confidence spread) needs to be before exiting early
-* `--refine-on-stop`: (AR only) uses the last steps' logits for the entire final output sequence, rather than the step-by-step iterative sequence.
-  + This needs experimenting with to see if there's any downside.
-  + to-do: compare the probability scores with the original output sequence, and pick the best one.
 
 Some arguments are able to be prefixed with `ar-` and `nar-` to only use that setting for its respective pass. At the moment through the CLI, this includes:
 * `temperature`
@@ -61,3 +55,4 @@ The `ar+nar-tts+stt-llama-8` (now the reference model) model has received additi
 
 Currently, the model only transcribes back into the IPA phonemes it was trained against, as an additional model or external program is required to translate the IPA phonemes back into text.
 * this does make a model that can phonemize text, and unphonemize text, more desirable in the future to replace espeak (having an additional task to handle this requires additional embeddings, output heads, and possible harm to the model as actual text is not a modality the model is trained on).
+* it seems to really want to only transcribe the first sentence for a given utterance. I imagine this is simply a problem with how it was trained.

@@ -70,6 +70,15 @@ As training under `deepspeed` and Windows is not (easily) supported, under your 
 
 Creature comforts like `float16`, `amp`, and multi-GPU training *should* work under the `local` backend, but extensive testing still needs to be done to ensure it all functions.
 
+## Knowledge Distillation
+
+Performing knowledge distillation from a teacher to a student is simple. All that's needed is to reference the teacher model in under `cfg.models`, and mark `teacher: True`, and the student model will automatically reference the teacher model.
+
+Additional hyperparameters can be tuned to what you want under `cfg.hyperparameters`, but the defaults are sane:
+* `teacher_alpha`: the alpha to blend between the normal logits, and the soft targets from comparing the probability distribution from the student model to the teacher model. `0.5` works fine enough.
+* `teacher_temperature`: the temperature to apply to the logits for both the student and the teacher, that is then also applied to the soft targets. `1.0` seems fine.
+* `teacher_loss_fn`: the type of loss function to use. `kl` will use `kl_div` on the probability distributions, while `mse_loss` will apply to the raw logits before applying softmax. Either are fine: `kl` is commonly used, while some literature swear by `mse_loss` for a trivial gain.
+
 # `train.py`
 
 This script handles the VALL-E specific training code.

@@ -94,10 +94,16 @@ class TTS():
 	def disable_lora( self ):
 		return self.enable_lora( enabled=False )
 
-	def encode_text( self, text, language="en" ):
+	def encode_text( self, text, language="auto", precheck=True ):
 		# already a tensor, return it
 		if isinstance( text, Tensor ):
 			return text
+
+		# check if tokenizes without any unks (for example, if already phonemized text is passes)
+		if precheck and "<unk>" in self.symmap:
+			tokens = tokenize( text )
+			if self.symmap["<unk>"] not in tokens:
+				return torch.tensor( tokens )
 
 		content = g2p.encode(text, language=language)
 		tokens = tokenize( content )
@@ -210,6 +216,9 @@ class TTS():
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
 
+		if batch_size < 1:
+			batch_size = 1
+
 		model_ar = None
 		model_len = None
 		model_nar = None
@@ -236,7 +245,7 @@ class TTS():
 			references = [ None for _ in range(samples) ]
 		# fill with english
 		if not languages:
-			languages = [ "en" for _ in range(samples) ]
+			languages = [ "auto" for _ in range(samples) ]
 		if not out_paths:
 			out_paths = [ None for _ in range(samples) ]
 		# use the audio language to phonemize the text
@@ -245,6 +254,10 @@ class TTS():
 
 		# tensorfy inputs
 		for i in range( samples ):
+			# detect language 
+			if languages[i] == "auto":
+				languages[i] = g2p.detect_language( texts[i] )
+
 			texts[i] = self.encode_text( texts[i], language=text_languages[i] )
 			references[i] = self.encode_audio( references[i], trim_length=input_prompt_length ) if references[i] else None
 			languages[i] = self.encode_lang( languages[i] )
@@ -325,7 +338,7 @@ class TTS():
 		self,
 		text,
 		references,
-		language="en",
+		language="auto",
 		text_language=None,
 		task="tts",
 		out_path=None,
@@ -338,6 +351,9 @@ class TTS():
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
+
+		if language == "auto":
+			language = g2p.detect_language( text )
 
 		if not text_language:
 			text_language = language

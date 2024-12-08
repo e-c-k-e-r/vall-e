@@ -78,7 +78,8 @@ setup(
 
 		# for the web UI
 		"gradio",
-		"nltk",
+		"nltk", # for parsing text inputs down to pieces
+		"langdetect", # for detecting the language of a text
 	],
 	extras_require = {
 		"all": [

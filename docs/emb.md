@@ -17,6 +17,8 @@ By default, punctuation, stress markers, and stripping are enabled by default, b
 
 To avoid memory leaking through `phonemizer`, backends and instances are cached for further reuse.
 
+The language for a given text can be automatically deduced with `langdetect` by passing `auto` as a language.
+
 ### Text Tokens
 
 Despite being an audio LM, the model still needs some form of text as the input prompt.

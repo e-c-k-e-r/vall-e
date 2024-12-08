@@ -68,6 +68,8 @@ This class defines the hyperparameters to use during training.
 
 For the most part, when using `prodigyopt`, the only dials to care about is `batch_size` and `gradient_accumulation_step`.
 
+For knowledge distillation, its corresponding hyperparameters live here, rather than alongside a given model's configuration.
+
 ## `Evaluation`
 
 This class governs the behavior during the evaluation / validation pass during training.

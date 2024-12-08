@@ -34,14 +34,19 @@ However, at this point and time, the implementation is rather divorced from VALL
 * [x] clean up the README, and document, document, document.
 * [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
   - reference model is trained against English, Japanese, French, and German.
+  - [ ] improve multi-lingual support
+  - [ ] improve cross-lingual support
 * [ ] extend to addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
-  - `stt` (Speech-to-Text) seems to be working fine for the most part.
+  - `stt` (Speech-to-Text) seems to be working fine for the most part, but is very much a second-class feature.
   - other tasks seem to require a ton of VRAM......
-* [ ] extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)
+  - SpeechX tasks might need to be reworked to fit well within the `NAR-len` context to make full use of masking (for example, for speech editing)
+  - ***possibly*** voice conversion through the `NAR-len` with clever demasking tricks (for example, the tokens that are masked are from the source voice)
+* [ ] ~~extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)~~
   - desu these don't seem to be worthwhile improvements, as inferencing is already rather fast, and RAS is just a fancy sampler.
 * [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
+  - desu the `NAR-len` can be fast enough with short enough utterances to generate audio >1x speeds
 * [ ] speed up inferencing for the AR
   - KV caching both yields broken output and quadratically slow output, unless I'm doing something grossly wrong.
   * [x] provide a pure NAR model that foregoes most of the inferencing slowdowns a regular AR+NAR model will provide.
@@ -58,13 +63,15 @@ However, at this point and time, the implementation is rather divorced from VALL
   - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
 * [ ] smarter/clever inferencing, such as:
   * [x] "rolling" context, where the last generated sentence is the prefix for the next sentence.
+  * for the AR, stop inferencing sequences in the batch that has already hit its stop token
 * [ ] explore exotic features like:
   * using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
-  * interleaving by using summed embedding tokens:
-    * for example, `<RVQ 0-7><RVQ 0>` => `<RVQ 0-7><RVQ 0-1>` => `<RVQ 0-7><RVQ 0-2>` (etc.)
-    * however, I imagine the sequences to train for this are *too* exotic.
   * mixing multiple speakers through summing input prompt embeddings
     * I do not expect this to work, but you never know...
+* [ ] objective metrics such as WER / SIM-O
+  * [ ] WER simply requires transcribing audio then computing word error rates through the transcriptions
+    * this does require subjugating an STT model though (like Whisper(X))
+  * [ ] SIM-O requires passing the raw waveform through a speaker-similarity model
 
 ## "Postmortem"
 
@@ -86,7 +93,9 @@ However, while this solution boasts being lightweight, there are some caveats fo
   * guidance distillation would be nice, but distillation in general harms finetuning (assuming this just as likely harms it)
   * rolling context/prefix does solve this
     * VALL-E Continuous (prefixing with the input prompt) could also fix this, but technically makes it one-shot and not zero-shot
-
+* multi-lingual support is a bit of an afterthought
+  * supported non-English speakers have the confidence problem for some speakers but exacerbated
+* there seems to be a regression with an increase in the word error rate, although it might only be inherent to the `NAR-len`
 
 ## Notices and Citations
 
