@@ -622,7 +622,7 @@ class AR_NAR(Base):
 				r = [ logit[-1:].argmax(dim=1) for logit in logits ]
 				# sanitize
 				for i, token in enumerate(r):
-					if token > 10:
+					if token > stop_token:
 						r[i][0] = stop_token
 
 				# append tokens

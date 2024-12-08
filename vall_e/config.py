@@ -744,6 +744,8 @@ class Inference:
 
 	normalize: bool = False # to-do: actually normalize input / output audio, I believe this might cause issues though
 
+	batch_size: int = 16 # I don't know what would be a good batch size
+
 	@property
 	def dtype(self):
 		if self.weight_dtype == "float16":

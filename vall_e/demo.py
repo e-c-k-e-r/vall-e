@@ -37,12 +37,40 @@ def encode(path):
 		return ""
 	return "data:audio/wav;base64," + base64.b64encode(open(path, "rb").read()).decode('utf-8')
 
+def safe_inference( tts, out_path, **kwargs ):
+	if args.skip_existing and out_path.exists():
+		return
+	
+	try:
+		tts.inference( out_path=out_path, **kwargs )
+	except Exception as e:
+		raise e
+		print(f'Error while processing {out_path}: {e}')
+
+def safe_batched_inference( tts, **kwargs ):
+	try:
+		tts.batched_inference( **kwargs )
+	except Exception as e:
+		raise e
+		print(f'Error while processing batch: {e}')
+
+def process_batch( tts, inputs, kwargs={} ):
+	kwargs = kwargs | dict(
+		texts=[ x[0] for x in inputs ],
+		references=[ x[1] for x in inputs ],
+		languages=[ x[2] for x in inputs ],
+		out_paths=[ x[3] for x in inputs ],
+	)
+
+	safe_batched_inference( tts, **kwargs )
+
 # Would be downright sugoi if I could incorporate this with into __main__
 def main():
 	parser = argparse.ArgumentParser("VALL-E TTS Demo")
 
 	parser.add_argument("--yaml", type=Path, default=None)
 	parser.add_argument("--model", type=Path, default=None)
+	parser.add_argument("--batch-size", type=int, default=0)
 	
 	parser.add_argument("--demo-dir", type=Path, default=None)
 	parser.add_argument("--skip-existing", action="store_true")
@@ -61,14 +89,14 @@ def main():
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--max-duration", type=int, default=12 * cfg.dataset.frames_per_second)
-	parser.add_argument("--max-steps", type=int, default=25)
+	parser.add_argument("--max-steps", type=int, default=50)
 	parser.add_argument("--max-levels", type=int, default=7)
 
 	parser.add_argument("--ar-temperature", type=float, default=1.0)
 	parser.add_argument("--nar-temperature", type=float, default=0.0)
 	parser.add_argument("--min-ar-temperature", type=float, default=-1.0)
 	parser.add_argument("--min-nar-temperature", type=float, default=-1.0)
-	parser.add_argument("--input-prompt-length", type=float, default=3.0)
+	parser.add_argument("--input-prompt-length", type=float, default=5.0)
 	parser.add_argument("--input-prompt-prefix", action="store_true")
 	parser.add_argument("--prefix-silence", type=float, default=0.0)
 	parser.add_argument("--cfg-strength", type=float, default=1.0)
@@ -89,18 +117,6 @@ def main():
 	parser.add_argument("--dry-multiplier", type=float, default=0)
 	parser.add_argument("--dry-base", type=float, default=1.75)
 	parser.add_argument("--dry-allowed-length", type=int, default=2)
-	
-	parser.add_argument("--entropix-sampling", action="store_true")
-	
-	parser.add_argument("--layer-skip", action="store_true")
-	parser.add_argument("--layer-skip-exit-layer", type=int, default=None)
-	parser.add_argument("--layer-skip-entropy-threshold", type=int, default=0.1)
-	parser.add_argument("--layer-skip-varentropy-threshold", type=int, default=0.1)
-	parser.add_argument("--refine-on-stop", action="store_true")
-
-	# experimental settings
-	parser.add_argument("--load-from-artifact", type=Path, default=None)
-	parser.add_argument("--denoise-start", type=float, default=0.0)
 	
 	parser.add_argument("--seed", type=int, default=None)
 
@@ -151,30 +167,6 @@ def main():
 		comparison_kwargs["disabled"]["ar_temperature"] = 0.0
 		comparison_kwargs["enabled"]["use_lora"] = False
 		comparison_kwargs["enabled"]["ar_temperature"] = 0.95
-	elif args.comparison == "entropix-sampling":
-		comparison_kwargs["suffix"] = "entropix_sampling"
-		comparison_kwargs["titles"] = ["Without Entropix", "With Entropix"]	
-
-		comparison_kwargs["disabled"]["entropix_sampling"] = False
-		comparison_kwargs["disabled"]["ar_temperature"] = args.ar_temperature
-		comparison_kwargs["disabled"]["top_k"] = args.top_k
-		comparison_kwargs["disabled"]["top_p"] = args.top_p
-		comparison_kwargs["enabled"]["entropix_sampling"] = True
-		comparison_kwargs["enabled"]["ar_temperature"] = 0.666
-		comparison_kwargs["enabled"]["top_k"] = 27
-		comparison_kwargs["enabled"]["top_p"] = 0.9
-	elif args.comparison == "layerskip":
-		comparison_kwargs["suffix"] = "layerskip"
-		comparison_kwargs["titles"] = [f"Without LayerSkip", "With LayerSkip"]
-
-		comparison_kwargs["disabled"]["layer_skip"] = False
-		comparison_kwargs["enabled"]["layer_skip"] = True
-	elif args.comparison == "refine-on-stop":
-		comparison_kwargs["suffix"] = "refine-on-stop"
-		comparison_kwargs["titles"] = [f"Without Ro<S>", "With Ro<S>"]
-
-		comparison_kwargs["disabled"]["refine_on_stop"] = False
-		comparison_kwargs["enabled"]["refine_on_stop"] = True
 	elif args.comparison == "ar-temp":
 		current_temperature = args.ar_temperature
 		other_temperature = 1.0
@@ -254,18 +246,15 @@ def main():
 		beam_width=args.beam_width,
 		mirostat_tau=args.mirostat_tau, mirostat_eta=args.mirostat_eta,
 		dry_multiplier=args.dry_multiplier, dry_base=args.dry_base, dry_allowed_length=args.dry_allowed_length,
-		entropix_sampling=args.entropix_sampling,
-		layer_skip=args.layer_skip,
-		layer_skip_exit_layer=args.layer_skip_exit_layer,
-		layer_skip_entropy_threshold=args.layer_skip_entropy_threshold,
-		layer_skip_varentropy_threshold=args.layer_skip_varentropy_threshold,
-		refine_on_stop=args.refine_on_stop,
-		denoise_start=args.denoise_start,
 		input_prompt_length=args.input_prompt_length,
 		input_prompt_prefix=args.input_prompt_prefix,
 		prefix_silence=args.prefix_silence,
 		cfg_strength=args.cfg_strength,
 		cfg_rescale=args.cfg_rescale,
+		
+		seed = args.seed if args.seed else int(time.time()),
+		tqdm = True,
+		batch_size = args.batch_size,
 	)
 
 	# replace values in our template
@@ -326,6 +315,9 @@ def main():
 			decode_to_file( batch["proms"].to("cuda"), prompt, device="cuda" )
 			decode_to_file( batch["resps"].to("cuda"), reference, device="cuda" )
 
+	inputs = []
+	outputs = []
+	comparison_inputs = []
 	for k, sample_dir in samples_dirs.items():
 		if not sample_dir.exists():
 			continue
@@ -349,6 +341,13 @@ def main():
 				audio_samples += [ out_path_comparison ]
 			audio_samples += [ p if p.exists() else None for p in external_sources ]
 
+			"""
+			# manual invocation
+			cmd = f'python3 -m vall_e --yaml="{args.yaml}" "{reference}" "{text}" --out-path={out_path}'
+			# F5
+			cmd = f'python inference-cli.py --model "F5-TTS" --ref_audio "{reference}" --gen_text "{text}" --output_dir "{out_path.parent}"'
+			"""
+
 			if not args.random_prompts or k == "librispeech":
 				audio_samples += [ reference ]
 
@@ -357,51 +356,22 @@ def main():
 			 	audio_samples,
 			))
 
-			seed = args.seed if args.seed else int(time.time())
-
-			"""
-			# manual invocation
-			cmd = f'python3 -m vall_e --yaml="{args.yaml}" "{reference}" "{text}" --out-path={out_path}'
-			# F5
-			cmd = f'python inference-cli.py --model "F5-TTS" --ref_audio "{reference}" --gen_text "{text}" --output_dir "{out_path.parent}"'
-			"""
-
-			kwargs = dict(
-				text=text,
-				references=[prompt],
-				language=language,
-				seed=seed,
-				tqdm=False,
-				**sampling_kwargs,
-			)
-
-			def safe_inference( out_path=out_path ):
-				if args.skip_existing and out_path.exists():
-					return
-				
-				# swap model config swap
-				"""
-				if "dtype" in kwargs or "amp" in kwargs:
-					dtype = kwargs.pop("dtype", args.dtype)
-					amp = kwargs.pop("amp", args.amp)
-					
-					del tts
-					tts = TTS( config=args.yaml, device=args.device, dtype=dtype, amp=amp )
-				"""
-				try:
-					tts.inference( out_path=out_path, **kwargs )
-				except Exception as e:
-					raise e
-					print(f'Error while processing {out_path}: {e}')
-
+			# segregate comparisons into its own batch because they use different kwargs (and I do not support variadic-batched kwargs)
 			if args.comparison:
-				kwargs.update( comparison_kwargs["enabled"] )
-				safe_inference(out_path_comparison)
-				kwargs.update( comparison_kwargs["disabled"] )
+				comparison_inputs.append((text, prompt, language, out_path_comparison))
 
-			safe_inference()
+			inputs.append((text, prompt, language, out_path))
 
-		# collate entries into HTML
+		outputs.append((k, samples))
+
+	if inputs:
+		process_batch( tts, inputs, sampling_kwargs | (comparison_kwargs["disabled"] if args.comparison else {}) )
+	
+	if comparison_inputs:
+		process_batch( tts, comparison_inputs, sampling_kwargs | (comparison_kwargs["enabled"] if args.comparison else {}) )
+
+	# collate entries into HTML
+	for k, samples in outputs:
 		samples = [
 			f'\n\t\t\t<tr>\n\t\t\t\t<td>{text}</td>'+
 			"".join( [
@@ -415,12 +385,12 @@ def main():
 		# write audio into template
 		html = html.replace("${"+k.upper()+"_SAMPLES}", "\n".join( samples ) )
 
-		if args.comparison:
-			disabled, enabled = comparison_kwargs["titles"]
-			if args.random_prompts:
-				html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", f"<th>Our VALL-E ({disabled})</th>\n\t\t\t\t\t<th>Our VALL-E ({enabled})</th>")
-			else:
-				html = html.replace("<th>Our VALL-E</th>", f"<th>Our VALL-E ({disabled})</th>\n\t\t\t\t\t<th>Our VALL-E ({enabled})</th>")
+	if args.comparison:
+		disabled, enabled = comparison_kwargs["titles"]
+		if args.random_prompts:
+			html = html.replace("<th>Our VALL-E</th>\n\t\t\t\t\t<th>Ground Truth</th>", f"<th>Our VALL-E ({disabled})</th>\n\t\t\t\t\t<th>Our VALL-E ({enabled})</th>")
+		else:
+			html = html.replace("<th>Our VALL-E</th>", f"<th>Our VALL-E ({disabled})</th>\n\t\t\t\t\t<th>Our VALL-E ({enabled})</th>")
 
 	# write demo page
 	open( args.demo_dir / args.output_filename, "w", encoding="utf-8" ).write( html )

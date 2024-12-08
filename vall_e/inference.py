@@ -68,6 +68,7 @@ class TTS():
 		self.device = device
 		self.dtype = cfg.inference.dtype
 		self.amp = amp
+		self.batch_size = cfg.inference.batch_size
 		
 		self.model_kwargs = {}
 		if attention:
@@ -120,10 +121,13 @@ class TTS():
 		if isinstance( paths, str ):
 			paths = [ Path(p) for p in paths.split(";") ]
 
-		# merge inputs
+		# not already a list		
+		if isinstance( paths, Path ):
+			paths = [ paths ]
 
 		proms = []
 
+		# merge inputs
 		for path in paths:
 			prom = qnt.encode_from_file(path)
 			if hasattr( prom, "codes" ):
@@ -185,26 +189,159 @@ class TTS():
 			modality = cfg.model.name
 		return modality
 
+	# makes use of being able to batch inputs seamlessly by automatically batching
+	# this is NOT the default because it absolutely cannot make use of rolling context / prefixing
+	@torch.inference_mode()
+	def batched_inference(
+		self,
+		texts,
+		references=None,
+		languages=None,
+		text_languages=None,
+		out_paths=None,
+		**sampling_kwargs,
+	):
+		batch_size = sampling_kwargs.pop("batch_size", self.batch_size)
+		input_prompt_length = sampling_kwargs.pop("input_prompt_length", 0)
+		modality = sampling_kwargs.pop("modality", "auto")
+		seed = sampling_kwargs.pop("seed", None)
+		tqdm = sampling_kwargs.pop("tqdm", True)
+		use_lora = sampling_kwargs.pop("use_lora", None)
+		dtype = sampling_kwargs.pop("dtype", self.dtype)
+		amp = sampling_kwargs.pop("amp", self.amp)
+
+		model_ar = None
+		model_len = None
+		model_nar = None
+
+		for name, engine in self.engines.items():
+			if model_ar is None and "ar" in engine.hyper_config.capabilities:
+				model_ar = engine.module
+			if model_len is None and "len" in engine.hyper_config.capabilities:
+				model_len = engine.module
+			if model_nar is None and "nar" in engine.hyper_config.capabilities:
+				model_nar = engine.module
+		
+		modality = self.modality( modality )
+		# force AR+NAR
+		if modality == "ar+nar":
+			model_len = None
+		# force NAR-len
+		elif modality == "nar-len":
+			model_ar = None
+
+		samples = len(texts)
+		# fill with null input proms
+		if not references:
+			references = [ None for _ in range(samples) ]
+		# fill with english
+		if not languages:
+			languages = [ "en" for _ in range(samples) ]
+		if not out_paths:
+			out_paths = [ None for _ in range(samples) ]
+		# use the audio language to phonemize the text
+		if not text_languages:
+			text_languages = languages
+
+		# tensorfy inputs
+		for i in range( samples ):
+			texts[i] = self.encode_text( texts[i], language=text_languages[i] )
+			references[i] = self.encode_audio( references[i], trim_length=input_prompt_length ) if references[i] else None
+			languages[i] = self.encode_lang( languages[i] )
+
+			texts[i] = to_device(texts[i], device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
+			references[i] = to_device(references[i], device=self.device, dtype=torch.int16)
+			languages[i] = to_device(languages[i], device=self.device, dtype=torch.uint8)
+
+		# create batches
+		batches = []
+		buffer = ([], [], [], [])
+		for batch in zip( texts, references, languages, out_paths ):
+			# flush
+			if len(buffer[0]) >= batch_size:
+				batches.append(buffer)
+				buffer = ([], [], [], [])
+
+			# insert into buffer
+			for i, x in enumerate( batch ):
+				buffer[i].append(x)
+
+		# flush
+		if len(buffer[0]) >= batch_size:
+			batches.append(buffer)
+			buffer = ([], [], [], [])
+
+		wavs = []
+		for texts, proms, langs, out_paths in batches:
+			seed = set_seed(seed)
+			batch_size = len(texts)
+			input_kwargs = dict(
+				text_list=texts,
+				proms_list=proms,
+				lang_list=langs,
+				disable_tqdm=not tqdm,
+				use_lora=use_lora,
+			)
+
+			with torch.autocast("cuda", dtype=dtype, enabled=amp):
+				if model_len is not None:
+					# extra kwargs
+					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
+					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
+
+					len_list = model_len( **input_kwargs, task_list=["len"]*batch_size, **{"max_duration": 5} ) # "max_duration" is max tokens
+
+					# add an additional X seconds
+					len_list = [ int(l * duration_padding) for l in len_list ]
+
+					resps_list = model_nar( **input_kwargs, len_list=len_list, task_list=["tts"]*batch_size,
+						**sampling_kwargs,
+					)
+				elif model_ar is not None:
+					resps_list = model_ar(
+						**input_kwargs, task_list=["tts"]*batch_size,
+						**sampling_kwargs,
+					)
+
+					resps_list = model_nar(
+						**input_kwargs, resps_list=resps_list, task_list=["tts"]*batch_size,
+						**sampling_kwargs,
+					)
+				else:
+					raise Exception("!")
+
+				for resp, out_path in zip( resps_list, out_paths ):
+					if out_path:
+						wav, sr = qnt.decode_to_file(resp, out_path, device=self.device)
+					else:
+						wav, sr = qnt.decode(resp, device=self.device)
+					wavs.append(wav)
+		return wavs
+
+	# naive serial inferencing
+	# will automatically split a text into pieces (if requested) piece by piece
 	@torch.inference_mode()
 	def inference(
 		self,
 		text,
 		references,
-		text_language=None,
 		language="en",
+		text_language=None,
 		task="tts",
-		modality="auto",
-
-		input_prompt_length = 0,
-
-		seed = None,
 		out_path=None,
-		tqdm=True,
-		use_lora=None,
 		**sampling_kwargs,
 	):
+		input_prompt_length = sampling_kwargs.pop("input_prompt_length", 0)
+		modality = sampling_kwargs.pop("modality", "auto")
+		seed = sampling_kwargs.pop("seed", None)
+		tqdm = sampling_kwargs.pop("tqdm", True)
+		use_lora = sampling_kwargs.pop("use_lora", None)
+		dtype = sampling_kwargs.pop("dtype", self.dtype)
+		amp = sampling_kwargs.pop("amp", self.amp)
+
 		if not text_language:
 			text_language = language
+		
 		lines = sentence_split(text, split_by=sampling_kwargs.get("split_text_by", "sentences"))
 
 		wavs = []
@@ -239,7 +376,7 @@ class TTS():
 			resp = to_device(resp, device=self.device, dtype=torch.int16)
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
-			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
+			with torch.autocast("cuda", dtype=dtype, enabled=amp):
 				model = model_ar if model_ar is not None else model_nar
 				if model is not None:
 					text_list = model(
@@ -275,14 +412,20 @@ class TTS():
 			phns = to_device(phns, device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
-			# to-do: add in case for experimental.hf model
-			with torch.autocast("cuda", dtype=self.dtype, enabled=self.amp):
+			with torch.autocast("cuda", dtype=dtype, enabled=amp):
+				input_kwargs = dict(
+					text_list=[phns],
+					proms_list=[prom],
+					lang_list=[lang],
+					disable_tqdm=not tqdm,
+					use_lora=use_lora,
+				)
 				if model_len is not None:
 					# extra kwargs
 					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
 
-					len_list = model_len( text_list=[phns], proms_list=[prom], task_list=["len"], disable_tqdm=not tqdm, **{"max_duration": 5} ) # "max_duration" is max tokens
+					len_list = model_len( **input_kwargs, task_list=["len"], **{"max_duration": 5} ) # "max_duration" is max tokens
 
 					# add an additional X seconds
 					len_list = [ int(l * duration_padding) for l in len_list ]
@@ -291,9 +434,7 @@ class TTS():
 					if prefix_context is not None:
 						kwargs["prefix_context"] = prefix_context
 
-					resps_list = model_nar( text_list=[phns], proms_list=[prom], len_list=len_list, task_list=["tts"],
-						disable_tqdm=not tqdm,
-						use_lora=use_lora,
+					resps_list = model_nar( **input_kwargs, len_list=len_list, task_list=["tts"],
 						**(sampling_kwargs | kwargs),
 					)
 				elif model_ar is not None:
@@ -302,16 +443,12 @@ class TTS():
 						kwargs["prefix_context"] = prefix_context
 
 					resps_list = model_ar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], task_list=["tts"],
-						disable_tqdm=not tqdm,
-						use_lora=use_lora,
+						**input_kwargs, task_list=["tts"],
 						**(sampling_kwargs | kwargs),
 					)
 
 					resps_list = model_nar(
-						text_list=[phns], proms_list=[prom], lang_list=[lang], resps_list=resps_list, task_list=["tts"],
-						disable_tqdm=not tqdm,
-						use_lora=use_lora,
+						**input_kwargs, resps_list=resps_list, task_list=["tts"],
 						**sampling_kwargs,
 					)
 				else:
