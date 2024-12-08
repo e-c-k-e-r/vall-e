@@ -61,7 +61,7 @@ def sentence_split( s, split_by="sentences", quote_placeholder="<QUOTE>" ):
 	# nltk does not split quotations all that nicely, so we coerce them into placeholders, then replace afterwards
 	s = s.replace('"', quote_placeholder)
 	sentences = nltk.sent_tokenize(s)
-	return [ sentence.replace(quote_placeholder, '"') for sentence in sentences ]
+	return [ sentence.replace(quote_placeholder, '"') for sentence in sentences if sentence ]
 
 @cache
 def get_random_prompts( validation=False, min_length=0, tokenized=False ):

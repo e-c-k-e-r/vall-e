@@ -123,6 +123,7 @@ def main():
 	parser.add_argument("--device", type=str, default=None)
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=None)
+	parser.add_argument("--attention", type=str, default="auto")
 
 	parser.add_argument("--random-prompts", action="store_true")
 	parser.add_argument("--lora", action="store_true")
@@ -136,7 +137,7 @@ def main():
 	elif args.model:
 		config = args.model
 	
-	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype, amp=args.amp )
+	tts = TTS( config=config, lora=args.lora, device=args.device, dtype=args.dtype, amp=args.amp, attention=args.attention )
 
 	if not args.demo_dir:
 		args.demo_dir = Path("./data/demo/")

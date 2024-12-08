@@ -300,8 +300,6 @@ class TTS():
 				if model_len is not None:
 					# extra kwargs
 					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
-					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
-
 					len_list = model_len( **input_kwargs, task_list=["len"]*batch_size, **{"max_duration": 5} ) # "max_duration" is max tokens
 
 					# add an additional X seconds
@@ -443,8 +441,6 @@ class TTS():
 				if model_len is not None:
 					# extra kwargs
 					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
-					nar_len_prefix_length = sampling_kwargs.pop("nar_len_prefix_length", 0)
-
 					len_list = model_len( **input_kwargs, task_list=["len"], **{"max_duration": 5} ) # "max_duration" is max tokens
 
 					# add an additional X seconds

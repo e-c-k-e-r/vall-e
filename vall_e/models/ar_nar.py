@@ -223,31 +223,19 @@ class AR_NAR(Base):
 		device = text_list[0].device
 		batch_size = len(text_list)
 
-		# special "scheduling" to inference RVQ-level 0
 		level = 0
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
-		# to-do: check if gumbel sampling works / helps
 		"""
-		def log(x, eps = 1e-20):
-			return torch.log(x.clamp(min = eps))
-
-		def gumbel_sample(x, temperature = 1., dim = -1):
-			return ((x / max(temperature, 1e-10)) + -log(-log(torch.zeros_like(x).uniform_(0, 1)))).argmax(dim = dim)
-		"""
-
 		def log(t, eps=1e-10):
 			return torch.log(t + eps)
-
-
 		def gumbel_noise(t):
 			noise = torch.zeros_like(t).uniform_(0, 1)
 			return -log(-log(noise))
-
-
 		def gumbel_sample(t, temperature=1.0, dim=-1):
 			return ((t / max(temperature, 1e-10)) + gumbel_noise(t)).argmax(dim=dim)
+		"""
 
 		# convert (N)AR specific args
 		sampling_kwargs = convert_kwargs( sampling_kwargs, "ar_" )
@@ -261,18 +249,18 @@ class AR_NAR(Base):
 
 		# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
 		temperature = sampling_kwargs.pop("temperature", 0.0)
+		minimum_cfg_strength = sampling_kwargs.get("minimum_cfg_strength", 2.5)
 		# this really helps keep audio coherent so far
-		cfg_strength = sampling_kwargs.get("cfg_strength", 2.0)
+		cfg_strength = sampling_kwargs.get("cfg_strength", minimum_cfg_strength)
 		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.75)
 		start_noise = sampling_kwargs.get("denoise_start", 0.0)
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
-		remasking = sampling_kwargs.get("remasking", True)
+		remasking = sampling_kwargs.get("remasking", False)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
 		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
 		
 		# force set CFG because too low / no CFG causes issues
-		minimum_cfg_strength = sampling_kwargs.get("minimum_cfg_strength", 3.0)
 		original_cfg_strength = cfg_strength
 		cfg_strength = max( cfg_strength, minimum_cfg_strength )
 
@@ -320,17 +308,19 @@ class AR_NAR(Base):
 			time_list = [ timestep for _ in range(batch_size) ]
 
 			sampling_temperature = temperature * annealing if annealed_sampling else temperature
-			sampling_cfg = cfg_strength * timestep if annealed_sampling else temperature
+			sampling_cfg = cfg_strength * timestep if annealed_sampling else cfg_strength
 
 			# avoid useless CFG sampling
+			"""
 			if sampling_cfg < minimum_cfg_strength * 0.5:
 				sampling_cfg = 0
+			"""
 
 			if prefix_context is not None:
 				input_resps_list = [ torch.concat( [ prefix, resps ] ) for prefix, resps in zip( prefix_resps_list, resps_list ) ]
 				# originally requested no CFG, safe to ignore if we have a prefix
-				if original_cfg_strength == 0:
-					sampling_cfg = 0
+				if original_cfg_strength < minimum_cfg_strength:
+					sampling_cfg = original_cfg_strength * timestep if annealed_sampling else original_cfg_strength
 			else:
 				input_resps_list = resps_list
 
@@ -347,7 +337,6 @@ class AR_NAR(Base):
 			output = super().forward(
 				inputs=inputs,
 				quant_levels=quant_levels,
-				#layer_skip_variables=sampling_layer_skip_variables,
 			)
 
 			logits = output.logits
@@ -365,7 +354,6 @@ class AR_NAR(Base):
 				null_output = super().forward(
 					inputs=null_inputs,
 					quant_levels=quant_levels,
-					#layer_skip_variables=sampling_layer_skip_variables,
 				)
 
 				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ l for l in len_list ] )
@@ -420,49 +408,6 @@ class AR_NAR(Base):
 		use_lora=None,
 		**sampling_kwargs,
 	):
-		# deduce batch_size
-		if text_list is not None:
-			default_task = "tts"
-			device = text_list[0].device
-			batch_size = len(text_list)
-		else:
-			default_task = "stt"
-			device = resps_list[0].device
-			batch_size = len(resps_list)
-
-		# convert NAR specific args
-		sampling_kwargs = convert_kwargs( sampling_kwargs, "nar_" )
-
-		max_levels = sampling_kwargs.get("max_levels", 0)
-		cfg_strength = sampling_kwargs.get("cfg_strength", 0.0)
-		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.7)
-
-		if max_levels == 0:
-			max_levels = self.n_max_levels - 1
-
-		# prefixed context provided
-		"""
-		prefix_context = sampling_kwargs.get("prefix_context", None)
-		if prefix_context is not None:
-			prefix_text, prefix_resps, _ = prefix_context
-			# to-do: check if we actually need to drop the middle "<eos><bos>"
-			text_list = [ torch.concat([prefix[:-1], text[1:]]) for prefix, text in zip( prefix_text, text_list ) ]
-			# feeding this into the NAR-len should automatically handle things
-			resps_list = [ resps for resps in prefix_resps ]
-		"""
-
-		"""
-		sampling_layer_skip_variables = {} if sampling_layer_skip else None
-
-		if sampling_layer_skip:
-			if sampling_layer_skip_entropy_threshold >= 0:
-				sampling_layer_skip_variables["entropy_threshold"] = sampling_layer_skip_entropy_threshold
-			if sampling_layer_skip_varentropy_threshold >= 0:
-				sampling_layer_skip_variables["varentropy_threshold"] = sampling_layer_skip_varentropy_threshold
-			if sampling_layer_skip_exit_layer >= 0:
-				sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
-		"""
-
 		# inference NAR level 0
 		if len_list is not None:
 			resps_list = self.forward_nar_masked(
@@ -475,6 +420,26 @@ class AR_NAR(Base):
 				len_list=len_list,
 				**sampling_kwargs,				
 			)
+		
+		# deduce batch_size
+		if text_list is not None:
+			default_task = "tts"
+			device = text_list[0].device
+			batch_size = len(text_list)
+		else:
+			default_task = "stt"
+			device = resps_list[0].device
+			batch_size = len(resps_list)
+		
+		# convert NAR specific args
+		sampling_kwargs = convert_kwargs( sampling_kwargs, "nar_" )
+
+		max_levels = sampling_kwargs.get("max_levels", 0)
+		cfg_strength = sampling_kwargs.get("cfg_strength", 0.0)
+		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.7)
+
+		if max_levels == 0:
+			max_levels = self.n_max_levels - 1
 
 		# expand if given a raw 1D tensor
 		for i, resp in enumerate(resps_list):
@@ -489,14 +454,14 @@ class AR_NAR(Base):
 		iterator = trange( max_levels, desc="NAR", disable=disable_tqdm )
 		for n in iterator:
 			level = prev_list[0].shape[-1]
-			if level >= max_levels + 1: # min(max_levels + 1, self.n_resp_levels): # commented out to experiment with exceeding trained levels
+			if level >= max_levels + 1:
 				iterator.close()
 				break
 
 			if cfg.lora is not None:
 				enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
-			quant_levels = [ level for _ in range(batch_size) ] # torch.full((len(text_list),), level)
+			quant_levels = [ level for _ in range(batch_size) ]
 
 			inputs = self.inputs(
 				text_list=text_list,
@@ -510,7 +475,6 @@ class AR_NAR(Base):
 			output = super().forward(
 				inputs=inputs,
 				quant_levels=quant_levels,
-				#layer_skip_variables=sampling_layer_skip_variables,
 			)
 			logits, state = output.logits, output.state
 
@@ -526,7 +490,6 @@ class AR_NAR(Base):
 				null_output = super().forward(
 					inputs=null_inputs,
 					quant_levels=quant_levels,
-					#layer_skip_variables=sampling_layer_skip_variables,
 				)
 
 				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ resp.shape[0] for resp in resps_list ] )
@@ -535,8 +498,7 @@ class AR_NAR(Base):
 				logits=logits,
 				prev_list=prev_list,
 				quant_levels=quant_levels,
-				#temperature=0.0,
-				**(sampling_kwargs | {"temperature": 0.0}),
+				**(sampling_kwargs),
 			)
 
 			resps_list = sampled.ids
