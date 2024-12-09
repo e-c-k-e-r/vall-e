@@ -9,15 +9,18 @@ The `emb` name is a relic of the original implementation used.
 This script handles taking text of a given language, and phonemizing into IPAs.
 * This is mainly an abstraction to `phonemizer`.
 
-For Japanese, text is coerced through `pykakasi` into kana, then phonemized, as `phonemizer` does not like kanji.
+Some additional languages receive preprocessing/postprocessing:
+  * For Japanese, text is coerced through `pykakasi` into hiragana, then phonemized, as `phonemizer` does not like kanji.
+  * For Chinese (Mandarin), the tone markers are replaced with equivalent tone markers to differentiate between being numbered.
 
-By default, `espeak` is used as the backend, but other *backends* can be passed through `encode`.
-
-By default, punctuation, stress markers, and stripping are enabled by default, but *can* be disabled.
+By default:
+  * `espeak` is used as the backend, but other *backends* can be passed through `encode`.
+  * punctuation, stress markers, and stripping are enabled by default, but *can* be disabled.
+  * language for a given text is automatically deduced with `langdetect`, if language is not provided (or `auto` is passed).
 
 To avoid memory leaking through `phonemizer`, backends and instances are cached for further reuse.
 
-The language for a given text can be automatically deduced with `langdetect` by passing `auto` as a language.
+Unfortunately, there are some quirks with this method, as contextually things like "read" and "lead" do not rhyme with "said".
 
 ### Text Tokens
 

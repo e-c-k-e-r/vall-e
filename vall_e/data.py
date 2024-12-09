@@ -521,13 +521,19 @@ def get_lang_symmap():
 		"ja": 1,
 		"de": 2,
 		"fr": 3,
+		"zh": 4, # mandarin I presume
+		"ko": 5,
 	}
 
 def get_tone_symmap():
 	return {
 		"neutral": 0,
+		# could use 4 instead of 8 basic emotions
+		# "joy": 1,
+		# "fear": 2,
+		# "surprise": 3,
+		# "anger": 4,
 	}
-	return symmap
 
 def get_task_symmap():
 	return {

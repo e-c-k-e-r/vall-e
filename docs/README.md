@@ -19,6 +19,20 @@ Unlike the paper, this VALL-E aims to:
 
 However, at this point and time, the implementation is rather divorced from VALL-E and its derivating papers, but the core principle is still followed.
 
+## Model Specifications
+
+The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
+* boasts 220M parameters
+* supports English, German, French, and Japanese
+  * support for Korean and Chinese (Mandarin?) soon™
+* has several modalities of inferencing:
+  * the primary audio level (RVQ level 0) can be inferenced both autoregressively (`AR`) or non-autoregressively (`NAR-len`)
+    * pure-NAR can yield faster-than-realtime output
+  * supports predicting the duration of an input
+  * supports Speech-to-Text (although it's a second-class feature)
+  * additional tasks such as noise reduction, speech removal, editing, and voice conversion eventually™ (just need to train on it)
+* trained on `?` samples / `?` hours of EnCodec-quantized audio at 24KHz
+
 ## To-Do
 
 * [x] train and release a serviceable model for finetuning against.
