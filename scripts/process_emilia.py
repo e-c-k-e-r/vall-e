@@ -110,8 +110,6 @@ def process(
 			if only_speakers and speaker_group not in only_speakers:
 				continue
 
-			os.makedirs(f'./{output_dataset}/{group_name}/{speaker_group}/', exist_ok=True)
-
 			if f'{group_name}/{speaker_group}' not in dataset:
 				dataset.append(f'{group_name}/{speaker_group}')
 
@@ -130,13 +128,14 @@ def process(
 			
 				extension = os.path.splitext(filename)[-1][1:]
 				fname = filename.replace(f'.{extension}', "")
-				if "text" not in metadata:
-					continue
 
 				waveform, sample_rate = None, None
 				metadata = json.load(open(jsonpath, "r", encoding="utf-8"))
+				if "text" not in metadata:
+					continue
 				speaker_id = metadata["speaker"]
-				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}')
+				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_group}/{speaker_id}/{fname}.{extension}')
+				os.makedirs(f'./{output_dataset}/{group_name}/{speaker_group}/{speaker_id}/', exist_ok=True)
 
 				if _replace_file_extension(outpath, audio_extension).exists():
 					continue
