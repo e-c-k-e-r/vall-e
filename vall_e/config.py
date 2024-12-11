@@ -22,7 +22,7 @@ from pathlib import Path
 
 from .utils.distributed import world_size
 from .utils.io import torch_load
-from .utils import set_seed, prune_missing, md5_hash
+from .utils import set_seed, prune_missing, md5_hash, coerce_dtype
 
 @dataclass()
 class BaseConfig:
@@ -721,15 +721,7 @@ class Trainer:
 
 	@cached_property
 	def dtype(self):
-		if self.weight_dtype == "float16":
-			return torch.float16
-		if self.weight_dtype == "bfloat16":
-			return torch.bfloat16
-		if self.weight_dtype == "float8_e5m2":
-			return torch.float8_e5m2
-		if self.weight_dtype == "float8_e4m3fn":
-			return torch.float8_e4m3fn
-		return torch.float32
+		return coerce_dtype(self.weight_dtype)
 
 	@cached_property
 	def scale_loss(self):
@@ -748,17 +740,7 @@ class Inference:
 
 	@property
 	def dtype(self):
-		if self.weight_dtype == "float16":
-			return torch.float16
-		if self.weight_dtype == "bfloat16":
-			return torch.bfloat16
-		if self.weight_dtype == "int8":
-			return torch.int8
-		if self.weight_dtype == "float8_e5m2":
-			return torch.float8_e5m2
-		if self.weight_dtype == "float8_e4m3fn":
-			return torch.float8_e4m3fn
-		return torch.float32
+		return coerce_dtype(self.weight_dtype)
 
 @dataclass()
 class Optimizations:

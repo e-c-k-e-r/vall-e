@@ -103,11 +103,17 @@ if cfg.optimizations.tensorrt:
 
 if cfg.optimizations.unsloth:
 	try:
-		from .unsloth import apply_unsloth_offloaded_gradient_checkpoint_monkey_patch
+		from .ext.unsloth import apply_unsloth_offloaded_gradient_checkpoint_monkey_patch
 		#apply_unsloth_offloaded_gradient_checkpoint_monkey_patch()
 	except Exception as e:
 		_logger.warning(f'Error while importing Unsloth: {str(e)}')
 		pass
+
+try:
+	from .ext.apollo import Apollo
+except Exception as e:
+	_logger.warning(f'Error while importing APOLLO: {str(e)}')
+	pass
 
 def compile_model(model, backend="auto"):
 	if not backend or backend == "auto":

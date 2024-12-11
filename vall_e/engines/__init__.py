@@ -110,8 +110,10 @@ def load_engines(training=True, **model_kwargs):
 			scheduler_class = None
 
 			params = {
+				"params": [ param for name, param in model.named_parameters() if name not in model.config.frozen_params ],
 				"lr": cfg.hyperparameters.learning_rate,
 			}
+
 			if cfg.hyperparameters.optimizer.lower() == "adamw":
 				params["betas"] = (0.9, 0.96)
 				params["eps"] = 1e-07
@@ -129,17 +131,30 @@ def load_engines(training=True, **model_kwargs):
 
 				params['d_coef'] = params['lr']
 				params['lr'] = 1.0
+			elif cfg.hyperparameters.optimizer.lower() in ["apollo","apollo-mini"]:
+				optimizer_class = ml.Apollo
+				is_mini = cfg.hyperparameters.optimizer.lower() == "apollo-mini"
+				param_kwargs = {
+					"rank": 1 if is_mini else 256,
+					"proj": "random",
+					"scale_type": "tensor" if is_mini else "channel",
+					"scale": 128 if is_mini else 1,
+					"update_proj_gap": 200,
+					"proj_type": "std",
+				}
+				# grab any extra configs from the YAML
+				param_kwargs.update(cfg.hyperparameters.optimizer_params)
+				# and blank it so it doesn't update the main optimizer kwargs
+				cfg.hyperparameters.optimizer_params = {}
+				# settings are stored under params
+				params["params"] = [dict(params=params["params"], **param_kwargs)]
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 
 			params.update(cfg.hyperparameters.optimizer_params)
-
-			optimizer = optimizer_class(
-				[ param for name, param in model.named_parameters() if name not in model.config.frozen_params ],
-				**params,
-			)
+			optimizer = optimizer_class(**params)
 
 			if cfg.hyperparameters.scheduler.lower() == "schedulefree":
 				if cfg.hyperparameters.optimizer.lower() == "adamw":

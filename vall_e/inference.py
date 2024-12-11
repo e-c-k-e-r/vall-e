@@ -296,7 +296,7 @@ class TTS():
 				use_lora=use_lora,
 			)
 
-			with torch.autocast("cuda", dtype=dtype, enabled=amp):
+			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				if model_len is not None:
 					# extra kwargs
 					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
@@ -384,7 +384,7 @@ class TTS():
 			resp = to_device(resp, device=self.device, dtype=torch.int16)
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
-			with torch.autocast("cuda", dtype=dtype, enabled=amp):
+			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				model = model_ar if model_ar is not None else model_nar
 				if model is not None:
 					text_list = model(
@@ -430,7 +430,7 @@ class TTS():
 			phns = to_device(phns, device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
-			with torch.autocast("cuda", dtype=dtype, enabled=amp):
+			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				input_kwargs = dict(
 					text_list=[phns],
 					proms_list=[prom],

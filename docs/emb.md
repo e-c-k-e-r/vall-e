@@ -77,13 +77,25 @@ I'm uncertain on how to remedy this, as my options are:
 
 ## `transcribe.py`
 
-This script handles taking raw input audio, and outputting adequate metadata containing transcriptions of said audio through `whisperX`.
+This script primarily handles taking raw input audio, and outputting adequate metadata containing transcriptions of said audio through `whisperX`.
 
 The process maintains slices `whisperX` thinks its best per the segments outputted, alongside the deduced language (if not specified).
 
 One limiting factor is that transcription transcribes into normal text, rather than the IPA phonemes the model was trained against. Some flavors *may* exist, but I have yet to test them extensively (if I did ever find one).
 
 Refer to the `__main__`'s arguments for usage details.
+
+### Metrics
+
+This script also handles calculating `WER` simply by transcribing the given audio file (and reference, if requested), then comparing the word error rate.
+
+This process *heavily* relies on text normalization, which currently is lacking, but transcribing the reference should keep things "normalized" per the transcriber.
+
+### ROCm
+
+Because life is pain, ROCm requires additional steps to ensure that `whisperX` works. A special fork of `CTranslate2` is required, but simplying following [these](https://github.com/arlo-phoenix/CTranslate2-rocm/blob/rocm/README_ROCM.md) steps should fix things.
+
+In the future, I would love to replace WhisperX for something simple.
 
 ## `process.py`
 
@@ -108,3 +120,7 @@ When processing a dataset, this requires already having accompanying metadata ge
 Be *very* careful if you opt to output unsegmented and segmented utterances, as the sliced version may end up amongst the top-K similar candidates.
 
 Refer to the `__main__`'s arguments for usage details.
+
+### Metrics
+
+This script also handles calculating `SIM-O` per [keonlee9420/evaluate-zero-shot-tts](https://github.com/keonlee9420/evaluate-zero-shot-tts/blob/master/src/evaluate_zero_shot_tts/utils/speaker_verification/verification.py), by making use of a model to create an embedding of a speaker, then computing cosine similarities on those embeddings.

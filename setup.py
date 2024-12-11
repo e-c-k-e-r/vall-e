@@ -91,6 +91,9 @@ setup(
 			"causal-conv1d",
 			"mamba-ssm",
 
+			#
+			"torcheval",
+
 			# attention helpers
 			"xformers",
 			"sageattention==1.0.6",

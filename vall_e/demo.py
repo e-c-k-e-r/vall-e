@@ -20,6 +20,7 @@ import base64
 import random
 import logging
 import time
+import torch
 
 _logger = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ from .inference import TTS
 from .config import cfg
 from .data import create_train_dataloader, create_val_dataloader, get_random_prompt
 from .emb.qnt import decode_to_file
+from .metrics import wer, sim_o
+from .utils import setup_logging
 
 from tqdm import tqdm, trange
 
@@ -230,6 +233,8 @@ def main():
 	elif args.comparison:
 		raise Exception(f"Unrecognized comparison flag: {args.comparison}")
 
+	setup_logging()
+
 	# read html template
 	html = open(args.demo_dir / "index.template.html", "r", encoding="utf-8").read()
 
@@ -318,6 +323,7 @@ def main():
 
 	inputs = []
 	outputs = []
+	metrics_inputs = []
 	comparison_inputs = []
 	for k, sample_dir in samples_dirs.items():
 		if not sample_dir.exists():
@@ -359,9 +365,15 @@ def main():
 
 			# segregate comparisons into its own batch because they use different kwargs (and I do not support variadic-batched kwargs)
 			if args.comparison:
-				comparison_inputs.append((text, prompt, language, out_path_comparison))
+				if (args.skip_existing and not out_path_comparison.exists()) or not (args.skip_existing):
+					comparison_inputs.append((text, prompt, language, out_path_comparison))
+				
+				metrics_inputs.append((text, language, out_path_comparison, reference))
 
-			inputs.append((text, prompt, language, out_path))
+			if (args.skip_existing and not out_path.exists()) or not (args.skip_existing):
+				inputs.append((text, prompt, language, out_path))
+			
+			metrics_inputs.append((text, language, out_path, reference))
 
 		outputs.append((k, samples))
 
@@ -371,10 +383,19 @@ def main():
 	if comparison_inputs:
 		process_batch( tts, comparison_inputs, sampling_kwargs | (comparison_kwargs["enabled"] if args.comparison else {}) )
 
+	metrics_map = {}
+	for text, language, out_path, reference_path in metrics_inputs:
+		wer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name="base" )
+		sim_o_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype )
+		metrics_map[out_path] = (wer_score, sim_o_score)
+
 	# collate entries into HTML
 	for k, samples in outputs:
 		samples = [
 			f'\n\t\t\t<tr>\n\t\t\t\t<td>{text}</td>'+
+			"".join([
+				f'\n\t\t\t\t<td>{metrics_map[audios[1]][0]:.3f}</td><td>{metrics_map[audios[1]][1]:.3f}</td>'
+			] ) +
 			"".join( [
 				f'\n\t\t\t\t<td><audio controls="controls" preload="none"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
 				for audio in audios

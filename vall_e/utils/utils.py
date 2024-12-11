@@ -124,6 +124,20 @@ def _get_named_modules(module, attrname):
 		if hasattr(module, attrname):
 			yield name, module
 
+def coerce_dtype(s):
+	# not a string
+	if not isinstance(s, str):
+		return s
+
+	if s == "float16":
+		return torch.float16
+	if s == "bfloat16":
+		return torch.bfloat16
+	if s == "float8_e5m2":
+		return torch.float8_e5m2
+	if s == "float8_e4m3fn":
+		return torch.float8_e4m3fn
+	return torch.float32
 
 def gather_attribute(module, attrname, delete=True, prefix=True):
 	ret = {}

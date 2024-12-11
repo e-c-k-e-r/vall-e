@@ -63,6 +63,13 @@ def sentence_split( s, split_by="sentences", quote_placeholder="<QUOTE>" ):
 	sentences = nltk.sent_tokenize(s)
 	return [ sentence.replace(quote_placeholder, '"') for sentence in sentences if sentence ]
 
+# to-do: improve upon this since it's kind of ass
+# this might be better to live in emb.g2p
+def normalize_text( s ):
+	s = s.lower()
+	s = re.sub(r'[^\w\s]', '', s)
+	return s
+
 @cache
 def get_random_prompts( validation=False, min_length=0, tokenized=False ):
 	duration_range = [ 5.5, 12.0 ] # to-do: pull from cfg.dataset.duration_range
@@ -1070,7 +1077,9 @@ class Dataset(_Dataset):
 		return root / name
 
 	def sample_prompts(self, spkr_name, reference, should_trim=True):
-		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0:
+		# return no prompt if explicitly requested for who knows why
+		# or if there's no other speakers to sample from (Emilia has a lot of singleton speakers, but I still want to make use of them)
+		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0 or len(self.paths_by_spkr_name[key]) <= 1:
 			return None
 
 		prom_list = []

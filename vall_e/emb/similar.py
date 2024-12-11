@@ -16,12 +16,13 @@ _logger = logging.getLogger(__name__)
 
 from tqdm.auto import tqdm
 from pathlib import Path
+from functools import cache
 
 import torchaudio.functional as F
 import torchaudio.transforms as T
 
 from ..config import cfg
-from ..utils import truncate_json
+from ..utils import truncate_json, coerce_dtype
 from ..utils.io import json_read, json_write
 
 from .g2p import encode as phonemize
@@ -29,19 +30,49 @@ from .qnt import encode as quantize, trim, convert_audio
 
 from ..webui import init_tts
 
-def load_audio( path ):
+def load_audio( path, target_sr=None ):
 	waveform, sr = torchaudio.load( path )
 	# mix channels
 	if waveform.shape[0] > 1:
 		waveform = torch.mean(waveform, dim=0, keepdim=True)
+	if target_sr is None:
+		target_sr = cfg.sample_rate
 	# resample
-	waveform, sr = convert_audio(waveform, sr, cfg.sample_rate, 1), cfg.sample_rate
+	waveform, sr = convert_audio(waveform, sr, target_sr, 1), target_sr
 
 	return waveform, sr
 
 tts = None
 
-def process(
+# this is for computing SIM-O, but can probably technically be used for scoring similar utterances
+@cache
+def _load_sim_model(device="cuda", dtype="float16", feat_type="wavlm_base_plus", feat_dim=768):
+	from ..utils.ext.ecapa_tdnn import ECAPA_TDNN_SMALL
+	model = ECAPA_TDNN_SMALL(feat_dim=feat_dim, feat_type=feat_type, config_path=None)
+	model = model.to(device=device, dtype=coerce_dtype(dtype))
+	model = model.eval()
+
+	return model
+
+@torch.no_grad()
+def speaker_similarity_embedding(
+	audio,
+	**model_kwargs,
+):
+	device = model_kwargs.get("device", "cuda")
+	dtype = model_kwargs.get("dtype", "float16")
+
+	model = _load_sim_model(**model_kwargs)
+	if isinstance(audio, str) or isinstance(audio, Path):
+		audio = load_audio(audio, 16000)
+
+	audio, sr = audio
+	audio = audio.to(device=device, dtype=coerce_dtype(dtype))
+
+	return model(audio)
+
+
+def batch_similar_utterances(
 	speaker_path,
 	yaml,
 	text=False,
@@ -266,7 +297,7 @@ def main():
 			if args.skip_existing and metadata_keys and "similar" in metadata[metadata_keys[-1]]:
 				return
 
-			similarities = process(
+			similarities = batch_similar_utterances(
 				speaker_path=cfg.data_dir / speaker_name,
 				yaml=args.yaml,
 				text=args.text,
@@ -314,7 +345,7 @@ def main():
 			add( data_dir, type="noise", texts=False )
 
 	elif args.input_speaker:
-		similarities = process(
+		similarities = batch_similar_utterances(
 			speaker_path=args.input_speaker,
 			yaml=args.yaml,
 			text=args.text,

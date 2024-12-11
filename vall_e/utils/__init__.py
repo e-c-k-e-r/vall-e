@@ -15,5 +15,6 @@ from .utils import (
     prune_missing,
     clamp,
     md5_hash,
-    convert_kwargs
+    convert_kwargs,
+    coerce_dtype
 )
