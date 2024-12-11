@@ -46,8 +46,24 @@ tts = None
 
 # this is for computing SIM-O, but can probably technically be used for scoring similar utterances
 @cache
-def _load_sim_model(device="cuda", dtype="float16", feat_type="wavlm_base_plus", feat_dim=768):
+def _load_sim_model(device="cuda", dtype="float16", feat_type="wavlm_base_plus", feat_dim="auto"):
+	logging.getLogger('s3prl').setLevel(logging.DEBUG)
+	logging.getLogger('speechbrain').setLevel(logging.DEBUG)
+
 	from ..utils.ext.ecapa_tdnn import ECAPA_TDNN_SMALL
+
+	if feat_dim == "auto":
+		if feat_type == "fbank":
+			feat_dim = 40
+		elif feat_type == "wavlm_base_plus":
+			feat_dim = 768
+		elif feat_type == "wavlm_large":
+			feat_dim = 1024
+		elif feat_type == "hubert_large_ll60k":
+			feat_dim = 1024
+		elif feat_type == "wav2vec2_xlsr":
+			feat_dim = 1024
+
 	model = ECAPA_TDNN_SMALL(feat_dim=feat_dim, feat_type=feat_type, config_path=None)
 	model = model.to(device=device, dtype=coerce_dtype(dtype))
 	model = model.eval()

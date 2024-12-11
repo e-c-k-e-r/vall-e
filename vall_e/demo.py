@@ -35,6 +35,9 @@ from .utils import setup_logging
 
 from tqdm import tqdm, trange
 
+def mean( l ):
+	return sum(l) / len(l)
+
 def encode(path):
 	if path is None or not path.exists():
 		return ""
@@ -132,6 +135,9 @@ def main():
 	parser.add_argument("--lora", action="store_true")
 	parser.add_argument("--comparison", type=str, default=None)
 	
+	parser.add_argument("--transcription-model", type=str, default="base")
+	parser.add_argument("--speaker-similarity-model", type=str, default="wavlm_base_plus")
+	
 	args = parser.parse_args()
 
 	config = None
@@ -149,6 +155,10 @@ def main():
 		args.preamble = "<br>".join([
 			'Below are some samples from my VALL-E implementation: <a href="https://git.ecker.tech/mrq/vall-e/">https://git.ecker.tech/mrq/vall-e/</a>.',
 			'Unlike the original VALL-E demo page, I\'m placing emphasis on the input prompt, as the model adheres to it stronger than others.',
+			f'Objective metrics are computed by transcribing ({args.transcription_model}) then comparing the word error rate on transcriptions (WER/CER), and computing the cosine similarities on embeddings through a speaker feature extraction model ({args.speaker_similarity_model}) (SIM-O)',
+			'<b>Total WER:</b> ${WER}'
+			'<b>Total CER:</b> ${CER}'
+			'<b>Total SIM-O:</b> ${SIM-O}'
 		])
 
 	# comparison kwargs
@@ -384,17 +394,18 @@ def main():
 		process_batch( tts, comparison_inputs, sampling_kwargs | (comparison_kwargs["enabled"] if args.comparison else {}) )
 
 	metrics_map = {}
-	for text, language, out_path, reference_path in metrics_inputs:
-		wer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name="base" )
-		sim_o_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype )
-		metrics_map[out_path] = (wer_score, sim_o_score)
+	total_metrics = (0, 0)
+	for text, language, out_path, reference_path in tqdm(metrics_inputs, desc="Calculating metrics"):
+		wer_score, cer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model )
+		sim_o_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype, feat_type=args.speaker_similarity_model )
+		metrics_map[out_path] = (wer_score, cer_score, sim_o_score)
 
 	# collate entries into HTML
 	for k, samples in outputs:
 		samples = [
 			f'\n\t\t\t<tr>\n\t\t\t\t<td>{text}</td>'+
 			"".join([
-				f'\n\t\t\t\t<td>{metrics_map[audios[1]][0]:.3f}</td><td>{metrics_map[audios[1]][1]:.3f}</td>'
+				f'\n\t\t\t\t<td>{metrics_map[audios[1]][0]:.3f}</td><td>{metrics_map[audios[1]][1]:.3f}</td><td>{metrics_map[audios[1]][2]:.3f}</td>'
 			] ) +
 			"".join( [
 				f'\n\t\t\t\t<td><audio controls="controls" preload="none"><source src="{str(audio).replace(str(args.demo_dir), args.audio_path_root) if args.audio_path_root else encode(audio)}"/></audio></td>'
@@ -406,6 +417,10 @@ def main():
 
 		# write audio into template
 		html = html.replace("${"+k.upper()+"_SAMPLES}", "\n".join( samples ) )
+	
+	html = html.replace("${WER}", f'{mean([ metrics[0] for metrics in metrics_map.values() ]):.3f}' )
+	html = html.replace("${CER}", f'{mean([ metrics[1] for metrics in metrics_map.values() ]):.3f}' )
+	html = html.replace("${SIM-O}", f'{mean([ metrics[2] for metrics in metrics_map.values() ]):.3f}' )
 
 	if args.comparison:
 		disabled, enabled = comparison_kwargs["titles"]

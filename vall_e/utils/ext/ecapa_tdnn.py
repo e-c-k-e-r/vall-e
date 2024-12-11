@@ -1,4 +1,5 @@
 # borrowed with love from "https://github.com/keonlee9420/evaluate-zero-shot-tts/blob/master/src/evaluate_zero_shot_tts/utils/speaker_verification/models/ecapa_tdnn.py"
+# (which was from https://github.com/microsoft/UniSpeech/blob/main/downstreams/speaker_verification/models/ecapa_tdnn.py)
 # part of the code is borrowed from https://github.com/lawlict/ECAPA-TDNN
 
 import torch
