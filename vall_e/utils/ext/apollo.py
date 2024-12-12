@@ -326,8 +326,10 @@ class Apollo(Optimizer):
 		if closure is not None:
 			loss = closure()
 
+		params_idx = 0
 		for group in self.param_groups:
 			for p in group["params"]:
+				params_idx += 1
 				if p.grad is None:
 					continue
 				grad = p.grad
@@ -338,6 +340,9 @@ class Apollo(Optimizer):
 				
 				if "step" not in state:
 					state["step"] = 0
+
+				if "seed" not in state:
+					state["seed"] = params_idx
 
 				# GaLore Projection
 				if "rank" in group:

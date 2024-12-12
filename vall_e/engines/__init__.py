@@ -132,6 +132,9 @@ def load_engines(training=True, **model_kwargs):
 				params['d_coef'] = params['lr']
 				params['lr'] = 1.0
 			elif cfg.hyperparameters.optimizer.lower() in ["apollo","apollo-mini"]:
+				if backend == "deepspeed":
+					raise Exception("APOLLO currently does not play nicely with DeepSpeed.")
+
 				optimizer_class = ml.Apollo
 				is_mini = cfg.hyperparameters.optimizer.lower() == "apollo-mini"
 				param_kwargs = {
@@ -146,8 +149,22 @@ def load_engines(training=True, **model_kwargs):
 				param_kwargs.update(cfg.hyperparameters.optimizer_params)
 				# and blank it so it doesn't update the main optimizer kwargs
 				cfg.hyperparameters.optimizer_params = {}
-				# settings are stored under params
-				params["params"] = [dict(params=params["params"], **param_kwargs)]
+				
+				"""
+				params["params"] = [{'params': params["params"]} | param_kwargs]
+				"""
+				target_params = []
+				target_modules_list = ["attn", "mlp"]
+				for module_name, module in model.named_modules():
+					if not (isinstance(module, torch.nn.Linear)):
+						continue
+					if not any(target_key in module_name for target_key in target_modules_list):
+						continue
+					target_params.append(module.weight)
+
+				param_ids = [id(p) for p in target_params]
+				regular_params = [p for p in model.parameters() if id(p) not in param_ids]
+				params["params"] = [{'params': regular_params}, {'params': target_params} | param_kwargs]
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
 			else:
@@ -207,6 +224,28 @@ def load_engines(training=True, **model_kwargs):
 			for k in erase:
 				del state[k]
 
+			# converts an AR+NAR model into an AR+NAR-len model
+			"""
+			if True:
+				# move STT one over
+				state['classifiers.proj.9.weight'] = state['classifiers.proj.8.weight'].clone()
+				state['classifiers.proj.9.bias'] = state['classifiers.proj.8.bias'].clone()
+				# copy from AR:0:0 classifier
+				if True:
+					state['classifiers.proj.8.weight'] = state['classifiers.proj.0.weight'].clone()
+					state['classifiers.proj.8.bias'] = state['classifiers.proj.0.bias'].clone()
+					# copy from AR:0:0 embeddings
+					state['resps_emb.embeddings.8.weight'] = state['resps_emb.embeddings.0.weight'].clone()
+				# remove
+				else:
+					if 'classifiers.proj.8.weight' in state:
+						del state['classifiers.proj.8.weight']
+					if 'classifiers.proj.8.bias' in state:
+						del state['classifiers.proj.8.bias']
+					if 'resps_emb.embeddings.8.weight' in state:
+						del state['resps_emb.embeddings.8.weight']
+			"""
+
 			# resize modules if I'm doing experiments and can't be assed to manually trim things
 			if cfg.trainer.resize_modules:
 				uses_stop_token = 1 if ("ar" in model.capabilities or "len" in model.capabilities) > 0 else 0
@@ -235,69 +274,49 @@ def load_engines(training=True, **model_kwargs):
 						continue
 					state[k] = ml.resize_weight( state[k], tokens )
 
-				"""
-				if True:
-					# move STT one over
-					state['classifiers.proj.9.weight'] = state['classifiers.proj.8.weight'].clone()
-					state['classifiers.proj.9.bias'] = state['classifiers.proj.8.bias'].clone()
-					# copy from AR:0:0 classifier
-					if False:
-						state['classifiers.proj.8.weight'] = state['classifiers.proj.0.weight'].clone()
-						state['classifiers.proj.8.bias'] = state['classifiers.proj.0.bias'].clone()
-						# copy from AR:0:0 embeddings
-						state['resps_emb.embeddings.8.weight'] = state['resps_emb.embeddings.0.weight'].clone()
-					# remove
-					else:
-						if 'classifiers.proj.8.weight' in state:
-							del state['classifiers.proj.8.weight']
-						if 'classifiers.proj.8.bias' in state:
-							del state['classifiers.proj.8.bias']
-						if 'resps_emb.embeddings.8.weight' in state:
-							del state['resps_emb.embeddings.8.weight']
-				"""
+			# stuff to inject new layers into an existing model train over (not recommended, it doesnt amount to anything)
+			"""
+			if True:
+				remapped_dict = {}
+				remapped_indices = [
+					(0, 1),
+					(1, 2),
+					(2, 3),
+					(3, 5),
+					(4, 6),
+					(5, 7),
+					(6, 9),
+					(7, 10),
+					(8, 11),
+					(9, 13),
+					(10, 14),
+					(11, 15),
+				]
 
-				"""
-				if True:
-					remapped_dict = {}
-					remapped_indices = [
-						(0, 1),
-						(1, 2),
-						(2, 3),
-						(3, 5),
-						(4, 6),
-						(5, 7),
-						(6, 9),
-						(7, 10),
-						(8, 11),
-						(9, 13),
-						(10, 14),
-						(11, 15),
-					]
+				for src, dst in remapped_indices:
+					remapped_dict[f"model.layers.{dst}.input_layernorm.weight"] = state[f"model.layers.{src}.input_layernorm.weight"]
+					remapped_dict[f"model.layers.{dst}.self_attn.k_proj.weight"] = state[f"model.layers.{src}.self_attn.k_proj.weight"]
+					remapped_dict[f"model.layers.{dst}.self_attn.q_proj.weight"] = state[f"model.layers.{src}.self_attn.q_proj.weight"]
+					remapped_dict[f"model.layers.{dst}.self_attn.v_proj.weight"] = state[f"model.layers.{src}.self_attn.v_proj.weight"]
+					remapped_dict[f"model.layers.{dst}.self_attn.o_proj.weight"] = state[f"model.layers.{src}.self_attn.o_proj.weight"]
+					remapped_dict[f"model.layers.{dst}.post_attention_layernorm.weight"] = state[f"model.layers.{src}.post_attention_layernorm.weight"]
+					remapped_dict[f"model.layers.{dst}.mlp.down_proj.weight"] = state[f"model.layers.{src}.mlp.down_proj.weight"]
+					remapped_dict[f"model.layers.{dst}.mlp.gate_proj.weight"] = state[f"model.layers.{src}.mlp.gate_proj.weight"]
+					remapped_dict[f"model.layers.{dst}.mlp.up_proj.weight"] = state[f"model.layers.{src}.mlp.up_proj.weight"]
 
-					for src, dst in remapped_indices:
-						remapped_dict[f"model.layers.{dst}.input_layernorm.weight"] = state[f"model.layers.{src}.input_layernorm.weight"]
-						remapped_dict[f"model.layers.{dst}.self_attn.k_proj.weight"] = state[f"model.layers.{src}.self_attn.k_proj.weight"]
-						remapped_dict[f"model.layers.{dst}.self_attn.q_proj.weight"] = state[f"model.layers.{src}.self_attn.q_proj.weight"]
-						remapped_dict[f"model.layers.{dst}.self_attn.v_proj.weight"] = state[f"model.layers.{src}.self_attn.v_proj.weight"]
-						remapped_dict[f"model.layers.{dst}.self_attn.o_proj.weight"] = state[f"model.layers.{src}.self_attn.o_proj.weight"]
-						remapped_dict[f"model.layers.{dst}.post_attention_layernorm.weight"] = state[f"model.layers.{src}.post_attention_layernorm.weight"]
-						remapped_dict[f"model.layers.{dst}.mlp.down_proj.weight"] = state[f"model.layers.{src}.mlp.down_proj.weight"]
-						remapped_dict[f"model.layers.{dst}.mlp.gate_proj.weight"] = state[f"model.layers.{src}.mlp.gate_proj.weight"]
-						remapped_dict[f"model.layers.{dst}.mlp.up_proj.weight"] = state[f"model.layers.{src}.mlp.up_proj.weight"]
+					del state[f"model.layers.{src}.input_layernorm.weight"]
+					del state[f"model.layers.{src}.self_attn.k_proj.weight"]
+					del state[f"model.layers.{src}.self_attn.q_proj.weight"]
+					del state[f"model.layers.{src}.self_attn.v_proj.weight"]
+					del state[f"model.layers.{src}.self_attn.o_proj.weight"]
+					del state[f"model.layers.{src}.post_attention_layernorm.weight"]
+					del state[f"model.layers.{src}.mlp.down_proj.weight"]
+					del state[f"model.layers.{src}.mlp.gate_proj.weight"]
+					del state[f"model.layers.{src}.mlp.up_proj.weight"]
 
-						del state[f"model.layers.{src}.input_layernorm.weight"]
-						del state[f"model.layers.{src}.self_attn.k_proj.weight"]
-						del state[f"model.layers.{src}.self_attn.q_proj.weight"]
-						del state[f"model.layers.{src}.self_attn.v_proj.weight"]
-						del state[f"model.layers.{src}.self_attn.o_proj.weight"]
-						del state[f"model.layers.{src}.post_attention_layernorm.weight"]
-						del state[f"model.layers.{src}.mlp.down_proj.weight"]
-						del state[f"model.layers.{src}.mlp.gate_proj.weight"]
-						del state[f"model.layers.{src}.mlp.up_proj.weight"]
-
-					for k, v in remapped_dict.items():
-						state[k] = v
-				"""
+				for k, v in remapped_dict.items():
+					state[k] = v
+			"""
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 

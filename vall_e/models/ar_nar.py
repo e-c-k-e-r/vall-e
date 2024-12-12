@@ -934,6 +934,7 @@ def example_usage():
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
 	learning_rate = cfg.hyperparameters.learning_rate if cfg.yaml_path is not None else None
 
+	params = model.parameters()
 	if cfg.optimizations.dadaptation:
 		# do not combine the two
 		if scheduler == "schedulefree":
@@ -966,12 +967,28 @@ def example_usage():
 			learning_rate = 0.01
 
 		optimizer = ml.Apollo
+
+		"""
+		target_params = []
+		target_modules_list = ["attn", "mlp"]
+		for module_name, module in model.named_modules():
+			if not (isinstance(module, torch.nn.Linear)):
+				continue
+			if not any(target_key in module_name for target_key in target_modules_list):
+				continue
+			target_params.append(module.weight)
+
+		param_ids = [id(p) for p in target_params]
+		regular_params = [p for p in model.parameters() if id(p) not in param_ids]
+		params = [{'params': regular_params}, {'params': target_params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
+		"""
+		params = [{'params': params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 
 	_logger.info(f"Optimizer: {optimizer}\tLearning rate: {learning_rate}")
 
-	optimizer = optimizer(model.parameters(), lr=learning_rate)
+	optimizer = optimizer(params, lr=learning_rate)
 
 	if scheduler == "schedulefree":
 		if isinstance(optimizer, ml.AdamW):
