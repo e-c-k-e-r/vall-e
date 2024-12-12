@@ -252,6 +252,7 @@ class TTS():
 		if not text_languages:
 			text_languages = languages
 
+		inputs = []
 		# tensorfy inputs
 		for i in range( samples ):
 			# detect language 
@@ -266,17 +267,24 @@ class TTS():
 			references[i] = to_device(references[i], device=self.device, dtype=torch.int16)
 			languages[i] = to_device(languages[i], device=self.device, dtype=torch.uint8)
 
+			seq_len = texts[i].shape[0] + 1 + (references[i].shape[0] if references[i] is not None else 0) + 1
+
+			inputs.append((texts[i], references[i], languages[i], out_paths[i], seq_len))
+
+		# attempt to reduce padding
+		inputs.sort(key=lambda x: x[-1])
+
 		# create batches
 		batches = []
 		buffer = ([], [], [], [])
-		for batch in zip( texts, references, languages, out_paths ):
+		for batch in inputs:
 			# flush
 			if len(buffer[0]) >= batch_size:
 				batches.append(buffer)
 				buffer = ([], [], [], [])
 
 			# insert into buffer
-			for i, x in enumerate( batch ):
+			for i, x in enumerate( batch[:-1] ):
 				buffer[i].append(x)
 
 		# flush

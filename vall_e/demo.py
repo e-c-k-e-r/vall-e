@@ -341,7 +341,9 @@ def main():
 		
 		samples = []
 		speakers = [ dir for dir in sample_dir.iterdir() if dir.is_dir() ]
-		sources = [ "ms_valle", "f5" ] if k == "librispeech" else ["f5"]
+		speakers.sort()
+		#sources = [ "ms_valle", "f5" ] if k == "librispeech" else ["f5"]
+		sources = [ "ms_valle" ] if k == "librispeech" else []
 
 		# generate demo output
 		for dir in tqdm(speakers, desc=f"Generating demo for {k}"):
@@ -376,19 +378,19 @@ def main():
 
 			# segregate comparisons into its own batch because they use different kwargs (and I do not support variadic-batched kwargs)
 			if args.comparison:
-				should_generate = (args.skip_existing and not out_path.exists()) or not (args.skip_existing)
+				should_generate = (args.skip_existing and not out_path_comparison.exists()) or not (args.skip_existing)
 				
 				if should_generate:
 					comparison_inputs.append((text, prompt, language, out_path_comparison))
 				
-				metrics_inputs.append((text, language, out_path_comparison, reference, metrics_path))
+				metrics_inputs.append((text, language, out_path_comparison, prompt, reference, metrics_path))
 
 			should_generate = (args.skip_existing and not out_path.exists()) or not (args.skip_existing)
 
 			if should_generate:
 				inputs.append((text, prompt, language, out_path))
 			
-			metrics_inputs.append((text, language, out_path, reference, metrics_path))
+			metrics_inputs.append((text, language, out_path, prompt, reference, metrics_path))
 
 		outputs.append((k, samples))
 
@@ -399,12 +401,12 @@ def main():
 		process_batch( tts, comparison_inputs, sampling_kwargs | (comparison_kwargs["enabled"] if args.comparison else {}) )
 
 	metrics_map = {}
-	for text, language, out_path, reference_path, metrics_path in tqdm(metrics_inputs, desc="Calculating metrics"):
+	for text, language, out_path, prompt_path, reference_path, metrics_path in tqdm(metrics_inputs, desc="Calculating metrics"):
 		calculate = not metrics_path.exists() or (metrics_path.stat().st_mtime < out_path.stat().st_mtime)
 
 		if calculate:
 			wer_score, cer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model )
-			sim_o_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype, model_name=args.speaker_similarity_model )
+			sim_o_score = sim_o( out_path, prompt_path, device=tts.device, dtype=tts.dtype, model_name=args.speaker_similarity_model )
 
 			metrics = {"wer": wer_score, "cer": cer_score, "sim-o": sim_o_score}
 			json_write( metrics, metrics_path )

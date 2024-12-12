@@ -1546,7 +1546,7 @@ class Base(nn.Module):
 		casual_levels = [ "AR:0:0", "stt", "len" ]
 
 		# right now limit to new versions because I need to retrain the model for noncausal masks...
-		is_causal = [ l in casual_levels for l in classifier_levels ] if self.noncausal_masks else None
+		is_causal = [ l in casual_levels for l in classifier_levels ] if self.noncausal_masks else [ True for l in classifier_levels ]
 
 		output = self._forward(
 			inputs=x,
