@@ -23,7 +23,6 @@ except Exception as e:
 	langdetect = None
 	print(f'Error while importing langdetect: {str(e)}')
 
-@cache
 def detect_language( text ):
 	if langdetect is None:
 		raise Exception('langdetect is not installed.')
@@ -34,7 +33,6 @@ def _get_graphs(path):
 		graphs = f.read()
 	return graphs
 
-@cache
 def coerce_to_hiragana( runes, sep="" ):	
 	if pykakasi is None:
 		raise Exception('pykakasi is not installed.')

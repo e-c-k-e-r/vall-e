@@ -19,7 +19,7 @@ from .config import cfg, Config
 from .models import get_models
 from .models.lora import enable_lora
 from .engines import load_engines, deepspeed_available
-from .data import get_phone_symmap, get_lang_symmap, _load_quants, _cleanup_phones, tokenize, sentence_split
+from .data import get_phone_symmap, get_lang_symmap, tokenize, sentence_split
 from .models import download_model, DEFAULT_MODEL_PATH
 
 if deepspeed_available:
