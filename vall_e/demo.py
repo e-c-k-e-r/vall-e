@@ -302,8 +302,8 @@ def main():
 		num = args.dataset_samples if args.dataset_samples else length
 
 		for i in trange( num, desc="Sampling dataset for samples" ):
-			index = i if not cfg.dataset.sample_shuffle else random.randint( 0, len( dataloader.dataset ) )
-			batch = dataloader.dataset[i]
+			index = i if not cfg.dataset.sample_shuffle else random.randint( 0, len( dataloader.dataset ) - 1 )
+			batch = dataloader.dataset[index]
 
 			if args.dataset_dir_name_prefix:
 				dir = args.demo_dir / args.dataset_dir_name / f'{args.dataset_dir_name_prefix}_{i}'

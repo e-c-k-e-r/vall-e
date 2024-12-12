@@ -633,8 +633,6 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		phones = entry['phones'] if "phones" in entry else 0
 		duration = entry['duration'] if "duration" in entry else 0
 
-		#print( id, duration )
-
 		# add to duration bucket
 		k = key(id, entry)
 		if type not in _durations_map:
@@ -1079,7 +1077,7 @@ class Dataset(_Dataset):
 	def sample_prompts(self, spkr_name, reference, should_trim=True):
 		# return no prompt if explicitly requested for who knows why
 		# or if there's no other speakers to sample from (Emilia has a lot of singleton speakers, but I still want to make use of them)
-		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0 or len(self.paths_by_spkr_name[key]) <= 1:
+		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0 or len(self.paths_by_spkr_name[spkr_name]) <= 1:
 			return None
 
 		prom_list = []
@@ -1686,7 +1684,11 @@ def create_dataset_hdf5( skip_existing=True ):
 		metadata_path = Path(f"{metadata_root}/{speaker_name}.json")
 		metadata_path.parents[0].mkdir(parents=True, exist_ok=True)
 
-		metadata = json_read(metadata_path, default={})
+		try:
+			metadata = json_read(metadata_path, default={})
+		except Exception as e:
+			print(metadata_path, e)
+			return
 
 		if not os.path.isdir(f'{root}/{name}/'):
 			return

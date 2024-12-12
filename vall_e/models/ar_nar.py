@@ -961,6 +961,11 @@ def example_usage():
 			learning_rate = 1.0e-4
 
 		optimizer = ml.SGD
+	elif optimizer == "apollo":
+		if learning_rate is None:
+			learning_rate = 0.01
+
+		optimizer = ml.Apollo
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 

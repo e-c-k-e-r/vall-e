@@ -884,18 +884,29 @@ class Config(BaseConfig):
 		if not isinstance( path, Path ):
 			path = Path(path)
 
-		# do not glob
+		# do not glob if no wildcard to glob
 		if "*" not in str(path):
 			return [ path ]
-		
-		metadata_parent = cfg.metadata_dir / path.parent
-		data_parent = cfg.data_dir / path.parent
-		
-		if metadata_parent.exists():
-			return [ path.parent / child.stem for child in Path(metadata_parent).glob(path.name) ]
 
+		dir = path.parent
+		name = path.name
+		
+		metadata_parent = cfg.metadata_dir / dir
+		data_parent = cfg.data_dir / dir
+		
+		res = []
+		# grab any paths from metadata folder (since this is for HDF5)
+		if metadata_parent.exists():
+			res = [ path.parent / child.stem for child in Path(metadata_parent).glob(name) ]
+			# return if found anything
+			if res:
+				return res
+		# grab anything from the data folder (if no metadata exists)
 		if data_parent.exists():
-			return [ path.parent / child.name for child in Path(data_parent).glob(path.name) ]
+			res = [ path.parent / child.name for child in Path(data_parent).glob(name) ]
+			# return if found anything
+			if res:
+				return res
 		
 		# return an empty list
 		if self.silent_errors:
