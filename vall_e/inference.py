@@ -280,7 +280,7 @@ class TTS():
 				buffer[i].append(x)
 
 		# flush
-		if len(buffer[0]) >= batch_size:
+		if buffer:
 			batches.append(buffer)
 			buffer = ([], [], [], [])
 

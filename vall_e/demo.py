@@ -67,7 +67,6 @@ def process_batch( tts, inputs, kwargs={} ):
 		languages=[ x[2] for x in inputs ],
 		out_paths=[ x[3] for x in inputs ],
 	)
-
 	safe_batched_inference( tts, **kwargs )
 
 # Would be downright sugoi if I could incorporate this with into __main__
@@ -136,7 +135,7 @@ def main():
 	parser.add_argument("--comparison", type=str, default=None)
 	
 	parser.add_argument("--transcription-model", type=str, default="base")
-	parser.add_argument("--speaker-similarity-model", type=str, default="wavlm_base_plus")
+	parser.add_argument("--speaker-similarity-model", type=str, default="microsoft/wavlm-base-sv")
 	
 	args = parser.parse_args()
 
@@ -397,7 +396,7 @@ def main():
 	total_metrics = (0, 0)
 	for text, language, out_path, reference_path in tqdm(metrics_inputs, desc="Calculating metrics"):
 		wer_score, cer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model )
-		sim_o_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype, feat_type=args.speaker_similarity_model )
+		sim_o_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype, model_name=args.speaker_similarity_model )
 		metrics_map[out_path] = (wer_score, cer_score, sim_o_score)
 
 	# collate entries into HTML

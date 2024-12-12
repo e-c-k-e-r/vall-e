@@ -46,29 +46,20 @@ tts = None
 
 # this is for computing SIM-O, but can probably technically be used for scoring similar utterances
 @cache
-def _load_sim_model(device="cuda", dtype="float16", feat_type="wavlm_base_plus", feat_dim="auto"):
+def _load_sim_model(device="cuda", dtype="float16", model_name='microsoft/wavlm-base-sv'):
 	logging.getLogger('s3prl').setLevel(logging.DEBUG)
 	logging.getLogger('speechbrain').setLevel(logging.DEBUG)
 
-	from ..utils.ext.ecapa_tdnn import ECAPA_TDNN_SMALL
+	#from ..utils.ext.ecapa_tdnn import ECAPA_TDNN_SMALL
+	from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
 
-	if feat_dim == "auto":
-		if feat_type == "fbank":
-			feat_dim = 40
-		elif feat_type == "wavlm_base_plus":
-			feat_dim = 768
-		elif feat_type == "wavlm_large":
-			feat_dim = 1024
-		elif feat_type == "hubert_large_ll60k":
-			feat_dim = 1024
-		elif feat_type == "wav2vec2_xlsr":
-			feat_dim = 1024
-
-	model = ECAPA_TDNN_SMALL(feat_dim=feat_dim, feat_type=feat_type, config_path=None)
+	model = WavLMForXVector.from_pretrained(model_name)
 	model = model.to(device=device, dtype=coerce_dtype(dtype))
 	model = model.eval()
+	
+	feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
 
-	return model
+	return model, feature_extractor
 
 @torch.no_grad()
 def speaker_similarity_embedding(
@@ -78,15 +69,19 @@ def speaker_similarity_embedding(
 	device = model_kwargs.get("device", "cuda")
 	dtype = model_kwargs.get("dtype", "float16")
 
-	model = _load_sim_model(**model_kwargs)
+	model, feature_extractor = _load_sim_model(**model_kwargs)
+	
 	if isinstance(audio, str) or isinstance(audio, Path):
 		audio = load_audio(audio, 16000)
 
 	audio, sr = audio
-	audio = audio.to(device=device, dtype=coerce_dtype(dtype))
-
-	return model(audio)
-
+	features = feature_extractor(audio, return_tensors="pt", sampling_rate=sr)
+	features = features.input_values.squeeze(0).to(dtype=coerce_dtype(dtype), device=device)
+	
+	output = model(input_values=features)
+	embeddings = output.embeddings
+	embeddings = torch.nn.functional.normalize(embeddings, dim=-1).cpu()
+	return embeddings
 
 def batch_similar_utterances(
 	speaker_path,

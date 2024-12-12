@@ -10,7 +10,12 @@ import torch.nn.functional as F
 
 from pathlib import Path
 from torcheval.metrics.functional import word_error_rate
-from torchmetrics import CharErrorRate
+
+# cringe warning message
+try:
+	from torchmetrics.text import CharErrorRate
+except Exception as e:
+	from torchmetrics import CharErrorRate
 
 def wer( audio, reference, language="auto", normalize=True, phonemize=True, **transcription_kwargs ):
 	if language == "auto":
@@ -45,4 +50,4 @@ def sim_o( audio, reference, **kwargs ):
 	audio_emb = speaker_similarity_embedding( audio, **kwargs )
 	reference_emb = speaker_similarity_embedding( reference, **kwargs )
 
-	return F.cosine_similarity( audio_emb, reference_emb ).item()
+	return F.cosine_similarity( audio_emb, reference_emb, dim=-1 ).item()
