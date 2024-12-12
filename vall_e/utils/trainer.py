@@ -106,6 +106,9 @@ def _make_infinite_epochs(dl):
 	total = dl.dataset.batches()
 	manual_update = False
 
+	if total == 0:
+		raise Exception("Empty dataset")
+
 	while True:
 		if dl.dataset.index() == 0:
 			_logger.info("New epoch starts.")

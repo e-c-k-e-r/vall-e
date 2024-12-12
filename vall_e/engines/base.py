@@ -67,10 +67,11 @@ class Engine():
 		self.lr_scheduler = kwargs['lr_scheduler'] if 'lr_scheduler' in kwargs else None
 
 		stats = kwargs.pop("stats", {})
-		self.global_steps = stats.pop("global_step", 0)
-		self.micro_steps = stats.pop("micro_step", 0)
-		self.global_samples = stats.pop("global_samples", 0)
-		self.tokens_processed = stats.pop("tokens_processed", 0)
+		if stats is not None:
+			self.global_steps = stats.pop("global_step", 0)
+			self.micro_steps = stats.pop("micro_step", 0)
+			self.global_samples = stats.pop("global_samples", 0)
+			self.tokens_processed = stats.pop("tokens_processed", 0)
 
 		self._frozen_params = set()
 

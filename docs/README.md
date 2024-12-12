@@ -10,14 +10,22 @@ At the time, state-of-the-art neural-based TTS solutions were sparing. TorToiSe 
 
 Unlike the paper, this VALL-E aims to:
 * be lightweight as possible, only requiring one model to load and use (and EnCodec/Vocos as an audio encoder/decoder).
-	+ Even the original VALL-E requires a separate AR and a NAR.
+	+ Even the original VALL-E requires two separate models (one for the course codes, and one for the fine codes).
 * keep training and finetuning (be it the base model or through LoRAs) accessible to anyone.
 	+ Bark was needlessly complex in providing even additional voices to use.
 	+ Current SoTA such as F5-TTS supports it, but seems to have a rather high ceiling to finetune it. 
 * provide decent zero-shot text-to-speech synthesis, both without requiring sampling adjustments and providing thorough sampler settings.
 * provide additional, easy to use functionality, that other solutions don't offer.
 
-However, at this point and time, the implementation is rather divorced from VALL-E and its derivating papers, but the core principle is still followed.
+However, at this point and time, the implementation is *very* divorced from VALL-E and its derivating papers, but the core principle is still followed.
+
+# Why *not* this VALL-E?
+
+This VALL-E is still actively being iterated upon without any actual proper standards or procedures.
+* While I try to maintain interop with previous versions, I can't guarantee it (for example, support for `ar+nar-retnet-8` dropped due to shifting focuses).
+* I am *very* stubborn with/against some approaches, paradigms, and methodologies.
+
+There are far better TTS solutions out there, such as [MaskGCT](https://github.com/open-mmlab/Amphion/tree/main/models/tts/maskgct) and [F5-TTS](https://github.com/SWivid/F5-TTS). They're both easy to use and offer amazing results.
 
 ## Model Specifications
 
@@ -82,10 +90,9 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
   * using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
   * mixing multiple speakers through summing input prompt embeddings
     * I do not expect this to work, but you never know...
-* [ ] objective metrics such as WER / SIM-O
-  * [ ] WER simply requires transcribing audio then computing word error rates through the transcriptions
-    * this does require subjugating an STT model though (like Whisper(X))
-  * [ ] SIM-O requires passing the raw waveform through a speaker-similarity model
+* [x] objective metrics such as WER / SIM-O
+  * [x] WER simply requires transcribing audio then computing word error rates through the transcriptions
+  * [x] SIM-O requires passing the raw waveform through a speaker-similarity model
 
 ## "Postmortem"
 
@@ -109,7 +116,7 @@ However, while this solution boasts being lightweight, there are some caveats fo
     * VALL-E Continuous (prefixing with the input prompt) could also fix this, but technically makes it one-shot and not zero-shot
 * multi-lingual support is a bit of an afterthought
   * supported non-English speakers have the confidence problem for some speakers but exacerbated
-* there seems to be a regression with an increase in the word error rate, although it might only be inherent to the `NAR-len`
+* there's a regression in the `ar+nar-len-llama-8` model with a decrease in speaker similarity.
 
 ## Notices and Citations
 

@@ -279,7 +279,7 @@ def main():
 
 	# pull from provided samples
 	samples_dirs = {
-		"librispeech": args.demo_dir / "librispeech",
+		#"librispeech": args.demo_dir / "librispeech",
 	}
 
 	if (args.demo_dir / args.dataset_dir_name).exists():
