@@ -155,9 +155,9 @@ def main():
 			'Below are some samples from my VALL-E implementation: <a href="https://git.ecker.tech/mrq/vall-e/">https://git.ecker.tech/mrq/vall-e/</a>.',
 			'Unlike the original VALL-E demo page, I\'m placing emphasis on the input prompt, as the model adheres to it stronger than others.',
 			f'Objective metrics are computed by transcribing ({args.transcription_model}) then comparing the word error rate on transcriptions (WER/CER), and computing the cosine similarities on embeddings through a speaker feature extraction model ({args.speaker_similarity_model}) (SIM-O)',
-			'<b>Total WER:</b> ${WER}'
-			'<b>Total CER:</b> ${CER}'
-			'<b>Total SIM-O:</b> ${SIM-O}'
+			'<b>Total WER:</b> ${WER}<br>'
+			'<b>Total CER:</b> ${CER}<br>'
+			'<b>Total SIM-O:</b> ${SIM-O}<br>'
 		])
 
 	# comparison kwargs

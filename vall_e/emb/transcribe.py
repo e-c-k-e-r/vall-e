@@ -9,12 +9,14 @@ import argparse
 import torch
 import torchaudio
 
+"""
 try:
 	import whisperx
 except Exception as e:
 	whisperx = None
 	print(f"Error while querying for whisperx: {str(e)}")
 	pass
+"""
 
 from transformers import pipeline
 
@@ -193,6 +195,7 @@ def transcribe(
 	return metadata
 
 # for backwards compat since it also handles some other things for me
+"""
 def transcribe_whisperx(
 	audio,
 	language = "auto",
@@ -248,6 +251,7 @@ def transcribe_whisperx(
 	metadata["end"] = end
 
 	return metadata
+"""
 
 def transcribe_batch(
 	input_audio = "voices",
@@ -315,7 +319,7 @@ def transcribe_batch(
 				if os.path.isdir(inpath):
 					continue
 
-				metadata[filename] = transcribe_whisperx( inpath, model_name=model_name, diarize=diarize, device=device, dtype=dtype )
+				metadata[filename] = transcribe( inpath, model_name=model_name, diarize=diarize, device=device, dtype=dtype )
 
 				open(outpath, 'w', encoding='utf-8').write(json.dumps(metadata))
 
