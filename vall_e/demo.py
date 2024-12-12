@@ -134,7 +134,7 @@ def main():
 	parser.add_argument("--lora", action="store_true")
 	parser.add_argument("--comparison", type=str, default=None)
 	
-	parser.add_argument("--transcription-model", type=str, default="base")
+	parser.add_argument("--transcription-model", type=str, default="openai/whisper-base")
 	parser.add_argument("--speaker-similarity-model", type=str, default="microsoft/wavlm-base-sv")
 	
 	args = parser.parse_args()
