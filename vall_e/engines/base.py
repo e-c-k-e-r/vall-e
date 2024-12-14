@@ -406,10 +406,14 @@ class Engines(dict[str, Engine]):
 			if cfg.lora is not None:
 				save_dir = cfg.ckpt_dir / cfg.lora.full_name
 
+			engine.save_checkpoint(save_dir, tag=tag)
+
+			"""
 			try:
 				engine.save_checkpoint(save_dir, tag=tag)
 			except Exception as e:
 				_logger.warning(f'Failed to save checkpoint for engine {name}: {str(e)}')
+			"""
 
 			# might be better to prune before saving for safety, but [:0] returns an empty list, but I could do [:-cfg.trainer.keep_last_checkpoints - 1 if cfg.trainer.keep_last_checkpoints > 1 else None]
 			if cfg.trainer.keep_last_checkpoints > 0 and is_global_leader():
@@ -515,11 +519,11 @@ class Engines(dict[str, Engine]):
 			start_time = time.time()
 
 			batch = to_device(batch, device)
-			n_ooms = torch.zeros([], device=device)
 
 			if not cfg.trainer.check_for_oom:
 				res = feeder( engine=engine, batch=batch, teacher=teacher )
 			else:
+				forward_ooms = torch.zeros([], device=device)
 				try:
 					res = feeder( engine=engine, batch=batch, teacher=teacher )
 				except RuntimeError as e:
@@ -529,12 +533,12 @@ class Engines(dict[str, Engine]):
 						self.save_checkpoint()
 						raise e
 
-					n_ooms += 1
+					forward_ooms += 1
 
 				if world_size() > 1:
-					all_reduce(n_ooms)
+					all_reduce(forward_ooms)
 
-				if n_ooms.item() > 0:
+				if forward_ooms.item() > 0:
 					continue
 					"""
 					self.save_checkpoint()
@@ -554,7 +558,7 @@ class Engines(dict[str, Engine]):
 			if not cfg.trainer.check_for_oom:
 				engine.backward(loss)
 			else:
-				# to-do: properly handle when one GPU throws an OOM because it just halts despite doing a gather/reduce
+				backward_ooms = torch.zeros([], device=device)
 				try:
 					engine.backward(loss)
 				except RuntimeError as e:
@@ -564,12 +568,12 @@ class Engines(dict[str, Engine]):
 						self.save_checkpoint()
 						raise e
 					
-					n_ooms += 1
+					backward_ooms += 1
 
 				if world_size() > 1:
-					all_reduce(n_ooms)
+					all_reduce(backward_ooms)
 
-				if n_ooms.item() > 0:
+				if backward_ooms.item() > 0:
 					self.save_checkpoint()
 					raise RuntimeError("Out of memory during backwards pass!")
 

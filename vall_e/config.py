@@ -520,7 +520,7 @@ class DeepSpeed:
 	use_compression_training: bool = False # cope
 	compression_bits: int = 8 # cope
 	inferencing: bool = False # for using DeepSpeed's inferencing wrapper instead
-	
+	optimizer: bool = True # use DeepSpeed optimizer wrapper
 	amp: bool = False # use DeepSpeed's AMP (requires some other package installed apparently)
 
 	loss_scale_window: int = 100

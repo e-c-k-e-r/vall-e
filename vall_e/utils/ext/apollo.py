@@ -28,7 +28,7 @@ class GaLoreProjector:
 			self.ortho_matrix = self.ortho_matrix.to(full_rank_grad.device)
 
 		if self.proj_type == 'std':
-			if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
+			if full_rank_grad.dim() > 1 and full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
 				if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
 					self.ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
 					self.svd_count += 1
@@ -39,7 +39,7 @@ class GaLoreProjector:
 					self.svd_count += 1
 				low_rank_grad = torch.matmul(self.ortho_matrix.t(), full_rank_grad)
 		elif self.proj_type == 'reverse_std':
-			if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
+			if full_rank_grad.dim() > 1 and full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
 				if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
 					self.ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='left')
 					self.svd_count += 1
@@ -70,12 +70,12 @@ class GaLoreProjector:
 	def project_back(self, low_rank_grad):
 
 		if self.proj_type == 'std':
-			if low_rank_grad.shape[0] >= low_rank_grad.shape[1]:
+			if low_rank_grad.dim() > 1 and low_rank_grad.shape[0] >= low_rank_grad.shape[1]:
 				full_rank_grad = torch.matmul(low_rank_grad, self.ortho_matrix)
 			else:
 				full_rank_grad = torch.matmul(self.ortho_matrix, low_rank_grad)
 		elif self.proj_type == 'reverse_std':
-			if low_rank_grad.shape[0] <= low_rank_grad.shape[1]: # note this is different from std
+			if low_rank_grad.dim() > 1 and low_rank_grad.shape[0] <= low_rank_grad.shape[1]: # note this is different from std
 				full_rank_grad = torch.matmul(self.ortho_matrix, low_rank_grad)
 			else:
 				full_rank_grad = torch.matmul(low_rank_grad, self.ortho_matrix)
@@ -170,9 +170,8 @@ class GradientProjector:
 		self.seed = seed
 
 	def project(self, full_rank_grad, iter):
-
 		if self.proj_type == "std":
-			if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
+			if full_rank_grad.dim() > 1 and full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
 				if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
 					self.ortho_matrix = self.get_orthogonal_matrix(
 						full_rank_grad, self.rank, type="right", seed=self.seed
@@ -188,7 +187,7 @@ class GradientProjector:
 					
 				low_rank_grad = torch.matmul(self.ortho_matrix.t(), full_rank_grad)
 		elif self.proj_type == "reverse_std":
-			if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
+			if full_rank_grad.dim() > 1 and full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
 				if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
 					self.ortho_matrix = self.get_orthogonal_matrix(
 						full_rank_grad, self.rank, type="left", seed=self.seed
@@ -263,27 +262,6 @@ class GradientProjector:
 			raise ValueError("type should be left, right or full")
 
 class Apollo(Optimizer):
-	"""
-	Implements Adam algorithm with weight decay fix as introduced in [Decoupled Weight Decay
-	Regularization](https://arxiv.org/abs/1711.05101).
-
-	Parameters:
-		params (`Iterable[nn.parameter.Parameter]`):
-			Iterable of parameters to optimize or dictionaries defining parameter groups.
-		lr (`float`, *optional*, defaults to 0.001):
-			The learning rate to use.
-		betas (`Tuple[float,float]`, *optional*, defaults to `(0.9, 0.999)`):
-			Adam's betas parameters (b1, b2).
-		eps (`float`, *optional*, defaults to 1e-06):
-			Adam's epsilon for numerical stability.
-		weight_decay (`float`, *optional*, defaults to 0.0):
-			Decoupled weight decay to apply.
-		correct_bias (`bool`, *optional*, defaults to `True`):
-			Whether or not to correct bias in Adam (for instance, in Bert TF repository they use `False`).
-		no_deprecation_warning (`bool`, *optional*, defaults to `False`):
-			A flag used to disable the deprecation warning (set to `True` to disable the warning).
-	"""
-
 	def __init__(
 		self,
 		params: Iterable[nn.parameter.Parameter],
@@ -292,7 +270,13 @@ class Apollo(Optimizer):
 		eps: float = 1e-6,
 		weight_decay: float = 0.0,
 		correct_bias: bool = True,
-		scale_front: bool = False,
+
+		rank: int = 256,
+		proj: str = "random",
+		scale_type: str = "channel",
+		scale: int = 1,
+		update_proj_gap: int = 200,
+		proj_type: str = "std",
 	):
 		if lr < 0.0:
 			raise ValueError(f"Invalid learning rate: {lr} - should be >= 0.0")
@@ -302,17 +286,30 @@ class Apollo(Optimizer):
 			raise ValueError(f"Invalid beta parameter: {betas[1]} - should be in [0.0, 1.0)")
 		if not 0.0 <= eps:
 			raise ValueError(f"Invalid epsilon value: {eps} - should be >= 0.0")
-		defaults = {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay, "correct_bias": correct_bias}
+		defaults = {
+			"lr": lr,
+			"betas": betas,
+			"eps": eps,
+			"weight_decay": weight_decay,
+			"correct_bias": correct_bias,
+			
+			"rank": rank,
+			"proj": proj,
+			"scale_type": scale_type,
+			"scale": scale,
+			"update_proj_gap": update_proj_gap,
+			"proj_type": proj_type,
+		}
 		super().__init__(params, defaults)
-		
-		self.scale_front = scale_front
 
+		"""
 		params_idx = 0
 		for group in self.param_groups:
 			for p in group["params"]:
 				params_idx += 1
 				if p.requires_grad:
 					self.state[p]["seed"] = params_idx
+		"""
 
 	@torch.no_grad()
 	def step(self, closure: Callable = None):
@@ -332,42 +329,45 @@ class Apollo(Optimizer):
 				params_idx += 1
 				if p.grad is None:
 					continue
-				grad = p.grad
+				grad = p.grad.data
 				if grad.is_sparse:
-					raise RuntimeError("Adam does not support sparse gradients, please consider SparseAdam instead")
+					raise RuntimeError("APOLLO does not support sparse gradients")
 
 				state = self.state[p]
 				
 				if "step" not in state:
 					state["step"] = 0
-
+				
 				if "seed" not in state:
 					state["seed"] = params_idx
 
 				# GaLore Projection
-				if "rank" in group:
+				if group["rank"] > 0:
 					if "projector" not in state:
 						if group["proj"] == "random":
-							state["projector"] = GradientProjector(group["rank"], 
+							state["projector"] = GradientProjector(
+								group["rank"], 
 								update_proj_gap=group["update_proj_gap"], 
 								alpha=group["scale"], 
 								proj_type=group["proj_type"],
-								seed=state["seed"])
+								seed=state["seed"]
+							)
 
 						elif group["proj"] == "svd":
-							state["projector"] = GaLoreProjector(group["rank"], 
+							state["projector"] = GaLoreProjector(
+								group["rank"], 
 								update_proj_gap=group["update_proj_gap"], 
 								scale=group["scale"], 
-								proj_type=group["proj_type"])
+								proj_type=group["proj_type"]
+							)
 
 					grad = state["projector"].project(grad, state["step"])
 
-				# State initialization
 				if "exp_avg" not in state:
 					# Exponential moving average of gradient values
-					state["exp_avg"] = torch.zeros_like(grad)
+					state["exp_avg"] = torch.zeros_like(grad).detach()
 					# Exponential moving average of squared gradient values
-					state["exp_avg_sq"] = torch.zeros_like(grad)
+					state["exp_avg_sq"] = torch.zeros_like(grad).detach()
 
 				exp_avg, exp_avg_sq = state["exp_avg"], state["exp_avg_sq"]
 				beta1, beta2 = group["betas"]
@@ -389,9 +389,12 @@ class Apollo(Optimizer):
 				# compute norm gradient
 				norm_grad = exp_avg / denom
 
-				if "rank" in group:
+				if group["rank"] > 0:
 					if group['scale_type'] == 'channel':
-						norm_dim = 0 if norm_grad.shape[0] < norm_grad.shape[1] else 1
+						if norm_grad.dim() > 1:
+							norm_dim = 0 if norm_grad.shape[0] < norm_grad.shape[1] else 1
+						else:
+							norm_dim = 0
 						scaling_factor = (
 							torch.norm(norm_grad, dim=norm_dim) /
 							(torch.norm(grad, dim=norm_dim) + 1e-8)
@@ -405,7 +408,7 @@ class Apollo(Optimizer):
 							(torch.norm(grad) + 1e-8)
 						)
 
-					scaling_grad = p.grad * scaling_factor
+					scaling_grad = p.grad.data * scaling_factor
 
 					# Use Norm-Growth Limiter in Fira
 					if "scaling_grad" in state:
@@ -422,17 +425,9 @@ class Apollo(Optimizer):
 
 					norm_grad = scaling_grad * np.sqrt(group["scale"])
 
-				p.add_(norm_grad, alpha=-step_size)
+				p.data.add_(norm_grad, alpha=-step_size)
 
-				# Just adding the square of the weights to the loss function is *not*
-				# the correct way of using L2 regularization/weight decay with Adam,
-				# since that will interact with the m and v parameters in strange ways.
-				#
-				# Instead we want to decay the weights in a manner that doesn't interact
-				# with the m/v parameters. This is equivalent to adding the square
-				# of the weights to the loss with plain (non-momentum) SGD.
-				# Add weight decay at the end (fixed version)
 				if group["weight_decay"] > 0.0:
-					p.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
+					p.data.add_(p, alpha=(-group["lr"] * group["weight_decay"]))
 
 		return loss

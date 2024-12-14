@@ -132,41 +132,17 @@ def load_engines(training=True, **model_kwargs):
 				params['d_coef'] = params['lr']
 				params['lr'] = 1.0
 			elif cfg.hyperparameters.optimizer.lower() in ["apollo","apollo-mini"]:
-				"""
-				if backend == "deepspeed":
-					raise Exception("APOLLO currently does not play nicely with DeepSpeed.")
-				"""
-
 				optimizer_class = ml.Apollo
 				is_mini = cfg.hyperparameters.optimizer.lower() == "apollo-mini"
-				param_kwargs = {
+				
+				params.update({
 					"rank": 1 if is_mini else 256,
 					"proj": "random",
 					"scale_type": "tensor" if is_mini else "channel",
 					"scale": 128 if is_mini else 1,
 					"update_proj_gap": 200,
 					"proj_type": "std",
-				}
-				# grab any extra configs from the YAML
-				param_kwargs.update(cfg.hyperparameters.optimizer_params)
-				# and blank it so it doesn't update the main optimizer kwargs
-				cfg.hyperparameters.optimizer_params = {}
-				
-				"""
-				params["params"] = [{'params': params["params"]} | param_kwargs]
-				"""
-				target_params = []
-				target_modules_list = ["attn", "mlp"]
-				for module_name, module in model.named_modules():
-					if not (isinstance(module, torch.nn.Linear)):
-						continue
-					if not any(target_key in module_name for target_key in target_modules_list):
-						continue
-					target_params.append(module.weight)
-
-				param_ids = [id(p) for p in target_params]
-				regular_params = [p for p in model.parameters() if id(p) not in param_ids]
-				params["params"] = [{'params': regular_params}, {'params': target_params} | param_kwargs]
+				})
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
 			else:
