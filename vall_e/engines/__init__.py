@@ -132,8 +132,10 @@ def load_engines(training=True, **model_kwargs):
 				params['d_coef'] = params['lr']
 				params['lr'] = 1.0
 			elif cfg.hyperparameters.optimizer.lower() in ["apollo","apollo-mini"]:
+				"""
 				if backend == "deepspeed":
 					raise Exception("APOLLO currently does not play nicely with DeepSpeed.")
+				"""
 
 				optimizer_class = ml.Apollo
 				is_mini = cfg.hyperparameters.optimizer.lower() == "apollo-mini"

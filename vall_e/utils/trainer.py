@@ -115,12 +115,17 @@ def _make_infinite_epochs(dl):
 
 		with tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader()) as pbar:
 			if start:
+				pbar.update(start)
+				start = 0
+			"""
+			if start:
 				pbar.n = start
 				start = 0
 				manual_update = True
 			# for some reason this is required
 			if manual_update:
 				pbar.n += 1
+			"""
 			yield from pbar
 
 
