@@ -140,7 +140,7 @@ def load_engines(training=True, **model_kwargs):
 					"proj": "random",
 					"scale_type": "tensor" if is_mini else "channel",
 					"scale": 128 if is_mini else 1,
-					"update_proj_gap": 200,
+					"update_proj_gap": 1,
 					"proj_type": "std",
 				})
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":

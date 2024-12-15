@@ -277,7 +277,7 @@ class Apollo(Optimizer):
 		proj: str = "random",
 		scale_type: str = "channel",
 		scale: int = 1,
-		update_proj_gap: int = 200,
+		update_proj_gap: int = 1,
 		proj_type: str = "std",
 	):
 		if lr < 0.0:
@@ -288,6 +288,7 @@ class Apollo(Optimizer):
 			raise ValueError(f"Invalid beta parameter: {betas[1]} - should be in [0.0, 1.0)")
 		if not 0.0 <= eps:
 			raise ValueError(f"Invalid epsilon value: {eps} - should be >= 0.0")
+		
 		defaults = {
 			"lr": lr,
 			"betas": betas,
