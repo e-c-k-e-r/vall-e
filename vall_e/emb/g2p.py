@@ -50,7 +50,8 @@ def coerce_language( lang ):
 		return "fr-fr"
 	# phonemizer/espeak used to have zh refer to mandarin, but was renamed to cmn
 	# cmn outputs cringe, but not cmn-latn-pinyin
-	if lang == "zh":
+	# also just coerces any of the dialects into this (to avoid crimes)
+	if lang[:2] == "zh":
 		return "cmn-latn-pinyin"
 	"""
 	things to consider in the future
