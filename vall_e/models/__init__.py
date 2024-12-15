@@ -10,14 +10,14 @@ _logger = logging.getLogger(__name__)
 
 # to-do: implement automatically downloading model
 DEFAULT_MODEL_DIR = Path(__file__).parent.parent.parent / 'data/models'
-DEFAULT_MODEL_PATH = DEFAULT_MODEL_DIR / "ar+nar-llama-8.sft"
+DEFAULT_MODEL_PATH = DEFAULT_MODEL_DIR / "ar+nar-len-llama-8.sft"
 DEFAULT_MODEL_URLS = {
-	'ar+nar-llama-8.sft': 'https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/ar%2Bnar-llama-8/fp32.sft',
+	'ar+nar-len-llama-8.sft': 'https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/ar%2Bnar-len-llama-8/ckpt/fp32.sft',
 }
 
-if not DEFAULT_MODEL_PATH.exists() and Path("./data/models/ar+nar-llama-8.sft").exists():
+if not DEFAULT_MODEL_PATH.exists() and Path("./data/models/ar+nar-len-llama-8.sft").exists():
 	DEFAULT_MODEL_DIR = Path('./data/models')
-	DEFAULT_MODEL_PATH = DEFAULT_MODEL_DIR / "ar+nar-llama-8.sft"
+	DEFAULT_MODEL_PATH = DEFAULT_MODEL_DIR / "ar+nar-len-llama-8.sft"
 
 # kludge, probably better to use HF's model downloader function
 # to-do: write to a temp file then copy so downloads can be interrupted
