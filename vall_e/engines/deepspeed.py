@@ -62,9 +62,7 @@ class Engine(DeepSpeedEngine):
 		self.global_samples = stats["global_samples"]
 		self.tokens_processed = stats["tokens_processed"]
 
-		self.max_nan_losses = 8
 		self.current_batch_size = 0
-		self.skip_on_nan = True
 
 	def freeze(self, freeze_all=True):
 		# freeze non-LoRA params if requested
@@ -151,12 +149,14 @@ class Engine(DeepSpeedEngine):
 		stats |= {k: v.item() for k, v in losses.items()}
 		stats |= self.gather_attribute("scalar")
 
+		"""
 		if torch.isnan(loss).any():
 			self.max_nan_losses = self.max_nan_losses - 1
 			if self.max_nan_losses < 0:
 				raise RuntimeError("Too many NaN losses detected.")
 			
 			return stats
+		"""
 
 		self.backward(loss)
 		self.step()

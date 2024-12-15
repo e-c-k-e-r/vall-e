@@ -101,9 +101,6 @@ def train_feeder(engine, batch, teacher=None):
 
 		loss = torch.stack([*losses.values()]).sum()
 
-	if torch.isnan(loss).any():
-		return
-
 	stats = {}
 	stats |= {k: v.item() for k, v in losses.items()}
 	stats |= {k: v.item() for k, v in stat.items()}

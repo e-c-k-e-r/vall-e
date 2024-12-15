@@ -76,7 +76,6 @@ class Engine():
 
 		self._frozen_params = set()
 
-		self.max_nan_losses = 8
 		self.loss_scaler = torch.cuda.amp.GradScaler() if cfg.trainer.scale_loss else None
 
 		self.current_batch_size = 0
@@ -293,12 +292,6 @@ class Engine():
 		stats = {}
 		stats |= {k: v.item() for k, v in losses.items()}
 		stats |= self.gather_attribute("scalar")
-
-		if torch.isnan(loss).any():
-			self.max_nan_losses = self.max_nan_losses - 1
-			if self.max_nan_losses < 0:
-				raise RuntimeError("Too many NaN losses detected.")
-			return stats
 
 		self.backward(loss)
 		self.step()
@@ -545,12 +538,16 @@ class Engines(dict[str, Engine]):
 					raise RuntimeError("Out of memory during forward pass!")
 					"""
 
+			# this causes problems in distributed training
+			# it's probably required to do all_reduce for nan checks
+			"""
 			# no results are returned when a nan is encountered, so catch it here too
 			if res is None:
 				engine.max_nan_losses = engine.max_nan_losses - 1
 				if engine.max_nan_losses < 0:
 					raise RuntimeError("Too many NaN losses detected.")
 				continue
+			"""
 			
 			loss, engine_stats = res
 			engine_stats |= self.gather_attribute("scalar")
