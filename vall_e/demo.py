@@ -95,7 +95,7 @@ def main():
 	parser.add_argument("--out-path", type=Path, default=None)
 
 	parser.add_argument("--max-duration", type=int, default=12 * cfg.dataset.frames_per_second)
-	parser.add_argument("--max-steps", type=int, default=50)
+	parser.add_argument("--max-steps", type=int, default=30)
 	parser.add_argument("--max-levels", type=int, default=7)
 
 	parser.add_argument("--ar-temperature", type=float, default=1.0)

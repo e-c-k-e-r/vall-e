@@ -42,6 +42,7 @@ if USING_SPACES:
 	from vall_e.emb.qnt import decode_to_wave
 	from vall_e.data import get_lang_symmap, get_random_prompt
 	from vall_e.models.arch import AVAILABLE_ATTENTIONS
+	from vall_e.emb.transcribe import transcribe
 else:
 	from .inference import TTS, cfg
 	from .train import train
@@ -50,6 +51,8 @@ else:
 	from .emb.qnt import decode_to_wave
 	from .data import get_lang_symmap, get_random_prompt
 	from .models.arch import AVAILABLE_ATTENTIONS
+	from .emb.transcribe import transcribe
+
 
 is_windows = sys.platform.startswith("win")
 
@@ -144,6 +147,11 @@ def load_sample( speaker ):
 
 	return data, (sr, wav)
 
+def gradio_transcribe_input( audio, text, split_by ):
+	if not audio:
+		return ( text, split_by )
+	return ( transcribe( audio, model_name="openai/whisper-base", align=False )["text"], "lines" )
+
 def init_tts(config=None, lora=None, restart=False, device="cuda", dtype="auto", attention=None):
 	global tts
 
@@ -203,6 +211,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--task", type=str, default="tts")
 	parser.add_argument("--modality", type=str, default=kwargs["modality"])
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
+	parser.add_argument("--voice-convert", type=str, default=kwargs["voice-convert"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--text-language", type=str, default=kwargs["text-language"])
 	parser.add_argument("--split-text-by", type=str, default=kwargs["split-text-by"])
@@ -275,6 +284,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	sampling_kwargs = dict(
 		split_text_by=args.split_text_by,
 		context_history=args.context_history,
+		voice_convert=args.voice_convert,
 		max_steps=args.max_steps,
 		max_levels=args.max_levels,
 		max_duration=args.max_duration,
@@ -391,6 +401,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 """
 @gradio_wrapper(inputs=layout["training"]["inputs"].keys())
 def do_training( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
+
 	while True:
 		metrics = next(it)
 		yield metrics
@@ -430,10 +441,13 @@ with ui:
 		with gr.Tab("Text-to-Speech"):
 			with gr.Row():
 				with gr.Column(scale=8):
-					layout["inference_tts"]["inputs"]["text"] = gr.Textbox(lines=5, value=get_random_prompt, label="Input Prompt")
+					with gr.Tab("Text"):
+						layout["inference_tts"]["inputs"]["text"] = gr.Textbox(lines=5, value=get_random_prompt, label="Input Prompt")
+					with gr.Tab("Speech"):
+						layout["inference_tts"]["inputs"]["voice-convert"] = gr.Audio(label="Audio Input", sources=["upload"], type="filepath") # , info="Guiding utternace.")
 			with gr.Row():
 				with gr.Column(scale=1):
-					layout["inference_tts"]["inputs"]["reference"] = gr.Audio(label="Audio Input", sources=["upload"], type="filepath") #, info="Reference audio for TTS")
+					layout["inference_tts"]["inputs"]["reference"] = gr.Audio(label="Audio Input", sources=["upload"], type="filepath") # , info="Reference audio for TTS")
 					# layout["inference_tts"]["stop"] = gr.Button(value="Stop")
 					layout["inference_tts"]["outputs"]["output"] = gr.Audio(label="Output")
 					layout["inference_tts"]["buttons"]["inference"] = gr.Button(value="Inference")
@@ -494,6 +508,20 @@ with ui:
 			fn=do_inference_tts,
 			inputs=[ x for x in layout["inference_tts"]["inputs"].values() if x is not None],
 			outputs=[ x for x in layout["inference_tts"]["outputs"].values() if x is not None]
+		)
+
+		# IC
+		layout["inference_tts"]["inputs"]["voice-convert"].change(
+			gradio_transcribe_input,
+			[
+				layout["inference_tts"]["inputs"]["voice-convert"],
+				layout["inference_tts"]["inputs"]["text"],
+				layout["inference_tts"]["inputs"]["split-text-by"],
+			],
+			[
+				layout["inference_tts"]["inputs"]["text"],
+				layout["inference_tts"]["inputs"]["split-text-by"],
+			]
 		)
 
 		with gr.Tab("Speech to Text"):

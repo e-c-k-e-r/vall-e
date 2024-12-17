@@ -13,6 +13,8 @@ from pathlib import Path
 
 from .emb import g2p, qnt
 from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio
+from .emb.transcribe import transcribe
+
 from .utils import to_device, set_seed, clamp, wrapper as ml
 
 from .config import cfg, Config
@@ -118,7 +120,7 @@ class TTS():
 		return torch.tensor([ id ])
 
 	# to-do: trim before quantizing, instead of after
-	def encode_audio( self, paths, trim_length=5.0 ):
+	def encode_audio( self, paths, trim_length=0.0 ):
 		# already a tensor, return it
 		if isinstance( paths, Tensor ):
 			return paths
@@ -357,6 +359,12 @@ class TTS():
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
+
+		voice_convert = sampling_kwargs.pop("voice_convert", None)
+
+		# transcribe from audio to voice convert from
+		if voice_convert is not None and not text:
+			text = transcribe( voice_convert, model_name="openai/whisper-base", align=False )["text"]
 		
 		lines = sentence_split(text, split_by=sampling_kwargs.get("split_text_by", "sentences"))
 
@@ -430,6 +438,7 @@ class TTS():
 			if auto_text_lang:
 				text_language = deduced_language
 
+			vc_utterance = self.encode_audio( voice_convert, trim_length=0 ) if voice_convert else None
 			prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
 			phns = self.encode_text( line, language=text_language )
 			lang = self.encode_lang( language )
@@ -457,6 +466,8 @@ class TTS():
 					kwargs = {}
 					if prefix_context is not None:
 						kwargs["prefix_context"] = prefix_context
+					if vc_utterance is not None:
+						kwargs["vc_list"] = [ vc_utterance ]
 
 					resps_list = model_nar( **input_kwargs, len_list=len_list, task_list=["tts"],
 						**(sampling_kwargs | kwargs),

@@ -259,9 +259,12 @@ class AR_NAR(Base):
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
 		# to specify the initial mask used
-		mask_list = sampling_kwargs.pop("mask_list", None)
-		if mask_list is not None:
-			len_list = [ x.shape[0] for x in mask_list ]
+		vc_list = sampling_kwargs.pop("vc_list", None)
+		vc_threshold = sampling_kwargs.pop("vc_threshold", 0.25)
+		vc_mask_p = sampling_kwargs.pop("vc_mask_p", 0.25)
+		if vc_list is not None:
+			vc_list = [ x if x.dim() == 1 else x[:, 0] for x in vc_list ]
+			len_list = [ x.shape[0] for x in vc_list ]
 
 		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
 		
@@ -305,16 +308,24 @@ class AR_NAR(Base):
 			remask_p = 1.0 / (max_steps * 2) if remasking else 0
 			# pick the worst scoring tokens to mask off
 			masked_indices = [ score.topk( clamp( int( noise_p * seq_len + remask_p * seq_len ), 1, seq_len), dim=-1 ).indices for score, seq_len in zip(scores, len_list) ]
-			if mask_list is None:
+			# normal masking
+			if vc_list is None or timestep >= vc_threshold:
 				# mask off inputs
 				resps_list = [ resp.scatter(0, indices, self.stop_token) for resp, indices in zip( resps_list, masked_indices ) ]
 				# boolean mask
 				is_masked = [ resps == self.stop_token for resps in resps_list ]
 			else:
-				# mask off inputs
-				resps_list = [ resp.scatter(0, indices, mask) for resp, indices, mask in zip( resps_list, masked_indices, mask_list ) ]
+				# mask off a random portion of the target
+				rand_mask_list = [ torch.rand(mask.shape).to(device=device) < vc_mask_p for mask in vc_list ]
+				half_mask_list = [ torch.where( rand_mask, self.stop_token, mask.clone() ) for mask, rand_mask in zip( vc_list, rand_mask_list ) ]
+				# always set the last end as masked off because it causes issues
+				for i, mask in enumerate(half_mask_list):
+					half_mask_list[i][-75:] = self.stop_token
+				# 
+				# mask off inputs per mask
+				resps_list = [ resp.scatter(0, indices, mask) for resp, indices, mask in zip( resps_list, masked_indices, half_mask_list ) ]
 				# boolean mask
-				is_masked = [ resps == mask for resps, mask in zip( resps_list, mask_list ) ]
+				is_masked = [ resps == mask for resps, mask in zip( resps_list, half_mask_list ) ]
 
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
@@ -392,7 +403,7 @@ class AR_NAR(Base):
 			# get sampled tokens
 			sampled_ids = filtered_sampled.ids
 			# keep unmasked tokens
-			resps_list = [ torch.where( masked, input_ids, resps ) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
+			resps_list = [ torch.where( masked, input_ids, resps ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
 			# get probability scores
 			scores = [ 
 				# conjugate to have worse scoring tokens picked for topk
