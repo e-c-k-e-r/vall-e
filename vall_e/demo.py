@@ -279,7 +279,7 @@ def main():
 
 	# pull from provided samples
 	samples_dirs = {
-		#"librispeech": args.demo_dir / "librispeech",
+		"librispeech": args.demo_dir / "librispeech",
 	}
 
 	if (args.demo_dir / args.dataset_dir_name).exists():
@@ -407,8 +407,9 @@ def main():
 		if calculate:
 			wer_score, cer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model )
 			sim_o_score = sim_o( out_path, prompt_path, device=tts.device, dtype=tts.dtype, model_name=args.speaker_similarity_model )
+			#sim_o_r_score = sim_o( out_path, reference_path, device=tts.device, dtype=tts.dtype, model_name=args.speaker_similarity_model )
 
-			metrics = {"wer": wer_score, "cer": cer_score, "sim-o": sim_o_score}
+			metrics = {"wer": wer_score, "cer": cer_score, "sim-o": sim_o_score} # , "sim-o-r": sim_o_r_score}
 			json_write( metrics, metrics_path )
 		else:
 			metrics = json_read( metrics_path )

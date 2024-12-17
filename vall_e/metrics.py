@@ -10,12 +10,7 @@ import torch.nn.functional as F
 
 from pathlib import Path
 from torcheval.metrics.functional import word_error_rate
-
-# cringe warning message
-try:
-	from torchmetrics.text import CharErrorRate
-except Exception as e:
-	from torchmetrics import CharErrorRate
+from torchmetrics.functional.text import char_error_rate
 
 def wer( audio, reference, language="auto", normalize=True, phonemize=True, **transcription_kwargs ):
 	if language == "auto":
@@ -43,7 +38,13 @@ def wer( audio, reference, language="auto", normalize=True, phonemize=True, **tr
 		reference = encode( reference, language=language )
 
 	wer_score = word_error_rate([transcription], [reference]).item()
-	cer_score = CharErrorRate()([transcription], [reference]).item()
+	# un-normalize
+	wer_score *= len(reference.split())
+	
+	cer_score = char_error_rate([transcription], [reference]).item()
+	# un-normalize
+	cer_score *= len(reference)
+
 	return wer_score, cer_score
 
 def sim_o( audio, reference, **kwargs ):
