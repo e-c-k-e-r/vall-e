@@ -28,6 +28,8 @@ from ..utils.io import json_read, json_write
 from .g2p import encode as phonemize
 from .qnt import encode as quantize, trim, convert_audio
 
+from ..models import download_model
+
 from ..webui import init_tts
 
 def load_audio( path, target_sr=None ):
@@ -46,20 +48,40 @@ tts = None
 
 # this is for computing SIM-O, but can probably technically be used for scoring similar utterances
 @cache
-def _load_sim_model(device="cuda", dtype="float16", model_name='microsoft/wavlm-base-sv'):
+def _load_sim_model(device="cuda", dtype="float16", model_name='microsoft/wavlm-large'):
+	from ..utils.ext.ecapa_tdnn import ECAPA_TDNN_SMALL
+	model = ECAPA_TDNN_SMALL(feat_dim=1024, feat_type='wavlm_large')
+
+	finetune_path = Path("./data/models/wavlm_large_finetune.pth")
+	if not finetune_path.exists():
+		download_model(finetune_path)
+
+	state_dict = torch.load( finetune_path )
+	state_dict = state_dict['model']
+	del state_dict['loss_calculator.projection.weight']
+	model.load_state_dict( state_dict )
+
+	model = model.to(device=device, dtype=coerce_dtype(dtype))
+	model = model.eval()
+
+	return model, None
+
+	"""
 	logging.getLogger('s3prl').setLevel(logging.DEBUG)
 	logging.getLogger('speechbrain').setLevel(logging.DEBUG)
-
-	#from ..utils.ext.ecapa_tdnn import ECAPA_TDNN_SMALL
 	from transformers import Wav2Vec2FeatureExtractor, WavLMForXVector
-
 	model = WavLMForXVector.from_pretrained(model_name)
+	finetune_path = Path("./data/models/wavlm_large_finetune.pth")
+	if finetune_path.exists():
+		state_dict = torch.load( finetune_path )
+		model.load_state_dict( state_dict['model'] )
 	model = model.to(device=device, dtype=coerce_dtype(dtype))
 	model = model.eval()
 	
 	feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
 
 	return model, feature_extractor
+	"""
 
 @torch.no_grad()
 def speaker_similarity_embedding(
@@ -75,12 +97,15 @@ def speaker_similarity_embedding(
 		audio = load_audio(audio, 16000)
 
 	audio, sr = audio
+	embeddings = model(audio.to(device=device, dtype=coerce_dtype(dtype)))
+	"""
 	features = feature_extractor(audio, return_tensors="pt", sampling_rate=sr)
 	features = features.input_values.squeeze(0).to(dtype=coerce_dtype(dtype), device=device)
 	
 	output = model(input_values=features)
 	embeddings = output.embeddings
 	embeddings = torch.nn.functional.normalize(embeddings, dim=-1).cpu()
+	"""
 	return embeddings
 
 def batch_similar_utterances(

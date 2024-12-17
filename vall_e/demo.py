@@ -136,7 +136,7 @@ def main():
 	parser.add_argument("--comparison", type=str, default=None)
 	
 	parser.add_argument("--transcription-model", type=str, default="openai/whisper-base")
-	parser.add_argument("--speaker-similarity-model", type=str, default="microsoft/wavlm-base-sv")
+	parser.add_argument("--speaker-similarity-model", type=str, default="microsoft/wavlm-large")
 	
 	args = parser.parse_args()
 
