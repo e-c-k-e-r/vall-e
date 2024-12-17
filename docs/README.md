@@ -47,24 +47,16 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * [x] train and release a ***good*** zero-shot model.
   - for what it's worth it's decent enough for me to finally be happy with it.
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
-* [x] ~~explore alternative setups, like a NAR-only model or Descript-Audio-Codec~~
-  - the current experiment of an AR length-predictor + NAR for the rest seems to fall apart...
-  - Descript-Audio-Codec 44KHz has NAR issues, but this *might* be user error.
-* [x] ~~explore better sampling techniques~~
-  - the AR doesn't *need* exotic sampling techniques, as they're bandaids for a bad AR.
-  - the NAR benefits from greedy sampling, and anything else just harms output quality.
 * [x] clean up the README, and document, document, document.
 * [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
-  - reference model is trained against English, Japanese, French, and German.
-  - [ ] improve multi-lingual support
+  - reference model is trained against English, Japanese, French, German, Korean, and Chinese (Mandarin?).
+  - [x] improve multi-lingual support
   - [ ] improve cross-lingual support
 * [ ] extend to addditional tasks ([SpeechX](https://arxiv.org/abs/2308.06873)).
   - `stt` (Speech-to-Text) seems to be working fine for the most part, but is very much a second-class feature.
   - other tasks seem to require a ton of VRAM......
   - SpeechX tasks might need to be reworked to fit well within the `NAR-len` context to make full use of masking (for example, for speech editing)
   - ***possibly*** voice conversion through the `NAR-len` with clever demasking tricks (for example, the tokens that are masked are from the source voice)
-* [ ] ~~extend using [VALL-E 2](https://arxiv.org/pdf/2406.05370)'s features (grouped code modeling + repetition aware sampling)~~
-  - desu these don't seem to be worthwhile improvements, as inferencing is already rather fast, and RAS is just a fancy sampler.
 * [ ] audio streaming
   - this *technically* can work without any additional architecture changes, just clever tricks with sampling-then-decoding-to-audio.
   - something similar to HiFiGAN (or the one for TorToiSe) trained on the last hidden states of the AR *might* also enable an alternate way for streaming.
@@ -80,16 +72,10 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   * [ ] train the model to handle text => phoneme (without a hit to the rest of the model)
     * [ ] ...and phonemes => text
-    * [ ] allow raw text as input instead
-  - espeak is nice, but I can only really put my whole trust with phonemizing English.
-  - a small model trained to handle converting text to phonemes might work, but has it's own problems (another model to carry around, as accurate as the dataset it was trained against, requires training for each language... etc).
+    * [ ] using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
 * [ ] smarter/clever inferencing, such as:
   * [x] "rolling" context, where the last generated sentence is the prefix for the next sentence.
-  * for the AR, stop inferencing sequences in the batch that has already hit its stop token
-* [ ] explore exotic features like:
-  * using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
-  * mixing multiple speakers through summing input prompt embeddings
-    * I do not expect this to work, but you never know...
+  * [ ] for the AR, stop inferencing sequences in the batch that has already hit its stop token
 * [x] objective metrics such as WER / SIM-O
   * [x] WER simply requires transcribing audio then computing word error rates through the transcriptions
   * [x] SIM-O requires passing the raw waveform through a speaker-similarity model
@@ -104,19 +90,9 @@ However, while this solution boasts being lightweight, there are some caveats fo
 * wrangling it is a bit of a chore, as some voices work fine under the `AR` but not the `NAR-len`, and vice-versa
   * some voices outright refuse to work without LoRA training
   * some sampler settings works on some voices, but others need some tweaking
-* for short durations, it excels, but despite training on longer durations, stability is less guaranteed
 * subjugating an existing LLM architecture is a bit of a pain, as I would *love* to make full use of LLaMA niceties
   * `hf`-ifying it is possible, but it'd be a chore to set up the tokenizer properly
-* it still seems like the phase of the moon matters with how it wants to cooperate
-  * some eval tests it seems fine, other times issues like word errors will crop up
-* the `NAR-len` requires CFGs > 2-ish to cooperate (or a prefix)
-  * this isn't *so* much of an issue, but this can lead to user error, and CFG incurs an additional sampling step per step.
-  * guidance distillation would be nice, but distillation in general harms finetuning (assuming this just as likely harms it)
-  * rolling context/prefix does solve this
-    * VALL-E Continuous (prefixing with the input prompt) could also fix this, but technically makes it one-shot and not zero-shot
 * multi-lingual support is a bit of an afterthought
-  * supported non-English speakers have the confidence problem for some speakers but exacerbated
-* there's a regression in the `ar+nar-len-llama-8` model with a decrease in speaker similarity.
 
 ## Notices and Citations
 
@@ -124,7 +100,7 @@ Unless otherwise credited/noted in this repo or within the designated Python fil
 
 - [EnCodec](https://github.com/facebookresearch/encodec) is licensed under CC-BY-NC 4.0. If you use the code to generate audio quantization or perform decoding, it is important to adhere to the terms of their license.
 
-- This implementation was originally based on [enhuiz/vall-e](https://github.com/enhuiz/vall-e), but has been heavily, heavily modified over time. Without it I would not have had a good basis to muck around and learn.
+- This implementation was originally based on [enhuiz/vall-e](https://github.com/enhuiz/vall-e), but has been heavily, heavily modified over time. Without it, I would not have had a good basis to muck around and learn.
 
 ```bibtex
 @article{wang2023neural,
@@ -141,5 +117,25 @@ Unless otherwise credited/noted in this repo or within the designated Python fil
   author={Défossez, Alexandre and Copet, Jade and Synnaeve, Gabriel and Adi, Yossi},
   journal={arXiv preprint arXiv:2210.13438},
   year={2022}
+}
+```
+
+```bibtex
+@inproceedings{emilia,
+    author={He, Haorui and Shang, Zengqiang and Wang, Chaoren and Li, Xuyuan and Gu, Yicheng and Hua, Hua and Liu, Liwei and Yang, Chen and Li, Jiaqi and Shi, Peiyang and Wang, Yuancheng and Chen, Kai and Zhang, Pengyuan and Wu, Zhizheng},
+    title={Emilia: An Extensive, Multilingual, and Diverse Speech Dataset for Large-Scale Speech Generation},
+    booktitle={Proc.~of SLT},
+    year={2024}
+}
+```
+
+```bibtex
+@INPROCEEDINGS{librilight,
+  author={J. {Kahn} and M. {Rivière} and W. {Zheng} and E. {Kharitonov} and Q. {Xu} and P. E. {Mazaré} and J. {Karadayi} and V. {Liptchinsky} and R. {Collobert} and C. {Fuegen} and T. {Likhomanenko} and G. {Synnaeve} and A. {Joulin} and A. {Mohamed} and E. {Dupoux}},
+  booktitle={ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)}, 
+  title={Libri-Light: A Benchmark for ASR with Limited or No Supervision}, 
+  year={2020},
+  pages={7669-7673},
+  note = {\url{https://github.com/facebookresearch/libri-light}},
 }
 ```

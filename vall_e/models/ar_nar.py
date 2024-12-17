@@ -258,6 +258,11 @@ class AR_NAR(Base):
 		remasking = sampling_kwargs.get("remasking", True)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
+		# to specify the initial mask used
+		mask_list = sampling_kwargs.pop("mask_list", None)
+		if mask_list is not None:
+			len_list = [ x.shape[0] for x in mask_list ]
+
 		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
 		
 		# force set CFG because too low / no CFG causes issues
@@ -300,10 +305,17 @@ class AR_NAR(Base):
 			remask_p = 1.0 / (max_steps * 2) if remasking else 0
 			# pick the worst scoring tokens to mask off
 			masked_indices = [ score.topk( clamp( int( noise_p * seq_len + remask_p * seq_len ), 1, seq_len), dim=-1 ).indices for score, seq_len in zip(scores, len_list) ]
-			# mask off inputs
-			resps_list = [ resp.scatter(0, indices, self.stop_token) for resp, indices in zip( resps_list, masked_indices ) ]
-			# boolean mask
-			is_masked = [ resps == self.stop_token for resps in resps_list ]
+			if mask_list is None:
+				# mask off inputs
+				resps_list = [ resp.scatter(0, indices, self.stop_token) for resp, indices in zip( resps_list, masked_indices ) ]
+				# boolean mask
+				is_masked = [ resps == self.stop_token for resps in resps_list ]
+			else:
+				# mask off inputs
+				resps_list = [ resp.scatter(0, indices, mask) for resp, indices, mask in zip( resps_list, masked_indices, mask_list ) ]
+				# boolean mask
+				is_masked = [ resps == mask for resps, mask in zip( resps_list, mask_list ) ]
+
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
 

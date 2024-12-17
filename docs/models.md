@@ -55,6 +55,7 @@ One problem exhibited from a NAR is producing arfifacts ("crust") in the final w
   * `token_dropout_rate`: This will randomly mask off tokens from the prior RVQ level with a mask token, to try and have the model not-strongly-rely on the given input.
 
 Sampling from the NAR absolutely necessitates a low temperature or to be greedily sampled, as higher temperatures lead to the aforementioned artifacts in the final waveform.
+* This is mostly mitigated with a proper non-causal mask, but crust still emerges at higher temperatures.
 
 Traditional samplers do not seem to offer much effect in the output, as it seems the output from the NAR are decent enough.
 
@@ -72,16 +73,19 @@ However, having a pure NAR is challenging, as you need to both explicitly provid
 The NAR-len model keeps things simple by:
 * training with a fixed masking ratio (80% of the tokens are masked and trained to predict the remaining tokens)
   * [this paper](https://arxiv.org/abs/2406.05478v1) mentions a fixed ratio during training yields better results than randomly picking a masking ratio.
-  * randomly picking a duration ~~is actually very ungood and harms the model during training~~ actually doesn't matter much.
+  * randomly picking a duration ~~is actually very ungood and harms the model during training~~ ~~actually doesn't matter much~~ matters enough to warrant sticking with a fixed rate.
     * theoretically, it should help later stages in demasking to better rely on the non-masked tokens, but who knows.
+    * in reality, it seems to harm the model being able to produce decent results in fewer steps.
 * not including any specific timestep embedding information
   * some solutions add in the (sinusoidal position'd) timestep embedding, either on top of the input embeddings, or as some normalization weight around the attention head (before and after).
   * it does not seem to be necessary what-so-ever to require this, especially training under a fixed masking ratio.
-    * in reality, the model shouldn't really need to reference this anyways.
+    * in theory, attention *could* deduce this from the amount of masked tokens vs unmasked tokens in the sequence. 
+    * in reality, the model shouldn't really need to reference this anyways, as there's no reason for the model to make use of this information when it's trying to predict what *all* masked tokens should be.
 * predicting the "duration" (the output audio token window) is kept within the model itself, by autoregressievly inferencing the duration for a given input prompt (text + audio).
   * the model can already "know" the duration for a given prompt already from an AR RVQ level 0, by predicting when to output the stop token, so it makes sense to re-use the model for this.
   * the output length is a simple tokenized sequence where each token is a base-10 digit.
     * it could be in any base, but it's simple to just treat each token ID as a digit, then cast the string to an int.
+    * this could literally also not be relying on an AR sequence to predict.
   * some checkpoints of the model seems to adhere well to outputting silence at the end if the requested duration exceeds the actual duration.
 * inferencing is a simple loop that simply takes the best masked-off k tokens per step, and remasks the remaining.
 
@@ -96,9 +100,11 @@ In theory, demasking for the NAR's RVQ level 0 can also be applied to the remain
 It is ***crucial*** to:
 * avoid re-masking tokens that are already "good" enough (this can easily be done by "banning" them in the scoring process)
   * without this, you ***will*** get stuttering and unaligned utterances. I do not know why this is such a big problem but I imagine this "interleaves" many different sequences between each step.
+  * (although token remasking shows that this isn't a strict requirement)
 * use unfiltered/unprocessed logit scores:
-  * not that crucial, but helps stability.
+  * not that crucial, but helps stability, by using which part of the sequence was "confident enough" to keep.
 * use a CFG strength of at least 2 (or a prefix)
+  * the output falls apart completely without this.
 
 It is not required to train a model from scratch to use this modality, as training from existing weights works just as well, if not better (as it can piggyback off the original model).
 * additional training is still required to help confidence issues and to condition the model to not fall apart for longer durations.
@@ -110,6 +116,9 @@ The "magic" of subjugating a transformer for audio use lies within the ensemble 
 While embeddings *can* be tied to the output head, testing showed that the model ***really*** does not like to do this, although my implementation could very well be flawed.
 
 With attention-based transformers, most embeddings can serve as a token itself and have the attention mechanism attend to it. Theoretically, there should be little to no functional differences between "tokenizing" an embedding, and summing a modifying embedding, but experimentation is needed for this assertion.
+* EnCodec seems to function perfectly fine with summing and without, but other codecs such as Descript-Audio-Codec might absolutely require summing.
+
+Other solutions such as TorToiSe makes use of additional embeddings/classifiers for each portion of the sequence as well.
 
 ### Classifiers
 
@@ -126,14 +135,21 @@ Technically, due to how the audio embeddings are implemented, it's possible to o
 
 These embeddings *could* instead be added on top of the input prompt embedding instead of serving as additional tasks (similar to injecting position embeddings), but additional experimentation is required to see if the model both can work under this and/or benefits from this.
 
+These embeddings can also be substituted out for a "text semantic" embedding, rather than tokenized phonemes, as the text conditioning input.
+* Additionally, methods like [BLT](https://github.com/facebookresearch/blt) can replace this instead, as patching the audio portion wouldn't gain much benefit due to it already being quantized audio.
+
 #### Language Embedding
 
 This embedding provides the requested language for the model to be aware of.
 
 This *mostly* isn't necessary, but VALL-E X's paper mentions needing a token for the language itself, and other solutions like XTTS2 provides a language token as well.
 
-In practice, this seems to help govern the accent / general mannerisms associated with that language. For example, prompting French or German with the language set to `en` will give typical foreigner speech of trying to speak a language they don't know.
+In reality, this seems to help govern the accent / general mannerisms associated with that language.
+* For examples:
+  * prompting French or German with the output language set to `en` will give typical foreigner speech of trying to speak a language they don't know.
+  * prompting a Japanese speaker with the output language set to `ko` or `zh` will offer little changes to the spoken language (at least no nuance I can hear as an EOP).
 * Consequently, since this does tie to accents more, ***extreme*** attention is to be paid to the dialects being trained against, instead of naively grouping, say, all of Spanish to one language code.
+  * unfortunately, this does mean that audio annotated as English is dialect/accent-agnostic, per the dataset.
 
 This embedding probably helps the model with being able to perform cross-lingual outputs, but I did not do any experimentations on a model without this, as the reference `ar+nar-llama-8` was trained with this from the beginning with the small Japanese in my dataset anyhow (and maybe the `ar+nar-retnet-8` experiment).
 
@@ -143,7 +159,7 @@ This embedding *should* provide information on the tone for the model to output 
 
 Should, since I do not actually make use of this anywhere, and the model is not trained against any tones. I would need to annotate my dataset based on tones *and* pick which tones I do want.
 
-This should most definitely help the model identify tone strongly even without needing to annotate for it, but it does an adequate already with maintaining tone from a given input prompt.
+This should most definitely help the model identify tone strongly even without needing to annotate for it, but it does an adequate job already with maintaining tone from a given input prompt.
 
 ### Audio Embeddings
 
@@ -154,8 +170,8 @@ As EnCodec encodes audio across eight codebooks (and DAC's 44Khz audio under nin
 
 For the `prom` embedding, we can simply use each embedding for each layer. Each embedding level maps to its respective RVQ level.
 
-Howver, the `resp` requires some extra care, as the model needs to both causally (AR) and parallel-ly (NAR) decode tokens.
-* The first embedding level pertains to RVQ level 0 for the AR (`AR:0:0`).
+However, the `resp` requires some extra care, as the model needs to both causally (AR) and parallel-ly (NAR) decode tokens.
+* The first embedding level pertains to RVQ level 0 for the AR (`AR:0:0`) or NAR (`NAR:0:0`).
   * This embedding predicts tokens within its own embedding.
 * The remaining embedding levels maps to RVQ level 0 + n for the NAR (`NAR:L-1:L`).
   * In other words, embedding level 1 => RVQ level 0, embedding level 2 => RVQ level 1, etc...
@@ -163,7 +179,7 @@ Howver, the `resp` requires some extra care, as the model needs to both causally
   * In other words, each embedding needs to be separated based on what tokens they do predict.
 
 The `prom` and `resp` are split since, in theory, it helps the model know better what audio to source from, and what audio is part of the output sequence. In theory.
-* The `text` embedding's robustness not only for reusing between each RVQ level, but as STT task as well is a mystery.
+* The `text` embedding's robustness not only for reuse between each RVQ level, but for the `stt` task as well is a mystery.
 
 Finally, the model *may* then sum each embedding level back down to one sequence, as defined under `cfg.model.experimental.audio_embedding_sums`.
 * The resulant sum is not normalized by the length.
@@ -175,6 +191,10 @@ Finally, the model *may* then sum each embedding level back down to one sequence
   * The reference model was trained originally without summing, then trained with summing.
 
 Additionally, it's *technically* possible to instead use the embeddings from the model used to encode the audio (for example, EnCodec's embeddings), but in theory this may exclude specific features the model has encoded within the embeddings.
+
+Either embeddings can be used to compute utterance similarity scores, as per `vall_e.emb.similarity` for utterance similarities.
+* I need to compare if this can be used as well for speaker similarities.
+* The current implementation makes use of the `resp` embeddings for this, but the `proms` might be used instead (experimentation is needed for this).
 
 #### RVQ Level Embedding
 
@@ -196,6 +216,7 @@ The primary zero-shot text-to-speech synthesis `tts` task takes in a requested t
 
 The model primarily functions in a zero-shot setting, where it does not need a guiding prefix, but few-shotting is possible through manual intervention.
 * I believe the original VALL-E paper refers to this more as `VALL-E Continuous`, while some other TTS solutions follow this method by transcribing the input audio prompt as well.
+* Guidiance prefixing is offered in the implementation, but right now is only exposed under "rolling context/prefix" through the web UI / CLI (where the previous segment is used as the prefix for the next).
 
 Additional tasks are implemented in this project, but ***are yet to be trained for*** in the reference model (as some tasks require additional compute-cost).
 
@@ -250,11 +271,13 @@ This task will follow a reverse sequence of `<audio><language><RVQ level><output
 ## Emergent Behavior
 
 The model can be prompted in creative ways to yield some interesting behaviors:
-* prompting without an input audio prompt will have the model generate a random voice at the "cost" of some unintelligible utterance at the beginning of the output response (despite doing no promptless training).
+* prompting without an input audio prompt will have the model generate a random voice ~~at the "cost" of some unintelligible utterance at the beginning of the output response (despite doing no promptless training)~~.
   * classifier-free-guidance-aware training does fix this, but this property emerges without it.
+  * the AR is much better with this property, as the `NAR-len` gets crusty sometimes.
 * prompting with an input text prompt being the transcription of the input audio prompt will have the response follow very closely to the input prompt  (despite not doing input=output training).
   * this should allow for easy transcription editing without much fuss.
   * the `NAR-len` greatly exhibits this property, although it sometimes does keep any noise in the background.
+  * extra care is required when doing this, as some checkpoints of the model will degrade completely the moment the prompt can't be directly referenced.
 
 # `models/*`
 
@@ -324,7 +347,7 @@ This script modifies modules of BitNet to play nicely with my existing code.
 
 ### `models/arch/llama.py`
 
-This script modifes modules of LLaMA provided through `transformers`.
+This script modifies modules of LLaMA provided through `transformers`.
 
 A bulk of it pertains to modifying `LlamaAttention` and detecting available attention mechanisms, allowing for using different attention mechanisms:
 * `torch.nn.functional.scaled_dot_product_attention`-based attention:
@@ -388,17 +411,5 @@ This provides the original implementation's implementation of a transformer.
 This folder contains specific attention mechanisms.
 
 Currently, only `fused.py` is provided, which implements fused attention through Triton.
-
-Attributions are noted at the top of the respective file(s).
-
-### `models/arch/mamba_vasqu`
-
-This folder contains an implementation of Mamba2 as a HuggingFace-compatible model, and not requiring Triton.
-
-Attributions are noted at the top of the respective file(s).
-
-### `models/arch/retnet_syncdoth`
-
-This folder contains scripts to modify modules within a RetNet model.
 
 Attributions are noted at the top of the respective file(s).

@@ -102,14 +102,14 @@ def _non_blocking_input():
 
 
 def _make_infinite_epochs(dl):
+	if dl.dataset.batches() == 0:
+		raise Exception("Empty dataset!")
+
 	while True:
 		if dl.dataset.index() == 0:
 			_logger.info("New epoch starts.")
 		
 		total = dl.dataset.batches() - dl.dataset.index()
-		if total <= 0:
-			raise Exception("Empty dataset")
-
 		with tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader(), total=total) as pbar:
 			yield from pbar
 
