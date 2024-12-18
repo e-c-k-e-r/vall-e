@@ -5,39 +5,7 @@
 	<body>
 		<h1>VALL-E Demo</h1>
 		<p>${PREAMBLE}</p>
-		<table>
-			<thead>
-				<caption>LibriSpeech</caption>
-				<tr>
-					<th>Text</th>
-					<th>WER↓</th>
-					<th>CER↓</th>
-					<th>SIM-O↑</th>
-					<th>Prompt</th>
-					<th>Our VALL-E</th>
-					<th>Original VALL-E</th>
-					<!--th>F5-TTS</th-->
-					<th>Ground Truth</th>
-				</tr>
-			</thead>
-			<tbody>${LIBRISPEECH_SAMPLES}</tbody>
-		</table>
-		<table>
-			<thead>
-				<caption>Sampled Dataset</caption>
-				<tr>
-					<th>Text</th>
-					<th>WER↓</th>
-					<th>CER↓</th>
-					<th>SIM-O↑</th>
-					<th>Prompt</th>
-					<th>Our VALL-E</th>
-					<!--th>F5-TTS</th-->
-					<th>Ground Truth</th>
-				</tr>
-			</thead>
-			<tbody>${DATASET_SAMPLES}</tbody>
-		</table>
+		${TABLES}
 		<p>Settings used: <pre>${SETTINGS}</pre></p>
 	</body>
 </html>

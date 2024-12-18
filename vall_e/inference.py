@@ -11,6 +11,8 @@ from torch import Tensor
 from einops import rearrange
 from pathlib import Path
 
+from tqdm import tqdm, trange
+
 from .emb import g2p, qnt
 from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio
 from .emb.transcribe import transcribe
@@ -213,7 +215,7 @@ class TTS():
 		input_prompt_length = sampling_kwargs.pop("input_prompt_length", 0)
 		modality = sampling_kwargs.pop("modality", "auto")
 		seed = sampling_kwargs.pop("seed", None)
-		tqdm = sampling_kwargs.pop("tqdm", True)
+		use_tqdm = sampling_kwargs.pop("tqdm", True)
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
@@ -256,7 +258,7 @@ class TTS():
 
 		inputs = []
 		# tensorfy inputs
-		for i in range( samples ):
+		for i in trange( samples, desc="Preparing batches" ):
 			# detect language 
 			if languages[i] == "auto":
 				languages[i] = g2p.detect_language( texts[i] )
@@ -295,14 +297,14 @@ class TTS():
 			buffer = ([], [], [], [])
 
 		wavs = []
-		for texts, proms, langs, out_paths in batches:
+		for texts, proms, langs, out_paths in tqdm(batches, desc="Processing batch"):
 			seed = set_seed(seed)
 			batch_size = len(texts)
 			input_kwargs = dict(
 				text_list=texts,
 				proms_list=proms,
 				lang_list=langs,
-				disable_tqdm=not tqdm,
+				disable_tqdm=not use_tqdm,
 				use_lora=use_lora,
 			)
 
@@ -355,7 +357,7 @@ class TTS():
 		input_prompt_length = sampling_kwargs.pop("input_prompt_length", 0)
 		modality = sampling_kwargs.pop("modality", "auto")
 		seed = sampling_kwargs.pop("seed", None)
-		tqdm = sampling_kwargs.pop("tqdm", True)
+		use_tqdm = sampling_kwargs.pop("tqdm", True)
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
@@ -405,7 +407,7 @@ class TTS():
 				if model is not None:
 					text_list = model(
 						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=["stt"],
-						disable_tqdm=not tqdm,
+						disable_tqdm=not use_tqdm,
 						use_lora=use_lora,
 						**sampling_kwargs,
 					)
@@ -452,7 +454,7 @@ class TTS():
 					text_list=[phns],
 					proms_list=[prom],
 					lang_list=[lang],
-					disable_tqdm=not tqdm,
+					disable_tqdm=not use_tqdm,
 					use_lora=use_lora,
 				)
 				if model_len is not None:

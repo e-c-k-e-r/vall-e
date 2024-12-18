@@ -1058,7 +1058,7 @@ class Dataset(_Dataset):
 	def sample_prompts(self, spkr_name, reference, should_trim=True):
 		# return no prompt if explicitly requested for who knows why
 		# or if there's no other speakers to sample from (Emilia has a lot of singleton speakers, but I still want to make use of them)
-		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[-1] == 0 or len(self.paths_by_spkr_name[spkr_name]) <= 1:
+		if len(self.paths_by_spkr_name[spkr_name]) <= 1:
 			return None
 
 		prom_list = []
@@ -1075,9 +1075,15 @@ class Dataset(_Dataset):
 			)
 			"""
 
+		if not cfg.dataset.prompt_duration_range or cfg.dataset.prompt_duration_range[1] <= 0:
+			should_trim = False
+
 		prom_length = 0
-		duration_lo, duration_hi = cfg.dataset.prompt_duration_range
-		trim_length = int(random.uniform(duration_lo, duration_hi) * cfg.dataset.frames_per_second) if trim else 0
+		if should_trim:
+			duration_lo, duration_hi = cfg.dataset.prompt_duration_range
+			trim_length = int(random.uniform(duration_lo, duration_hi) * cfg.dataset.frames_per_second)
+		else:
+			trim_length = 0
 
 		for _ in range(cfg.dataset.prompt_max_samples):
 			if reference is not None:
