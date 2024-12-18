@@ -39,15 +39,15 @@ def process(
 	for line in lines:
 		if not line:
 			continue
-		speaker, text, prompt_wav, prompt_transcription = line.split("|")
+		filename, prompt_text, prompt_wav, text = line.split("|")
 
-		(output_dir / speaker).mkdir(parents=True, exist_ok=True)
+		(output_dir / filename / "out").mkdir(parents=True, exist_ok=True)
 
-		open( output_dir / speaker / "prompt.txt", "w", encoding="utf-8" ).write( text )
-		open( output_dir / speaker / "language.txt", "w", encoding="utf-8" ).write( language )
+		open( output_dir / filename / "prompt.txt", "w", encoding="utf-8" ).write( text )
+		open( output_dir / filename / "language.txt", "w", encoding="utf-8" ).write( language )
 
-		shutil.copy((input_dir / wav_dir / speaker).with_suffix(".wav"), output_dir / speaker / "reference.wav" )
-		shutil.copy(input_dir / prompt_wav, output_dir / speaker / "prompt.wav" )
+		shutil.copy((input_dir / wav_dir / filename).with_suffix(".wav"), output_dir / filename / "reference.wav" )
+		shutil.copy(input_dir / prompt_wav, output_dir / filename / "prompt.wav" )
 
 if __name__ == "__main__":
 	process()
