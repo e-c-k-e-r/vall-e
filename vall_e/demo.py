@@ -135,7 +135,7 @@ def main():
 	parser.add_argument("--lora", action="store_true")
 	parser.add_argument("--comparison", type=str, default=None)
 	
-	parser.add_argument("--transcription-model", type=str, default="openai/whisper-base")
+	parser.add_argument("--transcription-model", type=str, default="openai/whisper-large-v3")
 	parser.add_argument("--speaker-similarity-model", type=str, default="microsoft/wavlm-large")
 	
 	args = parser.parse_args()
@@ -426,7 +426,8 @@ def main():
 		calculate = not metrics_path.exists() or (metrics_path.stat().st_mtime < out_path.stat().st_mtime)
 
 		if calculate:
-			wer_score, cer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model )
+			wer_score, cer_score = wer( out_path, text, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model, phonemize=True )
+			#wer_score, cer_score = wer( out_path, reference_path, language=language, device=tts.device, dtype=tts.dtype, model_name=args.transcription_model, phonemize=False )
 			sim_o_score = sim_o( out_path, prompt_path, device=tts.device, dtype=tts.dtype, model_name=args.speaker_similarity_model )
 
 			metrics = {"wer": wer_score, "cer": cer_score, "sim-o": sim_o_score}

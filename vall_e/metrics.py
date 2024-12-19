@@ -12,13 +12,19 @@ from pathlib import Path
 from torcheval.metrics.functional import word_error_rate
 from torchmetrics.functional.text import char_error_rate
 
-def wer( audio, reference, language="auto", normalize=True, phonemize=True, **transcription_kwargs ):
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+warnings.simplefilter(action='ignore', category=UserWarning)
+
+def wer( audio, reference, language="auto", phonemize=True, **transcription_kwargs ):
 	if language == "auto":
 		language = detect_language( reference )
 
 	transcription = transcribe( audio, language=language, align=False, **transcription_kwargs )
+	
 	if language == "auto":
 		language = transcription["language"]
+	
 	transcription = transcription["text"]
 
 	# reference audio needs transcribing too
@@ -29,13 +35,12 @@ def wer( audio, reference, language="auto", normalize=True, phonemize=True, **tr
 		transcription = coerce_to_hiragana( transcription )
 		reference = coerce_to_hiragana( reference )
 
-	if normalize:
-		transcription = normalize_text( transcription )
-		reference = normalize_text( reference )
-
 	if phonemize:
 		transcription = encode( transcription, language=language )
 		reference = encode( reference, language=language )
+	else:
+		transcription = normalize_text( transcription, language=language )
+		reference = normalize_text( reference, language=language )
 
 	wer_score = word_error_rate([transcription], [reference]).item()
 	# un-normalize
