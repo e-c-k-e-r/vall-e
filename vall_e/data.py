@@ -192,7 +192,7 @@ def normalize_text(text, language="auto", full=True):
 	return text
 
 @cache
-def get_random_prompts( validation=False, min_length=0, tokenized=False ):
+def get_random_prompts( validation=False, min_length=0, tokenized=False, source_path=Path("./data/harvard_sentences.txt") ):
 	duration_range = [ 5.5, 12.0 ] # to-do: pull from cfg.dataset.duration_range
 	sentences = [
 		"The birch canoe slid on the smooth planks.",
@@ -228,9 +228,8 @@ def get_random_prompts( validation=False, min_length=0, tokenized=False ):
 		"Perfect. Please move quickly to the chamber lock, as the effect of prolonged exposure to the button are not part of this test.",
 	]
 
-	harvard_sentences_path = Path("./data/harvard_sentences.txt")
-	if harvard_sentences_path.exists():
-		sentences = open( harvard_sentences_path, "r", encoding="utf-8" ).read().split("\n")
+	if source_path.exists():
+		sentences = open( source_path, "r", encoding="utf-8" ).read().split("\n")
 
 	# Pull from validation dataset if existing + requested
 	if validation and cfg.dataset.validation:

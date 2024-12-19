@@ -16,7 +16,7 @@ import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
 
-def wer( audio, reference, language="auto", phonemize=True, **transcription_kwargs ):
+def wer( audio, reference, language="auto", phonemize=True, normalize=True, **transcription_kwargs ):
 	if language == "auto":
 		language = detect_language( reference )
 
@@ -38,7 +38,7 @@ def wer( audio, reference, language="auto", phonemize=True, **transcription_kwar
 	if phonemize:
 		transcription = encode( transcription, language=language )
 		reference = encode( reference, language=language )
-	else:
+	elif normalize:
 		transcription = normalize_text( transcription, language=language )
 		reference = normalize_text( reference, language=language )
 
