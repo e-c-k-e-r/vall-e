@@ -546,6 +546,8 @@ class Base(nn.Module):
 		if self.version >= 3:
 			self.langs_emb = Embedding(n_langs, d_model) if n_langs > 0 else None
 			self.tasks_emb = Embedding(n_tasks, d_model) if n_tasks > 0 else None
+
+			self.capabilities += ["lang"]
 		# never actually got added... I kept forgetting to classify all my audio for speaker's tone
 		if self.version >= 4:
 			self.tones_emb = Embedding(n_tones, d_model) if n_tones > 0 else None
