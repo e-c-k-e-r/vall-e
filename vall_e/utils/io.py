@@ -13,13 +13,12 @@ except:
 
 from .utils import truncate_json
 
-def json_stringify( data, truncate=False, pretty=False ):
+def json_stringify( data, truncate=False, pretty=False, raw=False ):
 	if truncate:
 		return truncate_json( json.dumps( data ) )
 	if pretty:
-		if use_orjson:
-			return json.dumps( data, option=json.OPT_INDENT_2 ).decode('utf-8')
-		return json.dumps( data, indent='\t' ).decode('utf-8')
+		s = json.dumps( data, option=json.OPT_INDENT_2 ) if use_orjson else json.dumps( data, indent='\t' )
+		return s if raw and use_orjson else s.decode('utf-8')
 	return json.dumps( data )
 
 def json_parse( string ):
@@ -34,11 +33,11 @@ def json_read( path, default=None ):
 	with (open( str(path), "rb" ) if use_orjson else open( str(path), "r", encoding="utf-8" ) ) as f:
 		return json_parse( f.read() )
 
-def json_write( data, path, truncate=False ):
+def json_write( data, path, **kwargs ):
 	path = coerce_path( path )
 	
 	with (open( str(path), "wb" ) if use_orjson else open( str(path), "w", encoding="utf-8" ) ) as f:
-		f.write( json_stringify( data, truncate=truncate ) )
+		f.write( json_stringify( data, raw=use_orjson, **kwargs ) )
 
 def coerce_path( path ):
 	return path if isinstance( path, Path ) else Path(path)
@@ -94,7 +93,7 @@ def torch_save( data, path, module_key=None ):
 	path = coerce_path(path)
 	ext = path.suffix
 
-	if ext in [".safetensor", ".sft"]:
+	if ext in [".safetensor", ".safetensors", ".sft"]:
 		data, metadata = state_dict_to_tensor_metadata( data, module_key=module_key )
 
 		return sft_save( data, path, metadata )
@@ -105,7 +104,7 @@ def torch_load( path, device="cpu", framework="pt", unsafe=True, load_metadata=T
 	path = coerce_path(path)
 	ext = path.suffix
 	
-	if ext in [".safetensor", ".sft"]:
+	if ext in [".safetensor", ".safetensors", ".sft"]:
 		state_dict = {}
 		with sft_load(path, framework=framework, device=device) as f:
 			for k in f.keys():
@@ -113,12 +112,13 @@ def torch_load( path, device="cpu", framework="pt", unsafe=True, load_metadata=T
 
 			if load_metadata:
 				metadata = f.metadata()
-				for k, v in metadata.items():
-					try:
-						metadata[k] = json.loads( v )
-					except Exception as e:
-						pass
-				state_dict = { module_key: state_dict } | metadata
+				if metadata is not None:
+					for k, v in metadata.items():
+						try:
+							metadata[k] = json.loads( v )
+						except Exception as e:
+							pass
+					state_dict = { module_key: state_dict } | metadata
 
 		return state_dict
 

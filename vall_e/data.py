@@ -192,7 +192,7 @@ def normalize_text(text, language="auto", full=True):
 	return text
 
 @cache
-def get_random_prompts( validation=False, min_length=0, tokenized=False, source_path=Path("./data/tongue_twisters.txt") ):
+def get_random_prompts( validation=False, min_length=0, tokenized=False, source_path=Path("./data/harvard_sentences.txt") ):
 	duration_range = [ 5.5, 12.0 ] # to-do: pull from cfg.dataset.duration_range
 	sentences = [
 		"The birch canoe slid on the smooth planks.",
