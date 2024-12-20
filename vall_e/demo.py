@@ -289,10 +289,10 @@ def main():
 
 	# only add the existing librispeech validation dataset if i'm doing validation so I can stop commenting this out
 	if not args.dataset_dir_name:
-		samples_dirs["librispeech"] = args.demo_dir / "librispeech"
+		samples_dirs["librispeech"] = args.demo_dir / "datasets" / "librispeech"
 	else:
 		if "validation" in args.dataset_dir_name:
-			samples_dirs["librispeech"] = args.demo_dir / "librispeech"
+			samples_dirs["librispeech"] = args.demo_dir / "datasets" / "librispeech"
 
 		# automatically pull from anything under the dataset dir
 		if args.dataset_dir_name.endswith("/*"):
@@ -444,7 +444,7 @@ def main():
 		if dataset_name not in metrics_map:
 			metrics_map[dataset_name] = {}
 
-		metrics_map[dataset_name][out_path] = (wer_score, cer_score, sim_o_score)
+		metrics_map[dataset_name][out_path] = (wer_score, cer_score, per_score, sim_o_score)
 
 	# collate entries into HTML
 	tables = []

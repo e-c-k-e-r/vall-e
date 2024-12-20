@@ -13,15 +13,13 @@ from .utils.io import torch_save, torch_load
 # *will* require retraining because the classifier is in one contiguous space, and proms are NOT summed
 @torch.no_grad()
 def convert_to_hf( state_dict, config = None, save_path = None ):
-	# to-do: infer all of this from the existing state_dict, should be easy by checking shape
-	model_dim = 1024
+	n_text_tokens, model_dim = state_dict['module']['text_emb.weight'].shape
 
-	n_text_tokens = 256
-	n_audio_tokens = 1024
-	n_resp_levels = 8
+	n_audio_tokens = state_dict['module']['proms_emb.embeddings.0.weight'].shape[0]
+	n_resp_levels = state_dict['module']['rvq_l_emb.weight'].shape[0]
 	n_len_tokens = 11
-	n_lang_tokens = 4
-	n_task_tokens = 9
+	n_lang_tokens = state_dict['module']['langs_emb.weight'].shape[0]
+	n_task_tokens = state_dict['module']['tasks_emb.weight'].shape[0]
 
 	# the new tokenizer to use
 	tokenizer_append = {}
@@ -45,6 +43,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 		"ja",
 		"de",
 		"fr",
+		"zh",
+		"ko",
 	]
 	task_map = [
 		"tts",
@@ -100,8 +100,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_start = token_end
 	token_end += l_tokens[2] // 2
 	embedding.weight[token_start:token_end] = state_dict['module'][f'resps_emb.embeddings.8.weight']
-	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.8.weight']
-	classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.8.bias']
+	classifier.weight[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.weight']
+	classifier.bias[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.bias']
 	for t in range(n_audio_tokens):
 		tokenizer_append[f'<NAR:0:0:{t}>'] = token_start + t
 	tokenizer_append[f'<NAR:0:0:STOP>'] = token_start + 1024

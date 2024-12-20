@@ -18,10 +18,10 @@ from tqdm.auto import tqdm
 from pathlib import Path
 
 def process(
-	input_dir=Path("./seedtts_testset/en/"),
-	list_name="./meta.lst",
+	input_dir=Path("./seedtts_testset/zh/"),
+	list_name="./hardcase.lst",
 	wav_dir="./wavs/",
-	output_dir=Path("./dataset/seed-tts-eval-en/"),
+	output_dir=Path("./dataset/seed-tts-eval-hard/"),
 ):
 	language = "auto"
 	
@@ -46,7 +46,11 @@ def process(
 		open( output_dir / filename / "prompt.txt", "w", encoding="utf-8" ).write( text )
 		open( output_dir / filename / "language.txt", "w", encoding="utf-8" ).write( language )
 
-		shutil.copy((input_dir / wav_dir / filename).with_suffix(".wav"), output_dir / filename / "reference.wav" )
+		reference_wav = (input_dir / wav_dir / filename).with_suffix(".wav")
+		if not reference_wav.exists():
+			continue
+
+		shutil.copy(reference_wav, output_dir / filename / "reference.wav" )
 		shutil.copy(input_dir / prompt_wav, output_dir / filename / "prompt.wav" )
 
 if __name__ == "__main__":
