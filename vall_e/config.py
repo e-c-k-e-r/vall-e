@@ -188,7 +188,7 @@ class Dataset:
 	prompt_similar_p: float = 0.75 # odds of sampling for a similar prompt instead of a random prompt
 	prompt_similar_top_k: int = 1 # top-k similar candidates to sample from 
 	prompt_similar_top_k_offset: int = 0 # offset from the top-k to sample from
-	prompt_inject_noise: bool = False # adds noise to the input prompt waveform to try and vary things
+	prompt_inject_noise_p: float = 0.0 # adds noise to the input prompt waveform to try and vary things
 	
 	resps_max_samples: int = 1 # number of samples to target for training
 	resps_append_p: float = 1.0 # probability to append another sample to the training target

@@ -1337,7 +1337,7 @@ class Dataset(_Dataset):
 		if task == "tts":
 			proms = self.sample_prompts(spkr_name, reference=path)
 
-			if cfg.dataset.prompt_inject_noise:
+			if random.random() < cfg.dataset.prompt_inject_noise_p:
 				# sample random noise
 				noise = self.sample_noise()
 				# extend the noise to fill the target audio
