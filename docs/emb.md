@@ -63,39 +63,27 @@ For audio backends:
 
 Descript-Audio-Codec was thoroughly tested for promising much, much cleaner output audio, as this model encodes/decodes at 44.1KHz, rather than EnCodec's 24KHz.
 
-However, due to the nature of the codec, simply throwing it at an attention-based transformer proves to be painful, as a unified AR+NAR model *heavily* suffers from noisy output in the NAR.
+However, due to the nature of the codec, simply throwing it at an attention-based transformer proves to be painful, as the model *heavily* suffers from noisy output in the higher half of the RVQ levels.
 
 Ironically, testing through erroneously encoded audio (feeding 24KHz audio without upsampling to 44.1KHz) proved to have "cleaner" but bad utterances.
 
 I'm uncertain on how to remedy this, as my options are:
-* train under a RetNet, if an attention-based transformer is simply the problem
-* train an AR, and train a NAR, if the codec itself is at fault
-* use an SSM like Mamba, if transformers entirely cannot model the codec
-* train a separate model that simply converts from EnCodec to DAC
-* train *all* NAR levels as independent masking sequences.
+* train under a RetNet, if an attention-based transformer is simply the problem (it's not)
+* train an AR, and train a NAR, if the codec itself is at fault (it's probably something inherent to the codec)
+* use an SSM like Mamba, if transformers entirely cannot model the codec (Mamba is too much of a thorn to use)
+* train a separate model that simply converts from EnCodec to DAC (requires another model to juggle, but does not require training a new model)
+* train *all* NAR levels as independent masking sequences similar to the `NAR-len` (complicated)
   * if this works, then it means that there's little to no mappable relation between DAC's RVQ levels
 
 ## `transcribe.py`
 
-This script primarily handles taking raw input audio, and outputting adequate metadata containing transcriptions of said audio through `whisperX`.
+This script primarily handles taking raw input audio, and outputting adequate metadata containing transcriptions of said audio through `whisper`.
 
-The process maintains slices `whisperX` thinks its best per the segments outputted, alongside the deduced language (if not specified).
+By default, `openai/whisper-large-v3` is used through HuggingFace's `pipeline` and everything is handled automatically. The process maintains slices `whisper` thinks its best per the segments outputted, alongside the deduced language (if not specified).
 
 One limiting factor is that transcription transcribes into normal text, rather than the IPA phonemes the model was trained against. Some flavors *may* exist, but I have yet to test them extensively (if I did ever find one).
 
 Refer to the `__main__`'s arguments for usage details.
-
-### Metrics
-
-This script also handles calculating `WER` simply by transcribing the given audio file (and reference, if requested), then comparing the word error rate.
-
-This process *heavily* relies on text normalization, which currently is lacking, but transcribing the reference should keep things "normalized" per the transcriber.
-
-### ROCm
-
-Because life is pain, ROCm requires additional steps to ensure that `whisperX` works. A special fork of `CTranslate2` is required, but simplying following [these](https://github.com/arlo-phoenix/CTranslate2-rocm/blob/rocm/README_ROCM.md) steps should fix things.
-
-In the future, I would love to replace WhisperX for something simple.
 
 ## `process.py`
 
@@ -120,7 +108,3 @@ When processing a dataset, this requires already having accompanying metadata ge
 Be *very* careful if you opt to output unsegmented and segmented utterances, as the sliced version may end up amongst the top-K similar candidates.
 
 Refer to the `__main__`'s arguments for usage details.
-
-### Metrics
-
-This script also handles calculating `SIM-O` per [keonlee9420/evaluate-zero-shot-tts](https://github.com/keonlee9420/evaluate-zero-shot-tts/blob/master/src/evaluate_zero_shot_tts/utils/speaker_verification/verification.py), by making use of a model to create an embedding of a speaker, then computing cosine similarities on those embeddings.

@@ -31,14 +31,14 @@ There are far better TTS solutions out there, such as [MaskGCT](https://github.c
 
 The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * boasts 220M parameters
-* supports English, German, French, and Japanese
-  * support for Korean and Chinese (Mandarin?) soon™
+* supports English, German, French, Japanese, Korean, and Chinese (Mandarin?)
 * has several modalities of inferencing:
   * the primary audio level (RVQ level 0) can be inferenced both autoregressively (`AR`) or non-autoregressively (`NAR-len`)
     * pure-NAR can yield faster-than-realtime output
   * supports predicting the duration of an input
   * supports Speech-to-Text (although it's a second-class feature)
-  * additional tasks such as noise reduction, speech removal, editing, and voice conversion eventually™ (just need to train on it)
+  * supports additional tasks such as speech removal, noice reduction, and voice converison.
+    * additional tasks such as speaker extraction and speech editing eventually™ (just need to train on it)
 * trained on `?` samples / `?` hours of EnCodec-quantized audio at 24KHz
 
 ## To-Do
@@ -79,6 +79,8 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * [x] objective metrics such as WER / SIM-O
   * [x] WER simply requires transcribing audio then computing word error rates through the transcriptions
   * [x] SIM-O requires passing the raw waveform through a speaker-similarity model
+* [ ] valle.cpp through llama.cpp + encodec.cpp
+  * the latter is easy, the former is not.
 
 ## "Postmortem"
 
@@ -87,12 +89,11 @@ For the most part, the model is complete. With the `NAR-len` being crammed on, I
 However, while this solution boasts being lightweight, there are some caveats for its given size
 * its at capacity on what it *can* do without additional tasks to augment it further
   * post-fixing it with additional layers glued on doesn't seem to offer very much improvement (12 => 16 layers)
-* wrangling it is a bit of a chore, as some voices work fine under the `AR` but not the `NAR-len`, and vice-versa
-  * some voices outright refuse to work without LoRA training
-  * some sampler settings works on some voices, but others need some tweaking
+  * the only bet is to feed it more data and see how it fares, since the model is still grossly undertrained compared to the 50K+ hour behemoths.
 * subjugating an existing LLM architecture is a bit of a pain, as I would *love* to make full use of LLaMA niceties
-  * `hf`-ifying it is possible, but it'd be a chore to set up the tokenizer properly
-* multi-lingual support is a bit of an afterthought
+  * `hf`-ifying it is possible, but due to the nature of summed audio embeddings and split classifiers, it's not as plug-and-play as I would like for inferencing.
+* speaker similarity is rather mediocre for unseen speakers, the model isn't as robust for mapping speakers to its latent space as it is for seen speakers.
+* despite being rather robust, some vocal stutters makes it way in.
 
 ## Notices and Citations
 

@@ -127,6 +127,9 @@ def get_speakers():
 def get_languages():
 	return list(get_lang_symmap().keys()) + ["auto"]
 
+def get_tasks():
+	return ["tts", "sr", "nr", "vc"]
+
 #@gradio_wrapper(inputs=layout["dataset"]["inputs"].keys())
 def load_sample( speaker ):
 	metadata_path = cfg.metadata_dir / f'{speaker}.json'
@@ -208,7 +211,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
 	parser.add_argument("--text", type=str, default=kwargs["text"])
-	parser.add_argument("--task", type=str, default="tts")
+	parser.add_argument("--task", type=str, default=kwargs["task"])
 	parser.add_argument("--modality", type=str, default=kwargs["modality"])
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--voice-convert", type=str, default=kwargs["voice-convert"])
@@ -336,7 +339,7 @@ def do_inference_stt( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 
 	parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
 	# I'm very sure I can procedurally generate this list
-	parser.add_argument("--task", type=str, default="tts")
+	parser.add_argument("--task", type=str, default="stt")
 	parser.add_argument("--references", type=str, default=kwargs["reference"])
 	parser.add_argument("--max-duration", type=int, default=0)
 	parser.add_argument("--language", type=str, default=kwargs["language"])
@@ -460,6 +463,7 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["text-language"] = gr.Dropdown(choices=get_languages(), label="Language (Text)", value="auto", info="Language the input text is in.")
 							layout["inference_tts"]["inputs"]["language"] = gr.Dropdown(choices=get_languages(), label="Language (Output)", value="auto", info="Target language/accent to output.")
+							layout["inference_tts"]["inputs"]["task"] = gr.Dropdown(choices=get_tasks(), label="Task", value="tts", info="")
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["split-text-by"] = gr.Dropdown(choices=["sentences", "lines"], label="Text Delimiter", info="How to split the text into utterances.", value="sentences")
 							layout["inference_tts"]["inputs"]["context-history"] = gr.Slider(value=0, minimum=0, maximum=4, step=1, label="(Rolling) Context History", info="How many prior lines to serve as the context/prefix (0 to disable).")

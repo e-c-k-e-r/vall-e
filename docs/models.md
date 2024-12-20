@@ -87,6 +87,7 @@ The NAR-len model keeps things simple by:
     * it could be in any base, but it's simple to just treat each token ID as a digit, then cast the string to an int.
     * this could literally also not be relying on an AR sequence to predict.
   * some checkpoints of the model seems to adhere well to outputting silence at the end if the requested duration exceeds the actual duration.
+    * this seems to only happen for models that erroneously causally attend to tokens in the `NAR-len`.
 * inferencing is a simple loop that simply takes the best masked-off k tokens per step, and remasks the remaining.
 
 Because the model already leverages the magic of attention to derive phoneme-alignment, such annotations are still not required (but they probably help with a naive sampler).

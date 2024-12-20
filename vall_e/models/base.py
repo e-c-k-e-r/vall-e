@@ -535,11 +535,11 @@ class Base(nn.Module):
 		else:
 			self.proms_emb = AudioEmbedding(
 				[n_audio_tokens] * self.n_resp_levels, d_model,
-				sums=audio_embedding_sums,
+				sums=audio_embedding_sums == "prom" or audio_embedding_sums == True,
 			)
 			self.resps_emb = AudioEmbedding(
 				l_tokens, d_model,
-				sums=audio_embedding_sums,
+				sums=audio_embedding_sums == "resp" or audio_embedding_sums == True,
 				l_names=resp_l_names,
 			)
 

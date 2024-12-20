@@ -23,17 +23,6 @@ These durations were reported from the training script directly.
 
 If you already have a dataset you want, for example, your own large corpus or for finetuning, you can use your own dataset instead.
 
-0. Set up a `venv` with `https://github.com/m-bain/whisperX/`.
-  + At the moment only WhisperX is utilized. Using other variants like `faster-whisper` is an exercise left to the user at the moment.
-  + It's recommended to use a dedicated virtualenv specifically for transcribing, as WhisperX will break a few dependencies.
-  + The following command should work:
-  ```
-  python3 -m venv venv-whisper
-  source ./venv-whisper/bin/activate
-  pip3 install torch torchvision torchaudio
-  pip3 install git+https://github.com/m-bain/whisperX/
-  ```
-
 1. Populate your source voices under `./voices/{group name}/{speaker name}/`.
 
 2. Run `python3 -m vall_e.emb.transcribe`. This will generate a transcription with timestamps for your dataset.
@@ -114,6 +103,7 @@ This section may be covered elsewhere in the documentation, but coverage here sh
 	* the above, but injects some noise throughout the sampled utterances.
 
 A mystical `vc` for performing voice conversion is possible, but either requires a dataset to do so, or abusing an emergent property.
+* This emergent property is mostly abused through the NAR-len's demasking routine.
 
 ## `__main__`
 

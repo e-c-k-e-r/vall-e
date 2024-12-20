@@ -361,8 +361,14 @@ class TTS():
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
+		duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 
 		voice_convert = sampling_kwargs.pop("voice_convert", None)
+		# explicitly require this
+		if task != "vc":
+			voice_convert = None
+		elif voice_convert == None:
+			raise Exception("Voice conversion requested, but no reference clip provided.")
 
 		# transcribe from audio to voice convert from
 		if voice_convert is not None and not text:
@@ -425,6 +431,20 @@ class TTS():
 
 		auto_lang = not language or language == "auto"
 		auto_text_lang = not text_language or text_language == "auto"
+		
+		vc_utterance = self.encode_audio( voice_convert, trim_length=0 ) if voice_convert else None
+		prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
+		lang = self.encode_lang( language )
+		
+		if task in ["ns, sr"]:
+			prom = [
+				task,
+				prom
+			]
+		
+		prom = to_device(prom, device=self.device, dtype=torch.int16)
+		lang = to_device(lang, device=self.device, dtype=torch.uint8)
+		
 		for line in lines:
 			if out_path is None:
 				output_dir = Path("./data/results/")
@@ -440,14 +460,8 @@ class TTS():
 			if auto_text_lang:
 				text_language = deduced_language
 
-			vc_utterance = self.encode_audio( voice_convert, trim_length=0 ) if voice_convert else None
-			prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
 			phns = self.encode_text( line, language=text_language )
-			lang = self.encode_lang( language )
-
-			prom = to_device(prom, device=self.device, dtype=torch.int16)
 			phns = to_device(phns, device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
-			lang = to_device(lang, device=self.device, dtype=torch.uint8)
 
 			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				input_kwargs = dict(
@@ -458,12 +472,16 @@ class TTS():
 					use_lora=use_lora,
 				)
 				if model_len is not None:
-					# extra kwargs
-					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
-					len_list = model_len( **input_kwargs, task_list=["len"], **{"max_duration": 5} ) # "max_duration" is max tokens
+					# skip calculating len_list if possible
+					if task in ["ns, sr"]:
+						len_list = [ prom[1].shape[0] ]
+					elif vc_utterance is not None:
+						len_list = [ vc_utterance.shape[0] ]
+					else:					
+						len_list = model_len( **input_kwargs, task_list=["len"], **{"max_duration": 5} ) # "max_duration" is max tokens
 
-					# add an additional X seconds
-					len_list = [ int(l * duration_padding) for l in len_list ]
+						# add an additional X seconds
+						len_list = [ int(l * duration_padding) for l in len_list ]
 
 					kwargs = {}
 					if prefix_context is not None:

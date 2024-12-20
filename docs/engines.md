@@ -14,7 +14,7 @@ This script handles the bulk of loading a model and wrapping the model with the 
 
 The checkpoint or weight path is automatically deduced, as well as pre-processing the state dict (if requested) before loading it.
 * resizing modules from the weights to the requested configuration in the YAML is done here.
-* replacing modules with optimized versions or LoRAs are applied here.
+* replacing modules with quantized versions or LoRAs are applied here.
 * the requested optimizer, and params to freeze, for a model is applied here.
 
 ## `base.py`
