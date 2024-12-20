@@ -251,10 +251,11 @@ class Classifiers(nn.Module):
 		self,
 		l_tokens: list[int], # list of number of tokens (needed because AR resps includes stop token)
 		token_dim: int, # dimensionality of the embedding
-		l_names: list[str] | None = None, # list of names to map to each classifier
+		l_names: list[str] | None = None, # list of names to map to each classifier,
+		bias: bool = True,
 	):
 		super().__init__()
-		self.proj = nn.ModuleList([nn.Linear(token_dim, n_tokens) for n_tokens in l_tokens])
+		self.proj = nn.ModuleList([nn.Linear(token_dim, n_tokens, bias=bias) for n_tokens in l_tokens])
 		self.names = l_names
 
 	def indices(
@@ -446,6 +447,7 @@ class Base(nn.Module):
 		unified_position_ids = self.config.experimental.unified_position_ids if self.config is not None else True
 		interleave = self.config.experimental.interleave if self.config is not None else False
 		noncausal_masks = self.config.experimental.noncausal_masks if self.config is not None else False
+		classifiers_bias = self.config.experimental.classifiers_bias if self.config is not None else False
 		
 		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else False
 		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
@@ -781,7 +783,7 @@ class Base(nn.Module):
 			self.metrics = None
 		else:
 			self.classifier = None
-			self.classifiers = Classifiers( classifier_l_tokens, d_model, l_names=classifier_l_names )
+			self.classifiers = Classifiers( classifier_l_tokens, d_model, l_names=classifier_l_names, bias=classifiers_bias )
 			self.accuracy_metric = None
 			self.precision_metric = None
 			self.metrics = Metrics( classifier_l_tokens )

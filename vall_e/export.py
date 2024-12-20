@@ -74,9 +74,7 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	embedding = torch.nn.Embedding( n_tokens, model_dim )
 	classifier = torch.nn.Linear( model_dim, n_tokens )
 
-	#embedding.weight.requires_grad = False
-	#classifier.weight.requires_grad = False
-	#classifier.bias.requires_grad = False
+	# to-do: ignore classifier for RVQ level 7
 
 	# inject text tokens
 	token_start = 0
@@ -192,9 +190,21 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	out_dir.mkdir(parents=True, exist_ok=True)
 	# write weights
 	torch_save( model_dict, out_dir / "model.safetensors" )
-	# write vocab.json
+	# write tokenizer.json
 	tokenizer['model']['vocab'] |= tokenizer_vocab
 	json_write(tokenizer, out_dir / "tokenizer.json", pretty=True)
+	# write tokenizer_config.json
+	json_write({
+  		"added_tokens": tokenizer['added_tokens'],
+		"bos_token": "<bos>",
+		"eos_token": "</eos>",
+		"clean_up_tokenization_spaces": True,
+		"model_input_names": [
+			"input_ids",
+			"attention_mask"
+		],
+		"tokenizer_class": "PreTrainedTokenizerFast"
+	}, out_dir / "tokenizer_config.json", pretty=True)
 	# write config.json
 	json_write({
 		"architectures": [

@@ -267,6 +267,7 @@ class ModelExperimentalSettings:
 	ignore_inputs_for_loss: bool = True # only calculate the loss on the outputs since thats what matters, as the inputs that do have loss calculated upon affects the loss for the entire sequence
 
 	noncausal_masks: bool = False # to correct an oversight with Llama always using causal masks......
+	classifiers_bias: bool = True # ugh
 
 	# classifier-free guidance training settings
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
@@ -477,7 +478,7 @@ class Hyperparameters:
 	teacher_alpha: float = 0.5 # mixing factor when performing knowledge distillation
 	teacher_temperature: float = 1.0
 	teacher_loss_fn: str = "mse" # kl | mse, use either kl_div or mse_loss (most implementations use kl, some literature says you can use mse)
-	
+
 @dataclass()
 class Evaluation:
 	batch_size: int = 64 # number of samples per batch during eval / val
