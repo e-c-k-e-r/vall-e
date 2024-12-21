@@ -6,9 +6,13 @@ At the moment it's ***very*** barebones as I try and wrestle with `llama.cpp`'s 
 
 ## Build
 
-Probably something like:
+Populate `./include/` with the `llama.cpp` and `encodec.cpp` headers.
 
-`g++ -I/path/to/llama.cpp/include/ -L/path/to/llama.cpp/libllama.so -lggml  -lggml-base -lllama -o ./vall_e`
+Populate `./libs/` with the compiled libraries of `llama.cpp` and `encodec.cpp`.
+* `encodec.cpp` requires updating `ggml` to the latest version and doing a quick hack to make it work on the CPU backend.
+* `llama.cpp` currently requires no hacks, but would be *very* nice to hack in a way to retrieve a model's `tok_embd`.
+
+Run `make`.
 
 ## To-Do
 

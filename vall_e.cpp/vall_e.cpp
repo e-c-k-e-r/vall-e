@@ -1,5 +1,9 @@
 #include "llama-vocab.h"
 #include "llama.h"
+#include "encodec.h"
+
+#define DR_WAV_IMPLEMENTATION
+#include "dr_wav.h"
 
 #include <cmath>
 #include <cstdio>
@@ -140,9 +144,7 @@ void batch_add( struct llama_batch& batch, llama_token id, int n_embd, float* em
 	GGML_ASSERT(batch.seq_id[batch.n_tokens] && "llama_batch size exceeded");
 
 	if ( embds ) {
-		for ( auto i = 0; i < n_embd; ++i ) {
-			batch.embd[batch.n_tokens + i] = embds[id * n_embd + i];
-		}
+		for ( auto i = 0; i < n_embd; ++i ) batch.embd[batch.n_tokens + i] = embds[id * n_embd + i];
 	} else {
 		batch.token[batch.n_tokens] = id;
 	}
@@ -156,6 +158,77 @@ void batch_add( struct llama_batch& batch, llama_token id, int n_embd, float* em
 	batch.n_tokens++;
 }
 
+bool read_wav_from_disk(std::string in_path, std::vector<float> & audio_arr) {
+    uint32_t channels;
+    uint32_t sample_rate;
+    drwav_uint64 total_frame_count;
+
+    float * raw_audio = drwav_open_file_and_read_pcm_frames_f32(
+        in_path.c_str(), &channels, &sample_rate, &total_frame_count, NULL);
+
+    if (raw_audio == NULL) {
+        fprintf(stderr, "%s: could not read wav file\n", __func__);
+        return false;
+    }
+
+    fprintf(stderr, "\n%s: Number of frames read = %lld.\n", __func__, total_frame_count);
+
+    audio_arr.resize(total_frame_count);
+    memcpy(audio_arr.data(), raw_audio, total_frame_count * sizeof(float));
+
+    drwav_free(raw_audio, NULL);
+
+    return true;
+}
+
+void write_wav_on_disk(std::vector<float> & audio_arr, std::string dest_path) {
+    drwav_data_format format;
+    format.bitsPerSample = 32;
+    format.sampleRate = 24000;
+    format.container = drwav_container_riff;
+    format.channels = 1;
+    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+
+    drwav wav;
+    drwav_init_file_write(&wav, dest_path.c_str(), &format, NULL);
+    drwav_uint64 frames = drwav_write_pcm_frames(&wav, audio_arr.size(), audio_arr.data());
+    drwav_uninit(&wav);
+
+    fprintf(stderr, "%s: Number of frames written = %lld.\n", __func__, frames);
+}
+
+std::vector<int32_t> encode_audio( struct encodec_context* ectx, const std::string& path ) {
+	// read audio from disk
+    std::vector<float> wavform;
+
+    if(!read_wav_from_disk(path, wavform)) {
+        printf("%s: error during reading wav file\n", __func__);
+        return {};
+    }
+
+    // compress audio
+    if (!encodec_compress_audio(ectx, wavform.data(), wavform.size(), 1)) {
+        printf("%s: error during compression \n", __func__);
+        return {};
+    }
+
+    int32_t* codes_data = encodec_get_codes( ectx );
+    int n_codes = encodec_get_codes_size( ectx );
+    
+    return std::vector<int32_t>(codes_data, codes_data + n_codes);
+}
+std::vector<float> decode_audio( struct encodec_context* ectx, const std::vector<int32_t>& codes ) {
+    // decompress audio
+    if (!encodec_decompress_audio(ectx, codes.data(), codes.size(), 1)) {
+        printf("%s: error during decompression\n", __func__);
+        return {};
+    }
+
+    // write reconstructed audio on disk
+    const float* audio_data = encodec_get_audio(ectx);
+    const int audio_size = encodec_get_audio_size(ectx);
+    return std::vector<float>(audio_data, audio_data + audio_size);
+}
 int main(int argc, char ** argv) {
 	bool is_ar = true;
 	// to-do: replace all of this with proper loading code
@@ -168,16 +241,27 @@ int main(int argc, char ** argv) {
 	std::vector<std::vector<llama_token>> response_tokens = {
 		{922,395,869,869,354,989,762,762,762,610,975,626,626,866,609,442,762,762,762,610,610,610,610,212,869,869,51,336,352,352,352,570,148,893,76,535,568,568,270,568,568,560,597,86,744,744,744,203,738,408,1019,700,707,92,707,464,744,171,171,159,196,192,697,261,261,568,638,605,904,904,779,832,570,519,223,459,459,459,459,90,90,570,700,53,372,621,610,869,473,869,917,654,473,917,893,654,644,384,558,911,864,521,1,19,665},
 	};
-	std::string model_path = "./vall_e/Vall_E-238M-Q8_0.gguf";
+	std::string vall_e_model_path = "./data/vall_e-q8_0.gguf";
+	std::string encodec_model_path = "./data/encodec.bin";
+	int32_t ngl = 0;
+
 
 	// load dynamic backends
 	ggml_backend_load_all();
 
-	// initialize the model
-	llama_model_params model_params = llama_model_default_params();
-	model_params.n_gpu_layers = 0;
+	struct encodec_context* ectx = encodec_load_model(encodec_model_path.c_str(), 0, ngl);
+	if (!ectx) {
+		printf("%s: error during loading model\n", __func__);
+		return 1;
+	}
+	
+	encodec_set_target_bandwidth(ectx, 24);
 
-	llama_model* model = llama_load_model_from_file(model_path.c_str(), model_params);
+	// initialize the models
+	llama_model_params model_params = llama_model_default_params();
+	model_params.n_gpu_layers = ngl;
+
+	llama_model* model = llama_load_model_from_file(vall_e_model_path.c_str(), model_params);
 	if (model == NULL) {
 		fprintf(stderr , "%s: error: unable to load model\n" , __func__);
 		return 1;
@@ -358,6 +442,7 @@ int main(int argc, char ** argv) {
 	llama_perf_context_print(ctx);
 	fprintf(stderr, "\n");
 
+	// encodec_free(ectx);
 	llama_sampler_free(smpl);
 	llama_free(ctx);
 	llama_free_model(model);

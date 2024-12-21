@@ -8,3 +8,8 @@ __pycache__
 /voices
 /wandb
 /.nltk
+/vall_e.cpp/data
+/vall_e.cpp/include
+/vall_e.cpp/libs
+/vall_e.cpp/*.o
+/vall_e.cpp/vall_e
