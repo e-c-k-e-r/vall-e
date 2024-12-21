@@ -509,6 +509,7 @@ class TTS():
 				else:
 					raise Exception("!")
 
+
 			# to-do: care about batching later
 			resps = resps_list[0]
 			

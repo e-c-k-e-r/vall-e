@@ -71,8 +71,10 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 		"stt",
 	]
 
+	classifier_bias = False
+
 	embedding = torch.nn.Embedding( n_tokens, model_dim )
-	classifier = torch.nn.Linear( model_dim, n_tokens )
+	classifier = torch.nn.Linear( model_dim, n_tokens, bias=classifier_bias )
 
 	# to-do: ignore classifier for RVQ level 7
 
@@ -81,7 +83,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_end = l_tokens[0]
 	embedding.weight[token_start:token_end] = state_dict['module']['text_emb.weight']
 	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.9.weight']
-	classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.9.bias']
+	if classifier_bias:
+		classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.9.bias']
 	# tokenizer already has these tokens
 
 	# inject prom tokens
@@ -102,7 +105,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_end += l_tokens[2] // 2
 	embedding.weight[token_start:token_end] = state_dict['module'][f'resps_emb.embeddings.0.weight']
 	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.0.weight']
-	classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.0.bias']
+	if classifier_bias:
+		classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.0.bias']
 	for t in range(n_audio_tokens):
 		tokenizer_vocab[f'<|AR|0:0|{t}|>'] = token_start + t
 	tokenizer_vocab[f'<AR|0:0|STOP|>'] = token_start + 1024
@@ -112,10 +116,11 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_end += l_tokens[2] // 2
 	embedding.weight[token_start:token_end] = state_dict['module'][f'resps_emb.embeddings.8.weight']
 	classifier.weight[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.weight']
-	classifier.bias[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.bias']
+	if classifier_bias:
+		classifier.bias[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.bias']
 	for t in range(n_audio_tokens):
-		tokenizer_vocab[f'<NAR|0:0|{t}|>'] = token_start + t
-	tokenizer_vocab[f'<NAR|0:0|STOP|>'] = token_start + 1024
+		tokenizer_vocab[f'<|NAR|0:0|{t}|>'] = token_start + t
+	tokenizer_vocab[f'<|NAR|0:0|STOP|>'] = token_start + 1024
 	
 	# inject NAR
 	token_start = token_end
@@ -125,7 +130,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 		end = start + n_audio_tokens
 		embedding.weight[start:end] = state_dict['module'][f'resps_emb.embeddings.{l}.weight']
 		classifier.weight[start:end] = state_dict['module'][f'classifiers.proj.{l}.weight']
-		classifier.bias[start:end] = state_dict['module'][f'classifiers.proj.{l}.bias']
+		if classifier_bias:
+			classifier.bias[start:end] = state_dict['module'][f'classifiers.proj.{l}.bias']
 		for t in range(n_audio_tokens):
 			tokenizer_vocab[f'<|NAR|{l-1}:{l}|{t}|>'] = start + t
 	
@@ -142,7 +148,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_end += l_tokens[5]
 	embedding.weight[token_start:token_end] = state_dict['module'][f'len_emb.weight']
 	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.10.weight'][0:n_len_tokens] # erroneously sized as 256
-	classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.10.bias'][0:n_len_tokens] # erroneously sized as 256
+	if classifier_bias:
+		classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.10.bias'][0:n_len_tokens] # erroneously sized as 256
 	for t in range(n_len_tokens):
 		tokenizer_vocab[f'<|len:{t}|>'] = token_start + t
 
@@ -183,7 +190,8 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	classifier_dict = classifier.state_dict()
 	model_dict['model.embed_tokens.weight'] = embedding_dict['weight']
 	model_dict['lm_head.weight'] = classifier_dict['weight']
-	model_dict['lm_head.bias'] = classifier_dict['bias']
+	if classifier_bias:
+		model_dict['lm_head.bias'] = classifier_dict['bias']
 
 	# write files in an HF compatible way
 	out_dir = cfg.rel_path / "hf"

@@ -99,7 +99,12 @@
       }
     }
   },
-  "decoder": null,
+  "decoder": {
+    "type": "ByteLevel",
+    "add_prefix_space": false,
+    "trim_offsets": false,
+    "use_regex": false
+  },
   "model": {
     "type": "BPE",
     "dropout": null,
@@ -107,7 +112,7 @@
     "continuing_subword_prefix": null,
     "end_of_word_suffix": null,
     "fuse_unk": false,
-    "byte_fallback": false,
+    "byte_fallback": true,
     "ignore_merges": false,
     "vocab": {
       "<unk>": 0,
