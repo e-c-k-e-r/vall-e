@@ -15,7 +15,7 @@ Probably something like:
 * [x] converted model to GGUF
 	* [ ] convert it without modifying any of the existing code
 * [x] basic framework
-	* [x] load the model
+	* [x] load the quantized model
 	* [x] orchestrate the required embeddings
 	* [x] juggle the output head / classifier properly
 * [ ] phonemize text
@@ -23,8 +23,8 @@ Probably something like:
 * [ ] load audio from disk
 * [ ] encode audio
 * [ ] sum embeddings for the `prom` and prior `resp`s
+* [x] `AR` sampling
 * [ ] `NAR-len` demasking sampling
 * [ ] `NAR` sampling
 * [ ] decode audio to disk
 * [ ] a functional CLI
-* [ ] quantize the model (properly)
