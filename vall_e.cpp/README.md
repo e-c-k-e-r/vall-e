@@ -24,11 +24,13 @@ Run `make`.
 	* [x] juggle the output head / classifier properly
 * [ ] phonemize text
 * [ ] tokenize phonemes
-* [ ] load audio from disk
-* [ ] encode audio
-* [ ] sum embeddings for the `prom` and prior `resp`s
+* [x] load audio from disk
+* [x] encode audio
+* [x] sum embeddings for the `prom` and prior `resp`s
 * [x] `AR` sampling
 * [ ] `NAR-len` demasking sampling
 * [ ] `NAR` sampling
 * [ ] decode audio to disk
 * [ ] a functional CLI
+* [ ] actually make it work
+	* it seems naively stitching the model together isn't good enough since the output is wrong
