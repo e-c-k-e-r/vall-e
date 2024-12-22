@@ -58,33 +58,30 @@ task_outputs = {
 # yuck
 def _get_offsets():
 	return {
-		"text": 0, # <unk>
-		"quant_level": 17666, # <|RVQ:0>
-		"len": 17674, # <|len:0|>
-		"lang": 17686, # <|lang:en|>"
-		"task": 17692, # <|task:tts|>
-		"sep": 17685, # <|sep|>
-		"prom": [
-			256 + (1024 * 0), # <|P|0:0|>
-			256 + (1024 * 1), # <|P|1:0|>
-			256 + (1024 * 2), # <|P|2:0|>
-			256 + (1024 * 3), # <|P|3:0|>
-			256 + (1024 * 4), # <|P|4:0|>
-			256 + (1024 * 5), # <|P|5:0|>
-			256 + (1024 * 6), # <|P|6:0|>
-			256 + (1024 * 7), # <|P|7:0|>
-		],
-		"resp": [
-			8448, # <|AR|0:0|>
-			9473, # <|NAR|0:0|>
-			10498 + (1024 * 0), # <|NAR|0:1|>
-			10498 + (1024 * 1), # <|NAR|1:2|>
-			10498 + (1024 * 2), # <|NAR|2:3|>
-			10498 + (1024 * 3), # <|NAR|3:4|>
-			10498 + (1024 * 4), # <|NAR|4:5|>
-			10498 + (1024 * 5), # <|NAR|5:6|>
-			10498 + (1024 * 6), # <|NAR|6:7|>
-		]
+		"text": (0, 256), 
+		"quant_level": (256, 264), 
+		"lang": (264, 270), 
+		"task": (270, 279), 
+		"len": (279, 290), 
+		"tone": (290, 291), 
+		"sep": (291, 292), 
+		"prom|0": (292, 1316), 
+		"prom|1": (1316, 2340), 
+		"prom|2": (2340, 3364), 
+		"prom|3": (3364, 4388), 
+		"prom|4": (4388, 5412), 
+		"prom|5": (5412, 6436), 
+		"prom|6": (6436, 7460), 
+		"prom|7": (7460, 8484), 
+		"resps|AR:0:0": (8484, 9509), 
+		"resps|NAR:0:1": (9509, 10533), 
+		"resps|NAR:1:2": (10533, 11557), 
+		"resps|NAR:2:3": (11557, 12581), 
+		"resps|NAR:3:4": (12581, 13605), 
+		"resps|NAR:4:5": (13605, 14629), 
+		"resps|NAR:5:6": (14629, 15653), 
+		"resps|NAR:6:7": (15653, 16677), 
+		"resps|NAR:0:0": (16677, 17702), 
 	}
 
 def _dropout_mask( input, p=None ):
@@ -1084,27 +1081,22 @@ class Base(nn.Module):
 					classifier_level = input
 
 			for name, input in batch_input:
-				if name not in offsets:
-					continue
-
 				if not isinstance( input, torch.Tensor ):
 					continue
 
-				offset = offsets[name]
-				if name in ["prom", "resp"]:
-					l = quant_level
-					if name == "resp":
-						if classifier_level == "AR:0:0":
-							l = 0
-						elif classifier_level == "NAR:0:0":
-							l = 1
-						else:
-							l = 2 + (quant_level-1)
+				k = name
+				if name == "prom":
+					k = f'prom|{quant_level}'
+				elif name == "resp":
+					k = f'resps|{classifier_level}'
 
-					offset = offset[l]
+				if k not in offsets:
+					continue
+
+				start, end = offsets[k]
 
 				for i, t in enumerate( input ):
-					input[i] += offset * direction
+					input[i] += start * direction
 
 		return inputs
 
@@ -1446,45 +1438,22 @@ class Base(nn.Module):
 				# offset to flattened vocab ranges
 				if self.classifier is not None:
 					offsets = _get_offsets()
-					if name in offsets:
-						offset = offsets[name]
-						# yes there's a better way
-						if name == "prom":
-							offset = offset[quant_level]
-						elif name == "resp":
-							"""
-							if classifier_level == "AR:0:0":
-								offset = offset[0]
-							elif classifier_level == "NAR:0:0":
-								offset = offset[1]
-							elif classifier_level == "NAR:0:1":
-								offset = offset[2]
-							elif classifier_level == "NAR:1:2":
-								offset = offset[3]
-							elif classifier_level == "NAR:2:3":
-								offset = offset[4]
-							elif classifier_level == "NAR:3:4":
-								offset = offset[5]
-							elif classifier_level == "NAR:4:5":
-								offset = offset[6]
-							elif classifier_level == "NAR:5:6":
-								offset = offset[7]
-							elif classifier_level == "NAR:6:7":
-								offset = offset[8]
-							else:
-								continue
-							"""
-							if classifier_level == "AR:0:0":
-								offset = offset[0]
-							elif classifier_level == "NAR:0:0":
-								offset = offset[1]
-							else:
-								offset = offset[2 + (quant_level-1)]
+
+					k = name
+					if name == "stt":
+						k = "text"
+					if name == "prom":
+						k = f'prom|{quant_level}'
+					elif name == "resp":
+						k = f'resps|{classifier_level}'
+					
+					if k in offsets:
+						start, end = offsets[k]
 
 						for i, t in enumerate( token ):
 							if t == self.ignore_index:
 								continue
-							token[i] += offset
+							token[i] += start
 
 				if token.is_floating_point():
 					ignored = True
@@ -1709,17 +1678,7 @@ class Base(nn.Module):
 		if hidden_states is not None:
 			for i, state in enumerate( hidden_states ):
 				hidden_states[i] = [ hi[:li] for hi, li in zip(hidden_states[i], map(len, x_list)) ]
-
-		# corrections
-		"""
-		for batch_index, classifier_level in enumerate( classifier_levels ):
-			if classifier_level == "len" and logits[batch_index].shape[1] > 11:
-				logits[batch_index] = logits[batch_index][:,:11]
-			elif classifier_level == "NAR:0:0" and logits[batch_index].shape[1] > 1024:
-				logits[batch_index] = logits[batch_index][:,:1024]
-		"""
 		
-		# compute loss if the target is given
 		if not training:
 			loss = None
 			stats = None
@@ -1731,32 +1690,21 @@ class Base(nn.Module):
 			if self.classifier is not None:
 				offsets = _get_offsets()
 				for batch_index, classifier_level in enumerate( classifier_levels ):
-					# yes there's a better way
-					if classifier_level == "len":
-						offset = offsets["len"], 11
-					elif classifier_level == "AR:0:0":
-						offset = offsets["resp"][0], 1025
-					elif classifier_level == "NAR:0:0":
-						offset = offsets["resp"][1], 1024
-					elif classifier_level == "NAR:0:1":
-						offset = offsets["resp"][2], 1024
-					elif classifier_level == "NAR:1:2":
-						offset = offsets["resp"][3], 1024
-					elif classifier_level == "NAR:2:3":
-						offset = offsets["resp"][4], 1024
-					elif classifier_level == "NAR:3:4":
-						offset = offsets["resp"][5], 1024
-					elif classifier_level == "NAR:4:5":
-						offset = offsets["resp"][6], 1024
-					elif classifier_level == "NAR:5:6":
-						offset = offsets["resp"][7], 1024
-					elif classifier_level == "NAR:6:7":
-						offset = offsets["resp"][8], 1024
+					if classifier_level == "stt":
+						k = "text"
+					elif classifier_level == "len":
+						k = "len"
 					else:
+						k = f'resps|{classifier_level}'
+
+					if k not in offsets:
 						continue
 
-					logits[batch_index] = logits[batch_index][offset[0]:offset[0]+offset[1], :]
+					start, end = offsets[k]
 
+					logits[batch_index] = logits[batch_index][:, start:start+end]
+
+		# compute loss if the target is given
 		else:
 			loss, stats = self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels )
 
