@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <iostream>
 
-#define LLAMA_CPP_EXTENDED 1 // whether the underlying llama.cpp has some extra functions
+#define LLAMA_CPP_EXTENDED 0 // whether the underlying llama.cpp has some extra functions
 #define LLAMA_CPP_USE_VALL_E_ARCH 0 // whether the underlying llama.cpp is to use the VALL_E arch
 
 #if !LLAMA_CPP_EXTENDED

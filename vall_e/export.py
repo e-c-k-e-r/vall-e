@@ -105,7 +105,8 @@ def convert_to_hf_llama( state_dict, config = None, save_path = None ):
 	classifier = torch.nn.Linear( model_dim, n_tokens, bias=classifier_bias )
 
 	if not split_classifiers:
-		classifier.weight[:] = state_dict['module']['classifier.weight'][:]
+		src = state_dict['module']['classifier.weight'][:]
+		classifier.weight[:src.shape[0], ] = src
 
 	# update ranges
 	start = 0
