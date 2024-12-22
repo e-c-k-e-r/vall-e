@@ -60,14 +60,13 @@ def is_dict_of( d, t ):
 
 # handles converting the usual pth state_dict into just the dict with the tensors + a dict of JSON strings, for safetensors
 def state_dict_to_tensor_metadata( data: dict, module_key=None ):
-	metadata = None
+	metadata = {}
 
 	# is a state_dict, no need to coerce
 	if is_dict_of( data, torch.Tensor ):
 		return data, metadata
 
 	# is maybe a dict with a state dict + metadata, coerce it
-	metadata = {}
 	target = module_key
 	if not target:
 		for k, v in data.items():
@@ -78,7 +77,8 @@ def state_dict_to_tensor_metadata( data: dict, module_key=None ):
 
 			# not a dict of tensors, put it as metadata
 			try:
-				metadata[k] = json.dumps(v)
+				metadata[k] = json_stringify(v) if any([isinstance( v, dict ), isinstance( v, list )]) else v
+
 				if isinstance( metadata[k], bytes ):
 					metadata[k] = metadata[k].decode('utf-8')
 			except Exception as e:
@@ -96,6 +96,9 @@ def torch_save( data, path, module_key=None ):
 	if ext in [".safetensor", ".safetensors", ".sft"]:
 		data, metadata = state_dict_to_tensor_metadata( data, module_key=module_key )
 
+		if metadata is None:
+			metadata = {}
+
 		return sft_save( data, path, metadata )
 
 	return torch.save( data, path )
@@ -112,13 +115,12 @@ def torch_load( path, device="cpu", framework="pt", unsafe=True, load_metadata=T
 
 			if load_metadata:
 				metadata = f.metadata()
-				if metadata is not None:
-					for k, v in metadata.items():
-						try:
-							metadata[k] = json.loads( v )
-						except Exception as e:
-							pass
-					state_dict = { module_key: state_dict } | metadata
+				for k, v in metadata.items():
+					try:
+						metadata[k] = json.loads( v )
+					except Exception as e:
+						pass
+				state_dict = { module_key: state_dict } | metadata
 
 		return state_dict
 

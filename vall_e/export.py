@@ -71,10 +71,14 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 		"stt",
 	]
 
-	classifier_bias = False
+	classifier_bias = "classifiers.proj.0.bias" in state_dict['module'] # cfg.model.experimental.classifiers_bias
+	split_classifiers = "classifiers.proj.0.weight" in state_dict['module'] # cfg.model.experimental.split_classifiers
 
 	embedding = torch.nn.Embedding( n_tokens, model_dim )
 	classifier = torch.nn.Linear( model_dim, n_tokens, bias=classifier_bias )
+
+	if not split_classifiers:
+		classifier.weight[:] = state_dict['module']['classifier.weight'][:]
 
 	# to-do: ignore classifier for RVQ level 7
 
@@ -82,9 +86,10 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_start = 0
 	token_end = l_tokens[0]
 	embedding.weight[token_start:token_end] = state_dict['module']['text_emb.weight']
-	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.9.weight']
-	if classifier_bias:
-		classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.9.bias']
+	if split_classifiers:
+		classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.9.weight']
+		if classifier_bias:
+			classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.9.bias']
 	# tokenizer already has these tokens
 
 	# inject prom tokens
@@ -104,9 +109,10 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_start = token_end
 	token_end += l_tokens[2] // 2
 	embedding.weight[token_start:token_end] = state_dict['module'][f'resps_emb.embeddings.0.weight']
-	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.0.weight']
-	if classifier_bias:
-		classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.0.bias']
+	if split_classifiers:
+		classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.0.weight']
+		if classifier_bias:
+			classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.0.bias']
 	for t in range(n_audio_tokens):
 		tokenizer_vocab[f'<|AR|0:0|{t}|>'] = token_start + t
 	tokenizer_vocab[f'<AR|0:0|STOP|>'] = token_start + 1024
@@ -115,9 +121,10 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_start = token_end
 	token_end += l_tokens[2] // 2
 	embedding.weight[token_start:token_end] = state_dict['module'][f'resps_emb.embeddings.8.weight']
-	classifier.weight[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.weight']
-	if classifier_bias:
-		classifier.bias[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.bias']
+	if split_classifiers:
+		classifier.weight[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.weight']
+		if classifier_bias:
+			classifier.bias[token_start:token_end-1] = state_dict['module']['classifiers.proj.8.bias']
 	for t in range(n_audio_tokens):
 		tokenizer_vocab[f'<|NAR|0:0|{t}|>'] = token_start + t
 	tokenizer_vocab[f'<|NAR|0:0|STOP|>'] = token_start + 1024
@@ -129,9 +136,10 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 		start = token_start + ((l-1) * n_audio_tokens)
 		end = start + n_audio_tokens
 		embedding.weight[start:end] = state_dict['module'][f'resps_emb.embeddings.{l}.weight']
-		classifier.weight[start:end] = state_dict['module'][f'classifiers.proj.{l}.weight']
-		if classifier_bias:
-			classifier.bias[start:end] = state_dict['module'][f'classifiers.proj.{l}.bias']
+		if split_classifiers:
+			classifier.weight[start:end] = state_dict['module'][f'classifiers.proj.{l}.weight']
+			if classifier_bias:
+				classifier.bias[start:end] = state_dict['module'][f'classifiers.proj.{l}.bias']
 		for t in range(n_audio_tokens):
 			tokenizer_vocab[f'<|NAR|{l-1}:{l}|{t}|>'] = start + t
 	
@@ -147,9 +155,10 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	token_start = token_end
 	token_end += l_tokens[5]
 	embedding.weight[token_start:token_end] = state_dict['module'][f'len_emb.weight']
-	classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.10.weight'][0:n_len_tokens] # erroneously sized as 256
-	if classifier_bias:
-		classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.10.bias'][0:n_len_tokens] # erroneously sized as 256
+	if split_classifiers:
+		classifier.weight[token_start:token_end] = state_dict['module']['classifiers.proj.10.weight'][0:n_len_tokens] # erroneously sized as 256
+		if classifier_bias:
+			classifier.bias[token_start:token_end] = state_dict['module']['classifiers.proj.10.bias'][0:n_len_tokens] # erroneously sized as 256
 	for t in range(n_len_tokens):
 		tokenizer_vocab[f'<|len:{t}|>'] = token_start + t
 
@@ -197,7 +206,7 @@ def convert_to_hf( state_dict, config = None, save_path = None ):
 	out_dir = cfg.rel_path / "hf"
 	out_dir.mkdir(parents=True, exist_ok=True)
 	# write weights
-	torch_save( model_dict, out_dir / "model.safetensors" )
+	torch_save( { "module": model_dict, "format": "pt" }, out_dir / "model.safetensors" )
 	# write tokenizer.json
 	tokenizer['model']['vocab'] |= tokenizer_vocab
 	json_write(tokenizer, out_dir / "tokenizer.json", pretty=True)

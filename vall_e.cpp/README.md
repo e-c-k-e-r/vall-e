@@ -10,7 +10,9 @@ Populate `./include/` with the `llama.cpp` and `encodec.cpp` headers.
 
 Populate `./libs/` with the compiled libraries of `llama.cpp` and `encodec.cpp`.
 * `encodec.cpp` requires updating `ggml` to the latest version and doing a quick hack to make it work on the CPU backend.
-* `llama.cpp` currently requires no hacks, but would be *very* nice to hack in a way to retrieve a model's `tok_embd`.
+* `llama.cpp` currently requires no hacks, but:
+	* would be *very* nice to retrieve a model's `tok_embd` through the API.
+	* would be ***very*** nice to only specify a slice of the output head through the API.
 
 Run `make`.
 

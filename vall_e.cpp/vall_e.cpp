@@ -250,18 +250,19 @@ std::vector<float> decode_audio( struct encodec_context* ectx, const std::vector
 }
 
 const int EMBEDDING_MODE_PROM = 0;
-const int EMBEDDING_MODE_RESP_AR_NAR = 0;
-const int EMBEDDING_MODE_RESP_NAR_LEN = 0;
+const int EMBEDDING_MODE_RESP_AR_NAR = 1;
+const int EMBEDDING_MODE_RESP_NAR_LEN = 2;
 
 const int INFERENCE_MODE_LEN = 0;
 const int INFERENCE_MODE_AR = 1;
 const int INFERENCE_MODE_NAR_DEMASK = 2;
-const int INFERENCE_MODE_NAR = 4;
+const int INFERENCE_MODE_NAR = 3;
 
 const int MODALITY_AR_NAR = 0;
-const int MODALITY_NAR_LEN = 0;
+const int MODALITY_NAR_LEN = 1;
 
 const int MAX_DURATION = 75; // * 12;
+const int CTX_SIZE = 2048;
 
 // sums embeddings over a 2D "tensor"
 std::vector<std::vector<float>> sum_embeddings( const std::vector<std::vector<llama_token>>& input, int n_embd, int rvq_l, float** embds, int mode = EMBEDDING_MODE_PROM ) {
@@ -457,14 +458,14 @@ std::vector<llama_token> generate( llama_context* ctx, llama_model* model, llama
 int main(int argc, char ** argv) {
 	// to-do: replace all of this with proper loading code
 	int32_t ngl = 0;
-	int modality = MODALITY_AR_NAR;
+	int modality = MODALITY_NAR_LEN;
 	input_t input{};
 	embeddings_t embeddings_map{};
 
 	// input.phonemes = "hˈɛloː ʋˈɔrlt";
 	input.phn = {1,85,4,128,26,4,186,4,89,33,25,4,48,4,134,25,52,86,4,34,97,27,11,2}; // <bos>hˈɛloː ʋˈɔrlt</eos>
 
-	std::string vall_e_model_path = "./data/vall_e-F16.gguf";
+	std::string vall_e_model_path = "./data/vall_e-f16.gguf";
 	std::string encodec_model_path = "./data/encodec.bin";
 	std::string input_prompt_path = "./data/prom.wav";
 	std::string output_response_path = "./data/resp.wav";
@@ -497,9 +498,9 @@ int main(int argc, char ** argv) {
 
 	// initialize the context
 	llama_context_params ctx_params = llama_context_default_params();
-	ctx_params.n_ctx = 22500;
-	ctx_params.n_batch = 22500;
-	ctx_params.n_ubatch = 22500;
+	ctx_params.n_ctx = CTX_SIZE;
+	ctx_params.n_batch = CTX_SIZE;
+	ctx_params.n_ubatch = CTX_SIZE;
 	ctx_params.no_perf = false;
 	ctx_params.attention_type = LLAMA_ATTENTION_TYPE_CAUSAL; 
 
@@ -519,7 +520,7 @@ int main(int argc, char ** argv) {
 	llama_sampler_chain_add(smpl_ar, llama_sampler_init_top_k(20));
 	llama_sampler_chain_add(smpl_ar, llama_sampler_init_top_p(0.9, 20));
 	llama_sampler_chain_add(smpl_ar, llama_sampler_init_temp (1.0));
-	// llama_sampler_chain_add(smpl_ar, llama_sampler_init_dist (1130));
+	llama_sampler_chain_add(smpl_ar, llama_sampler_init_dist (1130));
 	
 	llama_sampler_chain_add(smpl_nar, llama_sampler_init_greedy());
 
@@ -542,13 +543,13 @@ int main(int argc, char ** argv) {
 	if ( input.phonemes != "" ) {
 		const int n_prompt = -llama_tokenize(model, input.phonemes.c_str(), input.phonemes.size(), NULL, 0, true, true);
 		// allocate space for the tokens and tokenize the input.phonemes
-		input.phns.resize(n_prompt)
-		if (llama_tokenize(model, input.phonemes.c_str(), input.phonemes.size(), input.phns.data(), input.phns.size(), true, true) < 0) {
+		input.phn.resize(n_prompt);
+		if (llama_tokenize(model, input.phonemes.c_str(), input.phonemes.size(), input.phn.data(), input.phn.size(), true, true) < 0) {
 		    fprintf(stderr, "%s: error: failed to tokenize: %s\n", __func__, input.phonemes.c_str());
 		    return 1;
 		}
 
-		for ( auto& token : input.phns ) printf("%i ", token );
+		for ( auto& token : input.phn ) printf("%i ", token );
 		printf("\n");
 	}
 

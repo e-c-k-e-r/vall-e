@@ -55,6 +55,38 @@ task_outputs = {
 	"len": "len",
 }
 
+# yuck
+def _get_offsets():
+	return {
+		"text": 0, # <unk>
+		"quant_level": 17666, # <|RVQ:0>
+		"len": 17674, # <|len:0|>
+		"lang": 17686, # <|lang:en|>"
+		"task": 17692, # <|task:tts|>
+		"sep": 17685, # <|sep|>
+		"prom": [
+			256 + (1024 * 0), # <|P|0:0|>
+			256 + (1024 * 1), # <|P|1:0|>
+			256 + (1024 * 2), # <|P|2:0|>
+			256 + (1024 * 3), # <|P|3:0|>
+			256 + (1024 * 4), # <|P|4:0|>
+			256 + (1024 * 5), # <|P|5:0|>
+			256 + (1024 * 6), # <|P|6:0|>
+			256 + (1024 * 7), # <|P|7:0|>
+		],
+		"resp": [
+			8448, # <|AR|0:0|>
+			9473, # <|NAR|0:0|>
+			10498 + (1024 * 0), # <|NAR|0:1|>
+			10498 + (1024 * 1), # <|NAR|1:2|>
+			10498 + (1024 * 2), # <|NAR|2:3|>
+			10498 + (1024 * 3), # <|NAR|3:4|>
+			10498 + (1024 * 4), # <|NAR|4:5|>
+			10498 + (1024 * 5), # <|NAR|5:6|>
+			10498 + (1024 * 6), # <|NAR|6:7|>
+		]
+	}
+
 def _dropout_mask( input, p=None ):
 	# cosine scheduling
 	if p is None:
@@ -494,6 +526,9 @@ class Base(nn.Module):
 			classifier_l_tokens += [ 11 ]
 			classifier_l_names += ["len"]
 
+		n_vocab = 17701 if not split_classifiers else n_resp_tokens + 1
+
+		self.n_vocab = n_vocab
 		self.unified_position_ids = unified_position_ids
 		self.interleave = interleave
 		self.layerskip = layerskip
@@ -601,7 +636,7 @@ class Base(nn.Module):
 		elif self.arch_type in ["mistral", "mixtral"]:
 			if n_experts <= 1:
 				self.model = MistralModel(MistralConfig(
-					vocab_size=n_resp_tokens,
+					vocab_size=n_vocab,
 					hidden_size=d_model,
 					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
 					intermediate_size=d_model*4,
@@ -647,7 +682,7 @@ class Base(nn.Module):
 
 			if n_experts <= 1:
 				self.model = LlamaClass(LlamaConfig(
-					vocab_size=n_resp_tokens,
+					vocab_size=n_vocab,
 					hidden_size=d_model,
 					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
 					intermediate_size=d_model*4,
@@ -700,7 +735,7 @@ class Base(nn.Module):
 				))
 		elif self.arch_type == "retnet":
 			kwargs = dict(
-				vocab_size=n_resp_tokens,
+				vocab_size=n_vocab,
 				decoder_embed_dim=d_model,
 				decoder_value_embed_dim =d_model * 2,
 				decoder_retention_heads=n_heads,
@@ -732,7 +767,7 @@ class Base(nn.Module):
 			self.model = RetNetDecoder(RetNetConfig(**kwargs))
 		elif self.arch_type in ["mamba2"]:
 			self.model = Mamba2Model(Mamba2Config(
-				vocab_size=n_resp_tokens,
+				vocab_size=n_vocab,
 				hidden_size=d_model,
 				expand=2,
 				num_hidden_layers=n_layers*2,
@@ -744,7 +779,7 @@ class Base(nn.Module):
 				))
 		elif self.arch_type in ["mamba"]:
 			self.model = MambaModel(MambaConfig(
-				vocab_size=n_resp_tokens,
+				vocab_size=n_vocab,
 				hidden_size=d_model,
 				expand=2,
 				num_hidden_layers=n_layers*2,
@@ -761,11 +796,11 @@ class Base(nn.Module):
 			del self.model.embeddings
 
 		if not split_classifiers:
-			self.classifier = nn.Linear(d_model, n_resp_tokens)
+			self.classifier = nn.Linear(d_model, n_vocab, bias=classifiers_bias)
 			self.classifiers = None
 			
 			self.accuracy_metric = MulticlassAccuracy(
-				n_resp_tokens,
+				n_vocab,
 				top_k=10,
 				average="micro",
 				multidim_average="global",
@@ -773,7 +808,7 @@ class Base(nn.Module):
 			)
 
 			self.precision_metric = MulticlassPrecision(
-				n_resp_tokens,
+				n_vocab,
 				top_k=10,
 				average="micro",
 				multidim_average="global",
@@ -1029,6 +1064,48 @@ class Base(nn.Module):
 				inputs[i].append( ("classifier_level", "stt") )
 			else:
 				raise Exception(f'Unrecognized task: {task_type}')
+		return inputs
+
+	def offset_inputs(
+		self,
+		inputs: list,
+		direction: int = 1, # -1 to de-offset
+	):
+		offsets = _get_offsets()
+
+		for batch_index, batch_input in enumerate(inputs):
+			quant_level = None
+			classifier_level = None
+			# pre-iterate
+			for name, input in batch_input:
+				if name == "quant_level":
+					quant_level = input
+				elif name == "classifier_level":
+					classifier_level = input
+
+			for name, input in batch_input:
+				if name not in offsets:
+					continue
+
+				if not isinstance( input, torch.Tensor ):
+					continue
+
+				offset = offsets[name]
+				if name in ["prom", "resp"]:
+					l = quant_level
+					if name == "resp":
+						if classifier_level == "AR:0:0":
+							l = 0
+						elif classifier_level == "NAR:0:0":
+							l = 1
+						else:
+							l = 2 + (quant_level-1)
+
+					offset = offset[l]
+
+				for i, t in enumerate( input ):
+					input[i] += offset * direction
+
 		return inputs
 
 	def inputs_to_embeddings(
@@ -1366,6 +1443,49 @@ class Base(nn.Module):
 				if not isinstance(token, torch.Tensor):
 					continue
 
+				# offset to flattened vocab ranges
+				if self.classifier is not None:
+					offsets = _get_offsets()
+					if name in offsets:
+						offset = offsets[name]
+						# yes there's a better way
+						if name == "prom":
+							offset = offset[quant_level]
+						elif name == "resp":
+							"""
+							if classifier_level == "AR:0:0":
+								offset = offset[0]
+							elif classifier_level == "NAR:0:0":
+								offset = offset[1]
+							elif classifier_level == "NAR:0:1":
+								offset = offset[2]
+							elif classifier_level == "NAR:1:2":
+								offset = offset[3]
+							elif classifier_level == "NAR:2:3":
+								offset = offset[4]
+							elif classifier_level == "NAR:3:4":
+								offset = offset[5]
+							elif classifier_level == "NAR:4:5":
+								offset = offset[6]
+							elif classifier_level == "NAR:5:6":
+								offset = offset[7]
+							elif classifier_level == "NAR:6:7":
+								offset = offset[8]
+							else:
+								continue
+							"""
+							if classifier_level == "AR:0:0":
+								offset = offset[0]
+							elif classifier_level == "NAR:0:0":
+								offset = offset[1]
+							else:
+								offset = offset[2 + (quant_level-1)]
+
+						for i, t in enumerate( token ):
+							if t == self.ignore_index:
+								continue
+							token[i] += offset
+
 				if token.is_floating_point():
 					ignored = True
 
@@ -1422,7 +1542,7 @@ class Base(nn.Module):
 			
 			# perofrm loss calculation on the entire sequence
 			if not self.config.loss_factors:
-				target = _join( target, torch.tensor(self.ignore_index, device=target[-1].device) )
+				target = _join( target, torch.tensor(self.ignore_index if self.classifier is None else 17685, device=target[-1].device) )
 				logit = logits[batch_index]
 
 				# shift if causal
@@ -1606,6 +1726,37 @@ class Base(nn.Module):
 
 			self.loss = None
 			self.stats = None
+
+			# de-offset if needed
+			if self.classifier is not None:
+				offsets = _get_offsets()
+				for batch_index, classifier_level in enumerate( classifier_levels ):
+					# yes there's a better way
+					if classifier_level == "len":
+						offset = offsets["len"], 11
+					elif classifier_level == "AR:0:0":
+						offset = offsets["resp"][0], 1025
+					elif classifier_level == "NAR:0:0":
+						offset = offsets["resp"][1], 1024
+					elif classifier_level == "NAR:0:1":
+						offset = offsets["resp"][2], 1024
+					elif classifier_level == "NAR:1:2":
+						offset = offsets["resp"][3], 1024
+					elif classifier_level == "NAR:2:3":
+						offset = offsets["resp"][4], 1024
+					elif classifier_level == "NAR:3:4":
+						offset = offsets["resp"][5], 1024
+					elif classifier_level == "NAR:4:5":
+						offset = offsets["resp"][6], 1024
+					elif classifier_level == "NAR:5:6":
+						offset = offsets["resp"][7], 1024
+					elif classifier_level == "NAR:6:7":
+						offset = offsets["resp"][8], 1024
+					else:
+						continue
+
+					logits[batch_index] = logits[batch_index][offset[0]:offset[0]+offset[1], :]
+
 		else:
 			loss, stats = self.calc_loss( inputs=inputs, logits=logits, quant_levels=quant_levels )
 
