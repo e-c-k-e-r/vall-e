@@ -795,29 +795,11 @@ class Base(nn.Module):
 		if not split_classifiers:
 			self.classifier = nn.Linear(d_model, n_vocab, bias=classifiers_bias)
 			self.classifiers = None
-			
-			self.accuracy_metric = MulticlassAccuracy(
-				n_vocab,
-				top_k=10,
-				average="micro",
-				multidim_average="global",
-				ignore_index=self.ignore_index,
-			)
-
-			self.precision_metric = MulticlassPrecision(
-				n_vocab,
-				top_k=10,
-				average="micro",
-				multidim_average="global",
-				ignore_index=self.ignore_index,
-			)
 
 			self.metrics = None
 		else:
 			self.classifier = None
 			self.classifiers = Classifiers( classifier_l_tokens, d_model, l_names=classifier_l_names, bias=classifiers_bias )
-			self.accuracy_metric = None
-			self.precision_metric = None
 			self.metrics = Metrics( classifier_l_tokens )
 
 			"""
@@ -1436,8 +1418,6 @@ class Base(nn.Module):
 					continue
 
 				# offset to flattened vocab ranges
-				if self.classifier is not None:
-					compute_acc = False
 				"""
 				if self.classifier is not None:
 					offsets = _get_offsets()
@@ -1505,7 +1485,15 @@ class Base(nn.Module):
 						if self.metrics is not None:
 							metrics = self.metrics.calc_accuracy( [ logit ], [ token ], self.classifiers.indices([ classifier_level ]) )
 						else:
-							metrics = self.accuracy_metric( logit, token )
+							accuracy_metric = MulticlassAccuracy(
+								logit.shape[-1],
+								top_k = 10,
+								average="micro",
+								multidim_average="global",
+								ignore_index = -100
+							).to(logit.device)
+							metrics = accuracy_metric( logit, token )
+
 						if f'{name}.acc' not in stats:
 							stats[f'{name}.acc'] = []
 						stats[f'{name}.acc'].append( metrics )
@@ -1534,7 +1522,14 @@ class Base(nn.Module):
 					if self.metrics is not None:
 						metrics = self.metrics.calc_accuracy( [ logit ], [ target ], self.classifiers.indices([ classifier_level ]) )
 					else:
-						metrics = self.accuracy_metric( logit, target )
+						accuracy_metric = MulticlassAccuracy(
+							logit.shape[-1],
+							top_k = 10,
+							average="micro",
+							multidim_average="global",
+							ignore_index = -100
+						).to(logit.device)
+						metrics = accuracy_metric( logit, target )
 
 					if 'acc' not in stats:
 						stats['acc'] = []
@@ -1595,8 +1590,6 @@ class Base(nn.Module):
 			
 			if early:
 				exited_layer = layer
-
-			#print( layer, early, metrics )
 
 			return early
 
