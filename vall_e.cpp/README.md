@@ -15,17 +15,8 @@ Run `make`.
 ### Required Modifications
 
 [`encodec.cpp`](https://github.com/e-c-k-e-r/encodec.cpp) requires updating its GGML copy to the latest version, which requires a few lines to get the CPU backend working.
-[`llama.cpp`](https://github.com/e-c-k-e-r/llama.cpp) *might* not require any modifications, but:
-* `llm.build_vall_e` can mostly copy `llm.build_llama`, but with:
-	* `KQ_mask = build_inp_KQ_mask( lctx.cparams.causal_attn )`
-	* a unified output head (pain)
-		* OR adjusting the `model.output` to the correct classifier head (better option)
-	    * OR slicing that tensor with the right range (`ggml_view_2d` confuses me)
-		* both require also require `*const_cast<uint32_t*>(&ctx->model.hparams.n_vocab) = output->ne[1];` because the logits are tied to `n_vocab`
-* commenting out `GGML_ABORT("input/output layer tensor %s used with a layer number", tn.str().c_str());` because grabbing embeddings/classifiers require using `bid` to trick it thinking it's part of a layer
-* some helper functions to retrieve the embeddings tensor from the model
-* some helper functions to set the target classifier head
-* some fix for `GGML_ASSERT(mask->ne[0] == a->ne[0])` when using a non-causal attention mask (or I can test on the model that had a causal NAR......)
+
+[`llama.cpp`](https://github.com/e-c-k-e-r/llama.cpp) *might* not require any modifications, but implementing `LLM_ARCH_VALL_E` requires some surgery.
 
 ## To-Do
 
@@ -46,11 +37,11 @@ Run `make`.
 	* [x] `AR` sampling
 	* currently need a model that didn't regress with the `AR:0:0` output
 * [ ] working `NAR-len` output
-	* [ ] `NAR-len` sampling
-	* currently cannot inference with non-causal_attn
+	* [x] `NAR-len` sampling
+	* need to assert that a non-causal mask is used
 * [ ] working `NAR` output
 	* [x] `NAR` sampling
-	* currently cannot inference with non-causal_attn
+	* need to assert that a non-causal mask is used
 * [x] decode audio to disk
 * [ ] a functional CLI
 * [ ] actually make it work

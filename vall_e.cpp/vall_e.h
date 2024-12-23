@@ -1,22 +1,23 @@
 #pragma once
 
-#include "llama-vocab.h"
 #include "llama.h"
 #include "encodec.h"
 
 #include "dr_wav.h"
 
-#include <cmath>
-#include <cstdio>
-#include <cstring>
 #include <string>
 #include <vector>
-#include <array>
 #include <unordered_map>
-#include <iostream>
 
 // to-do: copy over import/export stuff from engine project (because I don't remember how I set it up in <uf/config.h>)
 #define VALL_E_API
+
+#define LLAMA_CPP_EXTENDED 1 // whether the underlying llama.cpp has some extra functions
+#define LLAMA_CPP_USE_VALL_E_ARCH 1 // whether the underlying llama.cpp is to use the VALL_E arch (or using LLAMA arch)
+
+#if !LLAMA_CPP_EXTENDED
+	#include "_llama.h" // cringe hotfix but I have to do this until llama.cpp's API exposes the tok_embd
+#endif
 
 // to-do: clean up spaghetti enums
 const int EMBEDDING_MODE_PROM = 0;
@@ -106,6 +107,7 @@ struct inputs_map_t {
 std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor );
 std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<llama_token>& tokens, int n_embd, const float* embds );
 std::vector<std::vector<float>> VALL_E_API sum_embeddings( const std::vector<std::vector<llama_token>>& input, int n_embd, int rvq_l, const float** embds, int mode = EMBEDDING_MODE_PROM );
+std::vector<float> VALL_E_API soft_max( int n_logits, const float* logits );
 
 // batch and inferencing
 void VALL_E_API batch_add( llama_batch& batch, llama_token id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids = {0} );
