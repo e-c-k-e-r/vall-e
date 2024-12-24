@@ -33,7 +33,7 @@ Run `make`.
 * [x] load audio from disk
 * [x] encode audio
 * [x] sum embeddings for the `prom` and prior `resp`s
-* [ ] working `AR` output
+* [x] working `AR` output
 	* [x] `AR` sampling
 * [ ] working `NAR-len` output
 	* [x] `NAR-len` sampling
