@@ -12,11 +12,11 @@
 // to-do: copy over import/export stuff from engine project (because I don't remember how I set it up in <uf/config.h>)
 #define VALL_E_API
 
-#define LLAMA_CPP_EXTENDED 1 // whether the underlying llama.cpp has some extra functions
-#define LLAMA_CPP_USE_VALL_E_ARCH 1 // whether the underlying llama.cpp is to use the VALL_E arch (or using LLAMA arch)
+#define LLAMA_CPP_EXTENDED 0 // whether the underlying llama.cpp has some extra functions
+#define LLAMA_CPP_USE_VALL_E_ARCH 0 // whether the underlying llama.cpp is to use the VALL_E arch (or using LLAMA arch)
 
 #if !LLAMA_CPP_EXTENDED
-	#include "_llama.h" // cringe hotfix but I have to do this until llama.cpp's API exposes the tok_embd
+	#include "llama_hack.h" // cringe hotfix but I have to do this until llama.cpp's API exposes the tok_embd
 #endif
 
 // to-do: clean up spaghetti enums
@@ -75,44 +75,45 @@ struct input_t {
 	[(16677, 17702), 'resps_emb.embeddings.8.weight', 'classifiers.proj.8.weight', '<|R|NAR|0:0|{id}|>']
 */
 
-// handles all the cringe logic of slicing embeddings
-struct ranges_t {
-	std::string name;
-
-	uint32_t start;
-	uint32_t end;
-	
-	int32_t classifier_idx = -1;
-};
-
 // stores embeddings + metadata for an embedding range
-struct embeddings_t {
+struct io_t {
+	std::string name;
+	uint32_t start;
+	uint32_t end;	
+	int32_t head_idx = -1;
+
 	int32_t n_embd = 0;
 	int32_t n_vocab = 0;
 
-	ranges_t range = {};
 	std::vector<float> embds = {};
+	ggml_tensor* head = NULL;
 };
 
 // stores the mappings between tokens, input embeddings, and output heads
-struct inputs_map_t {
+struct io_map_t {
+	// model's original params
 	int32_t n_embd = 0;
 	int32_t n_vocab = 0;
 	
 	// mapping
-	std::unordered_map<std::string, embeddings_t> embds = {};
+	std::unordered_map<std::string, io_t> io = {};
+	// context to store slices
+	ggml_context* ctx = NULL;
 };
 
 // helper tensor functions
 std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor );
+ggml_tensor* VALL_E_API view_2d_tensor( ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 ); // cringe method to keep in my pocket
+ggml_tensor* VALL_E_API view_2d_tensor( ggml_context* ctx, ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 );
+
 std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<llama_token>& tokens, int n_embd, const float* embds );
 std::vector<std::vector<float>> VALL_E_API sum_embeddings( const std::vector<std::vector<llama_token>>& input, int n_embd, int rvq_l, const float** embds, int mode = EMBEDDING_MODE_PROM );
 std::vector<float> VALL_E_API soft_max( int n_logits, const float* logits );
 
 // batch and inferencing
 void VALL_E_API batch_add( llama_batch& batch, llama_token id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids = {0} );
-void VALL_E_API fill_batch( llama_batch& batch, input_t& input, inputs_map_t& inputs_map, int mode );
-std::vector<llama_token> VALL_E_API generate( llama_context* ctx, llama_model* model, llama_sampler* smpl, input_t& input, inputs_map_t& inputs_map, int max_tokens, int mode, bool verbose = true );
+void VALL_E_API fill_batch( llama_batch& batch, input_t& input, io_map_t& inputs_map, int mode );
+std::vector<llama_token> VALL_E_API generate( llama_context* ctx, llama_model* model, llama_sampler* smpl, input_t& input, io_map_t& inputs_map, int max_tokens, int mode, bool verbose = true );
 
 // encodec helpers
 bool VALL_E_API read_wav_from_disk( std::string in_path, std::vector<float>& audio_arr );
@@ -121,10 +122,10 @@ std::vector<std::vector<int32_t>> VALL_E_API encode_audio_from_disk( struct enco
 std::vector<float> VALL_E_API decode_audio( struct encodec_context* ectx, const std::vector<std::vector<int32_t>>& codes_2d );
 
 // model-accessing helpers
-const embeddings_t& VALL_E_API vall_e_inputs_map_get_embeddings( inputs_map_t& inputs_map, const std::string& name );
-const float* VALL_E_API vall_e_inputs_map_get_embeddings_p( inputs_map_t& inputs_map, const std::string& name );
-int32_t VALL_E_API vall_e_inputs_map_get_classifier_idx( inputs_map_t& inputs_map, const std::string& name );
-void VALL_E_API vall_e_inputs_map_init( inputs_map_t&, llama_model* model );
+const io_t& VALL_E_API vall_e_inputs_map_get_embeddings( io_map_t& inputs_map, const std::string& name );
+const float* VALL_E_API vall_e_inputs_map_get_embeddings_p( io_map_t& inputs_map, const std::string& name );
+int32_t VALL_E_API vall_e_inputs_map_get_classifier_idx( io_map_t& inputs_map, const std::string& name );
+void VALL_E_API vall_e_inputs_map_init( io_map_t&, llama_model* model );
 
 struct ggml_tensor * VALL_E_API vall_e_get_prom_embds( llama_vall_e_userdata& userdata, int32_t idx );
 struct ggml_tensor * VALL_E_API vall_e_get_resp_embds( llama_vall_e_userdata& userdata, int32_t idx );

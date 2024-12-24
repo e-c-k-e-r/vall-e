@@ -16,12 +16,13 @@ Run `make`.
 
 [`encodec.cpp`](https://github.com/e-c-k-e-r/encodec.cpp) requires updating its GGML copy to the latest version, which requires a few lines to get the CPU backend working.
 
-[`llama.cpp`](https://github.com/e-c-k-e-r/llama.cpp) *might* not require any modifications, but implementing `LLM_ARCH_VALL_E` requires some surgery.
+[`llama.cpp`](https://github.com/e-c-k-e-r/llama.cpp) only possible modification needs to ensure that a non-causal attention mask is used; everything necessary can be hacked together with clever tricks.
 
 ## To-Do
 
 * [x] converted model to GGUF
 	* [ ] convert it without modifying any of the existing code, as the tokenizer requires some care
+	* [ ] *actually* convert the model properly, as the embeddings differ from the real model
 * [x] basic framework
 	* [x] load the quantized model
 	* [x] orchestrate the required embeddings
@@ -35,13 +36,10 @@ Run `make`.
 * [x] sum embeddings for the `prom` and prior `resp`s
 * [ ] working `AR` output
 	* [x] `AR` sampling
-	* currently need a model that didn't regress with the `AR:0:0` output
 * [ ] working `NAR-len` output
 	* [x] `NAR-len` sampling
-	* need to assert that a non-causal mask is used
 * [ ] working `NAR` output
 	* [x] `NAR` sampling
-	* need to assert that a non-causal mask is used
 * [x] decode audio to disk
 * [ ] a functional CLI
 * [ ] actually make it work
