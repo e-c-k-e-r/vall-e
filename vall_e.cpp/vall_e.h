@@ -34,6 +34,7 @@ const int MODALITY_NAR_LEN = 1;
 
 const int MAX_DURATION = 75 * 12;
 const int CTX_SIZE = 2048;
+const int N_THREADS = 8;
 
 // stores the raw inputs to be fed
 struct input_t {
@@ -121,7 +122,7 @@ std::vector<float> VALL_E_API soft_max( int n_logits, const float* logits );
 // batch and inferencing
 void VALL_E_API batch_add( llama_batch& batch, llama_token id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids = {0} );
 void VALL_E_API fill_batch( llama_batch& batch, input_t& input, io_map_t& inputs_map, int mode );
-std::vector<llama_token> VALL_E_API generate( llama_context* ctx, llama_model* model, llama_sampler* smpl, input_t& input, io_map_t& inputs_map, int max_tokens, int mode, bool verbose = true );
+std::vector<llama_token> VALL_E_API generate( llama_context* ctx, llama_model* model, input_t& input, io_map_t& inputs_map, int max_tokens, int mode, bool verbose = true );
 
 // encodec helpers
 bool VALL_E_API read_wav_from_disk( std::string in_path, std::vector<float>& audio_arr );

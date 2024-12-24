@@ -4,7 +4,7 @@ INCS 					+= -I./include
 LIBS 					+= -L./libs
 	
 LINKS 					+= -lggml -lggml-base -lllama -lencodec
-FLAGS 					+= -g
+FLAGS 					+= -march=native -O3
 
 SRCS 					:= $(shell find ./ -name "*.cpp")
 OBJS 					+= $(patsubst %.cpp,%.o,$(SRCS))

@@ -678,7 +678,7 @@ class Base(nn.Module):
 			LlamaClass = LlamaModel_Adapted # if (self.layerskip or "len" in self.capabilities) else LlamaModel
 
 			if n_experts <= 1:
-				self.model = LlamaClass(LlamaConfig(
+				config = LlamaConfig(
 					vocab_size=n_vocab,
 					hidden_size=d_model,
 					max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
@@ -693,7 +693,9 @@ class Base(nn.Module):
 					is_decoder=True,
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
-				))
+				)
+				print( config )
+				self.model = LlamaClass(config)
 
 				# replace with desired attention
 				if attention_backend not in HF_ATTENTIONS:

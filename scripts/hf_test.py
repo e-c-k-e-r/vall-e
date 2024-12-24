@@ -1,16 +1,78 @@
 # this is a VERY rudimentary script to test if a HF-ified model works (it sort of does)
 
 import torch
-from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import LlamaForCausalLM, LlamaModel, LlamaConfig, LlamaTokenizer
 
 from torch.distributions import Categorical
 
-# tokenizer = LlamaTokenizer.from_pretrained("./training/llama-encodec-ar+nar-len/hf/")
-model = LlamaForCausalLM.from_pretrained("./training/llama-encodec-ar+nar-len/hf/")
-model.to(device="cuda", dtype=torch.bfloat16)
-model.eval()
+from vall_e.emb.qnt import decode_to_file
+from vall_e.utils.io import torch_load
 
-mode = "nar"
+# hack in a non-causal mask
+def _update_noncausal_mask(
+	attention_mask,
+	inputs_embeds,
+	cache_positions,
+	past_key_values_length,
+	output_attentions,
+):
+	# create noncausal mask
+	# [bsz, seq_len] -> [bsz, 1, seq_len, seq_len]
+
+	bsz, seq_len, _ = inputs_embeds.size()
+
+	# generate default mask based on input
+	if attention_mask is None:
+		attention_mask = torch.ones( (bsz, seq_len), dtype=torch.bool, device=inputs_embeds.device )
+
+	# make square
+	expanded_mask = attention_mask[:, None, None, :].expand( bsz, 1, seq_len, seq_len ).to( dtype=inputs_embeds.dtype )
+
+	# invert from 1.0 = attend, 0.0 = masked to 0.0 = valid, -inf = masked
+	inverted_mask = 1.0 - expanded_mask
+	return inverted_mask.masked_fill( inverted_mask.to(dtype=torch.bool), torch.finfo(inputs_embeds.dtype).min )
+
+device = "cuda"
+dtype = torch.bfloat16
+
+
+is_from_pretrained = True
+if is_from_pretrained:
+	# tokenizer = LlamaTokenizer.from_pretrained("./training/llama-encodec-ar+nar-len/hf/")
+	hf_model = LlamaForCausalLM.from_pretrained("./training/llama-encodec-ar+nar-len/hf/")
+	hf_model.to(device=device, dtype=dtype)
+	hf_model.eval()
+
+	model = hf_model.model
+else:
+	model = LlamaModel(LlamaConfig(
+		vocab_size=1024,
+		hidden_size=1024,
+		max_position_embeddings=75 * 60 * 5, # max-length of 60 seconds
+		intermediate_size=1024*4,
+		num_hidden_layers=12,
+		num_attention_heads=16,
+		attention_dropout=0.0,
+		num_key_value_heads=16,
+		sliding_window=75 * 12, # 12 second context window
+		hidden_act="gelu",
+		is_encoder_decoder=False,
+		is_decoder=True,
+	))
+
+	state_dict = torch_load("./training/llama-encodec-ar+nar-len/ckpt/ar+nar-len-llama-8/fp32.sft")['module']
+	state_dict_model = {}
+	for k, v in state_dict.items():
+		if not k.startswith('model.'):
+			continue
+		state_dict_model[k.replace("model.", "")] = v
+
+	model.load_state_dict( state_dict_model, strict=False )
+	model.to(device=device, dtype=dtype)
+	model.eval()
+
+model._original_update_causal_mask = model._update_causal_mask
+model._update_noncausal_mask = _update_noncausal_mask
 
 phn = [1,22,111,100,4,37,115,169,11,2]
 
@@ -24,6 +86,8 @@ prom = [
 	[485,748,562,562,485,380,834,997,78,963,755,142,978,135,362,421,217,79,530,1012,972,946,127,587,838,818,456,548,424,479,944,650,694,447,391,616,938,908,206,259,998,292,818,128,353,273,566,796,333,146,110,986,571,451,166,229,421,300,911,689,329,145,287,273,542,808,301,491,0,278,825,442,0,100,818,826,66,904,642,566,135,305,999,993,905,485,755,782,365,977,485,1015,570,1002,755,169,967,36,721,1019,273,931,273,166,216,31,346,946,32,290,362,828,464,748,782,1002,1015,755,1014,100,315,777,549,177,882,110,603,975,531,608,67,1011,950,465,368,416,798,941,635,602,553,300,200,644,498,325,786,734,342,222,403,1,716,175,899,273,40,333,999,74,54,644,408,976,407,631,577,338,435,612,333,273,162,709,882,555,384,995,173,459,442,72,72,200,72,711,219,282,716,442,431,801,976,130,622,72,582,384,516,772,0,440,1001,249,1,953,65,945,438,249,511,561,205,507,821,998,427,746,290,544,426,693,999,190,214,167,219,534,166,325,975,414,326,326,268,679,991,418,868,445,632,160,380,890,346,315,806,258,806,486,326,797,471,18,790,33,66,63,66,224,38,599,599,110,801,761,18,936,230,253,171,393,774,887,887,403,466,495,524,261,666,256,687,759,263,713,185,454,242,988,185,161,911,430,86,550,439,327,527,671,782,383,916,590,315,806,583,465,785,321,315,421,856,66,352,0,634,540,362,948,185,16,224,372,694,259,648,87,733,659,603,67,269,901,66,566,173,705,746,566,911,10,743,860,78,782,1002,755,389,175],
 	[948,948,975,975,948,322,672,639,902,55,916,439,498,389,407,682,451,401,386,440,499,348,736,891,603,762,783,407,886,76,543,699,137,458,639,253,63,475,55,436,502,888,542,131,524,167,738,131,907,29,378,545,227,382,478,399,218,872,917,202,330,2,371,264,667,355,1016,768,590,408,463,542,214,202,715,891,840,297,509,689,290,439,672,714,528,940,1019,534,975,475,1019,835,975,558,975,981,330,635,96,858,606,627,367,191,191,669,40,873,359,267,701,426,210,1012,899,975,475,1012,610,6,300,749,231,616,877,631,720,574,551,398,503,789,684,664,390,277,150,990,823,190,971,903,175,863,316,965,988,988,800,612,336,506,242,847,389,939,415,202,83,317,2,153,365,363,57,2,891,965,300,754,763,426,555,621,303,415,367,902,829,741,119,380,902,25,884,439,822,49,76,760,566,316,249,555,774,955,834,309,859,173,935,812,682,586,141,606,197,131,644,631,913,586,202,117,810,884,76,592,754,531,586,925,649,583,145,816,821,283,871,1017,316,377,646,339,201,76,780,76,976,217,38,598,977,617,825,833,49,231,749,749,633,205,231,271,50,249,684,555,982,526,895,288,22,57,722,996,260,1018,110,833,644,738,648,468,798,297,769,282,197,402,465,510,194,930,182,909,749,986,187,187,917,38,38,985,985,988,815,878,814,459,237,768,781,649,683,749,934,729,463,181,625,231,917,96,499,839,720,439,842,205,808,338,617,681,326,446,905,346,647,533,49,728,147,432,846,536,586,611,49,879,872,893,859,859,961,989,975,701,495,65],
 ]
+resp = []
+"""
 resp = [
 	[922,738,461,341,341,10,416,416,416,416,346,346,346,346,346,484,484,484,484,484,484,333,442,442,359,359,359,459,459,975,975,626,626,626,626,626,610,359,359,359,359,359,359,359,359,359,610,610,442,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,90,638,638,638,638,975,975,672,875,63,144],
 	[993,700,384,213,794,10,305,778,58,225,118,260,768,768,260,474,903,732,70,992,447,70,1000,665,848,379,485,934,181,795,438,298,688,324,934,756,395,795,110,328,343,172,768,871,593,355,396,783,24,24,911,20,27,562,697,616,668,27,27,755,20,505,248,79,822,461,197,156,27,492,151,1013,669,669,562],
@@ -34,97 +98,196 @@ resp = [
 	[365,908,896,819,206,153,515,471,75,79,664,145,145,801,135,321,79,216,233,223,79,66,724,517,135,474,818,818,105,892,971,337,818,19,932,981,469,135,163,75,135,818,999,555,135,710,256,105,590,31,539,1003,517,130,445,40,549,130,859,385,1003,1003,549,33,286,932,329,774,321,664,686,16,834,703,290],
 	[899,237,832,748,425,121,460,872,391,586,857,215,306,76,306,554,187,57,482,406,802,555,710,895,448,517,506,316,18,772,779,697,855,1005,792,96,402,96,517,775,506,938,114,986,986,503,749,984,524,527,506,749,463,490,188,374,506,49,537,188,494,900,526,524,524,500,500,345,630,338,982,761,700,598,749],
 ]
+"""
 
-sep = [291]
-rvq_lvl = [256]
-lang = [264]
+# name, (start, end), classifier, src_name
+io_map = {
+	'text': [(0, 256), 9, "text_emb.weight"],
+	'rvq_l': [(256, 264), -1, "rvq_l_emb.weight"],
+	'lang': [(264, 270), -1, "langs_emb.weight"],
+	'task': [(270, 279), -1, "tasks_emb.weight"],
+	'len': [(279, 290), 10, "len_emb.weight"],
+	'tone': [(290, 291), -1, "tones_emb.weight"],
+	'sep': [(291, 292), -1, "sep"],
+	'prom|0': [(292, 1316), -1, "proms_emb.embeddings.0.weight"],
+	'prom|1': [(1316, 2340), -1, "proms_emb.embeddings.1.weight"],
+	'prom|2': [(2340, 3364), -1, "proms_emb.embeddings.2.weight"],
+	'prom|3': [(3364, 4388), -1, "proms_emb.embeddings.3.weight"],
+	'prom|4': [(4388, 5412), -1, "proms_emb.embeddings.4.weight"],
+	'prom|5': [(5412, 6436), -1, "proms_emb.embeddings.5.weight"],
+	'prom|6': [(6436, 7460), -1, "proms_emb.embeddings.6.weight"],
+	'prom|7': [(7460, 8484), -1, "proms_emb.embeddings.7.weight"],
+	'resp|AR:0:0': [(8484, 9509), 0, "resps_emb.embeddings.0.weight"],
+	'resp|NAR:0:1': [(9509, 10533), 1, "resps_emb.embeddings.1.weight"],
+	'resp|NAR:1:2': [(10533, 11557), 2, "resps_emb.embeddings.2.weight"],
+	'resp|NAR:2:3': [(11557, 12581), 3, "resps_emb.embeddings.3.weight"],
+	'resp|NAR:3:4': [(12581, 13605), 4, "resps_emb.embeddings.4.weight"],
+	'resp|NAR:4:5': [(13605, 14629), 5, "resps_emb.embeddings.5.weight"],
+	'resp|NAR:5:6': [(14629, 15653), 6, "resps_emb.embeddings.6.weight"],
+	'resp|NAR:6:7': [(15653, 16677), 7, "resps_emb.embeddings.7.weight"],
+	'resp|NAR:0:0': [(16677, 17702), 8, "resps_emb.embeddings.8.weight"],
+}
 
-for l, codes in enumerate( prom ):
-	for i, t in enumerate( codes ):
-		prom[l][i] += 292 + (1024 * l)
+mode_lvl_map = {
+	'AR:0:0': 0,
+	'NAR:0:1': 1,
+	'NAR:1:2': 2,
+	'NAR:2:3': 3,
+	'NAR:3:4': 4,
+	'NAR:4:5': 5,
+	'NAR:5:6': 6,
+	'NAR:6:7': 7,
+	'NAR:0:0': 0,
+	'len': 0,
+}
 
-for l, codes in enumerate( resp ):
-	for i, t in enumerate( codes ):
-		resp[l][i] += 9509 + (1024 * l)
+embds = {}
+heads = {}
+n_embd = 1024
 
-ids = torch.tensor([])
-pos_ids = torch.tensor([])
-
-ids = torch.concat([ ids, torch.tensor(phn), torch.tensor(sep) ])
-seq = torch.tensor([ _ for _ in range( len(phn) + 1 ) ])
-pos_ids = torch.concat([ pos_ids, seq ])
-
-ids = torch.concat([ ids, torch.tensor(lang), torch.tensor(sep) ])
-seq = torch.tensor([ _ for _ in range( len(lang) + 1 ) ])
-pos_ids = torch.concat([ pos_ids, seq ])
-
-ids = torch.concat([ ids, torch.tensor(rvq_lvl), torch.tensor(sep) ])
-seq = torch.tensor([ _ for _ in range( len(rvq_lvl) + 1 ) ])
-pos_ids = torch.concat([ pos_ids, seq ])
-
-ids = torch.concat([ ids, torch.tensor(prom[0]), torch.tensor(sep) ])
-seq = torch.tensor([ _ for _ in range( len(prom[0]) + 1 ) ])
-pos_ids = torch.concat([ pos_ids, seq ])
-
-
-start, end, stop = (None, None, None)
-if mode == "len":
-	len_seq = [279]
-
-	ids = torch.concat([ ids, torch.tensor(len_seq) ])
-	seq = torch.tensor([ _ for _ in range( len(len_seq) ) ])
-	pos_ids = torch.concat([ pos_ids, seq ])
-	
-	start, end, stop = (279, 279+11, 10)
-	max_n = 10
-	outputs = 1
-elif mode =="ar":
-	start, end, stop = (8484, 8484+1025, 1024)
-	max_n = 350
-	outputs = 1
-elif mode =="nar":
-	ids = torch.concat([ ids, torch.tensor(resp[0]) ])
-	seq = torch.tensor([ _ for _ in range( len(resp[0]) ) ])
-	pos_ids = torch.concat([ pos_ids, seq ])
-
-	start, end, stop = (9509, 9509+1024, None)
-	max_n = 1
-	outputs = len(resp[0])
-
-ids = ids.to(device="cuda", dtype=torch.int32)
-pos_ids = pos_ids.to(device="cuda", dtype=torch.int32)
-attention_mask = torch.tensor([ True for _ in range( ids.shape[0] )  ], dtype=torch.bool)
-
-n = 0
 with torch.no_grad():
-	while n < max_n:
-		"""
-		if n == 0:
-			embs = model.model.embed_tokens( ids )
-			for i, emb in enumerate( embs ):
-				print( i, ids[i].item(), sum(emb).item(), pos_ids[i].item() )
-		"""
+	for k, v in io_map.items():
+		start, end = v[0]
+		classifier_idx = v[1]
+		embd_name = v[2]
 		
-		out = model(input_ids=ids.unsqueeze(0), position_ids=pos_ids.unsqueeze(0), attention_mask=attention_mask.unsqueeze(0))
-		logits = out.logits[0, -outputs:, start:end]
+		if is_from_pretrained:
+			n_vocab = end - start
 
-		if mode == "ar":
-			tokens = Categorical(logits=logits).sample()
+			embds[k] = torch.nn.Embedding( n_vocab, n_embd ).to(model.embed_tokens.weight)
+			embds[k].weight[:] = model.embed_tokens.weight[start:end, :]
+
+			if classifier_idx >= 0:
+				# NAR:0:0 does not have a masked token output
+				if k == "resp|NAR:0:0":
+					end -= 1
+					n_vocab -= 1
+				heads[k] = torch.nn.Linear( n_embd, n_vocab, bias=False ).to(hf_model.lm_head.weight)
+				heads[k].weight[:] = hf_model.lm_head.weight[start:end, :]
 		else:
-			tokens = logits.argmax(dim=-1)
+			embd_weight = state_dict[embd_name].unsqueeze(0) if state_dict[embd_name].dim() == 1 else state_dict[embd_name]
+			embds[k] = torch.nn.Embedding( embd_weight.shape[0], embd_weight.shape[1] ).to(device=device, dtype=dtype)
+			embds[k].load_state_dict({ "weight": embd_weight })
+			
+			if classifier_idx >= 0:
+				head_weight = state_dict[f'classifiers.proj.{classifier_idx}.weight']
 
-		n += 1
+				heads[k] = torch.nn.Linear( head_weight.shape[1], head_weight.shape[0], bias=False ).to(device=device, dtype=dtype)
+				heads[k].load_state_dict({ "weight": head_weight })
 
-		print( n, tokens )
+def create_inputs( phn, prom, lang=0, seq=None, mode="AR:0:0" ):
+	rvq_l = mode_lvl_map[mode]
 
-		if outputs == 1:
-			if stop in tokens:
+	inputs = torch.tensor([])
+	pos_ids = torch.tensor([])
+	attn_mask = torch.tensor([])
+
+	seqs = []
+
+	phn = torch.tensor(phn, device=device,dtype=torch.int32)
+	prom = torch.tensor(prom, device=device,dtype=torch.int32)
+	lang = torch.tensor([lang], device=device,dtype=torch.int32)
+	rvq_l = torch.tensor([rvq_l], device=device,dtype=torch.int32)
+	zero = torch.tensor([0], device=device,dtype=torch.int32)
+
+	if mode == "len":
+		seq = zero if not seq else torch.concat([zero, torch.tensor(seq, device=device, dtype=torch.int32)])
+	elif seq:
+		seq = torch.tensor(seq, device=device,dtype=torch.int32)
+		seq = seq[:rvq_l, :] if rvq_l > 0 else seq
+
+	sep_embd = embds["sep"](zero)
+	phn_embd = embds["text"](phn)
+	rvq_l_embd = embds["rvq_l"](rvq_l)
+	lang_embd = embds["lang"](lang)
+	prom_embd = torch.zeros(prom.shape[-1], n_embd, device=device, dtype=dtype)
+	seq_embd = None
+
+	for i, p in enumerate(prom):
+		if i > rvq_l:
+			break
+		prom_embd += embds[f"prom|{i}"](p)
+
+	if seq is not None:
+		if mode == "len":
+			seq_embd = embds["len"](seq)
+		elif mode == "AR:0:0":
+			seq_embd = embds["resp|AR:0:0"](seq)
+		else:
+			seq_embd = torch.zeros(seq.shape[-1], n_embd, device=device, dtype=dtype)
+			for i, r in enumerate(seq):
+				seq_embd += embds[f"resp|NAR:{i}:{i+1}"](r)
+
+	seqs.append(torch.concat([phn_embd, sep_embd]))
+	seqs.append(torch.concat([lang_embd, sep_embd]))
+	seqs.append(torch.concat([rvq_l_embd, sep_embd]))
+	seqs.append(torch.concat([prom_embd, sep_embd]))
+
+	if seq_embd is not None:
+		seqs.append(seq_embd)
+
+	inputs = torch.concat(seqs)
+	pos_ids = torch.tensor([ i for seq in seqs for i, _ in enumerate(seq) ], device=device, dtype=torch.int32)
+	attn_mask = torch.tensor([ True for seq in seqs for i, _ in enumerate(seq) ], device=device, dtype=torch.bool)
+
+	return inputs, pos_ids, attn_mask
+
+def generate( phn, prom, sequence=[], mode="resp|AR:0:0", max_tokens = 75 * 4, temperature = 1.0 ):
+	lm_head = heads[mode]
+	model._update_causal_mask = model._original_update_causal_mask
+
+	n_outputs = 1
+	stop_token = 1024
+	if mode == "len":
+		temperature = 0.0
+		max_tokens = 5
+		stop_token = 10
+	elif mode != "resp|AR:0:0":
+		temperature = 0.0
+		max_tokens = len(sequence)+1
+		n_outputs = len(sequence[0])
+
+		model._update_causal_mask = model._update_noncausal_mask
+
+	while len(sequence) < max_tokens:
+		inputs, pos_ids, attn_mask = create_inputs( phn, prom, seq=sequence, mode=mode.split("|")[-1] )
+		out = model(inputs_embeds=inputs.unsqueeze(0), position_ids=pos_ids.unsqueeze(0), attention_mask=attn_mask.unsqueeze(0))
+		logits = lm_head(out[0]).float()
+
+		logits = logits[0, -n_outputs:, :]
+		t = Categorical(logits=logits / temperature).sample() if temperature > 0 else logits.argmax(dim=-1)
+		if n_outputs > 1:
+			sequence.append([ _.item() for _ in t ])
+			break
+		else:
+			t = t[0]
+			if stop_token in t:
 				break
+			sequence.append(t.item())
+	return sequence
 
-			ids = torch.concat( [ ids, tokens + start ] )
-			pos_ids = torch.concat( [ pos_ids, torch.tensor([n]).to(pos_ids) ] )
-			attention_mask = torch.concat([ attention_mask, torch.tensor([True]).to(attention_mask) ])
+# check embds
+if False:
+	inputs, pos_ids, attn_mask = create_inputs( phn, prom, mode="len" )
+	flattened = [ sum(embd).item() for embd in inputs ]
 
-print( out )
-print( ids )
-print( pos_ids )
+	for i, embd in enumerate( flattened ):
+		print(f'{i}: ', pos_ids[i].item(), "\t", embd )
+
+
+# test len inferencing
+print( "len:", generate( phn, prom, mode="len" ) )
+
+# test ar ouptut
+if resp:
+	resp = [ resp[0] ]
+else:
+	resp = [ generate( phn, prom ) ]
+	print( "AR:", resp )
+
+# test nar ouptut
+for i in range(1, 8):
+	resp = generate( phn, prom, sequence=resp, mode=f"resp|NAR:{i-1}:{i}" )
+	print( f"NAR:{i-1}:{i}: ", resp[-1] )
+
+decode_to_file( torch.tensor(resp, dtype=torch.int16, device=device).t(), "./data/test.wav" )
