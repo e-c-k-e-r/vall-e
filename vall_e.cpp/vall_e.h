@@ -101,10 +101,18 @@ struct io_map_t {
 	ggml_context* ctx = NULL;
 };
 
+struct score_t {
+	int32_t idx;
+	float value;
+
+	bool operator<( const score_t& that ) const { return this->value < that.value; }
+};
+
 // helper tensor functions
 std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor );
 ggml_tensor* VALL_E_API view_2d_tensor( ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 ); // cringe method to keep in my pocket
 ggml_tensor* VALL_E_API view_2d_tensor( ggml_context* ctx, ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 );
+void VALL_E_API print_tokens( const std::vector<llama_token>& tokens, const std::string& prefix = "Tokens: " );
 
 std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<llama_token>& tokens, int n_embd, const float* embds );
 std::vector<std::vector<float>> VALL_E_API sum_embeddings( const std::vector<std::vector<llama_token>>& input, int n_embd, int rvq_l, const float** embds, int mode = EMBEDDING_MODE_PROM );
@@ -126,7 +134,3 @@ const io_t& VALL_E_API vall_e_inputs_map_get_embeddings( io_map_t& inputs_map, c
 const float* VALL_E_API vall_e_inputs_map_get_embeddings_p( io_map_t& inputs_map, const std::string& name );
 int32_t VALL_E_API vall_e_inputs_map_get_classifier_idx( io_map_t& inputs_map, const std::string& name );
 void VALL_E_API vall_e_inputs_map_init( io_map_t&, llama_model* model );
-
-struct ggml_tensor * VALL_E_API vall_e_get_prom_embds( llama_vall_e_userdata& userdata, int32_t idx );
-struct ggml_tensor * VALL_E_API vall_e_get_resp_embds( llama_vall_e_userdata& userdata, int32_t idx );
-struct ggml_tensor * VALL_E_API vall_e_get_aux_embds( llama_vall_e_userdata& userdata, int32_t idx );

@@ -2,7 +2,7 @@
 
 This is an implementation that makes use of [llama.cpp](https://github.com/ggerganov/llama.cpp/) and [encodec.cpp](https://github.com/PABannier/encodec.cpp).
 
-At the moment it's ***very*** barebones as I try and wrestle with `llama.cpp`'s API without needing to modify its code.
+At the moment it's ***very*** work in progress.
 
 ## Build
 
@@ -14,15 +14,14 @@ Run `make`.
 
 ### Required Modifications
 
-[`encodec.cpp`](https://github.com/e-c-k-e-r/encodec.cpp) requires updating its GGML copy to the latest version, which requires a few lines to get the CPU backend working.
+[`encodec.cpp`](https://github.com/PABannier/encodec.cpp) requires updating its GGML copy to the latest version, which requires a few lines to get the CPU backend working (per my [fork](https://github.com/e-c-k-e-r/encodec.cpp)).
 
-[`llama.cpp`](https://github.com/e-c-k-e-r/llama.cpp) only possible modification needs to ensure that a non-causal attention mask is used; everything necessary can be hacked together with clever tricks.
+[`llama.cpp`](https://github.com/ggerganov/llama.cpp) only possible modification needs to ensure that a non-causal attention mask is used; everything necessary can be hacked together with clever tricks.
 
 ## To-Do
 
 * [x] converted model to GGUF
 	* [ ] convert it without modifying any of the existing code, as the tokenizer requires some care
-	* [ ] *actually* convert the model properly, as the embeddings differ from the real model
 * [x] basic framework
 	* [x] load the quantized model
 	* [x] orchestrate the required embeddings
