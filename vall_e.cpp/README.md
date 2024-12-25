@@ -4,6 +4,8 @@ This is an implementation that makes use of [llama.cpp](https://github.com/ggerg
 
 At the moment it's ***very*** work in progress.
 
+Model weights can be found at [`ecker/vall-e@gguf`](https://huggingface.co/ecker/vall-e/tree/gguf).
+
 ## Build
 
 Populate `./include/` with the `ggml`, `llama.cpp`, and `encodec.cpp` headers.

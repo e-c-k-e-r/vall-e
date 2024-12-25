@@ -22,6 +22,12 @@ Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install g
 
 This repo is tested under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
 
+### Additional Implementations
+
+An "HF"-ified version of the model is available as [`ecker/vall-e@hf`](https://huggingface.co/ecker/vall-e/tree/hf), but it does require some additional efforts (see the `__main__` of [`./vall_e/models/base.py`](./vall_e/models/base.py) for details).
+
+Additionally, [`vall_e.cpp`](./vall_e.cpp/) is available. Consult its README for more details.
+
 ## Pre-Trained Model
 
 Pre-trained weights can be acquired from
