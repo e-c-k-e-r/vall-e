@@ -6,7 +6,7 @@ At the moment it's ***very*** work in progress.
 
 ## Build
 
-Populate `./include/` with the `llama.cpp` and `encodec.cpp` headers.
+Populate `./include/` with the `ggml`, `llama.cpp`, and `encodec.cpp` headers.
 
 Populate `./libs/` with the compiled libraries of `llama.cpp` and `encodec.cpp`.
 
@@ -35,10 +35,14 @@ Run `make`.
 * [x] sum embeddings for the `prom` and prior `resp`s
 * [x] working `AR` output
 	* [x] `AR` sampling
-* [ ] working `NAR-len` output
+* [x] working `NAR-len` output
 	* [x] `NAR-len` sampling
-* [ ] working `NAR` output
+* [x] working `NAR` output
 	* [x] `NAR` sampling
 * [x] decode audio to disk
 * [ ] a functional CLI
-* [ ] actually make it work
+* [x] actually make it work
+* [ ] clean up to make the code usable
+* [ ] feature parity with the PyTorch version
+	* [ ] vocos
+	* [ ] additional tasks (`stt`, `ns`, `sr`, samplers)

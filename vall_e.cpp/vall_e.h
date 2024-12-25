@@ -35,46 +35,10 @@ const int MODALITY_NAR_LEN = 1;
 const int MAX_DURATION = 75 * 12;
 const int CTX_SIZE = 2048;
 const int N_THREADS = 8;
+const int N_GPU_LAYERS = 0;
 
-// stores the raw inputs to be fed
-struct input_t {
-	std::string task = "tts";
-
-	std::string phonemes = "";
-	std::vector<llama_token> phn = {};
-	llama_token lang = 0;
-	llama_token rvq_l = 0;
-	std::vector<std::vector<llama_token>> prom = {};
-	std::vector<std::vector<llama_token>> resp = {};
-};
-
-// reference mapping from vall_e.export.py
-/*
-	[(0, 256), 'text_emb.weight', 'classifiers.proj.9.weight', None],
-	[(256, 264), 'rvq_l_emb.weight', None, '<|RVQ:{l}|>'],
-	[(264, 270), 'langs_emb.weight', None, '<|lang:{lang}|>'],
-	[(270, 279), 'tasks_emb.weight', None, '<|task:{task}|>'],
-	[(279, 290), 'len_emb.weight', 'classifiers.proj.10.weight', '<|len:{id}|>'],
-	[(290, 291), 'tones_emb.weight', None, '<|tone:{tone}|>'],
-	[(291, 292), 'sep', None, '<|sep|>'],
-	[(292, 1316), 'proms_emb.embeddings.0.weight', None, '<|P|0|{id}|>'],
-	[(1316, 2340), 'proms_emb.embeddings.1.weight', None, '<|P|1|{id}|>'],
-	[(2340, 3364), 'proms_emb.embeddings.2.weight', None, '<|P|2|{id}|>'],
-	[(3364, 4388), 'proms_emb.embeddings.3.weight', None, '<|P|3|{id}|>'],
-	[(4388, 5412), 'proms_emb.embeddings.4.weight', None, '<|P|4|{id}|>'],
-	[(5412, 6436), 'proms_emb.embeddings.5.weight', None, '<|P|5|{id}|>'],
-	[(6436, 7460), 'proms_emb.embeddings.6.weight', None, '<|P|6|{id}|>'],
-	[(7460, 8484), 'proms_emb.embeddings.7.weight', None, '<|P|7|{id}|>'],
-	[(8484, 9509), 'resps_emb.embeddings.0.weight', 'classifiers.proj.0.weight', '<|R|AR|0:0|{id}|>'],
-	[(9509, 10533), 'resps_emb.embeddings.1.weight', 'classifiers.proj.1.weight', '<|R|NAR|0:1|{id}|>'],
-	[(10533, 11557), 'resps_emb.embeddings.2.weight', 'classifiers.proj.2.weight', '<|R|NAR|1:2|{id}|>'],
-	[(11557, 12581), 'resps_emb.embeddings.3.weight', 'classifiers.proj.3.weight', '<|R|NAR|2:3|{id}|>'],
-	[(12581, 13605), 'resps_emb.embeddings.4.weight', 'classifiers.proj.4.weight', '<|R|NAR|3:4|{id}|>'],
-	[(13605, 14629), 'resps_emb.embeddings.5.weight', 'classifiers.proj.5.weight', '<|R|NAR|4:5|{id}|>'],
-	[(14629, 15653), 'resps_emb.embeddings.6.weight', 'classifiers.proj.6.weight', '<|R|NAR|5:6|{id}|>'],
-	[(15653, 16677), 'resps_emb.embeddings.7.weight', 'classifiers.proj.7.weight', '<|R|NAR|6:7|{id}|>'],
-	[(16677, 17702), 'resps_emb.embeddings.8.weight', 'classifiers.proj.8.weight', '<|R|NAR|0:0|{id}|>']
-*/
+typedef llama_token token_t;
+typedef std::vector<std::vector<token_t>> vall_e_audio_codes_t;
 
 // stores embeddings + metadata for an embedding range
 struct io_t {
@@ -109,25 +73,63 @@ struct score_t {
 	bool operator<( const score_t& that ) const { return this->value < that.value; }
 };
 
+struct vall_e_context_params_t {
+	std::string model_path;
+	std::string encodec_path;
+	int32_t gpu_layers = N_GPU_LAYERS;
+	int32_t cpu_threads = N_THREADS;
+	int32_t ctx_size = CTX_SIZE;
+	bool verbose = false;
+};
+// stores everything needed for vall_e.cpp
+struct vall_e_context_t {
+	vall_e_context_params_t params;
+
+	io_map_t io_map;
+
+	struct {
+		llama_model* model = NULL;
+		llama_context* ctx = NULL;
+	} llama;
+
+	struct {
+		encodec_context* ctx;
+	} encodec;
+};
+// stores the raw inputs to be fed
+struct vall_e_inputs_t {
+	std::string task = "tts";
+
+	std::vector<token_t> phn = {};
+	token_t lang = 0;
+	token_t rvq_l = 0;
+	vall_e_audio_codes_t prom = {};
+	vall_e_audio_codes_t resp = {};
+};
+
 // helper tensor functions
 std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor );
-ggml_tensor* VALL_E_API view_2d_tensor( ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 ); // cringe method to keep in my pocket
+//ggml_tensor* VALL_E_API view_2d_tensor( ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 ); // cringe method to keep in my pocket
 ggml_tensor* VALL_E_API view_2d_tensor( ggml_context* ctx, ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim = 0 );
-void VALL_E_API print_tokens( const std::vector<llama_token>& tokens, const std::string& prefix = "Tokens: " );
+void VALL_E_API print_tokens( const std::vector<token_t>& tokens, const std::string& prefix = "Tokens: " );
 
-std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<llama_token>& tokens, int n_embd, const float* embds );
-std::vector<std::vector<float>> VALL_E_API sum_embeddings( const std::vector<std::vector<llama_token>>& input, int n_embd, int rvq_l, const float** embds, int mode = EMBEDDING_MODE_PROM );
+std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<token_t>& tokens, int n_embd, const float* embds );
+std::vector<std::vector<float>> VALL_E_API sum_embeddings( const vall_e_audio_codes_t& input, int n_embd, int rvq_l, const float** embds, int mode = EMBEDDING_MODE_PROM );
 std::vector<float> VALL_E_API soft_max( int n_logits, const float* logits );
 
 // batch and inferencing
-void VALL_E_API batch_add( llama_batch& batch, llama_token id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids = {0} );
-void VALL_E_API fill_batch( llama_batch& batch, input_t& input, io_map_t& inputs_map, int mode );
-std::vector<llama_token> VALL_E_API generate( llama_context* ctx, llama_model* model, input_t& input, io_map_t& inputs_map, int max_tokens, int mode, bool verbose = true );
+void VALL_E_API batch_add( llama_batch& batch, token_t id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids = {0} );
+void VALL_E_API fill_batch( llama_batch& batch, vall_e_inputs_t& input, io_map_t& inputs_map, int mode );
+std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t& input, int max_tokens, int mode, bool verbose = true );
+
+//
+std::vector<token_t> VALL_E_API phonemize( vall_e_context_t* ctx, const std::string& text, const std::string& language = "auto" );
 
 // encodec helpers
-bool VALL_E_API read_wav_from_disk( std::string in_path, std::vector<float>& audio_arr );
-void VALL_E_API write_wav_on_disk( std::vector<float>& audio_arr, std::string dest_path );
-std::vector<std::vector<int32_t>> VALL_E_API encode_audio_from_disk( struct encodec_context* ectx, const std::string& path );
+std::vector<float> VALL_E_API read_audio_from_disk( const std::string& path );
+void VALL_E_API write_audio_to_disk( const std::vector<float>& waveform, const std::string& path );
+
+std::vector<std::vector<int32_t>> VALL_E_API encode_audio( struct encodec_context* ectx, const std::vector<float>& waveform );
 std::vector<float> VALL_E_API decode_audio( struct encodec_context* ectx, const std::vector<std::vector<int32_t>>& codes_2d );
 
 // model-accessing helpers
@@ -135,3 +137,9 @@ const io_t& VALL_E_API vall_e_inputs_map_get_embeddings( io_map_t& inputs_map, c
 const float* VALL_E_API vall_e_inputs_map_get_embeddings_p( io_map_t& inputs_map, const std::string& name );
 int32_t VALL_E_API vall_e_inputs_map_get_classifier_idx( io_map_t& inputs_map, const std::string& name );
 void VALL_E_API vall_e_inputs_map_init( io_map_t&, llama_model* model );
+
+// context management
+vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params );
+vall_e_inputs_t vall_e_prepare_inputs( vall_e_context_t* ctx, const std::string& text, const std::string& prompt_path, const std::string& lang );
+vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, int modality = MODALITY_NAR_LEN );
+void VALL_E_API vall_e_free( vall_e_context_t* ctx );
