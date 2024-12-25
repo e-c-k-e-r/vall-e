@@ -34,7 +34,8 @@ const int INFERENCE_MODE_NAR = 3;
 const int MODALITY_AR_NAR = 0;
 const int MODALITY_NAR_LEN = 1;
 
-const int MAX_DURATION = 75 * 12;
+const int ENCODEC_FRAMES_PER_SECOND = 75;
+const int MAX_DURATION = ENCODEC_FRAMES_PER_SECOND * 12;
 const int CTX_SIZE = 2048;
 const int N_THREADS = 8;
 const int N_GPU_LAYERS = 99;
@@ -100,7 +101,7 @@ struct vall_e_args_t {
 	std::string language = "en";
 	int modality = MODALITY_NAR_LEN;
 	int max_steps = 30;
-	int max_duration = 75 * 12;
+	int max_duration = MAX_DURATION;
 };
 // stores everything needed for vall_e.cpp
 struct vall_e_context_t {

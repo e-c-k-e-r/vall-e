@@ -601,7 +601,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 				is_masked[idx] = true;
 			}
 
-			if ( verbose ) print_tokens( output_tokens, "Masked tokens: " );
+			if ( verbose ) print_tokens( output_tokens, std::string("[")+std::to_string(step)+"/"+std::to_string(steps)+"] Masked tokens: " );
 
 			// update batch
 			// to-do: only update the embeddings instead
@@ -666,7 +666,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 
 			llama_sampler_free(smpl);
 
-			if ( verbose ) print_tokens( output_tokens );
+			if ( verbose ) print_tokens( output_tokens, std::string("[")+std::to_string(step)+"/"+std::to_string(steps)+"]: " );
 		}
 	} else if ( mode == INFERENCE_MODE_NAR ) {
 		// to-do: assert n_outputs == inputs.resp[rvq_l-1].size()
@@ -840,7 +840,7 @@ bool VALL_E_API vall_e_args_parse( int argc, char** argv, vall_e_context_params_
 		} else if (arg == "-ms" || arg == "--max-steps") {
 			args.max_steps = std::stoi(argv[++i]);
 		} else if (arg == "-md" || arg == "--max-duration") {
-			args.max_duration = std::stoi(argv[++i]);
+			args.max_duration = std::stoi(argv[++i]) * ENCODEC_FRAMES_PER_SECOND;
 		} else if (arg == "-i" || arg == "--input") {
 			args.prompt_path = argv[++i];
 		} else if (arg == "-o" || arg == "--output") {
