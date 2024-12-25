@@ -6,7 +6,10 @@
 #include <cstring>
 #include <iostream>
 #include <algorithm>
+#include <regex>
+#include <codecvt>
 
+// this technically can be used to initialize the map directly
 io_t io_ranges[] = {
 	{ "text", 0, 256, 9, }, 
 	{ "rvq_l", 256, 264, -1, }, 
@@ -35,6 +38,18 @@ io_t io_ranges[] = {
 	{ "resps|NAR:6:7", 15653, 16677, 7 }, 
 	{ "resps|NAR:0:0", 16677, 17702, 8 }, 
 };
+
+// stored here because I tokenize the merges
+// I can't be assed to figure out the tokenizer right now
+// u32string because encoding agony
+std::unordered_map<std::u32string, token_t> vocab = {	
+	{U"<unk>",0},{U"<bos>",1},{U"</eos>",2},{U"<mask>",3},{U" ",4},{U"ᵝ",4},{U"!",5},{U"\"",6},{U"(",7},{U"{",7},{U"[",7},{U")",8},{U"}",8},{U"]",8},{U",",9},{U"-",10},{U".",11},{U"1",211},{U"—",10},{U"“",6},{U"”",81},{U"ˇ",6},{U"ˉ",12},{U"ˊ",79},{U"ˋ",80},{U"_",81},{U":",13},{U";",14},{U"?",15},{U"a",16},{U"ä",16},{U"ɒ",16},{U"b",17},{U"c",18},{U"d",19},{U"e",20},{U"f",21},{U"h",22},{U"i",23},{U"ĩ",23},{U"j",24},{U"k",25},{U"l",26},{U"m",27},{U"n",28},{U"ɴ",28},{U"ɲ",28},{U"o",29},{U"̞",29},{U"p",30},{U"ɸ",30},{U"q",31},{U"r",32},{U"ɽ",32},{U"ʁ",32},{U"s",33},{U"t",34},{U"u",35},{U"ø",35},{U"œ",35},{U"y",35},{U"ɣ",35},{U"ũ",35},{U"v",36},{U"w",37},{U"ʍ",37},{U"x",38},{U"z",39},{U"¡",40},{U"«",41},{U"»",42},{U"¿",43},{U"æ",44},{U"ç",45},{U"ð",46},{U"ŋ",47},{U"ɐ",48},{U"ɑ",49},{U"ɔ",50},{U"ɕ",51},{U"ə",52},{U"ɚ",53},{U"ɛ",54},{U"ɜ",55},{U"ɟ",56},{U"ɡ",57},{U"ɪ",58},{U"ɬ",59},{U"ɯ",60},{U"ɹ",61},{U"ɾ",62},{U"ʃ",63},{U"ʈ",64},{U"ʊ",65},{U"ʋ",66},{U"ʌ",67},{U"ʑ",68},{U"ʒ",69},{U"ʔ",70},{U"ʲ",71},{U"ˈ",72},{U"ˌ",73},{U"ː",74},{U"̃",75},{U"̩",76},{U"θ",77},{U"ᵻ",78},{U"…",82},{U"ˈɛ",83},{U"iː",84},{U"aɪ",85},{U"nd",86},{U"ˈɪ",87},{U"eɪ",88},{U"ˈæ",89},{U"ðə",90},{U"oʊ",91},{U"ɑː",92},{U"ˈeɪ",93},{U"ən",94},{U"uː",95},{U"ˈʌ",96},{U"ˈaɪ",97},{U"st",98},{U"ˈɔ",99},{U"ˈoʊ",100},{U"ˈiː",101},{U"ˈɑː",102},{U"ænd",103},{U"ːɹ",104},{U"ɪŋ",105},{U"ɜː",106},{U"ɪn",107},{U"tə",108},{U"ʌv",109},{U"aʊ",110},{U"əl",111},{U"ˈuː",112},{U"tʃ",113},{U"ɪz",114},{U"ˈɜː",115},{U"ˌʌ",116},{U"æt",117},{U"dʒ",118},{U"ˈɔː",119},{U"ɪt",120},{U"ˈaʊ",121},{U"ɚɹ",122},{U"ˈɛn",123},{U"wʌ",124},{U"li",125},{U"hiː",126},{U"ˌɛ",127},{U"wɪ",128},{U"wʌz",129},{U"ðæt",130},{U"juː",131},{U"oːɹ",132},{U"ðɪ",133},{U"sˈɛ",134},{U"ˌɪ",135},{U"ˈɑːɹ",136},{U"nt",137},{U"ˈʊ",138},{U"ənt",139},{U"hɪz",140},{U"ˌɑː",141},{U"hæ",142},{U"ɔːɹ",143},{U"ˈɛɹ",144},{U"wɪð",145},{U"ᵻd",146},{U"ˈoːɹ",147},{U"pɹ",148},{U"ˈɔːl",149},{U"mˌ",150},{U"ʃən",151},{U"kt",152},{U"ˌoʊ",153},{U"ˈɔːɹ",154},{U"fɹ",155},{U"æz",156},{U"ˌʌt",157},{U"ʃiː",158},{U"ˈɛl",159},{U"ˌaʊ",160},{U"ˈʌn",161},{U"əs",162},{U"hɜː",163},{U"lˈaɪ",164},{U"ˈæn",165},{U"ˈɪɹ",166},{U"ʊd",167},{U"ɹᵻ",168},{U"ld",169},{U"bˌʌt",170},{U"ks",171},{U"nˈoʊ",172},{U"hæd",173},{U"ɾɚ",174},{U"ɛɹ",175},{U"ˈɪŋ",176},{U"ɡɹ",177},{U"nˌɑː",178},{U"ɔn",179},{U"vɚ",180},{U"maɪ",181},{U"fɔːɹ",182},{U"ðɚ",183},{U"tʊ",184},{U"ðɛɹ",185},{U"nˌɑːt",186},{U"ˈʌm",187},{U"tɹ",188},{U"sˈiː",189},{U"ʌvðə",190},{U"mˈɪ",191},{U"hˈæ",192},{U"ˌɪm",193},{U"lˈeɪ",194},{U"ɪk",195},{U"sp",196},{U"hˌɪm",197},{U"ɐn",198},{U"ðeɪ",199},{U"lˈɪ",200},{U"ɾi",201},{U"lˈɛ",202},{U"bɹ",203},{U"kɹ",204},{U"lˈæ",205},{U"ˈɪl",206},{U"jˈuː",207},{U"ʌm",208},{U"mˌiː",209},{U"bᵻ",210},{U"wˈʌn",211},{U"ˌɪn",212},{U"ˈɪn",213},{U"ˈoʊn",214},{U"sˈɛd",215},{U"biː",216},{U"ˈɛd",217},{U"ˈaɪt",218},{U"baɪ",219},{U"fɹʌm",220},{U"ɪs",221},{U"ɚz",222},{U"ðɪs",223},{U"əns",224},{U"bəl",225},{U"ɪf",226},{U"ɪnðə",227},{U"əm",228},{U"ᵻz",229},{U"ˌuː",230},{U"wˈeɪ",231},{U"ft",232},{U"wiː",233},{U"stɹ",234},{U"lˈiː",235},{U"iːz",236},{U"pt",237},{U"jʊ",238},{U"ɚd",239},{U"ˌaɪ",240},{U"kw",241},{U"ˌɔn",242},{U"ˈaɪd",243},{U"ɪm",244},{U"ˈʌst",245},{U"ˈoʊld",246},{U"ts",247},{U"ˌɪtʃ",248},{U"sˌoʊ",249},{U"dˈɪ",250},{U"ɑːɹ",251},{U"hɐ",252},{U"sˈeɪ",253},{U"ɾᵻd",254},{U"wˌɪtʃ",255},
+};
+
+std::vector<merge_entry_t> vocab_merges = {
+	{U"ˈ", U"ɛ"},{U"i", U"ː"},{U"a", U"ɪ"},{U"n", U"d"},{U"ˈ", U"ɪ"},{U"e", U"ɪ"},{U"ˈ", U"æ"},{U"ð", U"ə"},{U"o", U"ʊ"},{U"ɑ", U"ː"},{U"ˈ", U"eɪ"},{U"ə", U"n"},{U"u", U"ː"},{U"ˈ", U"ʌ"},{U"ˈ", U"aɪ"},{U"s", U"t"},{U"ˈ", U"ɔ"},{U"ˈ", U"oʊ"},{U"ˈ", U"iː"},{U"ˈ", U"ɑː"},{U"æ", U"nd"},{U"ː", U"ɹ"},{U"ɪ", U"ŋ"},{U"ɜ", U"ː"},{U"ɪ", U"n"},{U"t", U"ə"},{U"ʌ", U"v"},{U"a", U"ʊ"},{U"ə", U"l"},{U"ˈ", U"uː"},{U"t", U"ʃ"},{U"ɪ", U"z"},{U"ˈ", U"ɜː"},{U"ˌ", U"ʌ"},{U"æ", U"t"},{U"d", U"ʒ"},{U"ˈɔ", U"ː"},{U"ɪ", U"t"},{U"ˈ", U"aʊ"},{U"ɚ", U"ɹ"},{U"ˈɛ", U"n"},{U"w", U"ʌ"},{U"l", U"i"},{U"h", U"iː"},{U"ˌ", U"ɛ"},{U"w", U"ɪ"},{U"wʌ", U"z"},{U"ð", U"æt"},{U"j", U"uː"},{U"o", U"ːɹ"},{U"ð", U"ɪ"},{U"s", U"ˈɛ"},{U"ˌ", U"ɪ"},{U"ˈɑː", U"ɹ"},{U"n", U"t"},{U"ˈ", U"ʊ"},{U"ən", U"t"},{U"h", U"ɪz"},{U"ˌ", U"ɑː"},{U"h", U"æ"},{U"ɔ", U"ːɹ"},{U"ˈɛ", U"ɹ"},{U"wɪ", U"ð"},{U"ᵻ", U"d"},{U"ˈ", U"oːɹ"},{U"p", U"ɹ"},{U"ˈɔː", U"l"},{U"m", U"ˌ"},{U"ʃ", U"ən"},{U"k", U"t"},{U"ˌ", U"oʊ"},{U"ˈɔ", U"ːɹ"},{U"f", U"ɹ"},{U"æ", U"z"},{U"ˌʌ", U"t"},{U"ʃ", U"iː"},{U"ˈɛ", U"l"},{U"ˌ", U"aʊ"},{U"ˈʌ", U"n"},{U"ə", U"s"},{U"h", U"ɜː"},{U"l", U"ˈaɪ"},{U"ˈæ", U"n"},{U"ˈɪ", U"ɹ"},{U"ʊ", U"d"},{U"ɹ", U"ᵻ"},{U"l", U"d"},{U"b", U"ˌʌt"},{U"k", U"s"},{U"n", U"ˈoʊ"},{U"hæ", U"d"},{U"ɾ", U"ɚ"},{U"ɛ", U"ɹ"},{U"ˈɪ", U"ŋ"},{U"ɡ", U"ɹ"},{U"n", U"ˌɑː"},{U"ɔ", U"n"},{U"v", U"ɚ"},{U"m", U"aɪ"},{U"f", U"ɔːɹ"},{U"ð", U"ɚ"},{U"t", U"ʊ"},{U"ð", U"ɛɹ"},{U"nˌɑː", U"t"},{U"ˈʌ", U"m"},{U"t", U"ɹ"},{U"s", U"ˈiː"},{U"ʌv", U"ðə"},{U"m", U"ˈɪ"},{U"h", U"ˈæ"},{U"ˌɪ", U"m"},{U"l", U"ˈeɪ"},{U"ɪ", U"k"},{U"s", U"p"},{U"h", U"ˌɪm"},{U"ɐ", U"n"},{U"ð", U"eɪ"},{U"l", U"ˈɪ"},{U"ɾ", U"i"},{U"l", U"ˈɛ"},{U"b", U"ɹ"},{U"k", U"ɹ"},{U"l", U"ˈæ"},{U"ˈɪ", U"l"},{U"j", U"ˈuː"},{U"ʌ", U"m"},{U"mˌ", U"iː"},{U"b", U"ᵻ"},{U"w", U"ˈʌn"},{U"ˌ", U"ɪn"},{U"ˈɪ", U"n"},{U"ˈoʊ", U"n"},{U"sˈɛ", U"d"},{U"b", U"iː"},{U"ˈɛ", U"d"},{U"ˈaɪ", U"t"},{U"b", U"aɪ"},{U"fɹ", U"ʌm"},{U"ɪ", U"s"},{U"ɚ", U"z"},{U"ðɪ", U"s"},{U"ən", U"s"},{U"b", U"əl"},{U"ɪ", U"f"},{U"ɪn", U"ðə"},{U"ə", U"m"},{U"ᵻ", U"z"},{U"ˌ", U"uː"},{U"w", U"ˈeɪ"},{U"f", U"t"},{U"w", U"iː"},{U"st", U"ɹ"},{U"l", U"ˈiː"},{U"iː", U"z"},{U"p", U"t"},{U"j", U"ʊ"},{U"ɚ", U"d"},{U"ˌ", U"aɪ"},{U"k", U"w"},{U"ˌ", U"ɔn"},{U"ˈaɪ", U"d"},{U"ɪ", U"m"},{U"ˈʌ", U"st"},{U"ˈoʊ", U"ld"},{U"t", U"s"},{U"ˌɪ", U"tʃ"},{U"s", U"ˌoʊ"},{U"d", U"ˈɪ"},{U"ɑː", U"ɹ"},{U"h", U"ɐ"},{U"s", U"ˈeɪ"},{U"ɾ", U"ᵻd"},{U"w", U"ˌɪtʃ"},
+};
+std::unordered_map<std::string, merge_entry_t> vocab_merge_map = {};
 
 std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor ) {
 	size_t size = tensor->ne[0] * tensor->ne[1];
@@ -109,11 +124,11 @@ void VALL_E_API vall_e_inputs_map_init( io_map_t& io_map, llama_model* model ) {
 
 	int32_t ctx_size = 24 * 2 * ggml_tensor_overhead(); // 24 embeddings + 24 output heads (generous) (should only really need to do this for output heads since we manually handle embeddings)
 	struct ggml_init_params params = {
-        /*.mem_size   =*/ ctx_size,
-        /*.mem_buffer =*/ NULL,
-        /*.no_alloc   =*/ true,
-    };
-    io_map.ctx = ggml_init(params);
+		/*.mem_size   =*/ ctx_size,
+		/*.mem_buffer =*/ NULL,
+		/*.no_alloc   =*/ true,
+	};
+	io_map.ctx = ggml_init(params);
 
 // to-do: figure a nicer way to do this
 #if LLAMA_CPP_USE_VALL_E_ARCH
@@ -207,72 +222,72 @@ void VALL_E_API batch_add( llama_batch& batch, token_t id, int n_embd, const flo
 std::vector<float> VALL_E_API read_audio_from_disk( const std::string& path ) {
 	std::vector<float> res;
 
-    uint32_t channels;
-    uint32_t sample_rate;
-    drwav_uint64 total_frame_count;
+	uint32_t channels;
+	uint32_t sample_rate;
+	drwav_uint64 total_frame_count;
 
-    float * raw_audio = drwav_open_file_and_read_pcm_frames_f32(path.c_str(), &channels, &sample_rate, &total_frame_count, NULL);
+	float * raw_audio = drwav_open_file_and_read_pcm_frames_f32(path.c_str(), &channels, &sample_rate, &total_frame_count, NULL);
 
-    if (raw_audio == NULL) {
-        fprintf(stderr, "%s: could not read wav file\n", __func__);
-        return res;
-    }
+	if (raw_audio == NULL) {
+		fprintf(stderr, "%s: could not read wav file\n", __func__);
+		return res;
+	}
 
-    if (sample_rate != 24000) {
-        fprintf(stderr, "%s: wav file is wrong sample rate\n", __func__);
-        return res;
-    }
+	if (sample_rate != 24000) {
+		fprintf(stderr, "%s: wav file is wrong sample rate\n", __func__);
+		return res;
+	}
 
-    fprintf(stderr, "\n%s: Number of frames read = %lld.\n", __func__, total_frame_count);
+	fprintf(stderr, "\n%s: Number of frames read = %lld.\n", __func__, total_frame_count);
 
-    res.resize(total_frame_count);
-    memcpy(res.data(), raw_audio, total_frame_count * sizeof(float));
+	res.resize(total_frame_count);
+	memcpy(res.data(), raw_audio, total_frame_count * sizeof(float));
 
-    drwav_free(raw_audio, NULL);
+	drwav_free(raw_audio, NULL);
 
-    return res;
+	return res;
 }
 // writes a waveform to disk
 void VALL_E_API write_audio_to_disk( const std::vector<float>& wavform, const std::string& path ) {
-    drwav_data_format format;
-    format.bitsPerSample = 32;
-    format.sampleRate = 24000;
-    format.container = drwav_container_riff;
-    format.channels = 1;
-    format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
+	drwav_data_format format;
+	format.bitsPerSample = 32;
+	format.sampleRate = 24000;
+	format.container = drwav_container_riff;
+	format.channels = 1;
+	format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
 
-    drwav wav;
-    drwav_init_file_write(&wav, path.c_str(), &format, NULL);
-    drwav_uint64 frames = drwav_write_pcm_frames(&wav, wavform.size(), wavform.data());
-    drwav_uninit(&wav);
+	drwav wav;
+	drwav_init_file_write(&wav, path.c_str(), &format, NULL);
+	drwav_uint64 frames = drwav_write_pcm_frames(&wav, wavform.size(), wavform.data());
+	drwav_uninit(&wav);
 
-    fprintf(stderr, "%s: Number of frames written = %lld.\n", __func__, frames);
+	fprintf(stderr, "%s: Number of frames written = %lld.\n", __func__, frames);
 }
 // reads a waveform from disk then encodes it
 std::vector<std::vector<int32_t>> VALL_E_API encode_audio( struct encodec_context* ectx, const std::vector<float>& wavform ) {
-    // compress audio
-    if (!encodec_compress_audio(ectx, wavform.data(), wavform.size(), 1)) {
-        fprintf(stderr, "%s: error during compression \n", __func__);
-        return {};
-    }
+	// compress audio
+	if (!encodec_compress_audio(ectx, wavform.data(), wavform.size(), 1)) {
+		fprintf(stderr, "%s: error during compression \n", __func__);
+		return {};
+	}
 
-    int32_t* codes_data = encodec_get_codes( ectx );
-    int n_codes = encodec_get_codes_size( ectx );
-    int n_codebooks = 8;
-    int n_frames = n_codes / n_codebooks;
-    
-    std::vector<std::vector<int32_t>> res(n_codebooks);
+	int32_t* codes_data = encodec_get_codes( ectx );
+	int n_codes = encodec_get_codes_size( ectx );
+	int n_codebooks = 8;
+	int n_frames = n_codes / n_codebooks;
+	
+	std::vector<std::vector<int32_t>> res(n_codebooks);
 
-    for ( auto l = 0; l < n_codebooks; ++l ) {
-    	res[l].insert( res[l].end(), codes_data + (l * n_frames), codes_data + ((l+1) * n_frames) );
-    }
+	for ( auto l = 0; l < n_codebooks; ++l ) {
+		res[l].insert( res[l].end(), codes_data + (l * n_frames), codes_data + ((l+1) * n_frames) );
+	}
 
-    return res;
+	return res;
 }
 // decodes a 2D codebook into a waveform
 std::vector<float> VALL_E_API decode_audio( struct encodec_context* ectx, const std::vector<std::vector<int32_t>>& codes ) {
-    int n_codebooks = codes.size();
-    int n_frames = codes[0].size();
+	int n_codebooks = codes.size();
+	int n_frames = codes[0].size();
 	
 
 	std::vector<int32_t> res;
@@ -282,16 +297,16 @@ std::vector<float> VALL_E_API decode_audio( struct encodec_context* ectx, const 
 		res.insert( res.end(), codes[l].begin(), codes[l].end() );
 	}
 
-    // decompress audio
-    if (!encodec_decompress_audio(ectx, res.data(), res.size(), N_THREADS)) {
-        fprintf(stderr, "%s: error during decompression\n", __func__);
-        return {};
-    }
+	// decompress audio
+	if (!encodec_decompress_audio(ectx, res.data(), res.size(), N_THREADS)) {
+		fprintf(stderr, "%s: error during decompression\n", __func__);
+		return {};
+	}
 
-    // write reconstructed audio on disk
-    const float* audio_data = encodec_get_audio(ectx);
-    const int audio_size = encodec_get_audio_size(ectx);
-    return std::vector<float>(audio_data, audio_data + audio_size);
+	// write reconstructed audio on disk
+	const float* audio_data = encodec_get_audio(ectx);
+	const int audio_size = encodec_get_audio_size(ectx);
+	return std::vector<float>(audio_data, audio_data + audio_size);
 }
 
 // sums embeddings over a 2D "tensor"
@@ -484,7 +499,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 	// to-do: figure this out......
 	{
 		llama_set_causal_attn( ctx->llama.ctx, causal ); // to-do: fix GGML_ASSERT(mask->ne[0] == a->ne[0])
-    //	*const_cast<bool*>(&model->hparams.causal_attn) = true; // force set this
+	//	*const_cast<bool*>(&model->hparams.causal_attn) = true; // force set this
 	}
 
 	std::vector<token_t> output_tokens;
@@ -702,20 +717,78 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 	return output_tokens;
 }
 
-std::vector<token_t> VALL_E_API phonemize( vall_e_context_t* ctx, const std::string& text, const std::string& language ) {
-	return {1,22,111,100,4,37,115,169,11,2}; // <bos>hˈɛloː ʋˈɔrlt</eos>
-/*
-	const int n_prompt = -llama_tokenize(model, inputs.phonemes.c_str(), inputs.phonemes.size(), NULL, 0, true, true);
-	// allocate space for the tokens and tokenize the inputs.phonemes
-	inputs.phn.resize(n_prompt);
-	if (llama_tokenize(model, inputs.phonemes.c_str(), inputs.phonemes.size(), inputs.phn.data(), inputs.phn.size(), true, true) < 0) {
-	    fprintf(stderr, "%s: error: failed to tokenize: %s\n", __func__, inputs.phonemes.c_str());
-	    return 1;
+std::string string_replace( const std::string& string, const std::string& search, const std::string& replace ) {
+	std::string res = string;
+	size_t start_pos;
+	while ( (start_pos = res.find(search)) != std::string::npos ) {
+		res.replace(start_pos, search.length(), replace);
 	}
+	return res;
+}
 
-	for ( auto& token : inputs.phn ) printf("%i ", token );
-	printf("\n");
-*/
+std::vector<token_t> VALL_E_API phonemize( vall_e_context_t* ctx, const std::string& text, const std::string& language ) {	
+	std::vector<token_t> tokens;
+
+	// phonemize text
+	std::string espeak_language = "en";
+	if ( language == "en" ) espeak_language = "en-us";
+	else if ( language == "fr" ) espeak_language = "fr-fr";
+	else if ( language == "zh" ) espeak_language = "cmn-latn-pinyin";
+	espeak_SetVoiceByName(espeak_language.c_str());
+
+	const char* text_c_str = text.c_str();
+	const char* phonemes = espeak_TextToPhonemes((const void**) &text_c_str, espeakCHARS_UTF8, espeakPHONEMES_IPA);
+
+	std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv_utf8_utf32;
+	std::u32string unicode_phonemes = conv_utf8_utf32.from_bytes(phonemes);
+
+	// manual tokenization because llama tokenizer isn't cooperating
+	// to-do: handle merges
+	tokens.emplace_back(1);
+	for (auto& phone : unicode_phonemes ) {
+		std::u32string phone_str;
+		phone_str += phone;
+		// place <unk> first
+		auto& token = tokens.emplace_back(0);
+		// update if found
+		if ( vocab.count( phone_str ) > 0 ) {
+			token = vocab[phone_str];
+		}
+	}
+	
+	// handle merges (skip <bos>)
+	for ( auto i = 1; i < tokens.size() - 1; ++i ) {
+		auto& cur = tokens[i];
+		auto& next = tokens[i+1];
+		std::string key = std::to_string(cur) + ":" + std::to_string(next);
+		// not a merge
+		if ( !vocab_merge_map.count(key) )
+			continue;
+
+		// get merge entry
+		auto& merge = vocab_merge_map[key];
+		// update with merged token
+		cur = merge.resolved_token;
+		// erase at next token
+		tokens.erase(tokens.begin() + i + 1);
+		// back iterate to check for more merges at next iteration
+		--i;
+	}
+	tokens.emplace_back(2);
+
+
+	/*
+	// to-do: fix terminate called after throwing an instance of 'std::out_of_range'
+	// deduce token count
+	const int n_tokens = -llama_tokenize(ctx->llama.model, phonemes.c_str(), phonemes.size(), NULL, 0, true, true);
+	tokens.resize(n_tokens);
+	// tokenize
+	if ( llama_tokenize(ctx->llama.model, phonemes.c_str(), phonemes.size(), tokens.data(), tokens.size(), true, true) < 0 ) {
+		fprintf(stderr, "%s: error: failed to tokenize: %s\n", __func__, phonemes.c_str());
+		return tokens;
+	}
+	*/
+	return tokens;
 }
 
 vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params ) {
@@ -750,8 +823,8 @@ vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params 
 		fprintf(stderr , "%s: error: failed to create the llama_context\n" , __func__);
 		return ctx;
 	}
-    
-    // setup encodec.cpp
+	
+	// setup encodec.cpp
 	ctx->encodec.ctx = encodec_load_model(params.encodec_path.c_str(), 0, params.gpu_layers);
 	if ( !ctx->encodec.ctx ) {
 		fprintf(stderr, "%s: error during loading model\n", __func__);
@@ -760,8 +833,23 @@ vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params 
 	encodec_set_target_bandwidth(ctx->encodec.ctx, 6);
 	encodec_set_sample_rate(ctx->encodec.ctx, 24000);
 
+	// setup espeak
+	espeak_Initialize(AUDIO_OUTPUT_SYNCHRONOUS, 0, NULL, 0);
+
 	// setup vall_e.cpp
 	vall_e_inputs_map_init( ctx->io_map, ctx->llama.model );
+
+	// setup vocab things
+	for ( auto& entry : vocab_merges ) {
+		entry.resolved = entry.pre+entry.post;
+
+		entry.pre_token = vocab[entry.pre];
+		entry.post_token = vocab[entry.post];
+		entry.resolved_token = vocab[entry.resolved];
+
+		std::string key = std::to_string(entry.pre_token) + ":" + std::to_string(entry.post_token);	
+		vocab_merge_map[key] = entry;
+	}
 
 	return ctx;
 }
@@ -785,7 +873,7 @@ vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& in
 	std::vector<token_t> output_tokens;
 	if ( modality == MODALITY_NAR_LEN ) {
 		// inference len
-		int len = 75;
+		int len = 0;
 		if ( !len ) {
 			inputs.task = "len";
 			output_tokens = generate( ctx, inputs, 5, INFERENCE_MODE_LEN );
@@ -826,6 +914,7 @@ vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& in
 	return inputs.resp;
 }
 void VALL_E_API vall_e_free( vall_e_context_t* ctx ) {
+	espeak_Terminate();
 	encodec_free(ctx->encodec.ctx);
 	llama_free(ctx->llama.ctx);
 	llama_free_model(ctx->llama.model);
@@ -843,12 +932,13 @@ int main( int argc, char** argv ) {
 	params.cpu_threads = N_THREADS;
 	vall_e_context_t* ctx = vall_e_load( params );
 
+	std::string text = "Hello world.";
 	std::string prompt_path = "./data/prom.wav";
 	std::string output_path = "./data/resp.wav";
 	std::string language = "en";
 	int modality = MODALITY_NAR_LEN;
 
-	auto inputs = vall_e_prepare_inputs( ctx, "Hello world.", prompt_path, language );
+	auto inputs = vall_e_prepare_inputs( ctx, text, prompt_path, language );
 	auto output_audio_codes = vall_e_generate( ctx, inputs, modality );
 	write_audio_to_disk( decode_audio( ctx->encodec.ctx, output_audio_codes ), output_path );
 

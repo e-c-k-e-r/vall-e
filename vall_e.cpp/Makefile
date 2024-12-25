@@ -3,7 +3,7 @@ CXX 					= g++
 INCS 					+= -I./include
 LIBS 					+= -L./libs
 	
-LINKS 					+= -lggml -lggml-base -lllama -lencodec
+LINKS 					+= -lggml -lggml-base -lllama -lencodec -lespeak-ng
 FLAGS 					+= -march=native -O3
 
 SRCS 					:= $(shell find ./ -name "*.cpp")

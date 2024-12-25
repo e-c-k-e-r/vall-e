@@ -8,7 +8,7 @@ At the moment it's ***very*** work in progress.
 
 Populate `./include/` with the `ggml`, `llama.cpp`, and `encodec.cpp` headers.
 
-Populate `./libs/` with the compiled libraries of `llama.cpp` and `encodec.cpp`.
+Populate `./libs/` with the compiled libraries of `llama.cpp`, `encodec.cpp`, and `espeak-ng`.
 
 Run `make`.
 
@@ -26,10 +26,10 @@ Run `make`.
 	* [x] load the quantized model
 	* [x] orchestrate the required embeddings
 	* [x] juggle the output head / classifier properly
-* [ ] phonemize text
+* [x] phonemize text
 	* with the help of espeak-ng
-* [ ] tokenize phonemes
-	* the tokenizer is being a huge thorn on actual sequences
+* [x] tokenize phonemes
+	* tokenize with `llama_tokenize` instead of a homebrewed method because the tokenizer is being a huge thorn
 * [x] load audio from disk
 * [x] encode audio
 * [x] sum embeddings for the `prom` and prior `resp`s

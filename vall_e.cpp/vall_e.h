@@ -1,13 +1,15 @@
 #pragma once
 
-#include "llama.h"
-#include "encodec.h"
-
-#include "dr_wav.h"
-
+// C++ deps
 #include <string>
 #include <vector>
 #include <unordered_map>
+
+// external deps
+#include <llama.h>
+#include <encodec.h>
+#include <dr_wav.h>
+#include <espeak-ng/speak_lib.h>
 
 // to-do: copy over import/export stuff from engine project (because I don't remember how I set it up in <uf/config.h>)
 #define VALL_E_API
@@ -71,6 +73,16 @@ struct score_t {
 	float value;
 
 	bool operator<( const score_t& that ) const { return this->value < that.value; }
+};
+
+struct merge_entry_t {
+	std::u32string pre;
+	std::u32string post;
+	std::u32string resolved;
+
+	token_t pre_token;
+	token_t post_token;
+	token_t resolved_token;
 };
 
 struct vall_e_context_params_t {
