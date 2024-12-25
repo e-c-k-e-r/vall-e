@@ -37,7 +37,7 @@ const int MODALITY_NAR_LEN = 1;
 const int MAX_DURATION = 75 * 12;
 const int CTX_SIZE = 2048;
 const int N_THREADS = 8;
-const int N_GPU_LAYERS = 0;
+const int N_GPU_LAYERS = 99;
 
 typedef llama_token token_t;
 typedef std::vector<std::vector<token_t>> vall_e_audio_codes_t;
@@ -86,12 +86,21 @@ struct merge_entry_t {
 };
 
 struct vall_e_context_params_t {
-	std::string model_path;
-	std::string encodec_path;
+	std::string model_path = "./data/vall_e.gguf";
+	std::string encodec_path = "./data/encodec.bin";
 	int32_t gpu_layers = N_GPU_LAYERS;
-	int32_t cpu_threads = N_THREADS;
+	int32_t n_threads = N_THREADS;
 	int32_t ctx_size = CTX_SIZE;
 	bool verbose = false;
+};
+struct vall_e_args_t {
+	std::string text = "Hello world.";
+	std::string prompt_path = "./data/prom.wav";
+	std::string output_path = "./data/resp.wav";
+	std::string language = "en";
+	int modality = MODALITY_NAR_LEN;
+	int max_steps = 30;
+	int max_duration = 75 * 12;
 };
 // stores everything needed for vall_e.cpp
 struct vall_e_context_t {
@@ -151,6 +160,8 @@ int32_t VALL_E_API vall_e_inputs_map_get_classifier_idx( io_map_t& inputs_map, c
 void VALL_E_API vall_e_inputs_map_init( io_map_t&, llama_model* model );
 
 // context management
+void VALL_E_API vall_e_print_usage( char** argv, const vall_e_context_params_t& params, const vall_e_args_t& args );
+bool VALL_E_API vall_e_args_parse( int argc, char** argv, vall_e_context_params_t& params, vall_e_args_t& args );
 vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params );
 vall_e_inputs_t vall_e_prepare_inputs( vall_e_context_t* ctx, const std::string& text, const std::string& prompt_path, const std::string& lang );
 vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, int modality = MODALITY_NAR_LEN );

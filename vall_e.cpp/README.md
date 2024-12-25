@@ -42,9 +42,9 @@ Run `make`.
 * [x] working `NAR` output
 	* [x] `NAR` sampling
 * [x] decode audio to disk
-* [ ] a functional CLI
+* [x] a functional CLI
 * [x] actually make it work
-* [ ] clean up to make the code usable
+* [x] clean up to make the code usable elsewhere
 * [ ] feature parity with the PyTorch version
 	* [ ] vocos
 	* [ ] additional tasks (`stt`, `ns`, `sr`, samplers)
