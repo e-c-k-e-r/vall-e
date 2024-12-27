@@ -1,5 +1,6 @@
 #define DR_WAV_IMPLEMENTATION
 #include "vall_e.h"
+#include "vall_e-impl.h" // stores everything that isn't necessary for exporting
 
 #include <cmath>
 #include <cstdio>
@@ -39,19 +40,43 @@ io_t io_ranges[] = {
 	{ "resps|NAR:0:0", 16677, 17702, 8 }, 
 };
 
-// stored here because I tokenize the merges
-// I can't be assed to figure out the tokenizer right now
+// lang map
+std::unordered_map<std::string, token_t> lang_map = {
+	{ "en", 0 },
+	{ "ja", 1 },
+	{ "de", 2 },
+	{ "fr", 3 },
+	{ "zh", 4 },
+	{ "ko", 5 },
+};
+std::unordered_map<std::string, token_t> task_map = {
+	{ "tts", 0 },
+	{ "tts-c", 1 },
+	{ "ns", 2 },
+	{ "sr", 3 },
+	{ "tse", 4 },
+	{ "soe", 5 },
+	{ "mask", 6 },
+	{ "eoe", 7 },
+	{ "stt", 8 },
+
+	{ "len", 0 },
+	{ "nse", 6 },
+	{ "cse", 6 },
+};
+
 // u32string because encoding agony
 std::unordered_map<std::u32string, token_t> vocab = {	
 	{U"<unk>",0},{U"<bos>",1},{U"</eos>",2},{U"<mask>",3},{U" ",4},{U"ᵝ",4},{U"!",5},{U"\"",6},{U"(",7},{U"{",7},{U"[",7},{U")",8},{U"}",8},{U"]",8},{U",",9},{U"-",10},{U".",11},{U"1",211},{U"—",10},{U"“",6},{U"”",81},{U"ˇ",6},{U"ˉ",12},{U"ˊ",79},{U"ˋ",80},{U"_",81},{U":",13},{U";",14},{U"?",15},{U"a",16},{U"ä",16},{U"ɒ",16},{U"b",17},{U"c",18},{U"d",19},{U"e",20},{U"f",21},{U"h",22},{U"i",23},{U"ĩ",23},{U"j",24},{U"k",25},{U"l",26},{U"m",27},{U"n",28},{U"ɴ",28},{U"ɲ",28},{U"o",29},{U"̞",29},{U"p",30},{U"ɸ",30},{U"q",31},{U"r",32},{U"ɽ",32},{U"ʁ",32},{U"s",33},{U"t",34},{U"u",35},{U"ø",35},{U"œ",35},{U"y",35},{U"ɣ",35},{U"ũ",35},{U"v",36},{U"w",37},{U"ʍ",37},{U"x",38},{U"z",39},{U"¡",40},{U"«",41},{U"»",42},{U"¿",43},{U"æ",44},{U"ç",45},{U"ð",46},{U"ŋ",47},{U"ɐ",48},{U"ɑ",49},{U"ɔ",50},{U"ɕ",51},{U"ə",52},{U"ɚ",53},{U"ɛ",54},{U"ɜ",55},{U"ɟ",56},{U"ɡ",57},{U"ɪ",58},{U"ɬ",59},{U"ɯ",60},{U"ɹ",61},{U"ɾ",62},{U"ʃ",63},{U"ʈ",64},{U"ʊ",65},{U"ʋ",66},{U"ʌ",67},{U"ʑ",68},{U"ʒ",69},{U"ʔ",70},{U"ʲ",71},{U"ˈ",72},{U"ˌ",73},{U"ː",74},{U"̃",75},{U"̩",76},{U"θ",77},{U"ᵻ",78},{U"…",82},{U"ˈɛ",83},{U"iː",84},{U"aɪ",85},{U"nd",86},{U"ˈɪ",87},{U"eɪ",88},{U"ˈæ",89},{U"ðə",90},{U"oʊ",91},{U"ɑː",92},{U"ˈeɪ",93},{U"ən",94},{U"uː",95},{U"ˈʌ",96},{U"ˈaɪ",97},{U"st",98},{U"ˈɔ",99},{U"ˈoʊ",100},{U"ˈiː",101},{U"ˈɑː",102},{U"ænd",103},{U"ːɹ",104},{U"ɪŋ",105},{U"ɜː",106},{U"ɪn",107},{U"tə",108},{U"ʌv",109},{U"aʊ",110},{U"əl",111},{U"ˈuː",112},{U"tʃ",113},{U"ɪz",114},{U"ˈɜː",115},{U"ˌʌ",116},{U"æt",117},{U"dʒ",118},{U"ˈɔː",119},{U"ɪt",120},{U"ˈaʊ",121},{U"ɚɹ",122},{U"ˈɛn",123},{U"wʌ",124},{U"li",125},{U"hiː",126},{U"ˌɛ",127},{U"wɪ",128},{U"wʌz",129},{U"ðæt",130},{U"juː",131},{U"oːɹ",132},{U"ðɪ",133},{U"sˈɛ",134},{U"ˌɪ",135},{U"ˈɑːɹ",136},{U"nt",137},{U"ˈʊ",138},{U"ənt",139},{U"hɪz",140},{U"ˌɑː",141},{U"hæ",142},{U"ɔːɹ",143},{U"ˈɛɹ",144},{U"wɪð",145},{U"ᵻd",146},{U"ˈoːɹ",147},{U"pɹ",148},{U"ˈɔːl",149},{U"mˌ",150},{U"ʃən",151},{U"kt",152},{U"ˌoʊ",153},{U"ˈɔːɹ",154},{U"fɹ",155},{U"æz",156},{U"ˌʌt",157},{U"ʃiː",158},{U"ˈɛl",159},{U"ˌaʊ",160},{U"ˈʌn",161},{U"əs",162},{U"hɜː",163},{U"lˈaɪ",164},{U"ˈæn",165},{U"ˈɪɹ",166},{U"ʊd",167},{U"ɹᵻ",168},{U"ld",169},{U"bˌʌt",170},{U"ks",171},{U"nˈoʊ",172},{U"hæd",173},{U"ɾɚ",174},{U"ɛɹ",175},{U"ˈɪŋ",176},{U"ɡɹ",177},{U"nˌɑː",178},{U"ɔn",179},{U"vɚ",180},{U"maɪ",181},{U"fɔːɹ",182},{U"ðɚ",183},{U"tʊ",184},{U"ðɛɹ",185},{U"nˌɑːt",186},{U"ˈʌm",187},{U"tɹ",188},{U"sˈiː",189},{U"ʌvðə",190},{U"mˈɪ",191},{U"hˈæ",192},{U"ˌɪm",193},{U"lˈeɪ",194},{U"ɪk",195},{U"sp",196},{U"hˌɪm",197},{U"ɐn",198},{U"ðeɪ",199},{U"lˈɪ",200},{U"ɾi",201},{U"lˈɛ",202},{U"bɹ",203},{U"kɹ",204},{U"lˈæ",205},{U"ˈɪl",206},{U"jˈuː",207},{U"ʌm",208},{U"mˌiː",209},{U"bᵻ",210},{U"wˈʌn",211},{U"ˌɪn",212},{U"ˈɪn",213},{U"ˈoʊn",214},{U"sˈɛd",215},{U"biː",216},{U"ˈɛd",217},{U"ˈaɪt",218},{U"baɪ",219},{U"fɹʌm",220},{U"ɪs",221},{U"ɚz",222},{U"ðɪs",223},{U"əns",224},{U"bəl",225},{U"ɪf",226},{U"ɪnðə",227},{U"əm",228},{U"ᵻz",229},{U"ˌuː",230},{U"wˈeɪ",231},{U"ft",232},{U"wiː",233},{U"stɹ",234},{U"lˈiː",235},{U"iːz",236},{U"pt",237},{U"jʊ",238},{U"ɚd",239},{U"ˌaɪ",240},{U"kw",241},{U"ˌɔn",242},{U"ˈaɪd",243},{U"ɪm",244},{U"ˈʌst",245},{U"ˈoʊld",246},{U"ts",247},{U"ˌɪtʃ",248},{U"sˌoʊ",249},{U"dˈɪ",250},{U"ɑːɹ",251},{U"hɐ",252},{U"sˈeɪ",253},{U"ɾᵻd",254},{U"wˌɪtʃ",255},
 };
-
+// cringe list of merges to later process and fill out the map for referencing merges
 std::vector<merge_entry_t> vocab_merges = {
 	{U"ˈ", U"ɛ"},{U"i", U"ː"},{U"a", U"ɪ"},{U"n", U"d"},{U"ˈ", U"ɪ"},{U"e", U"ɪ"},{U"ˈ", U"æ"},{U"ð", U"ə"},{U"o", U"ʊ"},{U"ɑ", U"ː"},{U"ˈ", U"eɪ"},{U"ə", U"n"},{U"u", U"ː"},{U"ˈ", U"ʌ"},{U"ˈ", U"aɪ"},{U"s", U"t"},{U"ˈ", U"ɔ"},{U"ˈ", U"oʊ"},{U"ˈ", U"iː"},{U"ˈ", U"ɑː"},{U"æ", U"nd"},{U"ː", U"ɹ"},{U"ɪ", U"ŋ"},{U"ɜ", U"ː"},{U"ɪ", U"n"},{U"t", U"ə"},{U"ʌ", U"v"},{U"a", U"ʊ"},{U"ə", U"l"},{U"ˈ", U"uː"},{U"t", U"ʃ"},{U"ɪ", U"z"},{U"ˈ", U"ɜː"},{U"ˌ", U"ʌ"},{U"æ", U"t"},{U"d", U"ʒ"},{U"ˈɔ", U"ː"},{U"ɪ", U"t"},{U"ˈ", U"aʊ"},{U"ɚ", U"ɹ"},{U"ˈɛ", U"n"},{U"w", U"ʌ"},{U"l", U"i"},{U"h", U"iː"},{U"ˌ", U"ɛ"},{U"w", U"ɪ"},{U"wʌ", U"z"},{U"ð", U"æt"},{U"j", U"uː"},{U"o", U"ːɹ"},{U"ð", U"ɪ"},{U"s", U"ˈɛ"},{U"ˌ", U"ɪ"},{U"ˈɑː", U"ɹ"},{U"n", U"t"},{U"ˈ", U"ʊ"},{U"ən", U"t"},{U"h", U"ɪz"},{U"ˌ", U"ɑː"},{U"h", U"æ"},{U"ɔ", U"ːɹ"},{U"ˈɛ", U"ɹ"},{U"wɪ", U"ð"},{U"ᵻ", U"d"},{U"ˈ", U"oːɹ"},{U"p", U"ɹ"},{U"ˈɔː", U"l"},{U"m", U"ˌ"},{U"ʃ", U"ən"},{U"k", U"t"},{U"ˌ", U"oʊ"},{U"ˈɔ", U"ːɹ"},{U"f", U"ɹ"},{U"æ", U"z"},{U"ˌʌ", U"t"},{U"ʃ", U"iː"},{U"ˈɛ", U"l"},{U"ˌ", U"aʊ"},{U"ˈʌ", U"n"},{U"ə", U"s"},{U"h", U"ɜː"},{U"l", U"ˈaɪ"},{U"ˈæ", U"n"},{U"ˈɪ", U"ɹ"},{U"ʊ", U"d"},{U"ɹ", U"ᵻ"},{U"l", U"d"},{U"b", U"ˌʌt"},{U"k", U"s"},{U"n", U"ˈoʊ"},{U"hæ", U"d"},{U"ɾ", U"ɚ"},{U"ɛ", U"ɹ"},{U"ˈɪ", U"ŋ"},{U"ɡ", U"ɹ"},{U"n", U"ˌɑː"},{U"ɔ", U"n"},{U"v", U"ɚ"},{U"m", U"aɪ"},{U"f", U"ɔːɹ"},{U"ð", U"ɚ"},{U"t", U"ʊ"},{U"ð", U"ɛɹ"},{U"nˌɑː", U"t"},{U"ˈʌ", U"m"},{U"t", U"ɹ"},{U"s", U"ˈiː"},{U"ʌv", U"ðə"},{U"m", U"ˈɪ"},{U"h", U"ˈæ"},{U"ˌɪ", U"m"},{U"l", U"ˈeɪ"},{U"ɪ", U"k"},{U"s", U"p"},{U"h", U"ˌɪm"},{U"ɐ", U"n"},{U"ð", U"eɪ"},{U"l", U"ˈɪ"},{U"ɾ", U"i"},{U"l", U"ˈɛ"},{U"b", U"ɹ"},{U"k", U"ɹ"},{U"l", U"ˈæ"},{U"ˈɪ", U"l"},{U"j", U"ˈuː"},{U"ʌ", U"m"},{U"mˌ", U"iː"},{U"b", U"ᵻ"},{U"w", U"ˈʌn"},{U"ˌ", U"ɪn"},{U"ˈɪ", U"n"},{U"ˈoʊ", U"n"},{U"sˈɛ", U"d"},{U"b", U"iː"},{U"ˈɛ", U"d"},{U"ˈaɪ", U"t"},{U"b", U"aɪ"},{U"fɹ", U"ʌm"},{U"ɪ", U"s"},{U"ɚ", U"z"},{U"ðɪ", U"s"},{U"ən", U"s"},{U"b", U"əl"},{U"ɪ", U"f"},{U"ɪn", U"ðə"},{U"ə", U"m"},{U"ᵻ", U"z"},{U"ˌ", U"uː"},{U"w", U"ˈeɪ"},{U"f", U"t"},{U"w", U"iː"},{U"st", U"ɹ"},{U"l", U"ˈiː"},{U"iː", U"z"},{U"p", U"t"},{U"j", U"ʊ"},{U"ɚ", U"d"},{U"ˌ", U"aɪ"},{U"k", U"w"},{U"ˌ", U"ɔn"},{U"ˈaɪ", U"d"},{U"ɪ", U"m"},{U"ˈʌ", U"st"},{U"ˈoʊ", U"ld"},{U"t", U"s"},{U"ˌɪ", U"tʃ"},{U"s", U"ˌoʊ"},{U"d", U"ˈɪ"},{U"ɑː", U"ɹ"},{U"h", U"ɐ"},{U"s", U"ˈeɪ"},{U"ɾ", U"ᵻd"},{U"w", U"ˌɪtʃ"},
 };
+// merge map to reference when tokenizing text
 std::unordered_map<std::string, merge_entry_t> vocab_merge_map = {};
 
-std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor ) {
+std::vector<float> read_2d_tensor( struct ggml_tensor* tensor ) {
 	size_t size = tensor->ne[0] * tensor->ne[1];
 	std::vector<float> res( size );
 	
@@ -65,7 +90,7 @@ std::vector<float> VALL_E_API read_2d_tensor( struct ggml_tensor* tensor ) {
 	return res;
 }
 /*
-ggml_tensor* VALL_E_API view_2d_tensor( struct ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim ) {
+ggml_tensor* view_2d_tensor( struct ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim ) {
 	// to-do: implement other dim
 	if ( start < 0 ) start = tensor->ne[1] + start;
 	if ( end < 0 ) end = tensor->ne[1] + end;
@@ -86,7 +111,7 @@ ggml_tensor* VALL_E_API view_2d_tensor( struct ggml_tensor* tensor, int32_t star
 	return res;
 }
 */
-ggml_tensor* VALL_E_API view_2d_tensor( struct ggml_context* ctx, struct ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim ) {
+ggml_tensor* view_2d_tensor( struct ggml_context* ctx, struct ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim ) {
 	// to-do: implement other dim
 	if ( start < 0 ) start = tensor->ne[1] + start;
 	if ( end < 0 ) end = tensor->ne[1] + end;
@@ -96,7 +121,7 @@ ggml_tensor* VALL_E_API view_2d_tensor( struct ggml_context* ctx, struct ggml_te
 	return res;
 }
 
-void VALL_E_API print_tokens( const std::vector<token_t>& tokens, const std::string& prefix ) {
+void print_tokens( const std::vector<token_t>& tokens, const std::string& prefix ) {
 	printf("%s[", prefix.c_str());
 	for ( auto i = 0; i < tokens.size(); ++i ) {
 		printf("%i%s", tokens[i], i + 1 < tokens.size() ? ", " : "");
@@ -104,18 +129,18 @@ void VALL_E_API print_tokens( const std::vector<token_t>& tokens, const std::str
 	printf("]\n");
 }
 
-const io_t& VALL_E_API vall_e_inputs_map_get( io_map_t& io_map, const std::string& name ) {
+const io_t& vall_e_inputs_map_get( io_map_t& io_map, const std::string& name ) {
 	return io_map.io[name];
 }
-const float* VALL_E_API vall_e_inputs_map_get_embeddings_p( io_map_t& io_map, const std::string& name ) {
+const float* vall_e_inputs_map_get_embeddings_p( io_map_t& io_map, const std::string& name ) {
 	return io_map.io[name].embds.data();	
 }
 
-int32_t VALL_E_API vall_e_inputs_map_get_classifier_idx( io_map_t& io_map, const std::string& name ) {
+int32_t vall_e_inputs_map_get_classifier_idx( io_map_t& io_map, const std::string& name ) {
 	return io_map.io[name].head_idx;
 }
 
-void VALL_E_API vall_e_inputs_map_init( io_map_t& io_map, llama_model* model ) {
+void vall_e_inputs_map_init( io_map_t& io_map, llama_model* model ) {
 	auto n_embd = llama_n_embd( model );
 	auto n_vocab = llama_n_vocab( model );
 	
@@ -187,7 +212,7 @@ void VALL_E_API vall_e_inputs_map_init( io_map_t& io_map, llama_model* model ) {
 }
 
 // maps embeddings easily
-std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<token_t>& tokens, int n_embd, const float* embds ) {
+std::vector<std::vector<float>> map_embeddings( const std::vector<token_t>& tokens, int n_embd, const float* embds ) {
 	std::vector<std::vector<float>> embedded( tokens.size() );
 	for ( auto i = 0; i < tokens.size(); ++i ) {
 		embedded[i].insert( embedded[i].end(), embds + (tokens[i] * n_embd), embds + ((tokens[i]+1) * n_embd) );
@@ -197,7 +222,7 @@ std::vector<std::vector<float>> VALL_E_API map_embeddings( const std::vector<tok
 
 // handles adding either a token OR the embedding of that token into the batch
 // this really, really helps avoid needing to abuse the tokenizer
-void VALL_E_API batch_add( llama_batch& batch, token_t id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids ) {
+void batch_add( llama_batch& batch, token_t id, int n_embd, const float* embds, llama_pos pos, bool output, const std::vector<llama_seq_id> & seq_ids ) {
 	GGML_ASSERT(batch.seq_id[batch.n_tokens] && "llama_batch size exceeded");
 
 	// insert raw embedding instead
@@ -219,7 +244,7 @@ void VALL_E_API batch_add( llama_batch& batch, token_t id, int n_embd, const flo
 	batch.n_tokens++;
 }
 // reads a waveform from disk
-std::vector<float> VALL_E_API read_audio_from_disk( const std::string& path ) {
+std::vector<float> read_audio_from_disk( const std::string& path ) {
 	std::vector<float> res;
 
 	uint32_t channels;
@@ -248,7 +273,7 @@ std::vector<float> VALL_E_API read_audio_from_disk( const std::string& path ) {
 	return res;
 }
 // writes a waveform to disk
-void VALL_E_API write_audio_to_disk( const std::vector<float>& wavform, const std::string& path ) {
+void write_audio_to_disk( const std::vector<float>& wavform, const std::string& path ) {
 	drwav_data_format format;
 	format.bitsPerSample = 32;
 	format.sampleRate = 24000;
@@ -264,7 +289,7 @@ void VALL_E_API write_audio_to_disk( const std::vector<float>& wavform, const st
 	fprintf(stderr, "%s: Number of frames written = %lld.\n", __func__, frames);
 }
 // reads a waveform from disk then encodes it
-std::vector<std::vector<int32_t>> VALL_E_API encode_audio( struct encodec_context* ectx, const std::vector<float>& wavform ) {
+std::vector<std::vector<int32_t>> encode_audio( struct encodec_context* ectx, const std::vector<float>& wavform ) {
 	// compress audio
 	if (!encodec_compress_audio(ectx, wavform.data(), wavform.size(), 1)) {
 		fprintf(stderr, "%s: error during compression \n", __func__);
@@ -285,7 +310,7 @@ std::vector<std::vector<int32_t>> VALL_E_API encode_audio( struct encodec_contex
 	return res;
 }
 // decodes a 2D codebook into a waveform
-std::vector<float> VALL_E_API decode_audio( struct encodec_context* ectx, const std::vector<std::vector<int32_t>>& codes ) {
+std::vector<float> decode_audio( struct encodec_context* ectx, const std::vector<std::vector<int32_t>>& codes ) {
 	int n_codebooks = codes.size();
 	int n_frames = codes[0].size();
 	
@@ -310,7 +335,7 @@ std::vector<float> VALL_E_API decode_audio( struct encodec_context* ectx, const 
 }
 
 // sums embeddings over a 2D "tensor"
-std::vector<std::vector<float>> VALL_E_API sum_embeddings( const std::vector<std::vector<token_t>>& inputs, int n_embd, int rvq_l, const float** embds, int mode ) {
+std::vector<std::vector<float>> sum_embeddings( const std::vector<std::vector<token_t>>& inputs, int n_embd, int rvq_l, const float** embds, int mode ) {
 	auto n_tokens = inputs[0].size();
 
 	std::vector<std::vector<float>> res( n_tokens, std::vector<float>( n_embd, 0.0 ) );
@@ -336,7 +361,7 @@ std::vector<std::vector<float>> VALL_E_API sum_embeddings( const std::vector<std
 	return res;
 }
 
-std::vector<float> VALL_E_API soft_max( int n_logits, const float* logits ) {
+std::vector<float> soft_max( int n_logits, const float* logits ) {
 	std::vector<float> res( n_logits, 0.0f );
 	std::vector<float> expd( n_logits, 0.0f );
 	float denom = 0.0f;
@@ -353,7 +378,7 @@ std::vector<float> VALL_E_API soft_max( int n_logits, const float* logits ) {
 	return res;
 }
 
-std::vector<float> VALL_E_API log_soft_max( int n_logits, const float* logits ) {
+std::vector<float> log_soft_max( int n_logits, const float* logits ) {
 	std::vector<float> res( n_logits, 0.0f );
 	float denom = 0.0f;
 
@@ -368,7 +393,7 @@ std::vector<float> VALL_E_API log_soft_max( int n_logits, const float* logits ) 
 	return res;
 }
 
-void VALL_E_API fill_batch( llama_batch& batch, vall_e_inputs_t& inputs, io_map_t& io_map, int mode ) {
+void fill_batch( llama_batch& batch, vall_e_inputs_t& inputs, io_map_t& io_map, int mode ) {
 	// keeps track of the position for each sequence
 	size_t pos = 0;
 	auto n_embd = io_map.n_embd;
@@ -402,18 +427,25 @@ void VALL_E_API fill_batch( llama_batch& batch, vall_e_inputs_t& inputs, io_map_
 		vall_e_inputs_map_get_embeddings_p(io_map, "resps|NAR:0:0"),
 	};
 
+	token_t lang_token = lang_map[inputs.lang];
+	token_t task_token = task_map[inputs.task];
+
 	// insert text tokens
 	for ( auto& id : inputs.phn ) batch_add( batch, id, n_embd, text_embds, pos++, false );
 	batch_add( batch, 0, n_embd, sep_embds, pos++, false );
 	pos = 0;
 	// insert lang token
-	batch_add( batch, inputs.lang, n_embd, lang_embds, pos++, false );
+	batch_add( batch, lang_token, n_embd, lang_embds, pos++, false );
 	batch_add( batch, 0, n_embd, sep_embds, pos++, false );
 	pos = 0;
 	// insert rvq level token
 	batch_add( batch, inputs.rvq_l, n_embd, rvq_l_embds, pos++, false );
 	batch_add( batch, 0, n_embd, sep_embds, pos++, false );
 	pos = 0;
+	// input task token if needed
+	if ( task_token > 0 ) {
+		batch_add( batch, task_token, n_embd, task_embds, pos++, false );
+	}
 	// insert prom tokens
 	auto summed_proms_embds = sum_embeddings( inputs.prom, n_embd, inputs.rvq_l, prom_embds );
 	for ( auto i = 0; i < summed_proms_embds.size(); ++i ) {
@@ -439,13 +471,13 @@ void VALL_E_API fill_batch( llama_batch& batch, vall_e_inputs_t& inputs, io_map_
 }
 
 // generation code, should handle all modalities easily
-std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, int max_tokens, int mode, bool verbose ) {
+std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, int max_tokens, int mode, bool verbose ) {
 	bool causal = true; // sample autoregressively or not
 	int n_outputs = 0; // number of output tokens to expect
 
 	// create batch	(targetting embeddings instead of tokens)
-	llama_batch batch = llama_batch_init( ctx->params.ctx_size, ctx->io_map.n_embd, ctx->params.ctx_size );
-	fill_batch( batch, inputs, ctx->io_map, mode );
+	llama_batch batch = llama_batch_init( ctx->params.ctx_size, ctx->io_map->n_embd, ctx->params.ctx_size );
+	fill_batch( batch, inputs, *ctx->io_map, mode );
 
 	// determine how many outputs we need
 	for ( auto i = 0; i < batch.n_tokens; ++i ) {
@@ -485,7 +517,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 		embd_name = "resps|NAR:0:0";
 	}
 
-	auto& io = vall_e_inputs_map_get(ctx->io_map, embd_name);
+	auto& io = vall_e_inputs_map_get(*ctx->io_map, embd_name);
 	const float* embds = io.embds.data();
 
 	int32_t n_embd = io.n_embd;
@@ -535,7 +567,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 			// store token
 			output_tokens.emplace_back(t);
 			// update batch with token
-			batch_add( batch, t, ctx->io_map.n_embd, embds, output_tokens.size(), true );
+			batch_add( batch, t, ctx->io_map->n_embd, embds, output_tokens.size(), true );
 			
 			if ( verbose ) print_tokens( output_tokens );
 		}
@@ -560,7 +592,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 		null_input.phn = {1, 2}; // <bos></eos>
 		null_input.resp.resize(1);
 
-		llama_batch null_batch = llama_batch_init( ctx->params.ctx_size, ctx->io_map.n_embd, ctx->params.ctx_size );
+		llama_batch null_batch = llama_batch_init( ctx->params.ctx_size, ctx->io_map->n_embd, ctx->params.ctx_size );
 		
 		// token scores to reference for masking
 		std::vector<float> scores(n_outputs, 1.0);
@@ -607,11 +639,11 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 			// to-do: only update the embeddings instead
 			batch.n_tokens = 0;
 			inputs.resp[0] = output_tokens;
-			fill_batch( batch, inputs, ctx->io_map, mode );
+			fill_batch( batch, inputs, *ctx->io_map, mode );
 			// update null batch
 			null_input.resp[0] = output_tokens;
 			null_batch.n_tokens = 0;
-			fill_batch( null_batch, inputs, ctx->io_map, mode );
+			fill_batch( null_batch, inputs, *ctx->io_map, mode );
 
 			// cfg decode
 			if ( llama_decode(ctx->llama.ctx, null_batch) ) {
@@ -717,7 +749,7 @@ std::vector<token_t> VALL_E_API generate( vall_e_context_t* ctx, vall_e_inputs_t
 	return output_tokens;
 }
 
-std::vector<token_t> VALL_E_API phonemize( vall_e_context_t* ctx, const std::string& text, const std::string& language ) {	
+std::vector<token_t> phonemize( vall_e_context_t* ctx, const std::string& text, const std::string& language ) {	
 	std::vector<token_t> tokens;
 
 	// phonemize text
@@ -767,6 +799,7 @@ std::vector<token_t> VALL_E_API phonemize( vall_e_context_t* ctx, const std::str
 	}
 	tokens.emplace_back(2);
 
+	if ( ctx->params.verbose ) print_tokens( tokens, "Phonemes: " );
 
 	/*
 	// to-do: fix terminate called after throwing an instance of 'std::out_of_range'
@@ -782,7 +815,7 @@ std::vector<token_t> VALL_E_API phonemize( vall_e_context_t* ctx, const std::str
 	return tokens;
 }
 
-void VALL_E_API vall_e_print_usage( char** argv, vall_e_context_params_t& params, vall_e_args_t& args ) {
+void vall_e_print_usage( char** argv, vall_e_context_params_t& params, vall_e_args_t& args ) {
     fprintf(stderr, "usage: %s [options]\n", argv[0]);
     fprintf(stderr, "\n");
     fprintf(stderr, "options:\n");
@@ -803,6 +836,8 @@ void VALL_E_API vall_e_print_usage( char** argv, vall_e_context_params_t& params
     fprintf(stderr, "                                        Input text prompt (default: %s)\n", args.text.c_str());
     fprintf(stderr, "  -l TEXT, --language TEXT\n");
     fprintf(stderr, "                                        Language for input text / output response (default: %s)\n", args.language.c_str());
+    fprintf(stderr, "  -ts TASK, --task TASK\n");
+    fprintf(stderr, "                                        Inferencing task (default: %s, accepts ['tts', 'stt', 'ns', 'sr'])\n", args.task);
     fprintf(stderr, "  -mode MODE, --modality MODE\n");
     fprintf(stderr, "                                        Modality for inferencing (default: %s, accepts ['ar+nar', 'nar-len'])\n", args.modality == MODALITY_NAR_LEN ? "nar-len" : "ar+nar");
     fprintf(stderr, "  -ms N, --max-steps N\n");
@@ -815,7 +850,7 @@ void VALL_E_API vall_e_print_usage( char** argv, vall_e_context_params_t& params
     fprintf(stderr, "                                        Output audio wav (default: %s)\n", args.output_path.c_str());
     fprintf(stderr, "\n");
 }
-bool VALL_E_API vall_e_args_parse( int argc, char** argv, vall_e_context_params_t& params, vall_e_args_t& args ) {
+bool vall_e_args_parse( int argc, char** argv, vall_e_context_params_t& params, vall_e_args_t& args ) {
 	for ( int i = 1; i < argc; i++ ) {
 		std::string arg = argv[i];
 
@@ -835,6 +870,8 @@ bool VALL_E_API vall_e_args_parse( int argc, char** argv, vall_e_context_params_
 			args.text = argv[++i];
 		} else if (arg == "-l" || arg == "--language") {
 			args.language = argv[++i];
+		} else if (arg == "-ts" || arg == "--task") {
+			args.task = argv[++i];
 		} else if (arg == "-mode" || arg == "--modality") {
 			args.modality = argv[++i] == "ar+nar" ? MODALITY_AR_NAR : MODALITY_NAR_LEN;
 		} else if (arg == "-ms" || arg == "--max-steps") {
@@ -859,8 +896,9 @@ bool VALL_E_API vall_e_args_parse( int argc, char** argv, vall_e_context_params_
 	return true;
 }
 
-vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params ) {
+vall_e_context_t* vall_e_load( const vall_e_context_params_t& params ) {
 	vall_e_context_t* ctx = new vall_e_context_t();
+	ctx->io_map = new io_map_t();
 	ctx->params = params;
 
 	// setup ggml
@@ -905,7 +943,7 @@ vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params 
 	espeak_Initialize(AUDIO_OUTPUT_SYNCHRONOUS, 0, NULL, 0);
 
 	// setup vall_e.cpp
-	vall_e_inputs_map_init( ctx->io_map, ctx->llama.model );
+	vall_e_inputs_map_init( *ctx->io_map, ctx->llama.model );
 
 	// setup vocab things
 	for ( auto& entry : vocab_merges ) {
@@ -921,17 +959,15 @@ vall_e_context_t* VALL_E_API vall_e_load( const vall_e_context_params_t& params 
 
 	return ctx;
 }
-vall_e_inputs_t vall_e_prepare_inputs( vall_e_context_t* ctx, const std::string& text, const std::string& prompt_path, const std::string& language ) {
+vall_e_inputs_t  vall_e_prepare_inputs( vall_e_context_t* ctx, const std::string& text, const std::string& prompt_path, const std::string& language, const std::string& task ) {
+	// to-do: set members in initializer rather than in post
 	vall_e_inputs_t inputs;
 	
+	inputs.task = task;
+	inputs.rvq_l = 0;
 	inputs.phn = phonemize( ctx, text, language );
 	inputs.prom = encode_audio( ctx->encodec.ctx, read_audio_from_disk( prompt_path ) );
-	if ( language == "en" ) inputs.lang = 0;
-	else if ( language == "ja" ) inputs.lang = 1;
-	else if ( language == "de" ) inputs.lang = 2;
-	else if ( language == "fr" ) inputs.lang = 3;
-	else if ( language == "zh" ) inputs.lang = 4;
-	else if ( language == "ko" ) inputs.lang = 5;
+	inputs.lang = language;
 
 	return inputs;
 }
@@ -943,17 +979,20 @@ vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& in
 		// inference len
 		int len = 0;
 		if ( !len ) {
+			auto task = inputs.task;
 			inputs.task = "len";
 			output_tokens = generate( ctx, inputs, 5, INFERENCE_MODE_LEN, ctx->params.verbose );
 			{
+				// to-do: one liner this
 				int digit = 1;
 				for (auto it = output_tokens.rbegin(); it < output_tokens.rend(); ++it) {
 					len += (*it) * digit;
 					digit *= 10;
 				}
 			}
-			// cap for now
+			// cap duration
 			if ( len <= 0 || len > max_duration ) len = max_duration;
+			inputs.task = task;
 		}
 		// fill with mask tokens
 		inputs.resp.resize(1);
@@ -962,7 +1001,6 @@ vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& in
 		}
 
 		// inference NAR-len 0
-		inputs.task = "tts";
 		for ( auto l = 0; l < 8; ++l ) {
 			inputs.rvq_l = l;
 			output_tokens = generate( ctx, inputs, max_steps, l == 0 ? INFERENCE_MODE_NAR_DEMASK  : INFERENCE_MODE_NAR, ctx->params.verbose );
@@ -971,7 +1009,6 @@ vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& in
 		}
 	// AR+NAR
 	} else if ( modality == MODALITY_AR_NAR ){
-		inputs.task = "tts";
 		for ( auto l = 0; l < 8; ++l ) {
 			inputs.rvq_l = l;
 			output_tokens = generate( ctx, inputs, l == 0 ? max_duration : 1, l == 0 ? INFERENCE_MODE_AR  : INFERENCE_MODE_NAR, ctx->params.verbose );
@@ -981,18 +1018,17 @@ vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& in
 
 	return inputs.resp;
 }
-void VALL_E_API vall_e_free( vall_e_context_t* ctx ) {
+void vall_e_free( vall_e_context_t* ctx ) {
 	espeak_Terminate();
 	encodec_free(ctx->encodec.ctx);
 	llama_free(ctx->llama.ctx);
 	llama_free_model(ctx->llama.model);
-	ggml_free(ctx->io_map.ctx);
+	ggml_free(ctx->io_map->ctx);
+	delete ctx->io_map;
 	delete ctx;
 }
 
 int main( int argc, char** argv ) {
-	// to-do: parse CLI args
-
 	vall_e_context_params_t params;
 	vall_e_args_t args;
 

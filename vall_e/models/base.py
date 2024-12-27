@@ -694,7 +694,6 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				)
-				print( config )
 				self.model = LlamaClass(config)
 
 				# replace with desired attention
@@ -951,7 +950,7 @@ class Base(nn.Module):
 			# Base-line TTS task
 			# Sequence: <text><sep><rvq lvl><sep><prom><sep><resp>
 			# prom /may/ include <task> tokens inside to help guide things, per SpeechX
-			if f'<{task_type}>' in get_task_symmap() and task_type not in special_tasks:
+			if task_type in get_task_symmap() and task_type not in special_tasks:
 				# insert the text prompt
 				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
@@ -1092,7 +1091,7 @@ class Base(nn.Module):
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_embedding( input, quant_level ):
 			if isinstance(input, str):
-				return self.tasks_emb( torch.tensor( [ get_task_symmap()[f'<{input}>'] ], device=device, dtype=torch.int16) )
+				return self.tasks_emb( torch.tensor( [ get_task_symmap()[input] ], device=device, dtype=torch.int16) )
 
 			# get RVQ level 0, or up to targetted RVQ level inference
 			if self.version <= 4:
@@ -1348,14 +1347,8 @@ class Base(nn.Module):
 
 		# handles tasks where the prompt has task tokens injected in the middle
 		def prompt_input_to_token( input, quant_level ):
-			"""
 			if isinstance(input, str):
-				return torch.tensor( [ self.ignore_index ], device=device, dtype=torch.int16)
-			
-			return torch.tensor( [ self.ignore_index ] * input.shape[0], device=device, dtype=torch.int16)
-			"""
-			if isinstance(input, str):
-				return torch.tensor( [ get_task_symmap()[f'<{input}>'] ], device=device, dtype=torch.int16)
+				return torch.tensor( [ get_task_symmap()[input] ], device=device, dtype=torch.int16)
 
 			# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
 			if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):

@@ -121,6 +121,9 @@ With attention-based transformers, most embeddings can serve as a token itself a
 
 Other solutions such as TorToiSe makes use of additional embeddings/classifiers for each portion of the sequence as well.
 
+Other solutions will rely on conditioning latents or extracted features as the input. This *technically* isn't necessary since portions of the model seem to be allocated as an encoder anyways from the embeddings to some arbitrary depth, and as a decoder from some arbitrary depth to the output heads.
+* This might also mean it makes more sense to increase the model's size in-post by injecting new layers in the middle where it's outside these pseudo-encoder/decoder layers where it won't make any difference.
+
 ### Classifiers
 
 Classifiers are the final output head / projection layer that processes the last hidden states of a model into a probability distribution for each token. 
@@ -152,7 +155,7 @@ In reality, this seems to help govern the accent / general mannerisms associated
 * Consequently, since this does tie to accents more, ***extreme*** attention is to be paid to the dialects being trained against, instead of naively grouping, say, all of Spanish to one language code.
   * unfortunately, this does mean that audio annotated as English is dialect/accent-agnostic, per the dataset.
 
-This embedding probably helps the model with being able to perform cross-lingual outputs, but I did not do any experimentations on a model without this, as the reference `ar+nar-llama-8` was trained with this from the beginning with the small Japanese in my dataset anyhow (and maybe the `ar+nar-retnet-8` experiment).
+Some checkpoints of the model needs this for cross-lingual output, but the current checkpoints of the model doesn't seem to do this due to the attention heads deriving the language/accent from the phoneme sequences themselves rather than the language token due to a careless oversight.
 
 #### Tone Embedding
 
@@ -161,6 +164,8 @@ This embedding *should* provide information on the tone for the model to output 
 Should, since I do not actually make use of this anywhere, and the model is not trained against any tones. I would need to annotate my dataset based on tones *and* pick which tones I do want.
 
 This should most definitely help the model identify tone strongly even without needing to annotate for it, but it does an adequate job already with maintaining tone from a given input prompt.
+
+I imagine, like language/accent, this gets derived from the phoneme sequence itself rather than a guidance token.
 
 ### Audio Embeddings
 
@@ -230,11 +235,15 @@ In practice, this task is already implemented by providing the input audio to de
 I imagine training for this task will better help the model understand what is noise and what isn't, and can better strongly-er map utterances from the input audio prompt to use in the output, delivering better prompt adherance.
 * This also might help serve in helping the model identify effects applied to an utterance, and being able to maintain it in normal `tts` tasks, such as reverb or the audio quality itself (the "acoustic environment").
 
+This task can be briefly trained for decent results in-post.
+
 ##### Speech Removal
 
 This task `sr` aims to remove speech from a given audio, effectively serving as the reverse of denoising.
 
 As state above, this should help the model better identify what is noise and what isn't.
+
+This task can be briefly trained for decent results in-post.
 
 ##### Target Speech Extraction
 
@@ -258,6 +267,8 @@ The length predictor `len` task is required for a pure NAR model.
 
 This task will naively output a zero, then the length in base-10, followed by a stop token.
 
+This works because the model can already derive the length of a sequence when autoregressively decoding through the probability of emitting a `<stop>` token.
+
 #### Speech-to-Text
 
 The speech-To-text `stt` task transcribes a given piece of audio, by taking an input encoded audio, and outputting the text transcription.
@@ -274,11 +285,13 @@ This task will follow a reverse sequence of `<audio><language><RVQ level><output
 The model can be prompted in creative ways to yield some interesting behaviors:
 * prompting without an input audio prompt will have the model generate a random voice ~~at the "cost" of some unintelligible utterance at the beginning of the output response (despite doing no promptless training)~~.
   * classifier-free-guidance-aware training does fix this, but this property emerges without it.
-  * the AR is much better with this property, as the `NAR-len` gets crusty sometimes.
+  * the AR is much better with this property, as the `NAR-len` gets crusty sometimes as it will keep demasking on crust.
 * prompting with an input text prompt being the transcription of the input audio prompt will have the response follow very closely to the input prompt  (despite not doing input=output training).
   * this should allow for easy transcription editing without much fuss.
   * the `NAR-len` greatly exhibits this property, although it sometimes does keep any noise in the background.
   * extra care is required when doing this, as some checkpoints of the model will degrade completely the moment the prompt can't be directly referenced.
+* training without a language token will have the model derive the target language/accent from the phoneme sequence itself (it is a language model after all)
+* voice conversion is *possible* through demasking with the source prompt as the mask, but the current inferencing mechanism yields crust at the end of the output
 
 # `models/*`
 
@@ -288,7 +301,7 @@ This folder contains scripts relating to models and code for VALL-E use, from th
 
 This script implements Low-Ranking Adapters, to allow for cheaper and easier finetuning of existing modules.
 
-At the moment, two approaches are offered, through replacing `nn.Linear` outright, or parameterizing a `nn.Liner`. The latter is used by default(?).
+At the moment, two approaches are offered, through replacing `nn.Linear` outright, or parameterizing a `nn.Linear`. The latter is used by default(?).
 
 ## `models/base.py`
 
@@ -303,6 +316,8 @@ This script implements the core underlying model for VALL-E. This handle:
 
 This script aims to implement everything as required per VALL-E agnostically, to allow for different implementations to contain little extra code.
 
+A very naive implementation of using the model can be found under the `__main__` invocation.
+
 ## `models/ar_nar.py`
 
 This script implements VALL-E as a unified autoregressive and non-autoregressive model, where RVQ-level 0 is inferenced autoregressively, the remaining levels are infereneced non-autoregressively, if requested.
@@ -311,14 +326,6 @@ This script implements VALL-E as a unified autoregressive and non-autoregressive
 For training, this model handles preparing the batch provided through the dataloader according to a randomly sampled targetted RVQ-level.
 
 For inferencing, this will dynamically inference depending on the arguments provided.
-
-## `models/experimental.py`
-
-This script implements VALL-E as a mostly-HuggingFace compatible model, where it handles processing tokens as a uniform sequence of IDs.
-
-This mostly serves as an experiment to see what is required to do so, for possible future implementations requiring just `llama.cpp` and `encodec.cpp`, and to provide a pure HF-compatible implementation.
-
-Use of this is governed through `cfg.model.experimental.hf = True`
 
 ## `models/arch/*`
 
@@ -394,7 +401,7 @@ If I rememer right, it just simply provides gradient checkpointing.
 
 ### `models/arch/mixtral.py`
 
-Like `llama.py`, this provides modifications to Mixtral through `transformers`.
+Like `llama.py`, this provides modifications to Mixtral through `transformers`. However, most of the niceties from `llama.py` are not available here as it's not the core backend.
 
 Primarily, this is to address a bug with batch sizes > 1, and to use a different attention mechanism.
 * to-do: this is out of date from `llama.py`'s modified attention class.

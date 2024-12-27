@@ -2,15 +2,15 @@
 
 This is an implementation that makes use of [llama.cpp](https://github.com/ggerganov/llama.cpp/) and [encodec.cpp](https://github.com/PABannier/encodec.cpp).
 
-At the moment it's ***very*** work in progress.
-
-Model weights can be found at [`ecker/vall-e@gguf`](https://huggingface.co/ecker/vall-e/tree/gguf).
+Model weights can:
+* be found at [`ecker/vall-e@gguf`](https://huggingface.co/ecker/vall-e/tree/gguf)
+* converted with `vall_e.export --yaml=./model_path/config.yaml --hf`, then running `python3 /path/to/your/llama.cpp/convert_hf_to_gguf ./model_path/hf/`
 
 ## Build
 
 Populate `./include/` with the `ggml`, `llama.cpp`, and `encodec.cpp` headers.
 
-Populate `./libs/` with the compiled libraries of `llama.cpp`, `encodec.cpp`, and `espeak-ng`.
+Populate `./lib/` with the compiled libraries of `llama.cpp`, `encodec.cpp`, and `espeak-ng` (if not already in your `LD_LIBRARY_PATH`).
 
 Run `make`.
 
@@ -23,7 +23,7 @@ Run `make`.
 ## To-Do
 
 * [x] converted model to GGUF
-	* [ ] convert it without modifying any of the existing code, as the tokenizer requires some care
+	* [x] convert it without modifying any of the existing code, as the tokenizer requires some care
 * [x] basic framework
 	* [x] load the quantized model
 	* [x] orchestrate the required embeddings
@@ -45,6 +45,11 @@ Run `make`.
 * [x] a functional CLI
 * [x] actually make it work
 * [x] clean up to make the code usable elsewhere
+* [x] configured to allow for being used as a lib
+	* (I do need to validate this in my engine project, but that's in MSYS2)
 * [ ] feature parity with the PyTorch version
 	* [ ] vocos
-	* [ ] additional tasks (`stt`, `ns`, `sr`, samplers)
+	* [ ] additional tasks
+		* [ ] `stt`
+		* [x] `ns` / `sr`
+		* [ ] samplers

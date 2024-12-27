@@ -40,6 +40,20 @@ def convert_to_hf_llama( state_dict, config = None, save_path = None ):
 			}
 		}
 
+	# cleanup duplicate IDs because convert_hf_to_gguf.py does not like this
+	# get unique tokens
+	for k, v in tokenizer["model"]["vocab"].items():
+		if k not in tokenizer_vocab:
+			tokenizer_vocab[k] = v
+	# override if its in a merge
+	for k, v in tokenizer["model"]["vocab"].items():
+		for m in tokenizer["model"]["merges"]:
+			if k in m:
+				tokenizer_vocab[k] = v
+				break
+	tokenizer["model"]["vocab"] = {}
+
+
 	lang_map = [
 		"en",
 		"ja",
@@ -165,7 +179,7 @@ def convert_to_hf_llama( state_dict, config = None, save_path = None ):
 	model_dict['lm_head.weight'] = classifier_dict['weight']
 	if classifier_bias:
 		model_dict['lm_head.bias'] = classifier_dict['bias']
-
+	
 	# write files in an HF compatible way
 	out_dir = cfg.rel_path / "hf"
 	out_dir.mkdir(parents=True, exist_ok=True)
@@ -213,131 +227,6 @@ def convert_to_hf_llama( state_dict, config = None, save_path = None ):
 		"transformers_version": "4.40.0",
 		"use_cache": False,
 		"vocab_size": n_tokens
-	}, out_dir / "config.json", pretty=True )
-
-	return state_dict
-
-# stitches embeddings into one embedding & classifier => lm_head, for use in a HF compatible weight
-# *will* require retraining because the classifier is in one contiguous space, and proms are NOT summed
-@torch.no_grad()
-def convert_to_hf_custom( state_dict, config = None, save_path = None ):
-	n_text_tokens, model_dim = state_dict['module']['text_emb.weight'].shape
-
-	n_audio_tokens = state_dict['module']['proms_emb.embeddings.0.weight'].shape[0]
-	n_resp_levels = state_dict['module']['rvq_l_emb.weight'].shape[0]
-	n_len_tokens = 11
-	n_lang_tokens = state_dict['module']['langs_emb.weight'].shape[0]
-	n_task_tokens = state_dict['module']['tasks_emb.weight'].shape[0]
-
-	classifier_bias = "classifiers.proj.0.bias" in state_dict['module'] # cfg.model.experimental.classifiers_bias
-	split_classifiers = "classifiers.proj.0.weight" in state_dict['module'] # cfg.model.experimental.split_classifiers
-
-	# the new tokenizer to use
-	tokenizer = {}
-	tokenizer_vocab = {}
-
-	tokenizer_path = cfg.rel_path / cfg.tokenizer_path
-	if not tokenizer_path.exists():
-		tokenizer_path = Path("./data/") / cfg.tokenizer_path
-	if tokenizer_path.exists():
-		tokenizer = json_read( tokenizer_path )
-	else:
-		tokenizer = {
-			"model": {
-				"vocab": get_phone_symmap()
-			}
-		}
-
-	lang_map = [
-		"en",
-		"ja",
-		"de",
-		"fr",
-		"zh",
-		"ko",
-	]
-	task_map = [
-		"tts",
-		"tts-c",
-		"ns",
-		"sr",
-		"tse",
-		"soe",
-		"mask",
-		"eoe",
-		"stt",
-	]
-
-	model_dict = {}
-	# filter out the underlying model weights and extract them
-	for k in state_dict['module'].keys():
-		if not k.startswith('model.'):
-			continue
-		model_dict[k] = state_dict['module'][k].clone()
-
-	# cringe
-	for l in range(11):
-		model_dict[f'classifiers.{l}.weight'] = state_dict['module'][f'classifiers.proj.{l}.weight']
-	for l in range(8):
-		model_dict[f"embeddings.proms.{l}.weight"] = state_dict['module'][f"proms_emb.embeddings.{l}.weight"]
-	for l in range(9):
-		model_dict[f"embeddings.resps.{l}.weight"] = state_dict['module'][f"resps_emb.embeddings.{l}.weight"]
-	
-	model_dict["embeddings.aux.0.weight"] = state_dict['module']["text_emb.weight"]
-	model_dict["embeddings.aux.1.weight"] = state_dict['module']["rvq_l_emb.weight"]
-	model_dict["embeddings.aux.2.weight"] = state_dict['module']["langs_emb.weight"]
-	model_dict["embeddings.aux.3.weight"] = state_dict['module']["tasks_emb.weight"]
-	model_dict["embeddings.aux.4.weight"] = state_dict['module']["len_emb.weight"]
-	model_dict["embeddings.aux.5.weight"] = state_dict['module']["tones_emb.weight"]
-	model_dict["embeddings.aux.6.weight"] = state_dict['module']["sep"].unsqueeze(0)
-
-	# write files in an HF compatible way
-	out_dir = cfg.rel_path / "hf"
-	out_dir.mkdir(parents=True, exist_ok=True)
-	# write weights
-	torch_save( { "module": model_dict, "format": "pt" }, out_dir / "model.safetensors" )
-	# write tokenizer.json
-	tokenizer['model']['vocab'] |= tokenizer_vocab
-	json_write(tokenizer, out_dir / "tokenizer.json", pretty=True)
-	# write tokenizer_config.json
-	json_write({
-  		"added_tokens": tokenizer['added_tokens'],
-		"bos_token": "<bos>",
-		"eos_token": "</eos>",
-		"clean_up_tokenization_spaces": True,
-		"model_input_names": [
-			"input_ids",
-			"attention_mask"
-		],
-		"tokenizer_class": "PreTrainedTokenizerFast"
-	}, out_dir / "tokenizer_config.json", pretty=True)
-	# write config.json
-	json_write({
-		"architectures": [
-			"ValleLM"
-		],
-		"attention_bias": False,
-		"attention_dropout": 0.0,
-		"bos_token_id": 1,
-		"eos_token_id": 2,
-		"hidden_act": "gelu",
-		"hidden_size": model_dim,
-		"initializer_range": 0.02,
-		"intermediate_size": model_dim * 4,
-		"max_position_embeddings": 75 * 60 * 5,
-		"model_type": "llama",
-		"num_attention_heads": 16,
-		"num_hidden_layers": 12,
-		"num_key_value_heads": 16,
-		"pretraining_tp": 1,
-		"rms_norm_eps": 1e-06,
-		"rope_scaling": None,
-		"rope_theta": 10000.0,
-		"tie_word_embeddings": False,
-		"torch_dtype": "bfloat16",
-		"transformers_version": "4.40.0",
-		"use_cache": False,
-		"vocab_size": 256
 	}, out_dir / "config.json", pretty=True )
 
 	return state_dict
@@ -412,8 +301,7 @@ def moe_ify( state_dict, config = cfg.model, save_path = None, dtype = None ):
 def main():
 	parser = argparse.ArgumentParser("Save trained model to path.")
 	parser.add_argument("--module-only", action='store_true')
-	parser.add_argument("--hf", action='store_true', default=None) # convert to HF-style
-	parser.add_argument("--hf-llama", action='store_true', default=None) # convert to HF-style llama model
+	parser.add_argument("--hf", action='store_true', default=None) # convert to HF LLaMA
 	parser.add_argument("--export-lora", action='store_true', default=None) # exports LoRA
 	parser.add_argument("--split-classifiers", action='store_true', default=None) # splits classifier heads
 	parser.add_argument("--moe-ify", action='store_true', default=None) # splits classifier heads
@@ -441,9 +329,7 @@ def main():
 	engines = load_engines(training=False) # to ignore loading optimizer state
 
 	callback = None
-	if args.hf_llama:
-		callback = convert_to_hf_llama
-	elif args.hf:
+	if args.hf:
 		callback = convert_to_hf_custom
 	elif args.export_lora:
 		callback = extract_lora

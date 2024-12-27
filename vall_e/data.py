@@ -309,7 +309,7 @@ def fold_inputs(
 			return 0
 
 		if isinstance(prom, str):
-			task = get_task_symmap()[f'<{input}>']
+			task = get_task_symmap()[input]
 			seq = torch.tensor([task_start + task], device=device, dtype=dtype)
 
 			input_ids[i].append( seq )
@@ -664,19 +664,19 @@ def get_tone_symmap():
 
 def get_task_symmap():
 	return {
-		"<tts>": 0,
-		"<tts-c>": 1,
-		"<ns>": 2,
-		"<sr>": 3,
-		"<tse>": 4,
-		"<soe>": 5,
-		"<mask>": 6,
-		"<eoe>": 7,
-		"<stt>": 8,
+		"tts": 0,
+		"tts-c": 1,
+		"ns": 2,
+		"sr": 3,
+		"tse": 4,
+		"soe": 5,
+		"mask": 6,
+		"eoe": 7,
+		"stt": 8,
 
-		"<len>": 0, # fake
-		"<nse>": 6, # fake
-		"<cse>": 6, # fake
+		"len": 0, # fake
+		"nse": 6, # fake
+		"cse": 6, # fake
 	}
 
 def _replace_file_extension(path, suffix):
@@ -1330,7 +1330,7 @@ class Dataset(_Dataset):
 		
 		task = random.choice(self.tasks)
 
-		if f'<{task}>' not in self.task_symmap:
+		if task not in self.task_symmap:
 			raise Exception(f'Task not defined: {task}')
 
 		# Base TTS (<text><prompt> => <resp>)

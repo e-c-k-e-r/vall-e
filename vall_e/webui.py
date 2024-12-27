@@ -128,7 +128,7 @@ def get_languages():
 	return list(get_lang_symmap().keys()) + ["auto"]
 
 def get_tasks():
-	return ["tts", "sr", "nr", "vc"]
+	return ["tts", "sr", "ns", "vc"]
 
 #@gradio_wrapper(inputs=layout["dataset"]["inputs"].keys())
 def load_sample( speaker ):
