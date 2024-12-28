@@ -436,7 +436,7 @@ class TTS():
 		prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
 		lang = self.encode_lang( language )
 		
-		if task in ["ns, sr"]:
+		if task in ["ns", "sr"]:
 			prom = [
 				task,
 				prom
