@@ -48,6 +48,7 @@ class AR_NAR(Base):
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
+		raw_text_list: list[Tensor] | None = None,
 	):
 		# deduce batch_size
 		if text_list is not None:
@@ -194,6 +195,7 @@ class AR_NAR(Base):
 			lang_list=lang_list,
 			tone_list=tone_list,
 			task_list=task_list,
+			raw_text_list=raw_text_list,
 			time_list=timesteps,
 
 			quant_levels=quant_levels,
@@ -822,6 +824,7 @@ class AR_NAR(Base):
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
+		raw_text_list: list[Tensor] | None = None,
 
 		training: bool | None = None,
 
@@ -860,6 +863,7 @@ class AR_NAR(Base):
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
+				raw_text_list=raw_text_list,
 			)
 
 		# is NAR

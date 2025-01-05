@@ -38,6 +38,7 @@ def train_feeder(engine, batch, teacher=None):
 			lang_list=batch["lang"],
 			tone_list=batch["tone"],
 			task_list=batch["task"],
+			raw_text_list=batch["raw_text"],
 
 			training=True,
 		)

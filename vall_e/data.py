@@ -642,6 +642,11 @@ def tokenize( phones ):
 		phones = "".join( phones )
 	return cfg.tokenizer.encode( phones )
 
+def text_tokenize( text ):
+	if isinstance( text, list ):
+		text = "".join( text )
+	return cfg.text_tokenizer.encode( text )
+
 def get_lang_symmap():
 	return {
 		"en": 0,
@@ -677,6 +682,9 @@ def get_task_symmap():
 		"len": 0, # fake
 		"nse": 6, # fake
 		"cse": 6, # fake
+		
+		"phn": 0, # fake
+		"un-phn": 0, # fake
 	}
 
 def _replace_file_extension(path, suffix):
@@ -1299,6 +1307,8 @@ class Dataset(_Dataset):
 			text_string = metadata["text"] if "text" in metadata else None
 
 		lang = self.get_language(spkr_group) if not lang else lang.lower()
+
+		raw_text = torch.tensor(text_tokenize(text_string)).to(torch.int16) if text_string else None
 		
 		if not tone:
 			tone = "neutral"
@@ -1388,6 +1398,8 @@ class Dataset(_Dataset):
 		elif task == "len":
 			proms = self.sample_prompts(spkr_name, reference=path)
 
+		elif task in ["phn", "un-phn"]:
+			proms = []
 		# noise suppression (<text>? <resp+noise> => <resp>)
 		# speech removal (<text>?<resp+noise> => <noise>)
 		elif task == "ns" or task == "sr":
@@ -1532,6 +1544,7 @@ class Dataset(_Dataset):
 			text=text,
 			proms=proms,
 			resps=resps,
+			raw_text=raw_text,
 			
 			metadata=metadata,
 		)

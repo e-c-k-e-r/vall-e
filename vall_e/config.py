@@ -267,7 +267,8 @@ class ModelExperimentalSettings:
 	ignore_inputs_for_loss: bool = True # only calculate the loss on the outputs since thats what matters, as the inputs that do have loss calculated upon affects the loss for the entire sequence
 
 	noncausal_masks: bool = False # to correct an oversight with Llama always using causal masks......
-	classifiers_bias: bool = True # ugh
+	classifiers_bias: bool = True # base LLaMAs do not bias the output heads, but my existing weights do
+	max_position_embeddings: int = 70 * 65 * 5 # 5 minutes of audio
 
 	# classifier-free guidance training settings
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
@@ -785,6 +786,9 @@ class Config(BaseConfig):
 	
 	tokenizer: str | None = None # tokenizer class
 	tokenizer_path: str = "./tokenizer.json" # tokenizer path
+	
+	text_tokenizer: str | None = None # tokenizer class
+	text_tokenizer_path: str = "./text_tokenizer.json" # tokenizer path
 
 	sample_rate: int = 24_000 # sample rate the model expects
 	audio_backend: str = "vocos" # audio backend to use "encodec" | "vocos" | "dac""
@@ -1053,6 +1057,21 @@ class Config(BaseConfig):
 				raise Exception(f'Tokenizer path not found: {tokenizer_path}')
 
 			self.tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(tokenizer_path))
+		
+		if self.tokenizer == "naive":
+			...
+		else:
+			from transformers import PreTrainedTokenizerFast
+
+			text_tokenizer_path = self.rel_path / self.text_tokenizer_path
+			# deduce path if a local copy is not provided
+			if not text_tokenizer_path.exists():
+				text_tokenizer_path = Path("./data/") / self.text_tokenizer_path
+			
+			if not self.silent_errors and not text_tokenizer_path.exists():
+				raise Exception(f'Tokenizer path not found: {text_tokenizer_path}')
+
+			self.text_tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(text_tokenizer_path))
 
 
 # Preserves the old behavior

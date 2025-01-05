@@ -473,7 +473,7 @@ class TTS():
 				)
 				if model_len is not None:
 					# skip calculating len_list if possible
-					if task in ["ns, sr"]:
+					if task in ["ns", "sr"]:
 						len_list = [ prom[1].shape[0] ]
 					elif vc_utterance is not None:
 						len_list = [ vc_utterance.shape[0] ]
