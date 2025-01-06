@@ -1024,6 +1024,8 @@ class Dataset(_Dataset):
 
 	@cached_property
 	def tasks(self):
+		if not self.training:
+			return ["tts"]
 		return cfg.dataset.tasks_list # ["tts", "tts", "ns", "sr", "tse", "tts", "tts"] # , "cse", "nse"
 
 	def save_state_dict(self, path = None):

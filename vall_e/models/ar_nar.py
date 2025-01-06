@@ -719,8 +719,6 @@ class AR_NAR(Base):
 				text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
 				resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
 
-			print( text_list, raw_text_list )
-
 			quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
 
 			inputs = self.inputs(
