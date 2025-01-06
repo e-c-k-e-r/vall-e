@@ -23,7 +23,7 @@ from .config import cfg, Config
 from .models import get_models
 from .models.lora import enable_lora
 from .engines import load_engines, deepspeed_available
-from .data import get_phone_symmap, get_lang_symmap, tokenize, sentence_split
+from .data import get_phone_symmap, get_lang_symmap, tokenize, text_tokenize, sentence_split
 from .models import download_model, DEFAULT_MODEL_PATH
 
 if deepspeed_available:
@@ -412,7 +412,7 @@ class TTS():
 				model = model_ar if model_ar is not None else model_nar
 				if model is not None:
 					text_list = model(
-						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=["stt"],
+						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=[task],
 						disable_tqdm=not use_tqdm,
 						use_lora=use_lora,
 						**sampling_kwargs,
@@ -423,6 +423,35 @@ class TTS():
 				text_list = [ cfg.tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
 
 			return text_list[0]
+		elif task in ["phn", "un-phn"]:
+			lang = self.encode_lang( language )
+			lang = to_device(lang, device=self.device, dtype=torch.uint8)
+			
+			with torch.autocast(self.device, dtype=dtype, enabled=amp):
+				model = model_ar if model_ar is not None else model_nar
+				if task == "phn":
+					text_list = None
+					raw_text_list = [ torch.tensor( text_tokenize( text ), device=self.device, dtype=torch.int16) ]
+					output_tokenizer = cfg.tokenizer
+				else:
+					text_list = [ torch.tensor( tokenize( text ), device=self.device, dtype=torch.int16) ]
+					raw_text_list = None
+					output_tokenizer = cfg.text_tokenizer
+
+				if model is not None:
+					text_list = model(
+						text_list=text_list, raw_text_list=raw_text_list, lang_list=[lang], task_list=[task],
+						disable_tqdm=not use_tqdm,
+						use_lora=use_lora,
+						**sampling_kwargs,
+					)
+				else:
+					raise Exception("!")
+				
+				text_list = [ output_tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
+
+			return text_list[0]
+
 
 		# stuff for rolling context
 		prefix_context = None

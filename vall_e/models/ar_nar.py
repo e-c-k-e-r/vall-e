@@ -29,7 +29,7 @@ from ..utils import get_devices, setup_logging, timer, clamp, convert_kwargs
 from .lora import enable_lora
 from ..samplers import cfg_logits
 
-text_task = [ "stt" ]
+text_task = [ "stt", "phn", "un-phn" ]
 
 class AR_NAR(Base):
 	# yikes
@@ -40,23 +40,28 @@ class AR_NAR(Base):
 	# a lot of this could be delegated back to the dataloader, but it's just easier to keep the task of the dataloader to provide sufficient data, and the model to process the data for training
 	def forward_train(
 		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
-		resps_list: list[Tensor],
-		
 		task_list: list[Tensor] | None = None,
+		
+		text_list: list[Tensor] | None = None,
+		proms_list: list[Tensor] | None = None,
+		resps_list: list[Tensor] | None = None,
+		
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 		raw_text_list: list[Tensor] | None = None,
 	):
 		# deduce batch_size
-		if text_list is not None:
-			default_task = "tts"
+		if text_list:
 			device = text_list[0].device
 			batch_size = len(text_list)
-		else:
-			default_task = "stt"
+		elif raw_text_list:
+			device = raw_text_list[0].device
+			batch_size = len(raw_text_list)
+		elif proms_list:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
+		elif resps_list:
 			device = resps_list[0].device
 			batch_size = len(resps_list)
 
@@ -74,6 +79,7 @@ class AR_NAR(Base):
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
 		cfg_prom_dropout_p = self.config.experimental.cfg_prom_dropout_p if self.config is not None else 0.0
+		use_raw_text_p = self.config.experimental.use_raw_text_p if self.config is not None else 0.0
 		# rate to train RVQ level AR-ly or NAR-ly
 		masking_train_p = self.config.experimental.masking_train_p if self.config is not None else 0.5
 		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else "random"
@@ -161,10 +167,7 @@ class AR_NAR(Base):
 			# only apply stop token for RVQ level 0
 			if quant_level <= 0 and timesteps[i] is None:
 				# append stop tokens for AR
-				if task in text_task:
-					#text_list[i] = torch.cat([ resps, text_stop_sequence ])
-					...
-				else:
+				if task not in text_task:
 					resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
 
 			if task == "len":
@@ -174,6 +177,7 @@ class AR_NAR(Base):
 			if task not in text_task + ["len"]:
 				drop_text = False
 				drop_audio = False
+				swap_text = False
 
 				if random.random() < cfg_prom_dropout_p:
 					drop_audio = True
@@ -181,12 +185,18 @@ class AR_NAR(Base):
 				if random.random() < cfg_cond_dropout_p:
 					drop_audio = True
 					drop_text = True
+				
+				if random.random() < use_raw_text_p and raw_text_list[i] is not None:
+					swap_text = True
 
 				if drop_text:
 					text_list[i] = text_start_stop_sequence
 
 				if drop_audio:
 					proms_list[i] = None
+
+				if swap_text and not drop_text:
+					text_list[i] = None
 
 		inputs = self.inputs(
 			text_list=text_list,
@@ -209,14 +219,16 @@ class AR_NAR(Base):
 	def forward_nar_masked(
 		self,
 
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
+		task_list: list[Tensor] | None = None,
+		
+		text_list: list[Tensor] | None = None,
+		proms_list: list[Tensor] | None = None,
 		resps_list: list[Tensor] | None = None,
 		
-		task_list: list[Tensor] | None = None,
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
+		raw_text_list: list[Tensor] | None = None,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -420,14 +432,17 @@ class AR_NAR(Base):
 
 	def forward_nar(
 		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
+		task_list: list[Tensor] | None = None,
+		
+		text_list: list[Tensor] | None = None,
+		proms_list: list[Tensor] | None = None,
 		resps_list: list[Tensor] | None = None,
 		
-		task_list: list[Tensor] | None = None,
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
+		
+		raw_text_list: list[Tensor] | None = None,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -447,12 +462,16 @@ class AR_NAR(Base):
 			)
 		
 		# deduce batch_size
-		if text_list is not None:
-			default_task = "tts"
+		if text_list:
 			device = text_list[0].device
 			batch_size = len(text_list)
-		else:
-			default_task = "stt"
+		elif raw_text_list:
+			device = raw_text_list[0].device
+			batch_size = len(raw_text_list)
+		elif proms_list:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
+		elif resps_list:
 			device = resps_list[0].device
 			batch_size = len(resps_list)
 		
@@ -534,25 +553,31 @@ class AR_NAR(Base):
 	def forward_ar(
 		self,
 
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
+		task_list: list[Tensor],
+
+		text_list: list[Tensor] | None = None,
+		raw_text_list: list[Tensor] | None = None,
+		proms_list: list[Tensor] | None = None,
 		resps_list: list[Tensor] | None = None,
-		
-		task_list: list[Tensor] | None = None,
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
+
 		disable_tqdm=False,
 		use_lora=None,
 		**sampling_kwargs,
 	):
 		# deduce batch_size
-		if text_list is not None:
-			default_task = "tts"
+		if text_list:
 			device = text_list[0].device
 			batch_size = len(text_list)
-		else:
-			default_task = "stt"
+		elif raw_text_list:
+			device = raw_text_list[0].device
+			batch_size = len(raw_text_list)
+		elif proms_list:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
+		elif resps_list:
 			device = resps_list[0].device
 			batch_size = len(resps_list)
 
@@ -590,13 +615,17 @@ class AR_NAR(Base):
 				len_list = sequence_list
 
 				inputs = self.inputs(
+					task_list=task_list,
+					
 					text_list=text_list,
 					proms_list=proms_list,
 					resps_list=resps_list,
+					
 					lang_list=lang_list,
 					tone_list=tone_list,
 					len_list=len_list,
-					task_list=task_list,
+					raw_text_list=raw_text_list,
+					
 					quant_levels=quant_levels,
 				)
 
@@ -627,7 +656,6 @@ class AR_NAR(Base):
 			# convert tokens into int
 			return [ int("".join([ str(token.item()) for token in r if token != stop_token ])) for r in sequence_list ]
 
-		# STT
 		start_slice = [ 0 for _ in range(batch_size) ]
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
@@ -684,19 +712,29 @@ class AR_NAR(Base):
 		# get next in sequence
 		iterator = trange(max_duration // max(1, self.causal_size), desc="AR", disable=disable_tqdm)
 		for n in iterator:
-			# it would technically be faster to just append the new token's embedding to the inputs, but there's a VERY small performance gain from doing it, so it's not worth it
-			text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
-			resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
+			if batch_size == 1 and task_list[0] in ["phn", "un-phn"]:
+				text_list = [ sequence_list[i] if task in ["phn"] else text_list[i] for i, task in enumerate(task_list) ]
+				raw_text_list = [ sequence_list[i] if task in ["un-phn"] else raw_text_list[i] for i, task in enumerate(task_list) ]
+			else:
+				text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
+				resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
+
+			print( text_list, raw_text_list )
+
 			quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
 
 			inputs = self.inputs(
+				task_list=task_list,
+				
 				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=resps_list,
+				
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
-				task_list=task_list,
+				raw_text_list=raw_text_list,
+				
 				quant_levels=quant_levels,
 			)
 
@@ -816,11 +854,12 @@ class AR_NAR(Base):
 
 	def forward(
 		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
+		task_list: list[Tensor] | None = None,
+
+		text_list: list[Tensor] | None = None,
+		proms_list: list[Tensor] | None = None,
 		resps_list: list[Tensor] | None = None,
 		
-		task_list: list[Tensor] | None = None,
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
@@ -833,18 +872,19 @@ class AR_NAR(Base):
 		**sampling_kwargs,
 	):
 		# deduce batch_size
-		if text_list is not None:
-			default_task = "tts"
+		# deduce batch_size
+		if text_list:
 			device = text_list[0].device
 			batch_size = len(text_list)
-		else:
-			default_task = "stt"
+		elif raw_text_list:
+			device = raw_text_list[0].device
+			batch_size = len(raw_text_list)
+		elif proms_list:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
+		elif resps_list:
 			device = resps_list[0].device
 			batch_size = len(resps_list)
-
-		# generate task list if not provided
-		if task_list is None:
-			task_list = [ default_task for _ in range(batch_size) ]
 
 		# implicitly set for training
 		if training is None and text_list is not None and resps_list is not None:
@@ -856,10 +896,12 @@ class AR_NAR(Base):
 		# is training
 		if training:
 			return self.forward_train(
+				task_list=task_list,
+				
 				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=resps_list,
-				task_list=task_list,
+				
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
@@ -869,13 +911,17 @@ class AR_NAR(Base):
 		# is NAR
 		if (len_list is not None or resps_list is not None) and text_list is not None:
 			return self.forward_nar(
+				task_list=task_list,
+
 				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=resps_list,
-				task_list=task_list,
+				
 				lang_list=lang_list,
 				tone_list=tone_list,
 				len_list=len_list,
+				raw_text_list=raw_text_list,
+
 				disable_tqdm=disable_tqdm,
 				use_lora=use_lora,
 				**sampling_kwargs,
@@ -883,13 +929,17 @@ class AR_NAR(Base):
 
 		# is AR
 		return self.forward_ar(
+			task_list=task_list,
+			
 			text_list=text_list,
 			proms_list=proms_list,
 			resps_list=resps_list,
-			task_list=task_list,
+			
 			lang_list=lang_list,
 			tone_list=tone_list,
 			len_list=len_list,
+			raw_text_list=raw_text_list,
+
 			disable_tqdm=disable_tqdm,
 			use_lora=use_lora,
 			**sampling_kwargs,

@@ -248,11 +248,6 @@ class ModelExperimentalSettings:
 	rvq_level_range: list = field(default_factory=lambda: []) # some cringe to try and limit the RVQ training range for LoRAs, isn't necesary
 	unified_position_ids: bool = True # False will generate position IDs partitioned for each section
 	tie_classifier_to_embedding: bool = False # Ties the classifier output to their respective embeddings, this does not seem to do anything good in testing
-	
-	# performs token dropout to compensate for errors
-	token_dropout_error: float = 0.0 # probability to nudge a token by ±1
-	token_dropout_rate: float = 0.0 # probability to randomly set a token to a special dropout value
-	token_dropout_rvq_levels: list = field(default_factory=lambda: [1,8]) # determines which levels to do dropout, by default do not do dropout on RVQ level 0
 
 	causal_size: int = 1 # experimental setting to see if I can just do parallel decoding in chunks instead of one-at-a-time without resorting to exotic solutions
 	# VALL-E 2's approach of "combining token embeddings to group them" sounds terribad for a shared AR/NAR model
@@ -270,10 +265,18 @@ class ModelExperimentalSettings:
 	classifiers_bias: bool = True # base LLaMAs do not bias the output heads, but my existing weights do
 	max_position_embeddings: int = 70 * 65 * 5 # 5 minutes of audio
 
+	# these technically should be as hyperparameters
+	# performs token dropout to compensate for errors
+	token_dropout_error: float = 0.0 # probability to nudge a token by ±1
+	token_dropout_rate: float = 0.0 # probability to randomly set a token to a special dropout value
+	token_dropout_rvq_levels: list = field(default_factory=lambda: [1,8]) # determines which levels to do dropout, by default do not do dropout on RVQ level 0
+	# these technically should be as hyperparameters
 	# classifier-free guidance training settings
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
 	cfg_text_dropout_p: float = 0.0 # 0.0  # probability to drop out input audio prompt during training
 	cfg_prom_dropout_p: float = 0.0 # 0.3  # probability to drop out input audio prompt during training
+
+	use_raw_text_p: float = 0.0 # probability to use raw text as the input prompt instead
 
 	# failed experiment
 	layerskip: bool = False # layerskip compatible model (or training for)

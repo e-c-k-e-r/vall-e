@@ -51,6 +51,8 @@ special_tasks = [ "len", "stt", "phn", "un-phn" ]
 non_tokened_names = ["task", "dropout_mask", "classifier_level"]
 task_outputs = {
 	"tts": "resp",
+	"ns": "resp",
+	"sr": "resp",
 	"stt": "text",
 	"len": "len",
 	"phn": "text",
@@ -937,21 +939,32 @@ class Base(nn.Module):
 	# takes a bunch of separate lists and parses them into an ordered array of tuples to guide input sequence creation
 	def inputs(
 		self,
-		text_list: list[Tensor],
-		proms_list: list[Tensor],
-		resps_list: list[Tensor],
+		text_list: list[Tensor] | None = None,
+		raw_text_list: list[Tensor] | None = None,
+
+		proms_list: list[Tensor] | None = None,
+		resps_list: list[Tensor] | None = None,
 
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 		task_list: list[str] | None = None,
 		time_list: list[Tensor] | None = None,
-		raw_text_list: list[Tensor] | None = None,
 
 		quant_levels: int | list[int] | Tensor | None = None
 	):
-		device = text_list[0].device
-		batch_size = len(text_list)
+		if text_list and text_list[0] is not None:
+			device = text_list[0].device
+			batch_size = len(text_list)
+		elif raw_text_list and raw_text_list[0] is not None:
+			device = raw_text_list[0].device
+			batch_size = len(raw_text_list)
+		elif proms_list and proms_list[0] is not None:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
+		elif resps_list and resps_list[0] is not None:
+			device = resps_list[0].device
+			batch_size = len(resps_list)
 
 		inputs = [ [] for _ in range(batch_size) ]
 		for i in range(batch_size):
@@ -973,6 +986,8 @@ class Base(nn.Module):
 				# insert the text prompt
 				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
+				elif raw_text_list is not None and raw_text_list[i] is not None:
+					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
@@ -1022,6 +1037,8 @@ class Base(nn.Module):
 				# insert the text prompt
 				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
+				elif raw_text_list is not None and raw_text_list[i] is not None:
+					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
@@ -1070,6 +1087,8 @@ class Base(nn.Module):
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
+				if self.rvq_l_emb is not None and not self.interleave:
+					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert the text prompt
 				if text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
@@ -1084,6 +1103,8 @@ class Base(nn.Module):
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
+				if self.rvq_l_emb is not None and not self.interleave:
+					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert the text prompt
 				if raw_text_list is not None and raw_text_list[i] is not None:
 					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
@@ -1197,7 +1218,7 @@ class Base(nn.Module):
 					embedding = self.text_emb( input )
 
 					device = embedding.device
-				elif name == "raw_text":
+				elif name == "raw_text" and self.raw_text_emb is not None:
 					embedding = self.raw_text_emb( input )
 
 					device = embedding.device
@@ -1505,7 +1526,7 @@ class Base(nn.Module):
 					if self.config.loss_factors:
 						continue
 					# fill with ignored out tensor
-					token = torch.tensor( [ self.ignore_index ] * input.shape[0], device=device, dtype=torch.int16)
+					token = torch.tensor( [ self.ignore_index ] * token.shape[0], device=device, dtype=torch.int16)
 					
 				# perform loss calculation on the individual piece
 				if self.config.loss_factors:
@@ -1643,6 +1664,10 @@ class Base(nn.Module):
 		if quant_levels is None:
 			quant_levels = [ x.item() for x in self.get_input( inputs, "quant_level" ) ]
 
+		# inputs don't have quant levels added, pure AR
+		if len(quant_levels) != len(inputs):
+			quant_levels = [ 0 for _ in range(len(inputs)) ]
+
 		x_list = self.inputs_to_embeddings( inputs, quant_levels )
 		
 		x, mask = list_to_tensor(x_list)
@@ -1651,10 +1676,6 @@ class Base(nn.Module):
 		teaching = self.teaching
 		device = x.device
 		batch_size = len(x_list)
-
-		# pure AR
-		if quant_levels is None:
-			quant_levels = [ 0 for _ in range(batch_size) ]
 
 		# we only need hidden states if we're training with layerskip
 		if self.layerskip and training:
