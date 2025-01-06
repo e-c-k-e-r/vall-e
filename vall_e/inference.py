@@ -98,7 +98,7 @@ class TTS():
 	def disable_lora( self ):
 		return self.enable_lora( enabled=False )
 
-	def encode_text( self, text, language="auto", precheck=True ):
+	def encode_text( self, text, language="auto", precheck=True, phonemize=True ):
 		# already a tensor, return it
 		if isinstance( text, Tensor ):
 			return text
@@ -109,10 +109,10 @@ class TTS():
 			if self.symmap["<unk>"] not in tokens:
 				return torch.tensor( tokens )
 
-		content = g2p.encode(text, language=language)
-		tokens = tokenize( content )
+		if not phonemize:
+			return torch.tensor( text_tokenize( content ) )
 
-		return torch.tensor( tokens )
+		return torch.tensor( tokenize( g2p.encode(text, language=language) ) )
 
 	def encode_lang( self, language ):
 		symmap = get_lang_symmap()
@@ -361,6 +361,7 @@ class TTS():
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
+		phonemize = sampling_kwargs.pop("phonemize", True)
 		duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 
 		voice_convert = sampling_kwargs.pop("voice_convert", None)
@@ -431,10 +432,10 @@ class TTS():
 				model = model_ar if model_ar is not None else model_nar
 				if task == "phn":
 					text_list = None
-					raw_text_list = [ torch.tensor( text_tokenize( text ), device=self.device, dtype=torch.int16) ]
+					raw_text_list = [ self.encode_text( text, phonemize=False ).to(device=self.device, dtype=torch.int16) ]
 					output_tokenizer = cfg.tokenizer
 				else:
-					text_list = [ torch.tensor( tokenize( text ), device=self.device, dtype=torch.int16) ]
+					text_list = [ self.encode_text( text ).to(device=self.device, dtype=torch.int16) ]
 					raw_text_list = None
 					output_tokenizer = cfg.text_tokenizer
 
@@ -489,12 +490,13 @@ class TTS():
 			if auto_text_lang:
 				text_language = deduced_language
 
-			phns = self.encode_text( line, language=text_language )
+			phns = self.encode_text( line, language=text_language, phonemize=phonemize )
 			phns = to_device(phns, device=self.device, dtype=torch.uint8 if len(self.symmap) < 256 else torch.int16)
 
 			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				input_kwargs = dict(
-					text_list=[phns],
+					text_list=[phns] if phonemize else None,
+					raw_text_list=[phns] if not phonemize else None,
 					proms_list=[prom],
 					lang_list=[lang],
 					disable_tqdm=not use_tqdm,

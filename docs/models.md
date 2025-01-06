@@ -129,13 +129,15 @@ Other solutions will rely on conditioning latents or extracted features as the i
 Classifiers are the final output head / projection layer that processes the last hidden states of a model into a probability distribution for each token. 
 
 Out of paranoia, each head is split for each macro-task (RVQ level, `stt`, and `len`), even though the core half of the model's training was with a single output head.
+* It also helps with not needing to do some tricks by setting unwanted tokens to `-inf`.
 
 ### Text Embeddings
 
 The input text phonemes (or output for STT) are passed through an embedding head (`text`), similar to how a normal text LLM would. Nothing fancy is required, as it's very straightforward.
 
 Technically, due to how the audio embeddings are implemented, it's possible to offer "language specific" text embeddings, rather than one unified IPA-based embedding + a language embedding (`lang`).
-* Such an implementation *could* in fact inference from normal text rather than IPA phonemes, as language-specific pure text embeddings can be trained.
+* Such an implementation can instead inference from normal text rather than IPA phonemes, as language-specific pure text embeddings can be trained.
+  * This is because some arbitrary first `n` layers of the model *might* instead handle encoding the input prompt embeddings. It's easy to take an existing model and train it on raw text tokens alongside the IPA phonemes as an input.
 
 These embeddings *could* instead be added on top of the input prompt embedding instead of serving as additional tasks (similar to injecting position embeddings), but additional experimentation is required to see if the model both can work under this and/or benefits from this.
 
@@ -279,6 +281,14 @@ The primary benefit of this task is to provide a fast way to directly transcribe
 * The other problem is it's very hard to validate this, as the output isn't in English, and requires processing through the model again to verify the transciption.
 
 This task will follow a reverse sequence of `<audio><language><RVQ level><output>`.
+
+#### Phonemize / Un-Phonemize
+
+The `phn` task phonemizes raw text and outputs the corresponding IPA phonemes.
+
+The `un-phn` task does the opposite: it'll take IPA phonemes and outputs the text that would phonemize into it.
+
+Currently, `phn` works *okay*, while `un-phn` does not work at all.
 
 ## Emergent Behavior
 

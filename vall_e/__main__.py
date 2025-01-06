@@ -20,6 +20,7 @@ def main():
 
 	parser.add_argument("--split-text-by", type=str, default="\n")
 	parser.add_argument("--context-history", type=int, default=0)
+	parser.add_argument("--no-phonemize", action='store_true')
 
 	parser.add_argument("--yaml", type=Path, default=None)
 	parser.add_argument("--model", type=Path, default=None)
@@ -87,6 +88,7 @@ def main():
 	sampling_kwargs = dict(
 		split_text_by=args.split_text_by,
 		context_history=args.context_history,
+		phonemize=not args.no_phonemize,
 		max_steps=args.max_steps,
 		max_levels=args.max_levels,
 		max_duration=args.max_duration,

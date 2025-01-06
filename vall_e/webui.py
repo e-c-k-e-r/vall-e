@@ -217,6 +217,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--voice-convert", type=str, default=kwargs["voice-convert"])
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--text-language", type=str, default=kwargs["text-language"])
+	parser.add_argument("--no-phonemize", action="store_true")
 	parser.add_argument("--split-text-by", type=str, default=kwargs["split-text-by"])
 	parser.add_argument("--context-history", type=int, default=kwargs["context-history"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
@@ -272,6 +273,9 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	if kwargs.pop("refine-on-stop", False):
 		args.refine_on_stop = True
 
+	if kwargs.pop("no-phonemize", False):
+		args.no_phonemize = False
+
 	if args.split_text_by == "lines":
 		args.split_text_by = "\n"
 	elif args.split_text_by == "none":
@@ -287,6 +291,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	sampling_kwargs = dict(
 		split_text_by=args.split_text_by,
 		context_history=args.context_history,
+		phonemize=not args.no_phonemize,
 		voice_convert=args.voice_convert,
 		max_steps=args.max_steps,
 		max_levels=args.max_levels,
@@ -467,6 +472,7 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["split-text-by"] = gr.Dropdown(choices=["sentences", "lines"], label="Text Delimiter", info="How to split the text into utterances.", value="sentences")
 							layout["inference_tts"]["inputs"]["context-history"] = gr.Slider(value=0, minimum=0, maximum=4, step=1, label="(Rolling) Context History", info="How many prior lines to serve as the context/prefix (0 to disable).")
+							layout["inference_tts"]["inputs"]["no-phonemize"] = gr.Checkbox(label="No Phonemize", info="Use raw text rather than phonemize the text as the input prompt.")
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["ar-temperature"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR/NAR-len)", info="Adjusts the probabilities in the AR/NAR-len. (0 to greedy* sample)")
