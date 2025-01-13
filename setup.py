@@ -80,6 +80,7 @@ setup(
 		"gradio",
 		"nltk", # for parsing text inputs down to pieces
 		"langdetect", # for detecting the language of a text
+		"sounddevice", # for raw playback
 	],
 	extras_require = {
 		"all": [

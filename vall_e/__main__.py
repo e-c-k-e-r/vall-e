@@ -74,6 +74,7 @@ def main():
 	parser.add_argument("--amp", action="store_true")
 	parser.add_argument("--dtype", type=str, default=None)
 	parser.add_argument("--attention", type=str, default=None)
+	parser.add_argument("--play", action="store_true")
 	args = parser.parse_args()
 
 	config = None
@@ -122,6 +123,7 @@ def main():
 		task=args.task,
 		modality=args.modality,
 		out_path=args.out_path,
+		play=args.play,
 
 		input_prompt_length=args.input_prompt_length,
 		load_from_artifact=args.load_from_artifact,

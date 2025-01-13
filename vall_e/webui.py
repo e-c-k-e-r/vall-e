@@ -218,6 +218,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 	parser.add_argument("--language", type=str, default=kwargs["language"])
 	parser.add_argument("--text-language", type=str, default=kwargs["text-language"])
 	parser.add_argument("--no-phonemize", action="store_true")
+	parser.add_argument("--play", action="store_true")
 	parser.add_argument("--split-text-by", type=str, default=kwargs["split-text-by"])
 	parser.add_argument("--context-history", type=int, default=kwargs["context-history"])
 	parser.add_argument("--input-prompt-length", type=float, default=kwargs["input-prompt-length"])
@@ -274,7 +275,10 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 		args.refine_on_stop = True
 
 	if kwargs.pop("no-phonemize", False):
-		args.no_phonemize = False
+		args.no_phonemize = True
+	
+	if kwargs.pop("play", False):
+		args.play = True
 
 	if args.split_text_by == "lines":
 		args.split_text_by = "\n"
@@ -324,6 +328,7 @@ def do_inference_tts( progress=gr.Progress(track_tqdm=True), *args, **kwargs ):
 			language=args.language,
 			text_language=args.text_language,
 			task=args.task,
+			play=args.play,
 			modality=args.modality.lower(),
 			references=args.references.split(";") if args.references is not None else [],
 			**sampling_kwargs,
@@ -472,7 +477,11 @@ with ui:
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["split-text-by"] = gr.Dropdown(choices=["sentences", "lines"], label="Text Delimiter", info="How to split the text into utterances.", value="sentences")
 							layout["inference_tts"]["inputs"]["context-history"] = gr.Slider(value=0, minimum=0, maximum=4, step=1, label="(Rolling) Context History", info="How many prior lines to serve as the context/prefix (0 to disable).")
+						"""
+						with gr.Row():
 							layout["inference_tts"]["inputs"]["no-phonemize"] = gr.Checkbox(label="No Phonemize", info="Use raw text rather than phonemize the text as the input prompt.")
+							layout["inference_tts"]["inputs"]["play"] = gr.Checkbox(label="Auto Play", info="Auto play on generation (using sounddevice).")
+						"""
 					with gr.Tab("Sampler Settings"):
 						with gr.Row():
 							layout["inference_tts"]["inputs"]["ar-temperature"] = gr.Slider(value=1.0, minimum=0.0, maximum=1.5, step=0.05, label="Temperature (AR/NAR-len)", info="Adjusts the probabilities in the AR/NAR-len. (0 to greedy* sample)")

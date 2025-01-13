@@ -29,6 +29,11 @@ from .models import download_model, DEFAULT_MODEL_PATH
 if deepspeed_available:
 	import deepspeed
 
+try:
+	import sounddevice as sd
+except Exception as e:
+	sd = None
+
 class TTS():
 	def __init__( self, config=None, lora=None, device=None, amp=None, dtype=None, attention=None ):
 		self.loading = True 
@@ -110,7 +115,7 @@ class TTS():
 				return torch.tensor( tokens )
 
 		if not phonemize:
-			return torch.tensor( text_tokenize( content ) )
+			return torch.tensor( text_tokenize( text ) )
 
 		return torch.tensor( tokenize( g2p.encode(text, language=language) ) )
 
@@ -352,8 +357,12 @@ class TTS():
 		text_language=None,
 		task="tts",
 		out_path=None,
+		play=False,
 		**sampling_kwargs,
 	):
+		if sd is None:
+			play = False
+
 		input_prompt_length = sampling_kwargs.pop("input_prompt_length", 0)
 		modality = sampling_kwargs.pop("modality", "auto")
 		seed = sampling_kwargs.pop("seed", None)
@@ -559,6 +568,11 @@ class TTS():
 			wav, sr = qnt.decode_to_file(resps, out_path, device=self.device)
 			# add utterances
 			wavs.append(wav)
+
+			if play:
+				sd.play(wav.cpu().numpy()[0], sr)
+				sd.wait()
+
 
 		# combine all utterances
 		return (torch.concat(wavs, dim=-1), sr)
