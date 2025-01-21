@@ -650,55 +650,11 @@ class Base(nn.Module):
 				norm_type="ln", # adaln
 				n_levels=self.n_resp_levels,
 			) for _ in range(n_layers) ])
-		elif self.arch_type in ["mistral", "mixtral"]:
-			if n_experts <= 1:
-				self.model = MistralModel(MistralConfig(
-					vocab_size=n_vocab,
-					hidden_size=d_model,
-					max_position_embeddings=max_position_embeddings,
-					intermediate_size=d_model*4,
-					num_hidden_layers=n_layers,
-					num_attention_heads=n_heads,
-					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.config.experimental.kv_heads if self.config is not None and self.config.experimental.kv_heads > 0 else n_heads,
-					hidden_act="gelu",
-					is_encoder_decoder=False,
-					is_decoder=True,
-					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.gradient_checkpointing,
-				))
-			else:
-				self.model = MixtralModel(MixtralConfig(
-					vocab_size =n_resp_tokens,
-					hidden_size=d_model,
-					max_position_embeddings=max_position_embeddings,
-					intermediate_size=d_model*4,
-					num_hidden_layers=n_layers,
-					num_attention_heads=n_heads,
-					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=self.config.experimental.kv_heads if self.config is not None and self.config.experimental.kv_heads > 0 else n_heads,
-					sliding_window=75 * 12, # 12 second context window
-					output_router_logits=training,
-					hidden_act="gelu",
-					is_encoder_decoder=False,
-					is_decoder=True,
-					num_local_experts=n_experts,
-					num_experts_per_tok=min(2, n_experts),
-					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.gradient_checkpointing,
-				))
-				if attention_backend not in HF_ATTENTIONS:
-					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
-
-			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
-					use_reentrant=False
-				))
-		elif self.arch_type == "llama":
+		elif self.arch_type in ["llama", "mistral", "mixtral"]:
 			LlamaClass = LlamaModel_Adapted # if (self.layerskip or "len" in self.capabilities) else LlamaModel
 
 			if n_experts <= 1:
-				config = LlamaConfig(
+				self.model = LlamaClass(LlamaConfig(
 					vocab_size=n_vocab,
 					hidden_size=d_model,
 					max_position_embeddings=max_position_embeddings,
@@ -707,20 +663,19 @@ class Base(nn.Module):
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
 					num_key_value_heads=n_heads,
-					sliding_window=75 * 12, # 12 second context window
+					#sliding_window=75 * 12, # 12 second context window
 					hidden_act="gelu",
 					is_encoder_decoder=False,
 					is_decoder=True,
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
-				)
-				self.model = LlamaClass(config)
+				))
 
 				# replace with desired attention
 				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
 			else:
-				self.model = MixtralModel(MixtralConfig(
+				self.model = MixtralModel_Adapted(MixtralConfig(
 					vocab_size =n_resp_tokens,
 					hidden_size=d_model,
 					max_position_embeddings=max_position_embeddings,
@@ -729,7 +684,7 @@ class Base(nn.Module):
 					num_attention_heads=n_heads,
 					attention_dropout=p_dropout if training else 0.0,
 					num_key_value_heads=n_heads,
-					sliding_window=75 * 12, # 12 second context window
+					#sliding_window=75 * 12, # 12 second context window
 					output_router_logits=training,
 					hidden_act="gelu",
 					is_encoder_decoder=False,
@@ -886,8 +841,9 @@ class Base(nn.Module):
 				hidden_states = output["hidden_states"]
 			
 			if self.n_experts > 1 and self.training:
-				router_logits = output["aux_loss"]
-				aux_loss = self.model.config.router_aux_loss_coef * load_balancing_loss_func( router_logits, self.model.config.num_local_experts, self.model.config.num_experts_per_tok )
+				router_logits = output["router_logits"]
+				aux_loss = self.model.config.router_aux_loss_coef * load_balancing_loss_func( router_logits, self.model.config.num_local_experts, self.model.config.num_experts_per_tok, m )
+
 		elif self.arch_type == "transformer":
 			# ensures we specify a quant_level for the transformer implementation's AdaLN
 			l = torch.zeros((batch_size,), dtype=torch.int32) if quant_levels is None else quant_levels

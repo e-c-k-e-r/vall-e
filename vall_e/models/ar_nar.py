@@ -1006,7 +1006,7 @@ def example_usage():
 	available_tasks = [] + (["tts-ar"] if "ar" in cfg.model.capabilities else []) + (["tts-nar"] if "len" in cfg.model.capabilities else [])
 
 	model = AR_NAR(**kwargs).to(cfg.device)
-	steps = 1000 // batch_size
+	steps = 500 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -1154,12 +1154,12 @@ def example_usage():
 		text_list, proms_list, resp_list, task_list = sample_data( task )
 
 		if task == "tts-nar":
-			len_list = engine(text_list, proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
+			len_list = engine( text_list=text_list, proms_list=proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
 			len_list = [ resp_list[0].shape[0] for l in len_list ]
-			resps_list = engine( text_list, proms_list, len_list=len_list )
+			resps_list = engine( text_list=text_list, proms_list=proms_list, len_list=len_list )
 		else:
-			resps_list = engine( text_list, proms_list, task_list=["tts"], max_duration=steps, temperature=1.0 )
-			resps_list = engine( text_list, proms_list, resps_list=resps_list, temperature=0.0 )
+			resps_list = engine( text_list=text_list, proms_list=proms_list, task_list=["tts"], max_duration=steps, temperature=1.0 )
+			resps_list = engine( text_list=text_list, proms_list=proms_list, resps_list=resps_list, temperature=0.0 )
 
 		for i, o in enumerate(resps_list):
 			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.{task}.wav", device=cfg.device)

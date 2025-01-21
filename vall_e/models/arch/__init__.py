@@ -46,11 +46,15 @@ except Exception as e:
 	ERROR_ARCHES["bitnet"] = e
 	pass
 
+from .mixtral import MixtralModel, MixtralConfig, MixtralAttention, MixtralAttention_Adapted, MixtralModel_Adapted, load_balancing_loss_func
+AVAILABLE_ARCHES.append("mixtral")
+"""
 try:
-	from .mixtral import MixtralModel, MixtralConfig, MixtralAttention, MixtralAttention_Adapted, load_balancing_loss_func
+	from .mixtral import MixtralModel, MixtralConfig, MixtralAttention, MixtralAttention_Adapted, MixtralModel_Adapted, load_balancing_loss_func
 	AVAILABLE_ARCHES.append("mixtral")
 except Exception as e:
 	ERROR_ARCHES["mixtral"] = e
+"""
 
 try:
 	from .mamba import MambaModel, Mamba2Model, MambaConfig, Mamba2Config
