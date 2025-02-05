@@ -38,6 +38,7 @@ except Exception as e:
 
 try:
 	from .codecs.nemo import *
+except Exception as e:
 	cfg.inference.use_nemo = False
 	_logger.warning(str(e))
 
