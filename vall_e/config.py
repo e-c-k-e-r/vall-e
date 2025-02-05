@@ -216,6 +216,9 @@ class Dataset:
 			if cfg.sample_rate == 16_000:
 				return 50
 		
+		if cfg.audio_backend == "nemo":
+			return 86.1
+		
 		# 24Khz Encodec / Vocos and incidentally DAC are all at 75Hz
 		return 75
 
@@ -815,6 +818,11 @@ class Config(BaseConfig):
 			audio_extension = ".dec"
 			sample_rate = 48_000
 			cfg.model.resp_levels = 8 # ?
+		elif cfg.audio_backend == "nemo":
+			audio_extension = ".nem"
+			sample_rate = 44_100
+			cfg.model.resp_levels = 8
+			cfg.model.audio_tokens = 1000
 		else:
 			raise Exception(f"Unknown audio backend: {audio_backend}")
 
@@ -827,6 +835,8 @@ class Config(BaseConfig):
 			audio_extension = ".dac"
 		elif self.audio_backend == "audiodec":
 			audio_extension = ".dec"
+		elif self.audio_backend == "nemo":
+			audio_extension = ".nem"
 		return audio_extension
 
 	@property

@@ -671,9 +671,12 @@ class Base(nn.Module):
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
 
+				self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
+				"""
 				# replace with desired attention
 				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
+				"""
 			else:
 				self.model = MixtralModel_Adapted(MixtralConfig(
 					vocab_size =n_resp_tokens,
@@ -694,8 +697,11 @@ class Base(nn.Module):
 					attn_implementation=hf_attention,
 					#gradient_checkpointing=self.gradient_checkpointing,
 				))
+				self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
+				"""
 				if attention_backend not in HF_ATTENTIONS:
 					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
+				"""
 
 			if self.layerskip:
 				self.model.layer_dropout_p = layerskip_p_max

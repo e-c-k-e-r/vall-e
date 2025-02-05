@@ -19,205 +19,27 @@ from torch import Tensor
 from tqdm import tqdm
 
 try:
-	from encodec import EncodecModel
-	from encodec.utils import convert_audio
+	from .codecs.encodec import *
 except Exception as e:
 	cfg.inference.use_encodec = False
+	_logger.warning(str(e))
 
 try:
-	from vocos import Vocos
+	from .codecs.vocos import *
 except Exception as e:
 	cfg.inference.use_vocos = False
+	_logger.warning(str(e))
 
 try:
-	from dac import DACFile
-	from audiotools import AudioSignal
-	from dac.utils import load_model as __load_dac_model
-
-	"""
-	Patch decode to skip things related to the metadata (namely the waveform trimming)
-	So far it seems the raw waveform can just be returned without any post-processing
-	A smart implementation would just reuse the values from the input prompt
-	"""
-	from dac.model.base import CodecMixin
-
-	@torch.no_grad()
-	def CodecMixin_compress(
-		self,
-		audio_path_or_signal: Union[str, Path, AudioSignal],
-		win_duration: float = 1.0,
-		verbose: bool = False,
-		normalize_db: float = -16,
-		n_quantizers: int = None,
-	) -> DACFile:
-		"""Processes an audio signal from a file or AudioSignal object into
-		discrete codes. This function processes the signal in short windows,
-		using constant GPU memory.
-
-		Parameters
-		----------
-		audio_path_or_signal : Union[str, Path, AudioSignal]
-			audio signal to reconstruct
-		win_duration : float, optional
-			window duration in seconds, by default 5.0
-		verbose : bool, optional
-			by default False
-		normalize_db : float, optional
-			normalize db, by default -16
-
-		Returns
-		-------
-		DACFile
-			Object containing compressed codes and metadata
-			required for decompression
-		"""
-		audio_signal = audio_path_or_signal
-		if isinstance(audio_signal, (str, Path)):
-			audio_signal = AudioSignal.load_from_file_with_ffmpeg(str(audio_signal))
-
-		self.eval()
-		original_padding = self.padding
-		original_device = audio_signal.device
-
-		audio_signal = audio_signal.clone()
-		original_sr = audio_signal.sample_rate
-
-		resample_fn = audio_signal.resample
-		loudness_fn = audio_signal.loudness
-
-		# If audio is > 10 minutes long, use the ffmpeg versions
-		if audio_signal.signal_duration >= 10 * 60 * 60:
-			resample_fn = audio_signal.ffmpeg_resample
-			loudness_fn = audio_signal.ffmpeg_loudness
-
-		original_length = audio_signal.signal_length
-		resample_fn(self.sample_rate)
-		input_db = loudness_fn()
-
-		if normalize_db is not None:
-			audio_signal.normalize(normalize_db)
-		audio_signal.ensure_max_of_audio()
-
-		nb, nac, nt = audio_signal.audio_data.shape
-		audio_signal.audio_data = audio_signal.audio_data.reshape(nb * nac, 1, nt)
-		win_duration = (
-			audio_signal.signal_duration if win_duration is None else win_duration
-		)
-
-		if audio_signal.signal_duration <= win_duration:
-			# Unchunked compression (used if signal length < win duration)
-			self.padding = True
-			n_samples = nt
-			hop = nt
-		else:
-			# Chunked inference
-			self.padding = False
-			# Zero-pad signal on either side by the delay
-			audio_signal.zero_pad(self.delay, self.delay)
-			n_samples = int(win_duration * self.sample_rate)
-			# Round n_samples to nearest hop length multiple
-			n_samples = int(math.ceil(n_samples / self.hop_length) * self.hop_length)
-			hop = self.get_output_length(n_samples)
-
-		codes = []
-		range_fn = range if not verbose else tqdm.trange
-
-		for i in range_fn(0, nt, hop):
-			x = audio_signal[..., i : i + n_samples]
-			x = x.zero_pad(0, max(0, n_samples - x.shape[-1]))
-
-			audio_data = x.audio_data.to(self.device)
-			audio_data = self.preprocess(audio_data, self.sample_rate)
-			with torch.autocast("cuda", dtype=cfg.inference.dtype, enabled=cfg.inference.amp):
-				_, c, _, _, _ = self.encode(audio_data, n_quantizers)
-			codes.append(c.to(original_device))
-			chunk_length = c.shape[-1]
-
-		codes = torch.cat(codes, dim=-1)
-
-		dac_file = DACFile(
-			codes=codes,
-			chunk_length=chunk_length,
-			original_length=original_length,
-			input_db=input_db,
-			channels=nac,
-			sample_rate=original_sr,
-			padding=self.padding,
-			dac_version="1.0.0",
-			#dac_version=SUPPORTED_VERSIONS[-1],
-		)
-
-		if n_quantizers is not None:
-			codes = codes[:, :n_quantizers, :]
-
-		self.padding = original_padding
-		return dac_file
-
-	@torch.no_grad()
-	def CodecMixin_decompress(
-		self,
-		obj: Union[str, Path, DACFile],
-		verbose: bool = False,
-	) -> AudioSignal:
-		self.eval()
-		if isinstance(obj, (str, Path)):
-			obj = DACFile.load(obj)
-
-		original_padding = self.padding
-		self.padding = obj.padding
-
-		range_fn = range if not verbose else tqdm.trange
-		codes = obj.codes
-		original_device = codes.device
-		chunk_length = obj.chunk_length
-		recons = []
-
-		for i in range_fn(0, codes.shape[-1], chunk_length):
-			c = codes[..., i : i + chunk_length].to(self.device)
-			z = self.quantizer.from_codes(c)[0]
-			r = self.decode(z)
-			recons.append(r.to(original_device))
-
-		recons = torch.cat(recons, dim=-1)
-		recons = AudioSignal(recons, self.sample_rate)
-
-		# to-do, original implementation
-		if not hasattr(obj, "dummy") or not obj.dummy:
-			resample_fn = recons.resample
-			loudness_fn = recons.loudness
-			
-			# If audio is > 10 minutes long, use the ffmpeg versions
-			if recons.signal_duration >= 10 * 60 * 60:
-				resample_fn = recons.ffmpeg_resample
-				loudness_fn = recons.ffmpeg_loudness
-
-			recons.normalize(obj.input_db)
-			resample_fn(obj.sample_rate)
-			recons = recons[..., : obj.original_length]
-			loudness_fn()
-			recons.audio_data = recons.audio_data.reshape(
-				-1, obj.channels, obj.original_length
-			)
-		self.padding = original_padding
-		return recons
-
-	CodecMixin.compress = CodecMixin_compress
-	CodecMixin.decompress = CodecMixin_decompress
-
+	from .codecs.dac import *
 except Exception as e:
 	cfg.inference.use_dac = False
 	_logger.warning(str(e))
 
-# uses https://github.com/facebookresearch/AudioDec/
-# I have set up a pip-ify'd version with the caveat of having to manually handle downloading the checkpoints with a wget + unzip
-# I was not happy with testing, it sounded rather mediocre.
-"""
 try:
-	from audiodec.utils.audiodec import AudioDec, assign_model as _audiodec_assign_model
-except Exception as e:
-	cfg.inference.use_audiodec = False
+	from .codecs.nemo import *
+	cfg.inference.use_nemo = False
 	_logger.warning(str(e))
-"""
 
 @cache
 def _load_encodec_model(device="cuda", levels=0):
@@ -306,7 +128,7 @@ def _load_audiodec_model(device="cuda", model_name=None):
 		model_name = "libritts_v1" if cfg.sample_rate == 24_000 else "vctk_v1"
 	sample_rate, encoder_checkpoint, decoder_checkpoint = _audiodec_assign_model(model_name)
 
-	model = AudioDec(tx_device=device , rx_device=device )
+	model = AudioDec(tx_device=device, rx_device=device)
 	model.load_transmitter(encoder_checkpoint)
 	model.load_receiver(encoder_checkpoint, decoder_checkpoint)
 
@@ -317,10 +139,26 @@ def _load_audiodec_model(device="cuda", model_name=None):
 	return model
 
 @cache
+def _load_nemo_model(device="cuda", model_name=None):
+	if not model_name:
+		model_name = "nvidia/audio-codec-44khz"
+
+	model = AudioCodecModel.from_pretrained(model_name).to(device).eval()
+
+	model.backend = "nemo"
+	model.sample_rate = 44_100
+	#model.device = device
+
+	return model
+
+
+@cache
 def _load_model(device="cuda", backend=None):
 	if not backend:
 		backend = cfg.audio_backend
 
+	if backend == "nemo":
+		return _load_nemo_model(device)
 	if backend == "audiodec":
 		return _load_audiodec_model(device)
 	if backend == "dac":
@@ -353,6 +191,15 @@ def decode(codes: Tensor, device="cuda", metadata=None, window_duration=None):
 
 	# load the model
 	model = _load_model(device)
+
+	# NeMo uses a different pathway
+	if model.backend == "nemo":
+		# ugh
+		codes = rearrange( codes, "b q t -> b t q")
+		codes = codes.to( device=device )
+		l = torch.tensor([codes.shape[-1]], device=device, dtype=torch.int32)
+		wav, _ = model.decode(tokens=codes, tokens_len=l)
+		return wav, model.sample_rate
 
 	# AudioDec uses a different pathway
 	if model.backend == "audiodec":
@@ -483,6 +330,23 @@ def encode_as_embedding(codes: Tensor, quant_level: int = 0, sums=False, device=
 
 @torch.inference_mode()
 def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", return_metadata=True, window_duration=None):
+	# NeMo uses a different pathway
+	if cfg.audio_backend == "nemo":
+		model = _load_nemo_model( device )
+		# reshape (channel, samples) => (batch, channel, samples)
+		if wav.dim() < 3:
+			wav = wav.unsqueeze(0)
+		# skip unnecessary resample
+		if sr != model.sample_rate or wav.shape[1] != 1:
+			wav = convert_audio(wav, sr, model.sample_rate, 1)
+
+		wav = wav.to(device)[0, :, :]
+		l = torch.tensor([wav[0].shape[0]]).to(device)
+		
+		codes, _ = model.encode(audio=wav, audio_len=l)		
+		# ( batch, level, frame )
+		return codes[0]
+
 	# DAC uses a different pathway
 	if cfg.audio_backend == "dac":
 		model = _load_dac_model( device )

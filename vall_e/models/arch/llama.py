@@ -32,6 +32,8 @@ class LlamaAttention_Adapted(LlamaAttention):
 			self.mode = torch.nn.attention.SDPBackend.FLASH_ATTENTION
 		elif self.mode == "cudnn":
 			self.mode = torch.nn.attention.SDPBackend.CUDNN_ATTENTION
+		elif self.mode == "sdpa":
+			self.mode = torch.nn.attention.SDPBackend.MATH
 
 		super().__init__(*args, **kwargs)
 
@@ -393,6 +395,11 @@ class LlamaDecoderLayer_Adapted(LlamaDecoderLayer):
 
 		hidden_states = self.input_layernorm(hidden_states)
 		hidden_states = self.weigh_by_timestep( hidden_states, timesteps )
+		
+		# ugh
+		if isinstance( is_causal, list ) and len(is_causal) == 1:
+			is_causal = is_causal[0]
+
 		# Self Attention
 		hidden_states, self_attn_weights, present_key_value = self.self_attn(
 			hidden_states=hidden_states,
