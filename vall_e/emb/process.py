@@ -38,9 +38,9 @@ def process_items( items, stride=0, stride_offset=0 ):
 	items = sorted( items )
 	return items if stride == 0 else [ item for i, item in enumerate( items ) if (i+stride_offset) % stride == 0 ]
 
-def process_job( outpath, waveform, sample_rate, text=None, language="en", device="cuda" ):
+def process_job( outpath, waveform, sample_rate, text=None, language="en", device="cuda", dtype=None ):
 	# encodec requires this to be on CPU for resampling
-	qnt = quantize(waveform, sr=sample_rate, device=device)
+	qnt = quantize(waveform, sr=sample_rate, device=device, dtype=dtype)
 
 	if cfg.audio_backend == "dac":
 		state_dict = {
@@ -75,9 +75,12 @@ def process_job( outpath, waveform, sample_rate, text=None, language="en", devic
 	
 	np.save(open(outpath, "wb"), state_dict)
 
-def process_batched_jobs( jobs, speaker_id="", device=None, raise_exceptions=True, batch_size=1 ):
+def process_batched_jobs( jobs, speaker_id="", device=None, raise_exceptions=True, batch_size=1, dtype=None ):
 	if not jobs:
 		return
+
+	# sort to avoid egregious padding
+	jobs = sorted(jobs, key=lambda x: x[1].shape[-1], reverse=True)
 
 	buffer = []
 	batches = []
@@ -88,7 +91,7 @@ def process_batched_jobs( jobs, speaker_id="", device=None, raise_exceptions=Tru
 			batches.append(buffer)
 			buffer = []
 	
-	if len(buffer) >= batch_size:
+	if buffer:
 		batches.append(buffer)
 		buffer = []
 
@@ -101,7 +104,7 @@ def process_batched_jobs( jobs, speaker_id="", device=None, raise_exceptions=Tru
 			srs.append(sample_rate)
 		
 		try:
-			codes = quantize_batch(wavs, sr=srs, device=device)
+			codes = quantize_batch(wavs, sr=srs, device=device, dtype=dtype)
 		except Exception as e:
 			_logger.error(f"Failed to quantize: {outpath}: {str(e)}")
 			if raise_exceptions:
@@ -142,18 +145,18 @@ def process_batched_jobs( jobs, speaker_id="", device=None, raise_exceptions=Tru
 			
 			np.save(open(outpath, "wb"), state_dict)
 
-def process_jobs( jobs, speaker_id="", device=None, raise_exceptions=True, batch_size=1 ):
+def process_jobs( jobs, speaker_id="", device=None, raise_exceptions=True, batch_size=1, dtype=None ):
 	if not jobs:
 		return
 
 	# batch things
 	if batch_size > 1:
-		return process_batched_jobs( jobs, speaker_id=speaker_id, device=device, raise_exceptions=raise_exceptions, batch_size=batch_size )
+		return process_batched_jobs( jobs, speaker_id=speaker_id, device=device, raise_exceptions=raise_exceptions, batch_size=batch_size, dtype=dtype )
 	
 	for job in tqdm(jobs, desc=f"Quantizing: {speaker_id}"):
 		outpath, waveform, sample_rate, text, language = job
 		try:
-			process_job( outpath, waveform, sample_rate, text, language, device )
+			process_job( outpath, waveform, sample_rate, text, language, device, dtype=dtype )
 		except Exception as e:
 			_logger.error(f"Failed to quantize: {outpath}: {str(e)}")
 			if raise_exceptions:
@@ -185,6 +188,8 @@ def process(
 
 	cfg.inference.weight_dtype = dtype # "bfloat16"
 	cfg.inference.amp = amp # False
+
+	dtype = None
 
 	output_dataset = f"{output_dataset}/{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
 
@@ -334,12 +339,12 @@ def process(
 
 				# processes audio files one at a time
 				if low_memory:
-					process_jobs( jobs, device=device, speaker_id=f'{speaker_id}/{filename}', raise_exceptions=raise_exceptions, batch_size=batch_size )
+					process_jobs( jobs, device=device, speaker_id=f'{speaker_id}/{filename}', raise_exceptions=raise_exceptions, batch_size=batch_size, dtype=dtype if not amp else None )
 					jobs = []
 			
 			# processes all audio files for a given speaker
 			if not low_memory:
-				process_jobs( jobs, device=device, speaker_id=speaker_id, raise_exceptions=raise_exceptions, batch_size=batch_size )
+				process_jobs( jobs, device=device, speaker_id=speaker_id, raise_exceptions=raise_exceptions, batch_size=batch_size, dtype=dtype if not amp else None )
 				jobs = []
 
 	open(f"./{output_dataset}/missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
