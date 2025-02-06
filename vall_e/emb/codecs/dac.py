@@ -4,6 +4,8 @@ from dac import DACFile
 from audiotools import AudioSignal
 from dac.utils import load_model as __load_dac_model
 
+from typing import Union
+from pathlib import Path
 """
 Patch decode to skip things related to the metadata (namely the waveform trimming)
 So far it seems the raw waveform can just be returned without any post-processing
