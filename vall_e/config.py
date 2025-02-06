@@ -817,13 +817,13 @@ class Config(BaseConfig):
 			cfg.model.resp_levels = 9
 		elif cfg.audio_backend == "audiodec":
 			audio_extension = ".dec"
-			sample_rate = 48_000
+			cfg.sample_rate = 48_000
 			cfg.model.resp_levels = 8 # ?
 		elif cfg.audio_backend == "nemo":
 			audio_extension = ".nem"
-			sample_rate = 44_100
+			cfg.sample_rate = 44_100
 			cfg.model.resp_levels = 8
-			cfg.model.audio_tokens = 1000
+			#cfg.model.audio_tokens = 1000
 		else:
 			raise Exception(f"Unknown audio backend: {audio_backend}")
 
