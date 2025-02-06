@@ -32,7 +32,6 @@ from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, Mult
 from .arch import *
 from ..utils import wrapper as ml, clamp
 from ..samplers import *
-from ..emb.qnt import encode_as_embedding
 
 # yuck, kind of needed
 from ..data import get_task_symmap
@@ -115,21 +114,11 @@ def _join(x: tuple[Tensor], sep: Tensor):
 		ret = torch.cat((ret, sep[None], x[i]), dim=0)
 	return ret
 
-def list_to_tensor(x_list: list[Tensor], pattern="t b c -> b t c"):
-	"""
-	Args:
-		x_list: [(t d)]
-	Returns:
-		x: (? ? ?)
-		m: (? ? ?), same as x
-	"""
+def list_to_tensor(x_list: list[Tensor]):
 	l = list(map(len, x_list))
-	x = rearrange(pad_sequence(x_list), pattern)
+	x = pad_sequence(x_list, batch_first=True)
 	m = _create_mask(l, x_list[0].device)
-	"""
-	m = m.t().unsqueeze(-1)  # (t b 1)
-	m = rearrange(m, pattern)
-	"""
+
 	m = m.to(x).int()
 	return x, m
 

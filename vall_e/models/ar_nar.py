@@ -23,7 +23,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-from ..emb.qnt import trim, encode_as_embedding, get_silence
+from ..emb.qnt import trim, get_silence
 from ..utils import get_devices, setup_logging, timer, clamp, convert_kwargs
 
 from .lora import enable_lora
