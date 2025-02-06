@@ -298,6 +298,9 @@ def process(
 					if waveform is None:
 						waveform, sample_rate = load_audio( inpath )
 
+					if max_duration and waveform.shape[-1] / sample_rate > max_duration:
+						continue
+
 					jobs.append(( outpath, waveform, sample_rate, text, language ))
 				else:
 					i = 0
