@@ -958,6 +958,7 @@ def example_usage():
 	from tqdm import tqdm
 
 	from ..emb.qnt import decode_to_file, unload_model, trim_random, repeat_extend_audio, concat_audio, merge_audio
+	from ..data import _load_artifact
 	from ..engines import Engine, Engines
 	from ..utils import wrapper as ml
 	from ..utils import setup_logging
@@ -972,19 +973,19 @@ def example_usage():
 	setup_logging()
 
 	def load_artifact( path ):
-		artifact = np.load(path, allow_pickle=True)[()]
+		audio, metadata = _load_artifact(path, return_metadata=True)
 
-		text = torch.tensor( cfg.tokenizer.encode( artifact["metadata"]["phonemes"] ) ).to(dtype=torch.uint8, device=cfg.device)
-		audio = torch.from_numpy(artifact["codes"].astype(np.int16))[0, :, :].t().to(dtype=torch.int16, device=cfg.device)
+		audio = audio.to(cfg.device)
+		text = torch.tensor( cfg.tokenizer.encode( metadata["phonemes"] ) ).to(dtype=torch.uint8, device=cfg.device)
 
 		return text, audio
 
-	text, audio = load_artifact(f"./data/qnt.{'dac' if cfg.audio_backend == 'dac' else 'enc'}")
+	text, audio = load_artifact(f"./data/qnt.{cfg.audio_backend_extension}")
 	batch_size = cfg.hyperparameters.batch_size
 
 	text_list = [ text ] * batch_size
-	proms_list = [ audio[:cfg.dataset.frames_per_second, :] ] * batch_size
-	resps_list = [ audio[:cfg.dataset.frames_per_second * 4, :] ] * batch_size
+	proms_list = [ audio[:int(cfg.dataset.frames_per_second), :] ] * batch_size
+	resps_list = [ audio[:int(cfg.dataset.frames_per_second * 4), :] ] * batch_size
 
 	kwargs = {
 		'n_text_tokens': 256,
