@@ -322,7 +322,8 @@ def encode(wav: Tensor, sr: int = cfg.sample_rate, device="cuda", dtype=None, re
 	
 	# resample if necessary
 	if sr != cfg.sample_rate or wav.shape[1] != 1:
-		wav = convert_audio(wav, sr, cfg.sample_rate, 1)
+		dtype = wav.dtype
+		wav = convert_audio(wav.to(torch.float32), sr, cfg.sample_rate, 1).to(dtype)
 	
 	wav = wav.to(device)
 
@@ -351,7 +352,8 @@ def encode_batch( wavs: list[Tensor], sr: list[int] | int = cfg.sample_rate, dev
 	# resample if necessary
 	for i, wav in enumerate(wavs):
 		if sr[i] != cfg.sample_rate or wavs[i].shape[1] != 1:
-			wavs[i] = convert_audio(wavs[i], sr[i], cfg.sample_rate, 1)
+			dtype = wav.dtype
+			wavs[i] = convert_audio(wavs[i].to(torch.float32), sr[i], cfg.sample_rate, 1).to(dtype)
 
 		# (frames) => (channel, frames)
 		if wavs[i].dim() < 2:

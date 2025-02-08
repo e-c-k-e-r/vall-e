@@ -177,7 +177,7 @@ def process(
 	slice="auto",
 	batch_size=1,
 	max_duration=None,
-
+	skip_existing_folders=False,
 	low_memory=False,
 
 	device="cuda",
@@ -236,8 +236,13 @@ def process(
 				continue
 			if only_speakers and speaker_id not in only_speakers:
 				continue
+			
+			outfolder = Path(f'./{output_dataset}/{group_name}/{speaker_id}/')
 
-			os.makedirs(f'./{output_dataset}/{group_name}/{speaker_id}/', exist_ok=True)
+			if skip_existing_folders and outfolder.exists():
+				continue
+			
+			outfolder.mkdir(parents=True, exist_ok=True)
 
 			if speaker_id in audio_only:
 				for filename in sorted(os.listdir(f'./{input_audio}/{group_name}/{speaker_id}/')):
@@ -369,6 +374,7 @@ def main():
 	parser.add_argument("--output-dataset", type=str, default="training/dataset")
 	parser.add_argument("--raise-exceptions", action="store_true")
 	parser.add_argument("--low-memory", action="store_true")
+	parser.add_argument("--skip-existing-folders", action="store_true")
 	parser.add_argument("--stride", type=int, default=0)
 	parser.add_argument("--stride-offset", type=int, default=0)
 	parser.add_argument("--slice", type=str, default="auto")
@@ -405,6 +411,7 @@ def main():
 		slice=args.slice,
 		batch_size=args.batch_size,
 		max_duration=args.max_duration,
+		skip_existing_folders=args.skip_existing_folders,
 		
 		low_memory=args.low_memory,
 
