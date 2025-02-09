@@ -165,11 +165,17 @@ def transcribe(
 	start = 0
 	end = 0
 	segments = []
-	for segment in result["chunks"]:
+
+	info = torchaudio.info(audio)
+	duration = info.num_frames / info.sample_rate
+
+	for segment in result["chunks"]:		
 		text = segment["text"]
 		
 		if "timestamp" in segment:
 			s, e = segment["timestamp"]
+			if not e:
+				e = duration
 			start = min( start, s )
 			end = max( end, e )
 		else:
@@ -285,12 +291,12 @@ def transcribe_batch(
 		if not os.path.isdir(f'./{input_audio}/{dataset_name}/'):
 			continue
 
-		if group_name in ignore_groups:
+		if dataset_name in ignore_groups:
 			continue
-		if only_groups and group_name not in only_groups:
+		if only_groups and dataset_name not in only_groups:
 			continue
 
-		for speaker_id in tqdm(process_items(os.listdir(f'./{input_audio}/{dataset_name}/')), desc="Processing speaker"):
+		for speaker_id in tqdm(process_items(os.listdir(f'./{input_audio}/{dataset_name}/'), stride=stride, stride_offset=stride_offset), desc="Processing speaker"):
 			if not os.path.isdir(f'./{input_audio}/{dataset_name}/{speaker_id}'):
 				continue
 
