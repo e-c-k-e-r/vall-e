@@ -25,6 +25,7 @@ from tqdm.auto import tqdm
 from pathlib import Path
 
 from ..utils import coerce_dtype
+from ..utils.io import json_read, json_write
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
@@ -308,7 +309,7 @@ def transcribe_batch(
 			outpath = Path(f'./{output_metadata}/{dataset_name}/{speaker_id}/whisper.json')
 
 			if outpath.exists():
-				metadata = json.loads(open(outpath, 'r', encoding='utf-8').read())
+				metadata = json_read( outpath )
 			else:
 				os.makedirs(f'./{output_metadata}/{dataset_name}/{speaker_id}/', exist_ok=True)
 				metadata = {}
@@ -327,7 +328,7 @@ def transcribe_batch(
 
 				metadata[filename] = transcribe( inpath, model_name=model_name, diarize=diarize, device=device, dtype=dtype )
 
-				open(outpath, 'w', encoding='utf-8').write(json.dumps(metadata))
+				json_write( metadata, outpath )
 
 def main():
 	parser = argparse.ArgumentParser()

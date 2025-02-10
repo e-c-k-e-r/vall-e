@@ -762,8 +762,13 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		phones = entry['phones'] if "phones" in entry else 0
 		duration = entry['duration'] if "duration" in entry else 0
 
-		# add to duration bucket
 		k = key(id, entry)
+		
+		# double check if in HDF5
+		if cfg.dataset.use_hdf5 and k not in cfg.hdf5:
+			return False
+
+		# add to duration bucket
 		if type not in _durations_map:
 			_durations_map[type] = {}
 		_durations_map[type][k] = duration
