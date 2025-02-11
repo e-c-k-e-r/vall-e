@@ -58,6 +58,8 @@ For audio backends:
 * [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality, but has issues with model convergence.
   - models at 24KHz + 8kbps will NOT converge in any manner.
   - models at 44KHz + 8kbps seems harder to model its "language", and the NAR side of the model suffers greatly.
+* [`nvidia/audio-codec-44khz`](https://huggingface.co/nvidia/audio-codec-44khz): boasts even better compression and quality
+  - this codec employs FSQ instead of RVQ.
 
 #### Descript-Audio-Codec
 
@@ -74,6 +76,23 @@ I'm uncertain on how to remedy this, as my options are:
 * train a separate model that simply converts from EnCodec to DAC (requires another model to juggle, but does not require training a new model)
 * train *all* NAR levels as independent masking sequences similar to the `NAR-len` (complicated)
   * if this works, then it means that there's little to no mappable relation between DAC's RVQ levels
+
+  Other literature does mention the difficulty for a model to model using DAC as a codec.
+
+#### `nvidia/audio-codec-44khz`
+
+This novel codec promises more than DAC without the difficulty to model with it.
+
+NVIDIA's NeMo audio codec doesn't necessarily have a concrete name, but is simply referred to as `nemo` in the code. The included code under `./emb/codecs/nemo.py` is mostly copied (with attribution) from the reference implementation with additional tweaks. In the future, it would be beneficial to decouple it from NeMo's framework and its dependencies.
+
+However, because this codec relies on FSQ (Finite Scalar Quantization) rather than RVQ (Residual Vector Quantization), each level of the codebook governs a specific band of the mel spectrum, where each level for RVQ governs additive levels to the final audio. Because of this, the original approach of inferencing the strongest detail, then each level predicts the next, isn't a good fit for FSQ-based codecs.
+
+Proposed architectures may include:
+* independent NAR-demasking for *all* levels, rather than FSQ level 0.
+  * little additional code is required, as existing NAR-demasking training/inference code can be repurposed for additional levels.
+* parallel decoding for *all* levels in one pass, rather than separate passes for each level.
+  * some extra code would be required for orchestrating the additional decoding heads in parallel.
+  * the decoding heads may simply be a single `nn.Linear` classifier, or additional transformer blocks.
 
 ## `transcribe.py`
 
