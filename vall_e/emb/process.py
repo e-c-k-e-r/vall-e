@@ -312,7 +312,7 @@ def process(
 				elif language == "chinese":
 					language = "zh"
 
-				if strict_language and language not in ["en", "ja", "fr", "de", "ko", "zh"]:
+				if strict_languages and language not in ["en", "ja", "fr", "de", "ko", "zh"]:
 					language = "auto"
 
 				if len(metadata[filename]["segments"]) == 0 or not use_slices:

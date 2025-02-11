@@ -22,6 +22,7 @@ import torchaudio.functional as F
 import torchaudio.transforms as T
 
 from ..config import cfg
+from ..data import _load_artifact
 from ..utils import truncate_json, coerce_dtype
 from ..utils.io import json_read, json_write
 
@@ -171,10 +172,10 @@ def batch_similar_utterances(
 			if extension not in artifact_extension:
 				raise Exception("!")
 
-			artifact = np.load(f'./{speaker_path}/{filename}.{extension}', allow_pickle=True)[()]
-			duration = artifact["metadata"]["original_length"] / artifact["metadata"]["sample_rate"]
+			_, metadata = _load_artifact(f'./{speaker_path}/{filename}.{extension}', return_metadata=True)
 
 			"""
+			duration = metadata["original_length"] / metadata["sample_rate"]
 			if 0 < min_duration and duration < min_duration:
 				continue
 			
@@ -182,11 +183,11 @@ def batch_similar_utterances(
 				continue
 			"""
 
-			lang = artifact["metadata"]["language"] if "language" in artifact["metadata"]["language"] else "en"
-			if "phonemes" in artifact["metadata"]:
-				phn = artifact["metadata"]["phonemes"]
-			elif "text" in artifact["metadata"]:
-				txt = artifact["metadata"]["text"]
+			lang = metadata["language"] if "language" in metadata["language"] else "en"
+			if "phonemes" in metadata:
+				phn = metadata["phonemes"]
+			elif "text" in metadata:
+				txt = metadata["text"]
 				phn = phonemize( txt, language=lang )
 			
 			phn = phn.replace("(en)", "")
@@ -198,10 +199,12 @@ def batch_similar_utterances(
 			# treat embeddings as features, if provided quantized audio
 			if extension not in artifact_extension:
 				continue
-			artifact = np.load(f'./{speaker_path}/{filename}.{extension}', allow_pickle=True)[()]
-			duration = artifact["metadata"]["original_length"] / artifact["metadata"]["sample_rate"]
+
+			qnt, metadata = _load_artifact(f'./{speaker_path}/{filename}.{extension}', return_metadata=True)
 
 			"""
+			duration = metadata["original_length"] / metadata["sample_rate"]
+
 			if 0 < min_duration and duration < min_duration:
 				continue
 			
@@ -209,11 +212,11 @@ def batch_similar_utterances(
 				continue
 			"""
 
-			qnt = torch.from_numpy(artifact["codes"].astype(int))[0].t().to(dtype=torch.int16, device=device)
-
 			if trim_duration > 0:
 				qnt = trim( qnt, int( cfg.dataset.frames_per_second * trim_duration ) )
 			
+			qnt = qnt.to(device)
+
 			embedding = tts.audio_embedding( qnt )
 		# try and extract features from the raw audio itself
 		else:
@@ -307,10 +310,23 @@ def batch_similar_utterances(
 """
 def sort_similarities(
 	path,
+	num_speakers,
 	out_path=None,
 	threshold=0.8,
 	orphan_threshold=0.6,
 ):
+	from sklearn.cluster import KMeans
+
+	folders = [ "1", "2", "3", "4", "5", "6-7", "8", "9", "10", "11", "12", "14", "15" ]
+	embeddings = json_read(path / "0" / "embeddings.json")
+
+	for filename, embedding in embeddings.items():
+		embeddings[filename] = np.array(embedding)
+
+	embeddings_array = np.stack( list( embeddings.values() ) )
+	kmeans = KMeans(n_clusters=num_speakers).fit(embeddings_array)
+
+	"""
 	if not out_path:
 		out_path = path.parent / "speakers.json"
 
@@ -371,7 +387,7 @@ def sort_similarities(
 			continue
 		
 		speakers[target].append(filename)
-
+	"""
 
 	json_write( speakers, out_path )
 
