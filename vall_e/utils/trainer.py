@@ -109,9 +109,15 @@ def _make_infinite_epochs(dl):
 		if dl.dataset.index() == 0:
 			_logger.info("New epoch starts.")
 		
+		with tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader()) as pbar:
+			yield from pbar
+
+		"""
+		# this breaks the bar on a new epoch...
 		total = dl.dataset.batches() - dl.dataset.index()
 		with tqdm(dl, "Epoch progress", dynamic_ncols=True, disable=not is_global_leader(), total=total) as pbar:
 			yield from pbar
+		"""
 
 @local_leader_only(default=None)
 def logger(data):

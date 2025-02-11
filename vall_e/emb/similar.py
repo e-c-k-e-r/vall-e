@@ -164,9 +164,13 @@ def batch_similar_utterances(
 	"""
 
 	# compute features (embeddings if quantized already, MFCC features if raw audio)
+	dim_shape = 1024
 	for filename in tqdm(os.listdir(f'./{speaker_path}/'), desc=f"Encoding '{speaker_path.name}'", disable=not verbose):
 		extension = filename.split(".")[-1]
 		filename = filename.replace(f".{extension}", "")
+
+		if filename not in features:
+			continue
 
 		if similarity_backend == "text":
 			if extension not in artifact_extension:
@@ -273,6 +277,9 @@ def batch_similar_utterances(
 
 	if top_k == 0:
 		top_k = len(keys)
+
+	if len(keys) == 0:
+		return None
 
 	# fill any missing keys with a null embedding to keep the order the same
 	null_embedding = torch.zeros( (dim_shape,), device=tts.device, dtype=tts.dtype )
@@ -443,26 +450,29 @@ def main():
 			if args.skip_existing and metadata_keys and "similar" in metadata[metadata_keys[-1]]:
 				return
 
-			similarities = batch_similar_utterances(
-				speaker_path=cfg.data_dir / speaker_name,
-				yaml=args.yaml,
-				top_k=args.top_k,
-				top_p=args.top_p,
-				#trim_duration=args.trim_duration,
-				#min_duration=args.min_duration,
-				#max_duration=args.max_duration,
-				audio_backend=args.audio_backend,
-				storage_backend=args.storage_backend,
-				similarity_backend=args.similarity_backend,
+			try:
+				similarities = batch_similar_utterances(
+					speaker_path=cfg.data_dir / speaker_name,
+					yaml=args.yaml,
+					top_k=args.top_k,
+					top_p=args.top_p,
+					#trim_duration=args.trim_duration,
+					#min_duration=args.min_duration,
+					#max_duration=args.max_duration,
+					audio_backend=args.audio_backend,
+					storage_backend=args.storage_backend,
+					similarity_backend=args.similarity_backend,
 
-				metadata_keys=metadata_keys,
+					metadata_keys=metadata_keys,
 
-				device=args.device,
-				dtype=args.dtype,
-				amp=args.amp,
+					device=args.device,
+					dtype=args.dtype,
+					amp=args.amp,
 
-				verbose=True,
-			)
+					verbose=True,
+				)
+			except Exception as e:
+				similarities = None
 			
 			if not similarities:
 				return

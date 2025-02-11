@@ -879,6 +879,7 @@ class Dataset(_Dataset):
 		self.duration_map = _get_duration_map( self.dataset_type )
 
 		# cull speakers if they do not have enough utterances (or cull speakers with too many utternaces)
+		"""
 		if cfg.dataset.min_utterances > 0 or cfg.dataset.max_utterances > 0:
 			keys = list(self.paths_by_spkr_name.keys())
 			for key in keys:
@@ -889,7 +890,7 @@ class Dataset(_Dataset):
 				# slice away extraneous utterances
 				if cfg.dataset.max_utterances:
 					self.paths_by_spkr_name[key] = self.paths_by_spkr_name[key][:cfg.dataset.max_utterances]
-
+		"""
 		# flatten paths
 		self.paths = list(itertools.chain.from_iterable(self.paths_by_spkr_name.values()))
 		
@@ -1191,10 +1192,17 @@ class Dataset(_Dataset):
 		if len(reference_metadata["similar"]) >= offset:
 			offset = 0
 
+		# cringe stopgap
+		offset_end = offset + cfg.dataset.prompt_similar_top_k
+		if offset >= len( reference_metadata["similar"] ):
+			return None
+		if offset_end >= len( reference_metadata["similar"] ):
+			return None
+
 		metadata_keys = list(metadata.keys())
 
 		if cfg.dataset.prompt_similar_top_k > 1:
-			indices = reference_metadata["similar"][offset:offset+cfg.dataset.prompt_similar_top_k]
+			indices = reference_metadata["similar"][offset:offset_end]
 			index = random.choice( indices )
 		else:
 			index = reference_metadata["similar"][offset]
@@ -1246,7 +1254,10 @@ class Dataset(_Dataset):
 				# yuck
 				path = None
 				if random.random() < cfg.dataset.prompt_similar_p:
-					path = self.get_similar_utterance( reference, offset = len(prom_list) )
+					try:
+						path = self.get_similar_utterance( reference, offset = len(prom_list) )
+					except Exception as e:
+						path = None
 				if not path:
 					path = random.choice(choices)
 			else:
@@ -1310,7 +1321,13 @@ class Dataset(_Dataset):
 			key = _get_hdf5_path(path)
 
 			if key not in cfg.hdf5:
-				raise RuntimeError(f'Key of Path ({path}) not in HDF5: {key}')
+				_logger.warning(f'Key of Path ({path}) not in HDF5: {key}')
+				return dict(path=None)
+
+			# cringe stopgap
+			if "text" not in cfg.hdf5[key] or "audio" not in cfg.hdf5[key]:
+				_logger.warning(f"text/audio not in entry: {key}")
+				return dict(path=None)
 
 			# I need to do some weird coersion to a normal dict because it'll bitch about Hdf5 objects not being pickleable in worker processes
 			metadata = { f'{k}': f'{v}' for k, v in cfg.hdf5[key].attrs.items() }
@@ -1341,6 +1358,9 @@ class Dataset(_Dataset):
 		
 		if not tone:
 			tone = "neutral"
+
+		if lang == "auto":
+			lang = "en"
 
 		lang = torch.tensor([self.lang_symmap[lang]]).to(torch.uint8)
 		tone = torch.tensor([self.tone_symmap[tone]]).to(torch.uint8)
@@ -1601,6 +1621,7 @@ class Dataset(_Dataset):
 
 
 def collate_fn(samples: list[dict]):
+	samples = [ s for s in samples if s["path"] is not None ]
 	batch: dict[str, Any] = {k: [s[k] for s in samples] for k in samples[0]}
 	return batch
 
