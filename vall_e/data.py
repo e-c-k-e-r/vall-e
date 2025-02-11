@@ -749,11 +749,7 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 	metadata = {}
 
 	if cfg.dataset.use_metadata and metadata_path.exists():
-		#metadata = json.loads(open( metadata_path, "r", encoding="utf-8" ).read())
-		try:
-			metadata = json_read( metadata_path )
-		except Exception as e:
-			return []
+		metadata = json_read( metadata_path )
 
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_artifact_extension(), validate )
@@ -765,8 +761,11 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		k = key(id, entry)
 		
 		# double check if in HDF5
+		# this might be slow
+		"""
 		if cfg.dataset.use_hdf5 and k not in cfg.hdf5:
 			return False
+		"""
 
 		# add to duration bucket
 		if type not in _durations_map:
@@ -1201,7 +1200,16 @@ class Dataset(_Dataset):
 			index = reference_metadata["similar"][offset]
 		name = metadata_keys[index]
 
-		return root / name
+		path = root / name
+
+		if cfg.dataset.use_hdf5:
+			key = _get_hdf5_path(path)
+			if key not in cfg.hdf5[key]:
+				return None
+		elif not path.exists():
+			return None
+
+		return path
 
 	def sample_prompts(self, spkr_name, reference, should_trim=True):
 		# return no prompt if explicitly requested for who knows why
@@ -1243,6 +1251,7 @@ class Dataset(_Dataset):
 					path = random.choice(choices)
 			else:
 				path = random.choice(choices)
+
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
 				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)

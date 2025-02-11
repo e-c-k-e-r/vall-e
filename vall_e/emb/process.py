@@ -246,7 +246,7 @@ def process(
 			outfolder.mkdir(parents=True, exist_ok=True)
 
 			if speaker_id in audio_only:
-				for filename in sorted(os.listdir(f'./{input_audio}/{group_name}/{speaker_id}/')):
+				for filename in tqdm(sorted(os.listdir(f'./{input_audio}/{group_name}/{speaker_id}/')), desc=f"Processing {speaker_id}"):
 					inpath = Path(f'./{input_audio}/{group_name}/{speaker_id}/{filename}')
 					outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{filename}').with_suffix(audio_extension)
 
