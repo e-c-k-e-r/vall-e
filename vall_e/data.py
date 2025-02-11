@@ -1250,21 +1250,23 @@ class Dataset(_Dataset):
 			trim_length = 0
 
 		for _ in range(cfg.dataset.prompt_max_samples):
+			# yuck
+			path = None
 			if reference is not None:
-				# yuck
-				path = None
 				if random.random() < cfg.dataset.prompt_similar_p:
 					try:
 						path = self.get_similar_utterance( reference, offset = len(prom_list) )
 					except Exception as e:
 						path = None
-				if not path:
-					path = random.choice(choices)
-			else:
+
+			if not path:
 				path = random.choice(choices)
 
 			if cfg.dataset.use_hdf5:
 				key = _get_hdf5_path(path)
+				if key not in cfg.hdf5:
+					_logger.warning(f'Key of Path ({path}) not in HDF5: {key}')
+					continue
 				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 			else:
 				qnt = _load_artifact(path, return_metadata=False)

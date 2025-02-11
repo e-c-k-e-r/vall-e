@@ -363,6 +363,10 @@ class Model:
 	def audio_tokens(self):
 		if isinstance(self.size, dict) and hasattr(self.size, "audio_tokens"):
 			return self.size['audio_tokens']
+		
+		if cfg.audio_backend == "nemo":
+			return 1000
+
 		return 1024
 
 	@property

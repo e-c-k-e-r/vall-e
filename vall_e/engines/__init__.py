@@ -241,19 +241,50 @@ def load_engines(training=True, **model_kwargs):
 					("classifier.bias", model.n_vocab ),
 				]
 
+				last_embedding_keys = {}
+
 				# correcting an oversight
+				"""
 				if model.config.experimental.split_classifiers and "len" in model.capabilities:
 					len_idx, nar_0_idx = model.classifiers.indices(["len", "NAR:0:0"])
 					keys.append((f"classifiers.proj.{len_idx}.weight", 11))
 					keys.append((f"classifiers.proj.{len_idx}.bias", 11))
 
-					keys.append((f"classifiers.proj.{nar_0_idx}.weight", 1024))
-					keys.append((f"classifiers.proj.{nar_0_idx}.bias", 1024))
+					keys.append((f"classifiers.proj.{nar_0_idx}.weight", model.config.audio_tokens))
+					keys.append((f"classifiers.proj.{nar_0_idx}.bias", model.config.audio_tokens))
+				"""
+
+				# correcting an oversight
+				"""
+				if True:
+					keys.append((f"classifiers.proj.0.weight", model.config.audio_tokens+1))
+					for i in range(1,9):
+						keys.append((f"classifiers.proj.{i}.weight", model.config.audio_tokens))
+
+					keys.append((f"resps_emb.embeddings.0.weight", model.config.audio_tokens+1))
+					keys.append((f"resps_emb.embeddings.8.weight", model.config.audio_tokens+1))
+
+					for i in range(1,8):
+						keys.append((f"resps_emb.embeddings.{i}.weight", model.config.audio_tokens))
+					
+					for i in range(8):
+						keys.append((f"proms_emb.embeddings.{i}.weight", model.config.audio_tokens))
+
+					last_embedding_keys = {
+						"classifiers.proj.0.weight": state["classifiers.proj.0.weight"][-1].clone().detach(),
+						"resps_emb.embeddings.0.weight": state["resps_emb.embeddings.0.weight"][-1].clone().detach(),
+						"resps_emb.embeddings.8.weight": state["resps_emb.embeddings.8.weight"][-1].clone().detach(),
+					}
+				"""
+
 
 				for k, tokens in keys:
 					if k not in state:
 						continue
 					state[k] = ml.resize_weight( state[k], tokens )
+
+				for k, v in last_embedding_keys.items():
+					state[k][-1] = v
 
 			# stuff to inject new layers into an existing model train over (not recommended, it doesnt amount to anything)
 			"""
