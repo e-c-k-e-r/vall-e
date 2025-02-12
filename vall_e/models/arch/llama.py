@@ -435,7 +435,7 @@ class LlamaDecoderLayer_Adapted(LlamaDecoderLayer):
 
 class LlamaModel_Adapted(LlamaModel):
 	def __init__(self, config, *args, **kwargs):
-		self.layer_dropout_p = kwargs.pop("layer_dropout_p", 0.1)
+		self.layer_dropout_p = kwargs.pop("layer_dropout_p", 0)
 		self.early_exit_scale = kwargs.pop("early_exit_scale", 0.1)
 		self.early_exit_r = kwargs.pop("early_exit_r", 2)
 
@@ -459,7 +459,7 @@ class LlamaModel_Adapted(LlamaModel):
 		self.post_init()
 
 	def dropoff_layer( self, l ):
-		if not self.training:
+		if not self.training or self.layer_dropout_p <= 0:
 			return False
 
 		# this could probably a LUT but I'm not fiending for aggressive mal-optimizations

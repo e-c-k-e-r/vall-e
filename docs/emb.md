@@ -90,9 +90,11 @@ However, because this codec relies on FSQ (Finite Scalar Quantization) rather th
 Proposed architectures may include:
 * independent NAR-demasking for *all* levels, rather than FSQ level 0.
   * little additional code is required, as existing NAR-demasking training/inference code can be repurposed for additional levels.
+  * this also has the best backwards compat with vall_e.cpp, as no extra model code is required.
 * parallel decoding for *all* levels in one pass, rather than separate passes for each level.
   * some extra code would be required for orchestrating the additional decoding heads in parallel.
   * the decoding heads may simply be a single `nn.Linear` classifier, or additional transformer blocks.
+    * the former yields bad results when overfitting, the latter without an output projection head allows for overfitting.
 
 ## `transcribe.py`
 

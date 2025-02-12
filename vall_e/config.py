@@ -259,6 +259,9 @@ class ModelExperimentalSettings:
 	# it just seems like a bitch to try and train something worthwhile with it, since there's crackles every other token
 	# RetNet's chunked inferencing might be a better place for this
 
+	parallel_decoding: bool = False # enables some settings to decode ALL RVQ levels in one pass
+	# this is a bit of a pain to get working in the test trainer
+
 	masking_train_p: float = 0.0 # odds of training with masking
 	masking_train_rvq_levels: list = field(default_factory=lambda: [0,0]) # determines which levels to do mask training on
 

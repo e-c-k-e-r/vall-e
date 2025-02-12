@@ -15,52 +15,36 @@ from pathlib import Path
 
 from vall_e.config import cfg
 
-def pad(num, zeroes):
-	return str(num).zfill(zeroes+1)
+from vall_e.emb.g2p import encode as phonemize
+from vall_e.emb.qnt import encode as quantize, _replace_file_extension, convert_audio
 
-def process_items( items, stride=0, stride_offset=0 ):
-	items = sorted( items )
-	return items if stride == 0 else [ item for i, item in enumerate( items ) if (i+stride_offset) % stride == 0 ]
+from vall_e.emb.process import pad, load_audio, process_items, process_jobs
+
 
 def process(
-		audio_backend="encodec",
-		input_audio="LibriTTS_R",
-		output_dataset="training",
-		raise_exceptions=False,
-		stride=0,
-		stride_offset=0,
-		slice="auto",
+	audio_backend="encodec",
+	input_audio="LibriTTS_R",
+	output_dataset="training",
+	raise_exceptions=False,
+	stride=0,
+	stride_offset=0,
+	slice="auto",
+	batch_size=1,
+	low_memory=False,
 
-		device="cuda",
-		dtype="float16",
-		amp=False,
-	):
-	# encodec / vocos
-
-	if audio_backend in ["encodec", "vocos"]:
-		audio_extension = ".enc"
-		cfg.sample_rate = 24_000
-		cfg.model.resp_levels = 8
-	elif audio_backend == "dac":
-		audio_extension = ".dac"
-		cfg.sample_rate = 44_100
-		cfg.model.resp_levels = 9
-	elif cfg.audio_backend == "audiodec":
-		sample_rate = 48_000
-		audio_extension = ".dec"
-		cfg.model.resp_levels = 8 # ?
-	else:
-		raise Exception(f"Unknown audio backend: {audio_backend}")
-
+	device="cuda",
+	dtype="float16",
+	amp=False,
+):
 	# prepare from args
-	cfg.audio_backend = audio_backend # "encodec"
+	cfg.device = device
+	cfg.set_audio_backend(audio_backend)
+	audio_extension = cfg.audio_backend_extension
+
 	cfg.inference.weight_dtype = dtype # "bfloat16"
 	cfg.inference.amp = amp # False
 
-	# import after because we've overriden the config above
-	# need to validate if this is even necessary anymore
-	from vall_e.emb.g2p import encode as phonemize
-	from vall_e.emb.qnt import encode as quantize, _replace_file_extension
+	dtype = cfg.inference.dtype if not amp else None
 
 	output_dataset = f"{output_dataset}/{'2' if cfg.sample_rate == 24_000 else '4'}{'8' if cfg.sample_rate == 48_000 else '4'}KHz-{cfg.audio_backend}" # "training"
 
@@ -140,62 +124,19 @@ def process(
 						continue
 
 					if waveform is None:
-						waveform, sample_rate = torchaudio.load(inpath)
-						if waveform.shape[0] > 1:
-							waveform = torch.mean(waveform, dim=0, keepdim=True)
+						waveform, sample_rate = load_audio(inpath)
 
-					wavs.append((
-						outpath,
-						text,
-						language,
-						waveform,
-						sample_rate
-					))
+				jobs.append(( outpath, waveform, sample_rate, text, language ))
 
-			if len(wavs) > 0:
-				for job in tqdm(wavs, desc=f"Quantizing: {speaker_id}"):
-					try:
-						outpath, text, language, waveform, sample_rate = job
-
-						phones = phonemize(text, language=language)
-						qnt = quantize(waveform, sr=sample_rate, device=device)
-
-
-						if cfg.audio_backend == "dac":
-							np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
-								"codes": qnt.codes.cpu().numpy().astype(np.uint16),
-								"metadata": {
-									"original_length": qnt.original_length,
-									"sample_rate": qnt.sample_rate,
-									
-									"input_db": qnt.input_db.cpu().numpy().astype(np.float32),
-									"chunk_length": qnt.chunk_length,
-									"channels": qnt.channels,
-									"padding": qnt.padding,
-									"dac_version": "1.0.0",
-
-									"text": text.strip(),
-									"phonemes": "".join(phones),
-									"language": language,
-								},
-							})
-						else:						
-							np.save(open(_replace_file_extension(outpath, audio_extension), "wb"), {
-								"codes": qnt.cpu().numpy().astype(np.uint16),
-								"metadata": {
-									"original_length": waveform.shape[-1],
-									"sample_rate": sample_rate,
-
-									"text": text.strip(),
-									"phonemes": "".join(phones),
-									"language": language,
-								},
-							})
-					except Exception as e:
-						print(f"Failed to quantize: {outpath}:", e)
-						if raise_exceptions:
-							raise e
-						continue
+			# processes audio files one at a time
+			if low_memory:
+				process_jobs( jobs, device=device, speaker_id=f'{speaker_id}/{filename}', raise_exceptions=raise_exceptions, batch_size=batch_size, dtype=dtype if not amp else None )
+				jobs = []
+		
+		# processes all audio files for a given speaker
+		if not low_memory:
+			process_jobs( jobs, device=device, speaker_id=speaker_id, raise_exceptions=raise_exceptions, batch_size=batch_size, dtype=dtype if not amp else None )
+			jobs = []
 
 	open(f"./{output_dataset}/missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
 	open(f"./{output_dataset}/dataset.json", 'w', encoding='utf-8').write(json.dumps(dataset))
@@ -213,6 +154,8 @@ def main():
 	parser.add_argument("--stride", type=int, default=0)
 	parser.add_argument("--stride-offset", type=int, default=0)
 	parser.add_argument("--slice", type=str, default="auto")
+	parser.add_argument("--low-memory", action="store_true")
+	parser.add_argument("--batch-size", type=int, default=0)
 	
 	args = parser.parse_args()
 
@@ -231,6 +174,8 @@ def main():
 		stride=args.stride,
 		stride_offset=args.stride_offset,
 		slice=args.slice,
+		batch_size=args.batch_size,
+		low_memory=args.low_memory,
 
 		device=args.device,
 		dtype=args.dtype,

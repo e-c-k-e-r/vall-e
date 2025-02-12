@@ -75,6 +75,11 @@ class AR_NAR(Base):
 		token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
 		# RVQ levels to apply masking training on
 		masking_train_rvq_levels = self.config.experimental.masking_train_rvq_levels
+
+		if self.version >= 7:
+			masking_train_rvq_levels = [0,self.n_resp_levels]
+			rvq_levels_p = [ i for i in range( quant_level_range[0], quant_level_range[1] + 1 ) ]
+
 		# CFG
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
@@ -127,7 +132,10 @@ class AR_NAR(Base):
 					timesteps[i] = (timesteps[i] * 0.6) + 0.2
 
 		# trim resps to only contain all levels below the target level
-		resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
+		if self.version < 7:
+			resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
+		elif not self.parallel_decoding:
+			resps_list = [r if t in text_task else r[..., l] for r, l, t in zip(resps_list, quant_levels, task_list)]
 
 		# tensor to cat for RVQ level 0
 		text_stop_sequence = torch.tensor([2], device=device, dtype=torch.int16)
@@ -229,6 +237,7 @@ class AR_NAR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 		raw_text_list: list[Tensor] | None = None,
+		quant_levels: list[int] | None = None,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -237,7 +246,11 @@ class AR_NAR(Base):
 		device = text_list[0].device
 		batch_size = len(text_list)
 
-		level = 0
+		if quant_levels is None:
+			level = 0
+		else:
+			level = quant_levels[0] # ugh
+
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
 
@@ -306,11 +319,12 @@ class AR_NAR(Base):
 			# fill scores
 			scores = [ torch.ones((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
 
-		quant_levels = [ level for _ in range(batch_size) ]
+		if quant_levels is None:
+			quant_levels = [ level for _ in range(batch_size) ]
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
 
-		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm)
+		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc=f"NAR Masked Level {level}", disable=disable_tqdm)
 		for timestep in iterator:
 			# update previous list of tokens
 			prev_list = resps_list
@@ -427,6 +441,183 @@ class AR_NAR(Base):
 				# use unmodified logit scores for this, as it offers better stability
 				for scores, masked in zip( unfiltered_sampled.scores, is_masked )
 			]
+
+		return resps_list
+
+	# handles doing demasking inferencing in parallel to inference all tokens
+	# it works if the underlying model is trained properly (which is a pain)
+	def forward_nar_masked_parallel(
+		self,
+
+		task_list: list[Tensor] | None = None,
+		
+		text_list: list[Tensor] | None = None,
+		proms_list: list[Tensor] | None = None,
+		resps_list: list[Tensor] | None = None,
+		
+		lang_list: list[Tensor] | None = None,
+		tone_list: list[Tensor] | None = None,
+		len_list: list[Tensor] | None = None,
+		raw_text_list: list[Tensor] | None = None,
+
+		disable_tqdm=False,
+		use_lora=None,
+		**sampling_kwargs,
+	):
+		device = text_list[0].device
+		batch_size = len(text_list)
+
+		level = 0
+		if cfg.lora is not None:
+			enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
+
+		# convert (N)AR specific args
+		sampling_kwargs = convert_kwargs( sampling_kwargs, "ar_" )
+
+		min_length = sampling_kwargs.pop("min_duration", 1)
+		max_length = sampling_kwargs.pop("max_duration", 500)
+		max_steps = sampling_kwargs.get("max_steps", 25)
+		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
+		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
+		annealed_sampling = sampling_kwargs.get("annealed_sampling", True)
+
+		# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
+		temperature = sampling_kwargs.pop("temperature", 0.0)
+		minimum_cfg_strength = sampling_kwargs.get("minimum_cfg_strength", 2.5)
+		# this really helps keep audio coherent so far
+		cfg_strength = sampling_kwargs.get("cfg_strength", minimum_cfg_strength)
+		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.75)
+		start_noise = sampling_kwargs.get("denoise_start", 0.0)
+		end_noise = sampling_kwargs.get("denoise_end", 1.0)
+		remasking = sampling_kwargs.get("remasking", True)
+		max_steps = math.floor(max_steps * (end_noise - start_noise))
+
+		# to specify the initial mask used
+		vc_list = sampling_kwargs.pop("vc_list", None)
+		vc_threshold = sampling_kwargs.pop("vc_threshold", 0.25)
+		vc_mask_p = sampling_kwargs.pop("vc_mask_p", 0.25)
+
+		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
+		
+		# force set CFG because too low / no CFG causes issues
+		original_cfg_strength = cfg_strength
+		cfg_strength = max( cfg_strength, minimum_cfg_strength )
+
+		prefix_context = sampling_kwargs.get("prefix_context", None)
+		# fill with masked tokens (even though they get masked anyways)
+		resps_list = [ torch.ones((seq_len, self.n_resp_levels), dtype=torch.int16, device=device) * self.stop_token for seq_len in len_list ]
+		# fill scores
+		scores = [ torch.ones((seq_len), dtype=torch.float32, device=device) for seq_len in len_list ]
+
+		quant_levels = [ level for _ in range(batch_size) ]
+		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
+		null_prom = [ None for _ in range(batch_size) ]
+
+		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm)
+		for timestep in iterator:
+			# update previous list of tokens
+			prev_list = resps_list
+			# ramp down over time
+			annealing = 1.0 - timestep
+			# get noise level, per cosine scheduling
+			noise_p = math.cos( timestep * math.pi * 0.5 )
+			# proportion of tokens to remask
+			remask_p = 1.0 / (max_steps * 2) if remasking else 0
+			# pick the worst scoring tokens to mask off
+			masked_indices = [ score.topk( clamp( int( noise_p * seq_len + remask_p * seq_len ), 1, seq_len), dim=-1 ).indices for score, seq_len in zip(scores, len_list) ]
+			# normal masking
+			# mask off inputs
+			resps_list = [ torch.stack([resp[:, l].scatter(0, indices, self.stop_token) for l in range(self.n_resp_levels)], dim=-1) for resp, indices in zip( resps_list, masked_indices ) ]
+			# boolean mask
+			is_masked = [ resps == self.stop_token for resps in resps_list ]
+			# timestep inputs
+			time_list = [ timestep for _ in range(batch_size) ]
+
+			sampling_temperature = temperature * annealing if annealed_sampling else temperature
+			sampling_cfg = cfg_strength * timestep if annealed_sampling else cfg_strength
+
+			input_resps_list = resps_list
+
+			# setup inputs
+			inputs = super().inputs(
+				text_list=text_list,
+				proms_list=proms_list,
+				resps_list=input_resps_list,
+				lang_list=lang_list,
+				tone_list=tone_list,
+				time_list=time_list,
+				quant_levels=quant_levels,
+			)
+			output = super().forward(
+				inputs=inputs,
+				quant_levels=quant_levels,
+			)
+
+			logits = output.logits
+			if cfg_strength > 0:
+				null_inputs = super().inputs(
+					text_list=null_text,
+					proms_list=null_prom,
+					resps_list=input_resps_list,
+					lang_list=lang_list,
+					tone_list=tone_list,
+					time_list=time_list,
+					quant_levels=quant_levels,
+				)
+				null_output = super().forward(
+					inputs=null_inputs,
+					quant_levels=quant_levels,
+				)
+
+				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ l for l in len_list ] )
+
+			l_scores = []
+			l_resps_list = []
+			# cringe hack because we're able to sample multiple levels at once
+			for l in range(self.n_resp_levels):
+				# sample with sampler settings
+				filtered_sampled = super().sample(
+					logits=[ logit[l] for logit in logits ],
+					prev_list=[ resp[..., l] for resp in prev_list ],
+					quant_levels=quant_levels,
+
+					temperature=sampling_temperature,
+					**sampling_kwargs,
+				)
+
+				# retrieves unfiltered logits
+				unfiltered_sampled = super().sample(
+					logits=[ logit[l] for logit in logits ],
+					prev_list=[ resp[..., l] for resp in prev_list ],
+					quant_levels=quant_levels,
+
+					temperature=0.0,
+					**sampling_kwargs,
+				)
+
+				# get sampled tokens
+				sampled_ids = filtered_sampled.ids
+				# keep unmasked tokens
+				l_resps_list.append([ torch.where( masked[..., l], input_ids, resps[..., l] ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ])
+				# get probability scores
+				l_scores.append([ 
+					# conjugate to have worse scoring tokens picked for topk
+					1.0 - 
+						# only keep scores of tokens we are predicting (and ignore the tokens previously finalized)
+						torch.where( masked[..., l], torch.tensor([score for index, score in enumerate(scores)], device=device), torch.ones(masked[..., l].shape, device=device) )
+					# use unmodified logit scores for this, as it offers better stability
+					for scores, masked in zip( unfiltered_sampled.scores, is_masked )
+				])
+
+			resps_list = []
+			scores = []
+
+			for batch_index in range(batch_size):
+				score = sum([ l_scores[level][batch_index] for level in range(self.n_resp_levels) ]) / self.n_resp_levels
+				resp = torch.stack([ l_resps_list[level][batch_index] for level in range(self.n_resp_levels) ], dim=-1)
+
+				scores.append( score )
+				resps_list.append( resp )
 
 		return resps_list
 
@@ -911,6 +1102,56 @@ class AR_NAR(Base):
 
 		# is NAR
 		if (len_list is not None or resps_list is not None) and text_list is not None:
+			if self.version >= 7:
+				if self.parallel_decoding:
+					return self.forward_nar_masked_parallel(
+						task_list=task_list,
+
+						text_list=text_list,
+						proms_list=proms_list,
+						resps_list=resps_list,
+						
+						lang_list=lang_list,
+						tone_list=tone_list,
+						len_list=len_list,
+						raw_text_list=raw_text_list,
+
+						disable_tqdm=disable_tqdm,
+						use_lora=use_lora,
+						**sampling_kwargs,
+					)
+				else:
+					resps_lists = [ None for _ in range(batch_size) ]
+					for level in range(self.n_resp_levels):
+						resp_list = self.forward_nar_masked(
+							task_list=task_list,
+
+							text_list=text_list,
+							proms_list=proms_list,
+							resps_list=resps_list,
+							
+							lang_list=lang_list,
+							tone_list=tone_list,
+							len_list=len_list,
+							raw_text_list=raw_text_list,
+
+							disable_tqdm=disable_tqdm,
+							use_lora=use_lora,
+							quant_levels=[ level for _ in range(batch_size) ],
+							**sampling_kwargs,
+						)
+
+						for batch_index, resp in enumerate(resp_list):
+							if resps_lists[batch_index] is None:
+								resps_lists[batch_index] = []
+							
+							resps_lists[batch_index].append( resp )
+
+					for batch_index, resps in enumerate(resps_lists):
+						resps_lists[batch_index] = torch.stack( resps, dim=-1 )
+
+					return resps_lists
+
 			return self.forward_nar(
 				task_list=task_list,
 
@@ -988,8 +1229,8 @@ def example_usage():
 	resps_list = [ audio[:int(cfg.dataset.frames_per_second * 4), :] ] * batch_size
 
 	kwargs = {
-		'n_text_tokens': 256,
-		'n_audio_tokens': 1024,
+		'n_text_tokens': cfg.model.text_tokens,
+		'n_audio_tokens': cfg.model.audio_tokens,
 
 		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
@@ -1004,7 +1245,9 @@ def example_usage():
 	}
 
 	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
-	available_tasks = [] + (["tts-ar"] if "ar" in cfg.model.capabilities else []) + (["tts-nar"] if "len" in cfg.model.capabilities else [])
+	
+	#available_tasks = [] + (["tts-ar"] if "ar" in cfg.model.capabilities else []) + (["tts-nar"] if "len" in cfg.model.capabilities else [])
+	available_tasks = ["tts-nar"]
 
 	model = AR_NAR(**kwargs).to(cfg.device)
 	steps = 500 // batch_size
@@ -1156,13 +1399,14 @@ def example_usage():
 
 		if task == "tts-nar":
 			len_list = engine( text_list=text_list, proms_list=proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
-			len_list = [ resp_list[0].shape[0] for l in len_list ]
+			len_list = [ r.shape[0] for r in resp_list ]
 			resps_list = engine( text_list=text_list, proms_list=proms_list, len_list=len_list )
 		else:
 			resps_list = engine( text_list=text_list, proms_list=proms_list, task_list=["tts"], max_duration=steps, temperature=1.0 )
 			resps_list = engine( text_list=text_list, proms_list=proms_list, resps_list=resps_list, temperature=0.0 )
 
 		for i, o in enumerate(resps_list):
+			print( o.shape, o )
 			_ = decode_to_file(o.to(dtype=torch.int32), f"data/{cfg.model.arch_type}.{cfg.audio_backend}.{i}.{name}.{task}.wav", device=cfg.device)
 
 		unload_model()
@@ -1185,7 +1429,9 @@ def example_usage():
 		}, f"./data/{cfg.model.arch_type}.pth" )
 		"""
 
-	#sample("init", 5)
+	task = available_tasks[0]
+	#sample("init", task=task)
+
 	train()
 
 	"""

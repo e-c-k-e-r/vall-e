@@ -176,17 +176,17 @@ def top_no_logits_processing( logits, n = 1.0 ):
 #  (and because the null logits have a shorter input sequence compared to the positive logits)
 def cfg_logits( logits, null, strength, lens, rescale=0.0 ):
 	for i, seq_len in enumerate( lens ):
-		pos = logits[i][-seq_len:]
-		neg = null[i][-seq_len:]
+		pos = logits[i][..., -seq_len:, :]
+		neg = null[i][..., -seq_len:, :]
 
 		summed = neg + (pos - neg) * strength
 
 		if rescale <= 0:
-			logits[i][-seq_len:] = summed
+			logits[i][..., -seq_len:, :] = summed
 		else:
 			dims = tuple(range(1, summed.ndim - 1))
 			factor = rescale * (pos.std(dims, keepdim=True) / summed.std(dims, keepdim=True)) + (1 - rescale)
-			logits[i][-seq_len:] = summed * factor
+			logits[i][..., -seq_len:, :] = summed * factor
 
 	return logits
 
