@@ -1,6 +1,6 @@
 from ..config import cfg
 
-from ..utils.distributed import fix_unset_envs, ddp_model, world_size
+from ..utils.distributed import fix_unset_envs, ddp_model, world_size, global_rank
 fix_unset_envs()
 
 if cfg.trainer.backend == "deepspeed":
@@ -396,8 +396,11 @@ def load_engines(training=True, **model_kwargs):
 			if cfg.lora is not None:			
 				key_name = cfg.lora.full_name
 
+			kwargs['name'] = 'job'
 			if world_size() > 1:
 				kwargs["group"] = "DDP"
+				kwargs['name'] = f'job-{global_rank()}'
+
 
 			engine.wandb = wandb.init(project=key_name, **kwargs)
 			engine.wandb.watch(engine.module)

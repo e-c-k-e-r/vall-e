@@ -237,7 +237,7 @@ class AudioEmbedding(nn.Module):
 			offset = self.names.index( name )
 			offset -= quant_level # offset by quant level since it'll iterate up that many levels
 		
-		if self.sums and quant_level > 0:
+		if sums and quant_level > 0:
 			x = sum( [ self.embeddings[k + offset]( xi[:, k] ) for k in range( quant_level ) ] )
 		else:
 			k = quant_level
@@ -379,17 +379,13 @@ class ParallelDecoder(nn.Module):
 				))
 
 			modules.append(module)
-			"""
 			downs.append(nn.Linear(d_model, hidden_size, bias=False))
 			ups.append(nn.Linear(hidden_size, vocab_size, bias=False))
-			"""
 
 		self.levels = levels
 		self.decoders = nn.ModuleList(modules)
-		"""
 		self.downs = nn.ModuleList(downs)
 		self.ups = nn.ModuleList(ups)
-		"""
 
 	def forward(self, x: Tensor, level: int | None = None, stack: bool = True, **kwargs ) -> Tensor:
 		# split into levels
@@ -402,6 +398,7 @@ class ParallelDecoder(nn.Module):
 		# do one level
 
 		# attention + feedforward		
+		"""
 		x = self.decoders[level](inputs_embeds=x, **kwargs)["last_hidden_state"]
 		# this really hates an output head, so just treat the final output as one
 		x = x[..., :self.vocab_size]
@@ -413,7 +410,6 @@ class ParallelDecoder(nn.Module):
 		x = self.decoders[level](inputs_embeds=x, **kwargs)["last_hidden_state"]
 		# upscale to vocab logits
 		x = self.ups[level]( x )
-		"""
 
 		return x
 """
@@ -1281,13 +1277,20 @@ class Base(nn.Module):
 				)
 			
 			if not self.parallel_decoding:
+				"""
+				# provides only one
 				return self.proms_emb(
-					input,
-					quant_level = 0 if input.dim() == 1 else input.shape[-1],
+					input if input.dim() == 1 else input[:, quant_level],
+					quant_level = 0, # if input.dim() == 1 else input.shape[-1],
 					offset = 0,
 				)
-			"""
-			"""
+				"""
+				# sums all 
+				return self.proms_emb(
+					input,
+					quant_level = quant_level if input.dim() == 1 else input.shape[-1],
+					offset = 0,
+				)
 
 			return self.proms_emb( input )
 

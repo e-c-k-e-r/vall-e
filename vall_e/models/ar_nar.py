@@ -1246,8 +1246,12 @@ def example_usage():
 
 	bos_id, space_id, eos_id = cfg.tokenizer.encode( " " )
 	
-	#available_tasks = [] + (["tts-ar"] if "ar" in cfg.model.capabilities else []) + (["tts-nar"] if "len" in cfg.model.capabilities else [])
-	available_tasks = ["tts-nar"]
+	available_tasks = [] + (["tts-ar"] if "ar" in cfg.model.capabilities else []) + (["tts-nar"] if "len" in cfg.model.capabilities else [])
+
+	if cfg.model.experimental.masking_train_p == 0:
+		available_tasks = ["tts-ar"]
+	elif cfg.model.experimental.masking_train_p == 1:
+		available_tasks = ["tts-nar"]
 
 	model = AR_NAR(**kwargs).to(cfg.device)
 	steps = 500 // batch_size

@@ -795,14 +795,14 @@ def _get_hdf5_paths( data_dir, type="training", validate=False ):
 
 		if type not in _durations_map:
 			_durations_map[type] = {}
-		_durations_map[type][f"{key}/{id}"] = duration
+		_durations_map[type][f"{key}/{id}"] = float(duration)
 
 		if not validate:
 			return True
 		
 		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration
 
-	return [ Path(f"{key}/{id}") for id, entry in cfg.hdf5[key].items() if _validate(id, entry) ] if key in cfg.hdf5 else []
+	return [ f"{key}/{id}" for id, entry in cfg.hdf5[key].items() if _validate(id, entry) ] if key in cfg.hdf5 else []
 
 def _get_paths_of_extensions( path, extensions=_get_artifact_extension(), validate=False ):
 	if isinstance(path, str):
