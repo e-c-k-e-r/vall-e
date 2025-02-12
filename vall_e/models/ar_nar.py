@@ -173,7 +173,7 @@ class AR_NAR(Base):
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 			# only apply stop token for RVQ level 0
-			if quant_level <= 0 and timesteps[i] is None:
+			if quant_level <= 0 and timesteps[i] is None and not self.parallel_decoding:
 				# append stop tokens for AR
 				if task not in text_task:
 					resps_list[i] = torch.cat([ resps, audio_stop_sequence ])

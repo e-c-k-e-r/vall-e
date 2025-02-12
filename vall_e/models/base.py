@@ -1273,19 +1273,20 @@ class Base(nn.Module):
 					input if quant_level == 0 else input[:, :quant_level]
 				)
 
-			if self.version < 7 or not self.parallel_decoding:
+			if self.version < 7: # or not self.parallel_decoding:
 				return self.proms_emb(
 					input if input.dim() == 1 else input[:, : 1 if quant_level == 0 else quant_level],
 					quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
 					offset = 0,
 				)
-			"""
+			
 			if not self.parallel_decoding:
 				return self.proms_emb(
-					input if input.dim() == 1 else input[:, :quant_level+1],
-					quant_level = quant_level,
+					input,
+					quant_level = 0 if input.dim() == 1 else input.shape[-1],
 					offset = 0,
 				)
+			"""
 			"""
 
 			return self.proms_emb( input )
