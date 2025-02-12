@@ -134,13 +134,11 @@ class AR_NAR(Base):
 		# trim resps to only contain all levels below the target level
 		if self.version < 7:
 			resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
-		elif not self.parallel_decoding:
-			resps_list = [r if t in text_task else r[..., l] for r, l, t in zip(resps_list, quant_levels, task_list)]
 
 		# tensor to cat for RVQ level 0
 		text_stop_sequence = torch.tensor([2], device=device, dtype=torch.int16)
 		text_start_stop_sequence = torch.tensor([1, 2], device=device, dtype=torch.int16)
-		audio_stop_sequence = torch.tensor([[self.stop_token]], device=device, dtype=torch.int16)
+		audio_stop_sequence = torch.tensor([[self.stop_token] * (1 if self.version < 7 else self.n_resp_levels)], device=device, dtype=torch.int16)
 
 		# final validations and stuff
 		for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
@@ -173,7 +171,7 @@ class AR_NAR(Base):
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 			# only apply stop token for RVQ level 0
-			if quant_level <= 0 and timesteps[i] is None and not self.parallel_decoding:
+			if quant_level <= 0 and timesteps[i] is None:
 				# append stop tokens for AR
 				if task not in text_task:
 					resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
@@ -1103,54 +1101,56 @@ class AR_NAR(Base):
 		# is NAR
 		if (len_list is not None or resps_list is not None) and text_list is not None:
 			if self.version >= 7:
-				if self.parallel_decoding:
-					return self.forward_nar_masked_parallel(
-						task_list=task_list,
+				return self.forward_nar_masked_parallel(
+					task_list=task_list,
 
-						text_list=text_list,
-						proms_list=proms_list,
-						resps_list=resps_list,
-						
-						lang_list=lang_list,
-						tone_list=tone_list,
-						len_list=len_list,
-						raw_text_list=raw_text_list,
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					
+					lang_list=lang_list,
+					tone_list=tone_list,
+					len_list=len_list,
+					raw_text_list=raw_text_list,
 
-						disable_tqdm=disable_tqdm,
-						use_lora=use_lora,
-						**sampling_kwargs,
-					)
-				else:
-					resps_lists = [ None for _ in range(batch_size) ]
-					for level in range(self.n_resp_levels):
-						resp_list = self.forward_nar_masked(
-							task_list=task_list,
+					disable_tqdm=disable_tqdm,
+					use_lora=use_lora,
+					**sampling_kwargs,
+				)
 
-							text_list=text_list,
-							proms_list=proms_list,
-							resps_list=resps_list,
-							
-							lang_list=lang_list,
-							tone_list=tone_list,
-							len_list=len_list,
-							raw_text_list=raw_text_list,
+			# NAR demasking for all levels
+			"""
+			resps_lists = [ None for _ in range(batch_size) ]
+			for level in range(self.n_resp_levels):
+				resp_list = self.forward_nar_masked(
+					task_list=task_list,
 
-							disable_tqdm=disable_tqdm,
-							use_lora=use_lora,
-							quant_levels=[ level for _ in range(batch_size) ],
-							**sampling_kwargs,
-						)
+					text_list=text_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					
+					lang_list=lang_list,
+					tone_list=tone_list,
+					len_list=len_list,
+					raw_text_list=raw_text_list,
 
-						for batch_index, resp in enumerate(resp_list):
-							if resps_lists[batch_index] is None:
-								resps_lists[batch_index] = []
-							
-							resps_lists[batch_index].append( resp )
+					disable_tqdm=disable_tqdm,
+					use_lora=use_lora,
+					quant_levels=[ level for _ in range(batch_size) ],
+					**sampling_kwargs,
+				)
 
-					for batch_index, resps in enumerate(resps_lists):
-						resps_lists[batch_index] = torch.stack( resps, dim=-1 )
+				for batch_index, resp in enumerate(resp_list):
+					if resps_lists[batch_index] is None:
+						resps_lists[batch_index] = []
+					
+					resps_lists[batch_index].append( resp )
 
-					return resps_lists
+			for batch_index, resps in enumerate(resps_lists):
+				resps_lists[batch_index] = torch.stack( resps, dim=-1 )
+
+			return resps_lists
+			"""
 
 			return self.forward_nar(
 				task_list=task_list,
@@ -1254,7 +1254,7 @@ def example_usage():
 		available_tasks = ["tts-nar"]
 
 	model = AR_NAR(**kwargs).to(cfg.device)
-	steps = 500 // batch_size
+	steps = 750 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
