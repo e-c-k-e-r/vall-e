@@ -396,11 +396,11 @@ def load_engines(training=True, **model_kwargs):
 			if cfg.lora is not None:			
 				key_name = cfg.lora.full_name
 
-			kwargs['name'] = 'job'
+			kwargs['id'] = 'job'
 			kwargs['resume'] = 'allow'
 			if world_size() > 1:
 				kwargs["group"] = "DDP"
-				kwargs['name'] = f'job-{global_rank()}'
+				kwargs['id'] = f'job-{global_rank()}'
 
 
 			engine.wandb = wandb.init(project=key_name, **kwargs)
