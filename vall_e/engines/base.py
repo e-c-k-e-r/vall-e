@@ -37,6 +37,7 @@ import time
 import torch
 import torch.distributed
 import os
+import re
 
 from torch import Tensor
 from torch.distributed import all_reduce
@@ -596,6 +597,22 @@ class Engines(dict[str, Engine]):
 		
 			if engine.wandb is not None:
 				engine.wandb.log(model_stats, step=engine.global_step)
+
+			filtered_keys = [ k for k in model_stats.keys() if "[" in k ]
+			filtered_values = {}
+			for k in filtered_keys:
+				v = model_stats[k]
+				del model_stats[k]
+
+				nk = re.sub(r"\[\d+\]", "", k)
+				
+				if nk not in filtered_values:
+					filtered_values[nk] = []
+				
+				filtered_values[nk].append( v )
+
+			for k, v in filtered_values.items():
+				model_stats[k] = sum(v) / len(v)
 
 			model_stats = model_stats | dict(
 				lr=engine.get_lr()[0],

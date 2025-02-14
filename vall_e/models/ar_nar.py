@@ -171,7 +171,7 @@ class AR_NAR(Base):
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 			# only apply stop token for RVQ level 0
-			if quant_level <= 0 and timesteps[i] is None:
+			if (self.version < 7 and quant_level <= 0 and timesteps[i] is None) or (self.version >= 7 and timesteps[i] is None):
 				# append stop tokens for AR
 				if task not in text_task:
 					resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
@@ -1232,7 +1232,7 @@ def example_usage():
 		'n_text_tokens': cfg.model.text_tokens,
 		'n_audio_tokens': cfg.model.audio_tokens,
 
-		'd_model': 1024, # 256, # 1024, # 1536
+		'd_model': 1536, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
 		'n_experts': 1 if not cfg.model else cfg.model.experts,
@@ -1254,7 +1254,7 @@ def example_usage():
 		available_tasks = ["tts-nar"]
 
 	model = AR_NAR(**kwargs).to(cfg.device)
-	steps = 500 // batch_size
+	steps = 250 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -1444,7 +1444,7 @@ def example_usage():
 	"""
 	
 	for task in available_tasks:
-		sample("final", task=task)
+		sample("final", task="tts-nar")
 
 	engines.quit()
 

@@ -32,7 +32,7 @@ if cfg.optimizations.bitsandbytes:
 			Linear = bnb.nn.Linear8bitLt
 
 	if cfg.optimizations.embedding:
-		Embedding = bnb.nn.modules.Embedding
+		Embedding = bnb.nn.StableEmbedding
 		"""
 		Embedding.forward = lambda self, input: ( self.norm(F.embedding(
 			input,

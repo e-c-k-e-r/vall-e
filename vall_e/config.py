@@ -415,6 +415,13 @@ class Model:
 		return 12
 
 	@property
+	def ffn(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "ffn"):
+			return self.size['ffn']
+		
+		return 4
+
+	@property
 	def activation_checkpointing(self):
 		return cfg.trainer.activation_checkpointing
 	
