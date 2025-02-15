@@ -66,18 +66,9 @@ For audio backends:
 Descript-Audio-Codec was thoroughly tested for promising much, much cleaner output audio, as this model encodes/decodes at 44.1KHz, rather than EnCodec's 24KHz.
 
 However, due to the nature of the codec, simply throwing it at an attention-based transformer proves to be painful, as the model *heavily* suffers from noisy output in the higher half of the RVQ levels.
+* the solution may be to simply encode / decode with *all* RVQ levels in one pass.
 
 Ironically, testing through erroneously encoded audio (feeding 24KHz audio without upsampling to 44.1KHz) proved to have "cleaner" but bad utterances.
-
-I'm uncertain on how to remedy this, as my options are:
-* train under a RetNet, if an attention-based transformer is simply the problem (it's not)
-* train an AR, and train a NAR, if the codec itself is at fault (it's probably something inherent to the codec)
-* use an SSM like Mamba, if transformers entirely cannot model the codec (Mamba is too much of a thorn to use)
-* train a separate model that simply converts from EnCodec to DAC (requires another model to juggle, but does not require training a new model)
-* train *all* NAR levels as independent masking sequences similar to the `NAR-len` (complicated)
-  * if this works, then it means that there's little to no mappable relation between DAC's RVQ levels
-
-  Other literature does mention the difficulty for a model to model using DAC as a codec.
 
 #### `nvidia/audio-codec-44khz`
 
@@ -85,16 +76,9 @@ This novel codec promises more than DAC without the difficulty to model with it.
 
 NVIDIA's NeMo audio codec doesn't necessarily have a concrete name, but is simply referred to as `nemo` in the code. The included code under `./emb/codecs/nemo.py` is mostly copied (with attribution) from the reference implementation with additional tweaks. In the future, it would be beneficial to decouple it from NeMo's framework and its dependencies.
 
-However, because this codec relies on FSQ (Finite Scalar Quantization) rather than RVQ (Residual Vector Quantization), each level of the codebook governs a specific band of the mel spectrum, where each level for RVQ governs additive levels to the final audio. Because of this, the original approach of inferencing the strongest detail, then each level predicts the next, isn't a good fit for FSQ-based codecs.
+However, because this codec relies on FSQ (Finite Scalar Quantization) rather than RVQ (Residual Vector Quantization), each level of the codebook governs a specific band of the mel spectrum, instead of each level for RVQ governs additive levels to the final audio. Because of this, the original approach of inferencing the strongest detail, then each level predicts the weaker, next detail, is theoretically not a good fit for FSQ-based codecs.
 
-Proposed architectures may include:
-* independent NAR-demasking for *all* levels, rather than FSQ level 0.
-  * little additional code is required, as existing NAR-demasking training/inference code can be repurposed for additional levels.
-  * this also has the best backwards compat with vall_e.cpp, as no extra model code is required.
-* parallel decoding for *all* levels in one pass, rather than separate passes for each level.
-  * some extra code would be required for orchestrating the additional decoding heads in parallel.
-  * the decoding heads may simply be a single `nn.Linear` classifier, or additional transformer blocks.
-    * the former yields bad results when overfitting, the latter without an output projection head allows for overfitting.
+The current approach is to, instead, encode / decode all FSQ levels within each pass. This approach seems promising, as it does not seem to exhibit the problem `descript-audio-codec` did where higher levels fail to train sufficiently enough.
 
 ## `transcribe.py`
 

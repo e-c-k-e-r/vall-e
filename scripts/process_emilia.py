@@ -111,8 +111,8 @@ def process(
 				if "text" not in metadata:
 					continue
 				speaker_id = metadata["speaker"]
-				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_group}/{speaker_id}/{fname}.{extension}')
-				os.makedirs(f'./{output_dataset}/{group_name}/{speaker_group}/{speaker_id}/', exist_ok=True)
+				outpath = Path(f'./{output_dataset}/{group_name}/{speaker_id}/{fname}.{extension}').with_suffix(audio_extension)
+				os.makedirs(f'./{output_dataset}/{group_name}/{speaker_id}/', exist_ok=True)
 
 				if _replace_file_extension(outpath, audio_extension).exists():
 					continue

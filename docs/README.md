@@ -27,6 +27,8 @@ This VALL-E is still actively being iterated upon without any actual proper stan
 
 There are far better TTS solutions out there, such as [MaskGCT](https://github.com/open-mmlab/Amphion/tree/main/models/tts/maskgct) and [F5-TTS](https://github.com/SWivid/F5-TTS). They're both easy to use and offer amazing results.
 
+In the future, a 44KHz model will be released if training goes well for it.
+
 ## Model Specifications
 
 The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
@@ -46,6 +48,7 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * [x] train and release a serviceable model for finetuning against.
 * [x] train and release a ***good*** zero-shot model.
   - for what it's worth it's decent enough for me to finally be happy with it.
+* [ ] train a serviceable model for 44KHz audio (instead of 24KHz)
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
 * [x] clean up the README, and document, document, document.
 * [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
@@ -64,23 +67,25 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * [ ] speed up inferencing for the AR
   - KV caching both yields broken output and quadratically slow output, unless I'm doing something grossly wrong.
   * [x] provide a pure NAR model that foregoes most of the inferencing slowdowns a regular AR+NAR model will provide.
-* [ ] HF-ify the model
+* [x] HF-ify the model
   * [x] write a weights converter
-  * [ ] implement a pure llama_HF implementation
-  - this might be easily possible by subjugating the tokenizer to handle all the embeddings / classifiers
-  - this will pave the way to use the model under an easy marriage of `llama.cpp` and `encodec.cpp`
+  * [x] implement a pure llama_HF implementation
+    * provided under `./vall_e/models/base.py`'s `__main__`
 * [ ] replace the phonemizer with something that doesn't depend on espeak
   * [ ] train the model to handle text => phoneme (without a hit to the rest of the model)
     * [ ] ...and phonemes => text
     * [ ] using a pure text vocab rather than IPA phonemes (as a transformer should be "smart" enough to map text tokens)
+    * these features are predicated on the model being trained for it
 * [ ] smarter/clever inferencing, such as:
+  * [x] inference *all* codebooks in one pass, rather than each level being its own discrete pass.
+      * these features are predicated on the model being trained for it
   * [x] "rolling" context, where the last generated sentence is the prefix for the next sentence.
   * [ ] for the AR, stop inferencing sequences in the batch that has already hit its stop token
 * [x] objective metrics such as WER / SIM-O
   * [x] WER simply requires transcribing audio then computing word error rates through the transcriptions
   * [x] SIM-O requires passing the raw waveform through a speaker-similarity model
-* [ ] valle.cpp through llama.cpp + encodec.cpp
-  * the latter is easy, the former is not.
+* [x] valle.cpp through llama.cpp + encodec.cpp
+  * extend to decode with vocos.cpp, instead, for a quality improvement
 
 ## "Postmortem"
 

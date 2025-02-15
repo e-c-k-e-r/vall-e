@@ -37,6 +37,12 @@ Traditional samplers for text-gen models can apply to the AR (especially rep/len
 
 Compared to non-autoregressive decoding, I personally feel that autoregressive encoding offers a specific-yet-hard-to-quantify expressive quality that the NAR (and pure NAR solutions) does not offer.
 
+### Pure AR
+
+Technically, with `cfg.model.version >= 7`, a model can be purely AR, as that version of the model encodes and decodes all codebooks of audio in a single pass.
+
+Inferencing code is not available at the moment for this modality, but will be available in the future.
+
 ## The NAR (Non-autoregressive) Model
 
 The NAR is responsible for generating the remaining RVQ levels of the audio codes for a given output. References to the "outputs from the NAR" refers to the underlying "levels" for a given waveform, as each further levels contributes to the final waveform less significantly than the previous.
