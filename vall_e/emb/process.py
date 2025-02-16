@@ -322,13 +322,12 @@ def process(
 					if len(text) == 0 or outpath.exists():
 						continue
 
-					# audio not already loaded, load it
-					if waveform is None:
-						waveform, sample_rate = load_audio( inpath, dtype=dtype )
+					if max_duration:
+						info = torchaudio.info( inpath )
+						if info.num_frames / info.sample_rate > max_duration:
+							continue
 
-					if max_duration and waveform.shape[-1] / sample_rate > max_duration:
-						continue
-
+					waveform, sample_rate = load_audio( inpath, dtype=dtype )
 					jobs.append(( outpath, waveform, sample_rate, text, language ))
 				else:
 					i = 0
@@ -351,15 +350,18 @@ def process(
 						if len(text) == 0 or outpath.exists():
 							continue
 
+						start = (segment['start']-0.05)
+						end = (segment['end']+0.5)
+						
+						if max_duration and end - start > max_duration:
+							continue
+
 						# audio not already loaded, load it
 						if waveform is None:
 							waveform, sample_rate = load_audio( inpath, dtype=dtype )
 
-						start = int((segment['start']-0.05) * sample_rate)
-						end = int((segment['end']+0.5) * sample_rate)
-
-						if max_duration and (end - start) / sample_rate > max_duration:
-							continue
+						start = int(start * sample_rate)
+						end = int(end * sample_rate)
 
 						if not presliced:
 							if start < 0:
