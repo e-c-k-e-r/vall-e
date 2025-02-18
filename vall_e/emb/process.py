@@ -177,6 +177,7 @@ def process(
 	slice="auto",
 	batch_size=1,
 	max_duration=None,
+	max_samples=None,
 	skip_existing_folders=False,
 	low_memory=False,
 	strict_languages=False,
@@ -373,6 +374,10 @@ def process(
 								continue
 
 						jobs.append(( outpath, waveform if presliced else waveform[:, start:end], sample_rate, text, language ))
+						if max_samples and len(jobs) >= max_samples:
+							break
+					if not low_memory and max_samples and len(jobs) >= max_samples:
+						break
 
 				# processes audio files one at a time
 				if low_memory:
@@ -404,6 +409,7 @@ def main():
 	parser.add_argument("--slice", type=str, default="auto")
 	parser.add_argument("--batch-size", type=int, default=0)
 	parser.add_argument("--max-duration", type=int, default=0)
+	parser.add_argument("--max-samples", type=int, default=0)
 	
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--dtype", type=str, default="bfloat16")
@@ -435,6 +441,7 @@ def main():
 		slice=args.slice,
 		batch_size=args.batch_size,
 		max_duration=args.max_duration,
+		max_samples=args.max_samples,
 		skip_existing_folders=args.skip_existing_folders,
 		strict_languages=args.strict_languages,
 		
