@@ -178,6 +178,7 @@ def process(
 	batch_size=1,
 	max_duration=None,
 	max_samples=None,
+	min_utterances=None,
 	skip_existing_folders=False,
 	low_memory=False,
 	strict_languages=False,
@@ -334,6 +335,9 @@ def process(
 					i = 0
 					presliced = not inpath.exists()
 					
+					if min_utterances and len(metadata[filename]["segments"]) < min_utterances:
+						continue
+
 					for segment in metadata[filename]["segments"]:
 						id = pad(i, 4)
 						i = i + 1
@@ -410,6 +414,7 @@ def main():
 	parser.add_argument("--batch-size", type=int, default=0)
 	parser.add_argument("--max-duration", type=int, default=0)
 	parser.add_argument("--max-samples", type=int, default=0)
+	parser.add_argument("--min-utterances", type=int, default=0)
 	
 	parser.add_argument("--device", type=str, default="cuda")
 	parser.add_argument("--dtype", type=str, default="bfloat16")
@@ -442,6 +447,7 @@ def main():
 		batch_size=args.batch_size,
 		max_duration=args.max_duration,
 		max_samples=args.max_samples,
+		min_utterances=args.min_utterances,
 		skip_existing_folders=args.skip_existing_folders,
 		strict_languages=args.strict_languages,
 		
