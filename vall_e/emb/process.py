@@ -171,6 +171,7 @@ def process(
 	input_voice=None,
 	input_metadata="metadata",
 	output_dataset="training",
+	transcription_filename="whisper.json",
 	raise_exceptions=False,
 	stride=0,
 	stride_offset=0,
@@ -266,17 +267,17 @@ def process(
 
 				continue
 			
-			metadata_path = Path(f'./{input_metadata}/{group_name}/{speaker_id}/whisper.json')
+			metadata_path = Path(f'./{input_metadata}/{group_name}/{speaker_id}/{transcription_filename}')
 			if not metadata_path.exists():
 				missing["transcription"].append(str(metadata_path))
-				_logger.warning(f'Missing transcription metadata: ./{input_audio}/{group_name}/{speaker_id}/whisper.json')
+				_logger.warning(f'Missing transcription metadata: ./{input_audio}/{group_name}/{speaker_id}/{transcription_filename}')
 				continue
 
 			try:
 				metadata = json.loads(open(metadata_path, "r", encoding="utf-8").read())
 			except Exception as e:
 				missing["transcription"].append(str(metadata_path))
-				_logger.warning(f'Failed to open transcription metadata: ./{input_audio}/{group_name}/{speaker_id}/whisper.json: {e}')
+				_logger.warning(f'Failed to open transcription metadata: ./{input_audio}/{group_name}/{speaker_id}/{transcription_filename}: {e}')
 				continue
 
 			if f'{group_name}/{speaker_id}' not in dataset:
@@ -404,6 +405,7 @@ def main():
 	parser.add_argument("--input-voice", type=str, default=None)
 	parser.add_argument("--input-metadata", type=str, default="training/metadata")
 	parser.add_argument("--output-dataset", type=str, default="training/dataset")
+	parser.add_argument("--transcription-filename", type=str, default="whisper.json")
 	parser.add_argument("--raise-exceptions", action="store_true")
 	parser.add_argument("--low-memory", action="store_true")
 	parser.add_argument("--skip-existing-folders", action="store_true")
@@ -440,6 +442,7 @@ def main():
 		input_voice=args.input_voice,
 		input_metadata=args.input_metadata,
 		output_dataset=args.output_dataset,
+		transcription_filename=args.transcription_filename,
 		raise_exceptions=args.raise_exceptions,
 		stride=args.stride,
 		stride_offset=args.stride_offset,

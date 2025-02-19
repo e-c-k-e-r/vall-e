@@ -98,6 +98,9 @@ This process can utilize sliced segments within the transcription metadata, or u
 
 Refer to the `__main__`'s arguments for usage details.
 
+> [!NOTE]
+> If you're using this to try and split your workload over multiple process / GPUs, it is *imperative* to make sure to keep each process within its own NUMA node by prefixing with `numactl -N0 -m0`, or you'll experience bottlenecks that make processing worse off compared to just doing it with one GPU.
+
 ## `similar.py`
 
 This script handles taking either raw input audio, or processed encoded audio, and determines the top-K similar utterances for each sample for a given speaker (or dataset).
