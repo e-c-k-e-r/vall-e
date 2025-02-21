@@ -381,6 +381,9 @@ def process(
 
 			if check_and_process_jobs(jobs, speaker_id=speaker_id):
 				jobs = []
+	
+	batch_threshold = 0
+	check_and_process_jobs(jobs, speaker_id=speaker_id)
 
 	open(f"./{output_dataset}/missing.json", 'w', encoding='utf-8').write(json.dumps(missing))
 	open(f"./{output_dataset}/dataset.json", 'w', encoding='utf-8').write(json.dumps(dataset))
