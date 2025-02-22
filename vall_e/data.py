@@ -765,10 +765,12 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		
 		# double check if in HDF5
 		# this might be slow
-		"""
-		if cfg.dataset.use_hdf5 and k not in cfg.hdf5:
-			return False
-		"""
+		if cfg.dataset.strict_validate:
+			if cfg.dataset.use_hdf5:
+				if k not in cfg.hdf5:
+					return False
+			elif not (data_dir / id).with_suffix(_get_artifact_extension()).exists():
+				return False
 
 		# add to duration bucket
 		if type not in _durations_map:
@@ -882,7 +884,6 @@ class Dataset(_Dataset):
 		self.duration_map = _get_duration_map( self.dataset_type )
 
 		# cull speakers if they do not have enough utterances (or cull speakers with too many utternaces)
-		"""
 		if cfg.dataset.min_utterances > 0 or cfg.dataset.max_utterances > 0:
 			keys = list(self.paths_by_spkr_name.keys())
 			for key in keys:
@@ -893,7 +894,7 @@ class Dataset(_Dataset):
 				# slice away extraneous utterances
 				if cfg.dataset.max_utterances:
 					self.paths_by_spkr_name[key] = self.paths_by_spkr_name[key][:cfg.dataset.max_utterances]
-		"""
+
 		# flatten paths
 		self.paths = list(itertools.chain.from_iterable(self.paths_by_spkr_name.values()))
 		
@@ -1272,7 +1273,11 @@ class Dataset(_Dataset):
 					continue
 				qnt = torch.from_numpy(cfg.hdf5[key]["audio"][:, :]).to(torch.int16)
 			else:
-				qnt = _load_artifact(path, return_metadata=False)
+				try:
+					qnt = _load_artifact(path, return_metadata=False)
+				except Exception as e:
+					_logger.warning(f'Failed to load artifact: {path} ({e})')
+					path = None
 
 			if 0 < trim_length and trim_length < qnt.shape[0]:
 				qnt = trim( qnt, trim_length, reencode=cfg.dataset.reencode_on_concat, device=cfg.dataset.reencode_device )

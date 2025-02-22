@@ -168,6 +168,7 @@ class Dataset:
 	use_metadata: bool = False # use genretaed metadata to aid in dataset loading
 	
 	validate: bool = True # validate each utterance on wheter it can be included based on duration range caps
+	strict_validate: bool = False # so far only governs if a path actually exists within the dataset, as this can be a bit slow (and shouldn't really happen normally)
 	workers: int = 8 # number of dataloader workers to spawn
 	cache: bool = True # use diskcache to cache the dataset
 
@@ -268,6 +269,11 @@ class ModelExperimentalSettings:
 	noncausal_masks: bool = False # to correct an oversight with Llama always using causal masks......
 	classifiers_bias: bool = True # base LLaMAs do not bias the output heads, but my existing weights do
 	max_position_embeddings: int = 70 * 65 * 5 # 5 minutes of audio
+
+	resp_parallel_training: bool = True # used for version >= 7, computes loss for ALL quant levels rather than the randomly selected one
+	# this should allow for "faster" training as each sample is trained entirely, but slower backwards (and possibly less stable training, maybe)
+	monolithic_audio_encoder: bool = False # combines the prom/resp embeddings into one unit
+	# this usually sounds bad, as the model can "extract" features from the prom separate from the ones in the resp
 
 	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors

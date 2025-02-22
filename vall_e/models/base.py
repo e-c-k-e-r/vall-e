@@ -579,6 +579,10 @@ class Base(nn.Module):
 		masking_ratio = self.config.experimental.masking_ratio if self.config is not None else False
 		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
 		
+		resp_parallel_training = self.config.experimental.resp_parallel_training if self.config is not None else True
+		monolithic_audio_encoder = self.config.experimental.monolithic_audio_encoder if self.config is not None else False
+
+		self.resp_parallel_training = resp_parallel_training
 
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
@@ -708,10 +712,8 @@ class Base(nn.Module):
 		if self.version >= 6:
 			self.raw_text_emb = Embedding(self.n_raw_text_tokens, d_model)
 
-		self.resp_parallel_training = True # governs if all levels are trained in parallel or one per sample like the old way
-		self.monolithic_audio_encoder = False # monolithic sounds bad
 		if self.version >= 7:
-			if self.monolithic_audio_encoder:
+			if monolithic_audio_encoder:
 				self.audio_emb = AudioEncoder(
 					n_tokens=n_audio_tokens + 1, # masked token
 					n_levels=self.n_resp_levels,

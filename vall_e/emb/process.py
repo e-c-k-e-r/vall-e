@@ -21,6 +21,7 @@ from ..config import cfg
 # need to validate if this is safe to import before modifying the config
 from .g2p import encode as phonemize
 from .qnt import encode as quantize, encode_batch as quantize_batch
+from ..data import _load_artifact
 
 def pad(num, zeroes):
 	return str(num).zfill(zeroes+1)
@@ -43,6 +44,10 @@ def process_items( items, stride=0, stride_offset=0 ):
 def process_job( outpath, waveform, sample_rate, text=None, language="en", device="cuda", dtype=None ):
 	# encodec requires this to be on CPU for resampling
 	qnt = quantize(waveform, sr=sample_rate, device=device, dtype=dtype)
+
+	if torch.count_nonzero(qnt) == 0:
+		tqdm.write(f"Quantization returned zero'd tensor: {outpath}")
+		return
 
 	if cfg.audio_backend == "dac":
 		state_dict = {
@@ -106,6 +111,10 @@ def process_batched_jobs( jobs, speaker_id="", device=None, raise_exceptions=Tru
 			continue
 
 		for (outpath, waveform, sample_rate, text, language), qnt in zip( batch, codes ):
+			if torch.count_nonzero(qnt) == 0:
+				tqdm.write(f"Quantization returned zero'd tensor: {outpath}")
+				continue
+
 			if cfg.audio_backend == "dac":
 				state_dict = {
 					"codes": qnt.codes.cpu().numpy().astype(np.uint16),
@@ -165,6 +174,7 @@ def process(
 	output_dataset="training",
 	transcription_filename="whisper.json",
 	raise_exceptions=False,
+	verify_audio=False,
 	stride=0,
 	stride_offset=0,
 	slice="auto",
@@ -353,7 +363,13 @@ def process(
 						text = segment["text"]
 
 						if len(text) == 0 or outpath.exists():
-							continue
+							if not verify_audio:
+								continue
+
+							artifact = _load_artifact( outpath )
+							if torch.count_nonzero(artifact) > 0:
+								continue
+							tqdm.write(f"Found zero'd quantized audio tensor: {outpath}")
 
 						start = (segment['start']-0.05)
 						end = (segment['end']+0.5)
@@ -398,6 +414,7 @@ def main():
 	parser.add_argument("--output-dataset", type=str, default="training/dataset")
 	parser.add_argument("--transcription-filename", type=str, default="whisper.json")
 	parser.add_argument("--raise-exceptions", action="store_true")
+	parser.add_argument("--verify-audio", action="store_true")
 	#parser.add_argument("--low-memory", action="store_true")
 	parser.add_argument("--skip-existing-folders", action="store_true")
 	parser.add_argument("--strict-languages", action="store_true")
@@ -435,6 +452,7 @@ def main():
 		output_dataset=args.output_dataset,
 		transcription_filename=args.transcription_filename,
 		raise_exceptions=args.raise_exceptions,
+		verify_audio=args.verify_audio,
 		stride=args.stride,
 		stride_offset=args.stride_offset,
 		slice=args.slice,

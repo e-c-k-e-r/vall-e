@@ -403,9 +403,11 @@ def load_engines(training=True, **model_kwargs):
 				kwargs["group"] = "DDP"
 				kwargs['id'] = f'{key_name}-{salt}-{global_rank()}'
 
-
-			engine.wandb = wandb.init(project=key_name, **kwargs)
-			engine.wandb.watch(engine.module)
+			try:
+				engine.wandb = wandb.init(project=key_name, **kwargs)
+				engine.wandb.watch(engine.module)
+			except Exception as e:
+				engine.wandb = None
 		else:
 			engine.wandb = None
 
