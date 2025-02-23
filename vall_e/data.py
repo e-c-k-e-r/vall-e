@@ -757,20 +757,19 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_artifact_extension(), validate )
 
+	# this might be slow
+	def _exists( id, entry ):
+		if not cfg.dataset.strict_validate:
+			return True
+		
+		if cfg.dataset.use_hdf5:
+			return key(id, entry) in cfg.hdf5
+
+		return (data_dir / id).with_suffix(_get_artifact_extension()).exists()
+
 	def _validate( id, entry ):
 		phones = entry['phones'] if "phones" in entry else 0
 		duration = entry['duration'] if "duration" in entry else 0
-
-		k = key(id, entry)
-		
-		# double check if in HDF5
-		# this might be slow
-		if cfg.dataset.strict_validate:
-			if cfg.dataset.use_hdf5:
-				if k not in cfg.hdf5:
-					return False
-			elif not (data_dir / id).with_suffix(_get_artifact_extension()).exists():
-				return False
 
 		# add to duration bucket
 		if type not in _durations_map:
@@ -780,7 +779,11 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		if not validate:
 			return True
 
-		return cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration
+		in_bounds = cfg.dataset.min_duration <= duration and duration <= cfg.dataset.max_duration
+		if in_bounds and not _exists( id, entry ):
+			return False
+
+		return in_bounds
 
 	return [ key(id, entry) for id, entry in metadata.items() if _validate(id, entry) ]
 
