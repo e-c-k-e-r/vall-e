@@ -771,6 +771,8 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		phones = entry['phones'] if "phones" in entry else 0
 		duration = entry['duration'] if "duration" in entry else 0
 
+		k = key(id, entry)
+
 		# add to duration bucket
 		if type not in _durations_map:
 			_durations_map[type] = {}
