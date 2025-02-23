@@ -132,9 +132,8 @@ except Exception as e:
 try:
 	from muon import Muon as Muon
 except Exception as e:
-	raise e
-	#_logger.warning(f'Error while importing Muon: {str(e)}')
-	#pass
+	_logger.warning(f'Error while importing Muon: {str(e)}')
+	pass
 
 # https://github.com/konstmish/prodigy
 try:

@@ -148,8 +148,9 @@ def load_engines(training=True, **model_kwargs):
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 
-			muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None)
-			params.update(cfg.hyperparameters.optimizer_params)
+			if cfg.hyperparameters.optimizer_params is not None:
+				muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None)
+				params.update(cfg.hyperparameters.optimizer_params)
 
 			if muon_params is not None:
 				muon_params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 and f'model.{name}' not in model.config.frozen_params ]
