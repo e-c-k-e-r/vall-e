@@ -145,9 +145,25 @@ def load_engines(training=True, **model_kwargs):
 				})
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
+			elif cfg.hyperparameters.optimizer.lower() == "muon":
+				del params["params"]
+				optimizer_class = ml.Muon
+				
+
+				params["muon_params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 and f'model.{name}' not in model.config.frozen_params ]
+				params["adamw_params"] = [ param for name, param in model.model.named_parameters() if param.ndim < 2 and f'model.{name}' not in model.config.frozen_params ]
+				params["adamw_params"] += [ param for name, param in model.named_parameters() if not name.startswith('model.') and name not in model.config.frozen_params ]
+
+				if cfg.hyperparameters.optimizer_params is not None:
+					params["adamw_betas"] = cfg.hyperparameters.optimizer_params.pop("adamw_betas", (0.95, 0.95))
+					params["adamw_eps"] = cfg.hyperparameters.optimizer_params.pop("adamw_eps", 1e-8)
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 
+			params.update(cfg.hyperparameters.optimizer_params)
+			optimizer = optimizer_class(**params)
+
+			"""
 			if cfg.hyperparameters.optimizer_params is not None:
 				muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None)
 				params.update(cfg.hyperparameters.optimizer_params)
@@ -164,6 +180,7 @@ def load_engines(training=True, **model_kwargs):
 				])
 			else:
 				optimizer = optimizer_class(**params)
+			"""
 
 			if cfg.hyperparameters.scheduler.lower() == "schedulefree":
 				if cfg.hyperparameters.optimizer.lower() == "adamw":

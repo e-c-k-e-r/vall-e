@@ -130,7 +130,7 @@ except Exception as e:
 	pass
 
 try:
-	from muon import Muon as Muon
+	from .ext.muon import Muon
 except Exception as e:
 	_logger.warning(f'Error while importing Muon: {str(e)}')
 	pass

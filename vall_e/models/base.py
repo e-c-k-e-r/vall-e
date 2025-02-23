@@ -1503,7 +1503,7 @@ class Base(nn.Module):
 				return None, None
 
 			# shift if causal
-			if causal:
+			if causal or self.version >= 7:
 				l = self.causal_size
 				logit = logit[..., :-l, :] # shift the target so that token n...
 				sequence = sequence[..., l:] # ...predicts token n + 1

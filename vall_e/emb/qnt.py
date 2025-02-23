@@ -240,12 +240,12 @@ def decode(codes: Tensor, device="cuda", dtype=None, metadata=None, window_durat
 	if model.backend == "vocos":
 		x = model.codes_to_features(codes[0])
 		wav = model.decode(x, bandwidth_id=model.bandwidth_id)
-		return wav, cfg.sample_rate
-
+	
 	if model.backend == "encodec":
 		x = [(codes.to(device), None)]
-		wav = model.decode(x)
-		return wav, cfg.sample_rate
+		wav = model.decode(x)[0]
+
+	return wav, cfg.sample_rate
 
 @torch.inference_mode()
 def decode_batch(codes: list[Tensor], device="cuda", dtype=None):

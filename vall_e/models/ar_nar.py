@@ -171,7 +171,7 @@ class AR_NAR(Base):
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
 
 			# only apply stop token for RVQ level 0
-			if (self.version < 7 and quant_level <= 0 and timesteps[i] is None) or (self.version >= 7 and timesteps[i] is None):
+			if (self.version < 7 and quant_level <= 0 and timesteps[i] is None) or (self.version >= 7):
 				# append stop tokens for AR
 				if task not in text_task:
 					resps_list[i] = torch.cat([ resps, audio_stop_sequence ])
@@ -1434,7 +1434,9 @@ def example_usage():
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
 	learning_rate = cfg.hyperparameters.learning_rate if cfg.yaml_path is not None else None
 
-	params = model.parameters()
+	params = {
+		"params": model.parameters()
+	}
 	if cfg.optimizations.dadaptation:
 		# do not combine the two
 		if scheduler == "schedulefree":
@@ -1467,23 +1469,25 @@ def example_usage():
 			learning_rate = 0.01
 
 		optimizer = ml.Apollo
-		params = [{'params': params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
+		params["params"] = [{'params': params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
+	elif optimizer == "muon":
+		del params["params"]
+		optimizer = ml.Muon
+
+		params["muon_params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
+		params["adamw_params"] = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ]
+		params["adamw_params"] += [ param for name, param in model.named_parameters() if not name.startswith('model.') ]
+
+		if cfg.hyperparameters.optimizer_params is not None:
+			params["adamw_betas"] = cfg.hyperparameters.optimizer_params.pop("adamw_betas", (0.95, 0.95))
+			params["adamw_eps"] = cfg.hyperparameters.optimizer_params.pop("adamw_eps", 1e-8)
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 
 	_logger.info(f"Optimizer: {optimizer}\tLearning rate: {learning_rate}")
-	
-	muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None) if cfg.hyperparameters.optimizer_params is not None else None
-	if muon_params is not None:
-		muon_params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
-		adam_params = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ] + [ param for name, param in model.named_parameters() if not name.startswith('model.') ]
-		
-		optimizer = ml.Optimizers([
-			ml.Muon(**muon_params),
-			optimizer(adam_params, lr=learning_rate)
-		])
-	else:
-		optimizer = optimizer(params, lr=learning_rate)
+
+	params["lr"] = learning_rate
+	optimizer = optimizer(**params)
 
 	if scheduler == "schedulefree":
 		if isinstance(optimizer, ml.AdamW):
