@@ -736,7 +736,7 @@ class Base(nn.Module):
 			self.audio_decoder = AudioDecoder(
 				d_model,
 				d_model * 2,
-				(n_audio_tokens + 2) * self.n_resp_levels,
+				(n_audio_tokens + 1) * self.n_resp_levels,
 			)
 
 		if attention_backend == "auto":
