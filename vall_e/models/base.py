@@ -546,8 +546,8 @@ class Base(nn.Module):
 		self.capabilities = self.config.capabilities if self.config else ["ar", "nar"]
 		self.gradient_checkpointing = self.config.gradient_checkpointing if self.config is not None else True
 
-		self.stop_token = self.n_audio_tokens # id 1024
-		self.mask_token = self.n_audio_tokens + 1 # id 1024
+		self.stop_token = self.n_audio_tokens
+		self.mask_token = self.stop_token
 		self.causal = "ar" in self.capabilities or "len" in self.capabilities
 		self.version = self.config.version if self.config is not None else 5
 		self.causal_size = self.config.experimental.causal_size if self.config is not None else (1 if self.causal else 0)
@@ -616,7 +616,7 @@ class Base(nn.Module):
 				l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
 				l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 		else:
-			n_resp_tokens = n_audio_tokens + 1
+			n_resp_tokens = n_audio_tokens + 2
 			l_embedding_tokens = [n_resp_tokens] * self.n_resp_levels
 			l_embedding_names = [] # [f'NAR:{i}' for i in range( self.n_resp_levels )]
 			l_classifier_tokens = [] # [n_audio_tokens] * self.n_resp_levels
@@ -714,6 +714,7 @@ class Base(nn.Module):
 			self.raw_text_emb = Embedding(self.n_raw_text_tokens, d_model)
 
 		if self.version >= 7:
+			self.mask_token = self.stop_token + 1
 			if monolithic_audio_encoder:
 				self.audio_emb = AudioEncoder(
 					n_tokens=n_audio_tokens + 2, # stop + masked token
@@ -735,7 +736,7 @@ class Base(nn.Module):
 			self.audio_decoder = AudioDecoder(
 				d_model,
 				d_model * 2,
-				(n_audio_tokens + 1) * self.n_resp_levels,
+				(n_audio_tokens + 2) * self.n_resp_levels,
 			)
 
 		if attention_backend == "auto":
