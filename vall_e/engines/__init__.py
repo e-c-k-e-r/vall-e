@@ -11,7 +11,7 @@ elif cfg.trainer.backend == "local":
 from .base import Engines, TrainFeeder, default_feeder, Engine as LocalEngine
 
 from ..models import get_models, get_model
-from ..utils import wrapper as ml
+from ..utils import ml
 from ..utils.io import torch_save, torch_load, pick_path
 from ..models.lora import apply_lora, lora_load_state_dict
 
@@ -114,7 +114,6 @@ def load_engines(training=True, **model_kwargs):
 				"lr": cfg.hyperparameters.learning_rate,
 			}
 
-
 			if cfg.hyperparameters.optimizer.lower() == "adamw":
 				params["betas"] = (0.9, 0.96)
 				params["eps"] = 1e-07
@@ -149,8 +148,21 @@ def load_engines(training=True, **model_kwargs):
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 
+			muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None)
 			params.update(cfg.hyperparameters.optimizer_params)
-			optimizer = optimizer_class(**params)
+
+			if muon_params is not None:
+				muon_params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 and f'model.{name}' not in model.config.frozen_params ]
+				
+				params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim < 2 and f'model.{name}' not in model.config.frozen_params ]
+				params["params"] += [ param for name, param in model.named_parameters() if not name.startswith('model.') and name not in model.config.frozen_params ]
+
+				optimizer = ml.Optimizers([
+					ml.Muon(**muon_params),
+					optimizer_class(**params),
+				])
+			else:
+				optimizer = optimizer_class(**params)
 
 			if cfg.hyperparameters.scheduler.lower() == "schedulefree":
 				if cfg.hyperparameters.optimizer.lower() == "adamw":
@@ -406,7 +418,7 @@ def load_engines(training=True, **model_kwargs):
 			try:
 				engine.wandb = wandb.init(project=key_name, **kwargs)
 				engine.wandb.watch(engine.module)
-			except Exception as e:
+			except Exception as e:	
 				engine.wandb = None
 		else:
 			engine.wandb = None

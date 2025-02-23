@@ -17,7 +17,7 @@ from .emb import g2p, qnt
 from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio
 from .emb.transcribe import transcribe
 
-from .utils import to_device, set_seed, clamp, wrapper as ml
+from .utils import to_device, set_seed, clamp, ml
 
 from .config import cfg, Config
 from .models import get_models

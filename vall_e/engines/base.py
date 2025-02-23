@@ -45,7 +45,7 @@ from typing import Any, Protocol
 from functools import cached_property
 
 from .base import TrainFeeder
-from ..utils import wrapper as ml
+from ..utils import ml
 
 _logger = logging.getLogger(__name__)
 

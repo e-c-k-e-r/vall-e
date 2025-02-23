@@ -85,22 +85,6 @@ if cfg.optimizations.injects:
 		torch.optim.AdamW = AdamW
 		torch.optim.SGD = SGD
 
-AVAILABLE_COMPILE_BACKENDS = []
-
-try:
-	AVAILABLE_COMPILE_BACKENDS += torch._dynamo.list_backends()
-except Exception as e:
-	pass
-
-
-if cfg.optimizations.tensorrt:
-	try:
-		import torch_tensorrt
-		AVAILABLE_COMPILE_BACKENDS.append("tensorrt")
-	except Exception as e:
-		_logger.warning(f'Error while importing TensorRT: {str(e)}')
-		pass
-
 if cfg.optimizations.unsloth:
 	try:
 		from .ext.unsloth import apply_unsloth_offloaded_gradient_checkpoint_monkey_patch
@@ -109,20 +93,48 @@ if cfg.optimizations.unsloth:
 		_logger.warning(f'Error while importing Unsloth: {str(e)}')
 		pass
 
+class Optimizers(torch.optim.Optimizer):
+	def __init__(self, opts):
+		self.opts = opts
+
+	def step(self, *args, **kwargs):
+		for opt in self.opts:
+			opt.step(*args, **kwargs)
+	
+	def zero_grad(self, *args, **kwargs):
+		for opt in self.opts:
+			opt.zero_grad(*args, **kwargs)
+
+	@property
+	def param_groups(self):
+		l = []
+		for opt in self.opts:
+			l += opt.param_groups
+		return l
+
+	def state_dict(self):
+		states = []
+		for i, opt in enumerate( self.opts ):
+			states.append( opt.state_dict() )
+		
+		return states
+
+	def load_state_dict(self, state_dict):		
+		for opt, state in zip( self.opts, state_dict ):
+			opt.load_state_dict( state )
+
 try:
 	from .ext.apollo import Apollo
 except Exception as e:
 	_logger.warning(f'Error while importing APOLLO: {str(e)}')
 	pass
 
-def compile_model(model, backend="auto"):
-	if not backend or backend == "auto":
-		backend = AVAILABLE_COMPILE_BACKENDS[0]
-
-	if backend not in AVAILABLE_COMPILE_BACKENDS:
-		return torch.compile(model)
-
-	return torch.compile(model, backend=backend)
+try:
+	from muon import Muon as Muon
+except Exception as e:
+	raise e
+	#_logger.warning(f'Error while importing Muon: {str(e)}')
+	#pass
 
 # https://github.com/konstmish/prodigy
 try:
@@ -155,3 +167,28 @@ def replace_embedding( model, klass=Embedding, target=torch.nn.Embedding, verbos
 	return replace_embedding_old( model, klass, target, verbose )
 
 Embedding.forward = autocast_forward(Embedding.forward)
+
+AVAILABLE_COMPILE_BACKENDS = []
+
+try:
+	AVAILABLE_COMPILE_BACKENDS += torch._dynamo.list_backends()
+except Exception as e:
+	pass
+
+def compile_model(model, backend="auto"):
+	if not backend or backend == "auto":
+		backend = AVAILABLE_COMPILE_BACKENDS[0]
+
+	if backend not in AVAILABLE_COMPILE_BACKENDS:
+		return torch.compile(model)
+
+	return torch.compile(model, backend=backend)
+
+
+if cfg.optimizations.tensorrt:
+	try:
+		import torch_tensorrt
+		AVAILABLE_COMPILE_BACKENDS.append("tensorrt")
+	except Exception as e:
+		_logger.warning(f'Error while importing TensorRT: {str(e)}')
+		pass

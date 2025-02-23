@@ -25,7 +25,7 @@ from deepspeed import DeepSpeedEngine, DeepSpeedConfig, comm as dist, init_distr
 from deepspeed.accelerator import get_accelerator
 
 from ..utils.distributed import init_distributed, distributed_initialized
-from ..utils import wrapper as ml
+from ..utils import ml
 
 from ..models.lora import freeze_non_lora_weights
 

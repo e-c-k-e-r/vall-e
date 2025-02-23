@@ -30,7 +30,7 @@ from torch.utils.checkpoint import checkpoint
 from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, MulticlassPrecision
 
 from .arch import *
-from ..utils import wrapper as ml, clamp
+from ..utils import ml, clamp
 from ..samplers import *
 
 # yuck, kind of needed

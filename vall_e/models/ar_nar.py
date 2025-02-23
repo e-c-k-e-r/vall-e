@@ -1189,8 +1189,13 @@ class AR_NAR(Base):
 				break
 
 		for i, l in enumerate( sequence_list ):
-			index = (l == audio_stop_token).nonzero()[:, 0].min()
-			sequence_list[i] = sequence_list[i][:index]
+			index = (l == audio_stop_token).nonzero()
+			# kludge for when it doesnt actually hit a stop token but i cant be bothered to properly address it right now since it only came up in test training at the moment
+			try:
+				index = index[:, 0].min()
+				sequence_list[i] = sequence_list[i][:index]
+			except Exception as e:
+				pass
 
 		return sequence_list
 
@@ -1362,8 +1367,6 @@ class AR_NAR(Base):
 def example_usage():
 	cfg.device = "cuda"
 	cfg.trainer.backend = "local"
-	if cfg.audio_backend == "dac":
-		cfg.sample_rate = 44_100
 
 	from functools import partial
 	from einops import repeat
@@ -1372,7 +1375,7 @@ def example_usage():
 	from ..emb.qnt import decode_to_file, unload_model, trim_random, repeat_extend_audio, concat_audio, merge_audio
 	from ..data import _load_artifact
 	from ..engines import Engine, Engines
-	from ..utils import wrapper as ml
+	from ..utils import ml
 	from ..utils import setup_logging
 	
 	import numpy as np
@@ -1403,7 +1406,7 @@ def example_usage():
 		'n_text_tokens': cfg.model.text_tokens,
 		'n_audio_tokens': cfg.model.audio_tokens,
 
-		'd_model': 1536, # 256, # 1024, # 1536
+		'd_model': 1024, # 256, # 1024, # 1536
 		'n_heads': 16, # 4, # 16, # 24
 		'n_layers': 12, # 32
 		'n_experts': 1 if not cfg.model else cfg.model.experts,
@@ -1425,7 +1428,7 @@ def example_usage():
 		available_tasks = ["tts-nar"]
 
 	model = AR_NAR(**kwargs).to(cfg.device)
-	steps = 250 // batch_size
+	steps = 100 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
@@ -1464,28 +1467,23 @@ def example_usage():
 			learning_rate = 0.01
 
 		optimizer = ml.Apollo
-
-		"""
-		target_params = []
-		target_modules_list = ["attn", "mlp"]
-		for module_name, module in model.named_modules():
-			if not (isinstance(module, torch.nn.Linear)):
-				continue
-			if not any(target_key in module_name for target_key in target_modules_list):
-				continue
-			target_params.append(module.weight)
-
-		param_ids = [id(p) for p in target_params]
-		regular_params = [p for p in model.parameters() if id(p) not in param_ids]
-		params = [{'params': regular_params}, {'params': target_params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
-		"""
 		params = [{'params': params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 
 	_logger.info(f"Optimizer: {optimizer}\tLearning rate: {learning_rate}")
-
-	optimizer = optimizer(params, lr=learning_rate)
+	
+	muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None)
+	if muon_params is not None:
+		muon_params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
+		adam_params = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ] + [ param for name, param in model.named_parameters() if not name.startswith('model.') ]
+		
+		optimizer = ml.Optimizers([
+			ml.Muon(**muon_params),
+			optimizer(adam_params, lr=learning_rate)
+		])
+	else:
+		optimizer = optimizer(params, lr=learning_rate)
 
 	if scheduler == "schedulefree":
 		if isinstance(optimizer, ml.AdamW):
