@@ -248,7 +248,7 @@ class Engine():
 			self.global_samples += self.batch_size
 
 			if (self.micro_steps + 1) % max(1, self.gradient_accumulation_steps) == 0:
-				torch.nn.utils.clip_grad_norm_(self.module.parameters(), self.gradient_clipping)
+				self._global_grad_norm = torch.nn.utils.clip_grad_norm_(self.module.parameters(), self.gradient_clipping)
 
 				self.global_steps += 1 
 				if self.loss_scaler is not None:
@@ -260,6 +260,7 @@ class Engine():
 
 				self._get_grad_norm()
 	
+	# doesn't actually work
 	def _get_grad_norm(self):
 		t = [ param.grad.detach().flatten() for param in self.module.parameters() if param.grad is not None ]
 		self._global_grad_norm = torch.cat(t).norm().item() if len(t) else None
@@ -585,7 +586,9 @@ class Engines(dict[str, Engine]):
 			loss_scale = 1
 			if hasattr(engine.optimizer, "loss_scale") and engine.optimizer.loss_scale is not None:
 				loss_scale = engine.optimizer.loss_scale
-			
+			elif engine.loss_scaler is not None:
+				loss_scale = engine.loss_scaler.get_scale()
+
 			if grad_norm is not None:
 				grad_norm /= loss_scale
 

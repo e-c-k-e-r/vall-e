@@ -126,6 +126,10 @@ class Muon(torch.optim.Optimizer):
 			#		   Muon		   #
 			############################
 
+			# this actually doesn't work with deepspeed for the same reason APOLLO required modifications:
+			# deepspeed's BF16/F16 optimizer wrapper modifies the tensors, so self.state loses the right mapping
+			# can't be assed to figure it out right now since it's not easy to fix like APOLLO
+			
 			params = [p for p in group["params"] if self.state[p]["use_muon"]]
 			# import pdb; pdb.set_trace()
 			lr = group["lr"]
