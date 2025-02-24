@@ -258,7 +258,7 @@ class Engine():
 					self.optimizer.step()
 				self.optimizer.zero_grad()
 
-				self._get_grad_norm()
+				# self._get_grad_norm()
 	
 	# doesn't actually work
 	def _get_grad_norm(self):

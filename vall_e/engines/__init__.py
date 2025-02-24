@@ -60,7 +60,7 @@ def load_engines(training=True, **model_kwargs):
 
 		# to handle the issue of training with deepspeed, but inferencing with local
 		if checkpoint_path.exists() and backend == "local":
-			tag = open(checkpoint_path).read()
+			tag = open(checkpoint_path).read().strip()
 			checkpoint_path = pick_path( checkpoint_path.parent / tag / f"state.{cfg.weights_format}", *[ f'.{format}' for format in cfg.supported_weights_formats] )
 
 		# if loaded using --model=
