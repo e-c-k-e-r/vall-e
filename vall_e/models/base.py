@@ -581,9 +581,11 @@ class Base(nn.Module):
 		ignore_inputs_for_loss = self.config.experimental.ignore_inputs_for_loss if self.config is not None else False
 		
 		resp_parallel_training = self.config.experimental.resp_parallel_training if self.config is not None else True
+		predict_causally = self.config.experimental.predict_causally if self.config is not None else False
 		monolithic_audio_encoder = self.config.experimental.monolithic_audio_encoder if self.config is not None else False
 
 		self.resp_parallel_training = resp_parallel_training
+		self.predict_causally = predict_causally
 
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
@@ -1503,7 +1505,7 @@ class Base(nn.Module):
 				return None, None
 
 			# shift if causal
-			if causal or self.version >= 7:
+			if causal or self.predict_causally:
 				l = self.causal_size
 				logit = logit[..., :-l, :] # shift the target so that token n...
 				sequence = sequence[..., l:] # ...predicts token n + 1

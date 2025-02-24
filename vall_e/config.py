@@ -274,6 +274,9 @@ class ModelExperimentalSettings:
 	# this should allow for "faster" training as each sample is trained entirely, but slower backwards (and possibly less stable training, maybe)
 	monolithic_audio_encoder: bool = False # combines the prom/resp embeddings into one unit
 	# this usually sounds bad, as the model can "extract" features from the prom separate from the ones in the resp
+	predict_causally: bool = False # predicts the next token even for the non-causal/NAR tasks, in theory this should also bolster the model, as
+	# * NAR-demask would semi-doubly train for AR
+	# * the model wouldn't also need to learn when to predict the token in place
 
 	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors
