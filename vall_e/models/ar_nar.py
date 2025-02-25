@@ -1367,8 +1367,8 @@ class AR_NAR(Base):
 
 
 def example_usage():
-	cfg.device = "cuda"
-	cfg.trainer.backend = "local"
+	#cfg.device = "cuda"
+	#cfg.trainer.backend = "local"
 
 	from functools import partial
 	from einops import repeat
