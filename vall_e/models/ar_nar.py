@@ -78,6 +78,8 @@ class AR_NAR(Base):
 
 		if self.version >= 7:
 			masking_train_rvq_levels = [0,self.n_resp_levels]
+			
+		if cfg.audio_backend == "nemo":
 			rvq_levels_p = [ i for i in range( quant_level_range[0], quant_level_range[1] + 1 ) ]
 
 		# CFG
