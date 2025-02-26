@@ -146,7 +146,7 @@ def load_engines(training=True, **model_kwargs):
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
 			elif cfg.hyperparameters.optimizer.lower() == "muon":
-				optimizer = ml.Muon
+				optimizer_class = ml.Muon
 
 				muon_params = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
 				adamw_params = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ]
@@ -220,9 +220,6 @@ def load_engines(training=True, **model_kwargs):
 					if k not in state:
 						continue
 					state[k] = ml.resize_weight( state[k], tokens )
-
-				for k, v in last_embedding_keys.items():
-					state[k][-1] = v
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 
