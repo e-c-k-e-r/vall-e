@@ -162,6 +162,7 @@ class AR_NAR(Base):
 						quant_levels[i] = prom.shape[-1] - 1
 
 			# apply token dropout error compensation
+			"""
 			if token_dropout_error > 0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
 				steps = resps.shape[0]
 				for l in range( quant_level ):
@@ -171,6 +172,7 @@ class AR_NAR(Base):
 						if random.random() < token_dropout_error:								
 							offset = 1 * ( 1 if random.random() < 0.5  else -1 )
 							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
+			"""
 
 			# only apply stop token for RVQ level 0
 			if (self.version < 7 and quant_level <= 0 and timesteps[i] is None) or (self.version >= 7 and timesteps[i] is None) or (self.predict_causally):
@@ -1471,18 +1473,22 @@ def example_usage():
 			learning_rate = 0.01
 
 		optimizer = ml.Apollo
-		params["params"] = [{'params': params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}]
+		params["params"] = [
+			{'params': params, 'rank': 1, 'proj': 'random', 'scale_type': 'tensor', 'scale': 128,'update_proj_gap': 200, 'proj_type': 'std'}
+		]
 	elif optimizer == "muon":
-		del params["params"]
 		optimizer = ml.Muon
 
-		params["muon_params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
-		params["adamw_params"] = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ]
-		params["adamw_params"] += [ param for name, param in model.named_parameters() if not name.startswith('model.') ]
+		muon_params = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
+		adamw_params = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ]
+		adamw_params += [ param for name, param in model.named_parameters() if not name.startswith('model.') ]
 
-		if cfg.hyperparameters.optimizer_params is not None:
-			params["adamw_betas"] = cfg.hyperparameters.optimizer_params.pop("adamw_betas", (0.95, 0.95))
-			params["adamw_eps"] = cfg.hyperparameters.optimizer_params.pop("adamw_eps", 1e-8)
+		params["params"] = [
+			{ "params": muon_params, "muon": True },
+			{ "params": adamw_params, "muon": False, "betas": (0.95, 0.95), "eps": 1e-8 },
+		]
+	elif optimizer == "cosmos":
+		optimizer = ml.COSMOS
 	else:
 		raise ValueError(f"Unrecognized optimizer: {optimizer}")
 

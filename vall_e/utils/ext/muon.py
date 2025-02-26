@@ -66,15 +66,14 @@ class Muon(torch.optim.Optimizer):
 
 	def __init__(
 		self,
+		params=None,
 		lr=1e-3,
 		wd=0.1,
-		muon_params=None,
 		momentum=0.95,
 		nesterov=True,
 		ns_steps=5,
-		adamw_params=None,
-		adamw_betas=(0.95, 0.95),
-		adamw_eps=1e-8,
+		betas=(0.95, 0.95),
+		eps=1e-8,
 	):
 
 		defaults = dict(
@@ -83,22 +82,12 @@ class Muon(torch.optim.Optimizer):
 			momentum=momentum,
 			nesterov=nesterov,
 			ns_steps=ns_steps,
-			adamw_betas=adamw_betas,
-			adamw_eps=adamw_eps,
+			betas=betas,
+			eps=eps,
+			muon=False,
 		)
 
-		params = list(muon_params)
-		adamw_params = list(adamw_params) if adamw_params is not None else []
-		params.extend(adamw_params)
 		super().__init__(params, defaults)
-		# Sort parameters into those for which we will use Muon, and those for which we will not
-		for p in muon_params:
-			# Use Muon for every parameter in muon_params which is >= 2D and doesn't look like an embedding or head layer
-			assert p.ndim == 2, p.ndim
-			self.state[p]["use_muon"] = True
-		for p in adamw_params:
-			# Do not use Muon for parameters in adamw_params
-			self.state[p]["use_muon"] = False
 
 	def adjust_lr_for_muon(self, lr, param_shape):
 		A, B = param_shape[:2]
@@ -125,80 +114,74 @@ class Muon(torch.optim.Optimizer):
 			############################
 			#		   Muon		   #
 			############################
+			if group["muon"]:
+				# import pdb; pdb.set_trace()
+				lr = group["lr"]
+				wd = group["wd"]
+				momentum = group["momentum"]
 
-			# this actually doesn't work with deepspeed for the same reason APOLLO required modifications:
-			# deepspeed's BF16/F16 optimizer wrapper modifies the tensors, so self.state loses the right mapping
-			# can't be assed to figure it out right now since it's not easy to fix like APOLLO
-			
-			params = [p for p in group["params"] if self.state[p]["use_muon"]]
-			# import pdb; pdb.set_trace()
-			lr = group["lr"]
-			wd = group["wd"]
-			momentum = group["momentum"]
+				# generate weight updates in distributed fashion
+				for p in group["params"]:
+					# sanity check
+					g = p.grad
+					if g is None:
+						continue
+					if g.ndim > 2:
+						g = g.view(g.size(0), -1)
+					assert g is not None
 
-			# generate weight updates in distributed fashion
-			for p in params:
-				# sanity check
-				g = p.grad
-				if g is None:
-					continue
-				if g.ndim > 2:
-					g = g.view(g.size(0), -1)
-				assert g is not None
+					# calc update
+					state = self.state[p]
+					if "momentum_buffer" not in state:
+						state["momentum_buffer"] = torch.zeros_like(g)
+					buf = state["momentum_buffer"]
+					buf.mul_(momentum).add_(g)
+					if group["nesterov"]:
+						g = g.add(buf, alpha=momentum)
+					else:
+						g = buf
+					u = zeropower_via_newtonschulz5(g, steps=group["ns_steps"])
 
-				# calc update
-				state = self.state[p]
-				if "momentum_buffer" not in state:
-					state["momentum_buffer"] = torch.zeros_like(g)
-				buf = state["momentum_buffer"]
-				buf.mul_(momentum).add_(g)
-				if group["nesterov"]:
-					g = g.add(buf, alpha=momentum)
-				else:
-					g = buf
-				u = zeropower_via_newtonschulz5(g, steps=group["ns_steps"])
+					# scale update
+					adjusted_lr = self.adjust_lr_for_muon(lr, p.shape)
 
-				# scale update
-				adjusted_lr = self.adjust_lr_for_muon(lr, p.shape)
+					# apply weight decay
+					p.data.mul_(1 - lr * wd)
 
-				# apply weight decay
-				p.data.mul_(1 - lr * wd)
-
-				# apply update
-				p.data.add_(u, alpha=-adjusted_lr)
+					# apply update
+					p.data.add_(u, alpha=-adjusted_lr)
 
 			############################
 			#	   AdamW backup	   #
 			############################
+			else:
+				lr = group['lr']
+				beta1, beta2 = group["betas"]
+				eps = group["eps"]
+				weight_decay = group["wd"]
 
-			params = [p for p in group["params"] if not self.state[p]["use_muon"]]
-			lr = group['lr']
-			beta1, beta2 = group["adamw_betas"]
-			eps = group["adamw_eps"]
-			weight_decay = group["wd"]
+				for p in group["params"]:
+					g = p.grad
+					if g is None:
+						continue
+					state = self.state[p]
+					if "step" not in state:
+						state["step"] = 0
+						state["moment1"] = torch.zeros_like(g)
+						state["moment2"] = torch.zeros_like(g)
+					state["step"] += 1
+					step = state["step"]
+					buf1 = state["moment1"]
+					buf2 = state["moment2"]
+					buf1.lerp_(g, 1 - beta1)
+					buf2.lerp_(g.square(), 1 - beta2)
 
-			for p in params:
-				g = p.grad
-				if g is None:
-					continue
-				state = self.state[p]
-				if "step" not in state:
-					state["step"] = 0
-					state["moment1"] = torch.zeros_like(g)
-					state["moment2"] = torch.zeros_like(g)
-				state["step"] += 1
-				step = state["step"]
-				buf1 = state["moment1"]
-				buf2 = state["moment2"]
-				buf1.lerp_(g, 1 - beta1)
-				buf2.lerp_(g.square(), 1 - beta2)
+					g = buf1 / (eps + buf2.sqrt())
 
-				g = buf1 / (eps + buf2.sqrt())
-
-				bias_correction1 = 1 - beta1**step
-				bias_correction2 = 1 - beta2**step
-				scale = bias_correction1 / bias_correction2**0.5
-				p.data.mul_(1 - lr * weight_decay)
-				p.data.add_(g, alpha=-lr / scale)
+					bias_correction1 = 1 - beta1**step
+					bias_correction2 = 1 - beta2**step
+					scale = bias_correction1 / bias_correction2**0.5
+					p.data.mul_(1 - lr * weight_decay)
+					p.data.add_(g, alpha=-lr / scale)
 
 		return loss

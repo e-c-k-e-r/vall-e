@@ -146,41 +146,21 @@ def load_engines(training=True, **model_kwargs):
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
 			elif cfg.hyperparameters.optimizer.lower() == "muon":
-				del params["params"]
-				optimizer_class = ml.Muon
-				
+				optimizer = ml.Muon
 
-				params["muon_params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 and f'model.{name}' not in model.config.frozen_params ]
-				params["adamw_params"] = [ param for name, param in model.model.named_parameters() if param.ndim < 2 and f'model.{name}' not in model.config.frozen_params ]
-				params["adamw_params"] += [ param for name, param in model.named_parameters() if not name.startswith('model.') and name not in model.config.frozen_params ]
+				muon_params = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 ]
+				adamw_params = [ param for name, param in model.model.named_parameters() if param.ndim < 2 ]
+				adamw_params += [ param for name, param in model.named_parameters() if not name.startswith('model.') ]
 
-				if cfg.hyperparameters.optimizer_params is not None:
-					params["adamw_betas"] = cfg.hyperparameters.optimizer_params.pop("adamw_betas", (0.95, 0.95))
-					params["adamw_eps"] = cfg.hyperparameters.optimizer_params.pop("adamw_eps", 1e-8)
+				params["params"] = [
+					{ "params": muon_params, "muon": True },
+					{ "params": adamw_params, "muon": False, "betas": (0.95, 0.95), "eps": 1e-8 },
+				]
 			else:
 				raise ValueError(f'Optimizer specified not implemented: {cfg.hyperparameters.optimizer}')
 
 			params.update(cfg.hyperparameters.optimizer_params)
 			optimizer = optimizer_class(**params)
-
-			"""
-			if cfg.hyperparameters.optimizer_params is not None:
-				muon_params = cfg.hyperparameters.optimizer_params.pop("muon", None)
-				params.update(cfg.hyperparameters.optimizer_params)
-
-			if muon_params is not None:
-				muon_params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim >= 2 and f'model.{name}' not in model.config.frozen_params ]
-				
-				params["params"] = [ param for name, param in model.model.named_parameters() if param.ndim < 2 and f'model.{name}' not in model.config.frozen_params ]
-				params["params"] += [ param for name, param in model.named_parameters() if not name.startswith('model.') and name not in model.config.frozen_params ]
-
-				optimizer = ml.Optimizers([
-					ml.Muon(**muon_params),
-					optimizer_class(**params),
-				])
-			else:
-				optimizer = optimizer_class(**params)
-			"""
 
 			if cfg.hyperparameters.scheduler.lower() == "schedulefree":
 				if cfg.hyperparameters.optimizer.lower() == "adamw":
@@ -233,81 +213,9 @@ def load_engines(training=True, **model_kwargs):
 			for k in erase:
 				del state[k]
 
-			# converts an AR+NAR model into an AR+NAR-len model
-			"""
-			if True:
-				# move STT one over
-				state['classifiers.proj.9.weight'] = state['classifiers.proj.8.weight'].clone()
-				state['classifiers.proj.9.bias'] = state['classifiers.proj.8.bias'].clone()
-				# copy from AR:0:0 classifier
-				if True:
-					state['classifiers.proj.8.weight'] = state['classifiers.proj.0.weight'].clone()
-					state['classifiers.proj.8.bias'] = state['classifiers.proj.0.bias'].clone()
-					# copy from AR:0:0 embeddings
-					state['resps_emb.embeddings.8.weight'] = state['resps_emb.embeddings.0.weight'].clone()
-				# remove
-				else:
-					if 'classifiers.proj.8.weight' in state:
-						del state['classifiers.proj.8.weight']
-					if 'classifiers.proj.8.bias' in state:
-						del state['classifiers.proj.8.bias']
-					if 'resps_emb.embeddings.8.weight' in state:
-						del state['resps_emb.embeddings.8.weight']
-			"""
-
 			# resize modules if I'm doing experiments and can't be assed to manually trim things
 			if cfg.trainer.resize_modules:
-				uses_stop_token = 1 if ("ar" in model.capabilities or "len" in model.capabilities) > 0 else 0
-				keys = [
-					("text_emb.weight", model.config.text_tokens ),
-					("tasks_emb.weight", model.config.tasks ),
-					("langs_emb.weight", model.config.langs ),
-					("rvq_l_emb.weight", model.config.resp_levels ),
-					("resps_emb.embeddings.0.weight", model.config.audio_tokens + uses_stop_token ),
-					("model.embed_tokens.weight", model.config.audio_tokens + uses_stop_token ),
-					("classifiers.proj.0.weight", model.config.audio_tokens + uses_stop_token ),
-					("classifiers.proj.0.bias", model.config.audio_tokens + uses_stop_token ),
-					("classifier.weight", model.n_vocab ),
-					("classifier.bias", model.n_vocab ),
-				]
-
-				last_embedding_keys = {}
-
-				# correcting an oversight
-				"""
-				if model.config.experimental.split_classifiers and "len" in model.capabilities:
-					len_idx, nar_0_idx = model.classifiers.indices(["len", "NAR:0:0"])
-					keys.append((f"classifiers.proj.{len_idx}.weight", 11))
-					keys.append((f"classifiers.proj.{len_idx}.bias", 11))
-
-					keys.append((f"classifiers.proj.{nar_0_idx}.weight", model.config.audio_tokens))
-					keys.append((f"classifiers.proj.{nar_0_idx}.bias", model.config.audio_tokens))
-				"""
-
-				# correcting an oversight
-				"""
-				if True:
-					keys.append((f"classifiers.proj.0.weight", model.config.audio_tokens+1))
-					for i in range(1,9):
-						keys.append((f"classifiers.proj.{i}.weight", model.config.audio_tokens))
-
-					keys.append((f"resps_emb.embeddings.0.weight", model.config.audio_tokens+1))
-					keys.append((f"resps_emb.embeddings.8.weight", model.config.audio_tokens+1))
-
-					for i in range(1,8):
-						keys.append((f"resps_emb.embeddings.{i}.weight", model.config.audio_tokens))
-					
-					for i in range(8):
-						keys.append((f"proms_emb.embeddings.{i}.weight", model.config.audio_tokens))
-
-					last_embedding_keys = {
-						"classifiers.proj.0.weight": state["classifiers.proj.0.weight"][-1].clone().detach(),
-						"resps_emb.embeddings.0.weight": state["resps_emb.embeddings.0.weight"][-1].clone().detach(),
-						"resps_emb.embeddings.8.weight": state["resps_emb.embeddings.8.weight"][-1].clone().detach(),
-					}
-				"""
-
-
+				keys = []
 				for k, tokens in keys:
 					if k not in state:
 						continue
@@ -315,50 +223,6 @@ def load_engines(training=True, **model_kwargs):
 
 				for k, v in last_embedding_keys.items():
 					state[k][-1] = v
-
-			# stuff to inject new layers into an existing model train over (not recommended, it doesnt amount to anything)
-			"""
-			if True:
-				remapped_dict = {}
-				remapped_indices = [
-					(0, 1),
-					(1, 2),
-					(2, 3),
-					(3, 5),
-					(4, 6),
-					(5, 7),
-					(6, 9),
-					(7, 10),
-					(8, 11),
-					(9, 13),
-					(10, 14),
-					(11, 15),
-				]
-
-				for src, dst in remapped_indices:
-					remapped_dict[f"model.layers.{dst}.input_layernorm.weight"] = state[f"model.layers.{src}.input_layernorm.weight"]
-					remapped_dict[f"model.layers.{dst}.self_attn.k_proj.weight"] = state[f"model.layers.{src}.self_attn.k_proj.weight"]
-					remapped_dict[f"model.layers.{dst}.self_attn.q_proj.weight"] = state[f"model.layers.{src}.self_attn.q_proj.weight"]
-					remapped_dict[f"model.layers.{dst}.self_attn.v_proj.weight"] = state[f"model.layers.{src}.self_attn.v_proj.weight"]
-					remapped_dict[f"model.layers.{dst}.self_attn.o_proj.weight"] = state[f"model.layers.{src}.self_attn.o_proj.weight"]
-					remapped_dict[f"model.layers.{dst}.post_attention_layernorm.weight"] = state[f"model.layers.{src}.post_attention_layernorm.weight"]
-					remapped_dict[f"model.layers.{dst}.mlp.down_proj.weight"] = state[f"model.layers.{src}.mlp.down_proj.weight"]
-					remapped_dict[f"model.layers.{dst}.mlp.gate_proj.weight"] = state[f"model.layers.{src}.mlp.gate_proj.weight"]
-					remapped_dict[f"model.layers.{dst}.mlp.up_proj.weight"] = state[f"model.layers.{src}.mlp.up_proj.weight"]
-
-					del state[f"model.layers.{src}.input_layernorm.weight"]
-					del state[f"model.layers.{src}.self_attn.k_proj.weight"]
-					del state[f"model.layers.{src}.self_attn.q_proj.weight"]
-					del state[f"model.layers.{src}.self_attn.v_proj.weight"]
-					del state[f"model.layers.{src}.self_attn.o_proj.weight"]
-					del state[f"model.layers.{src}.post_attention_layernorm.weight"]
-					del state[f"model.layers.{src}.mlp.down_proj.weight"]
-					del state[f"model.layers.{src}.mlp.gate_proj.weight"]
-					del state[f"model.layers.{src}.mlp.up_proj.weight"]
-
-				for k, v in remapped_dict.items():
-					state[k] = v
-			"""
 
 			model.load_state_dict(state, strict=cfg.trainer.strict_loading)
 

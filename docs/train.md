@@ -19,10 +19,9 @@ A training paradigm that works for me is:
 * additional training for sampling per speaker, to better help diversify how well it can perform for a range of speakers, rather than just speaking itself
   * I don't think this is crucial, but speaker-based sampling seems to be a placebo if anything.
 
-Training under `float16` should be fairly simple, but care is required to keep the loss scaling factor above 8K, and probably even 16K.
-* At the very least for pre-trained models, low enough loss scales will irreparably fry the model, and no amount of training afterwards seems to "fix" it.
-* The current DeepSpeed configuration should keep the loss scale capped to 32K; normal training does not seem to have the loss scale ever want to dip below this at least.
-* Training under `bfloat16` does not have to worry about this as there's no need for loss scaling, but I feel the model performs better when trained under `float16`+AMP rather than `bfloat16` (with or without AMP).
+Training under `float16` (+AMP) should be fairly simple, but it's practically required to use the `deepspeed` backend.
+* This is because `deepspeed` will automatically wrap the optimizer to handle training under `float16`, while the `local` backend does not do this. Training will *not* converge.
+* Training under `bfloat16` does not have to worry about this.
 
 When training from scratch, maybe 30% of the time spent training is getting coherent speech, with a loose following of the prompt. The remaining bulk of the work is getting the model to closely-er resemble the input prompt.
 * an accuracy of at least 50% seems to be where coherent speech emerges.

@@ -91,15 +91,8 @@ def _get_offsets():
 		"resps|NAR:0:0": (16677, 17702), 
 	}
 
-def _dropout_mask( input, p=None ):
-	# cosine scheduling
-	if p is None:
-		t = random.random()
-		p = math.cos(t * math.pi * 0.5)
-
-	seq = [ random.random() < p for _ in range( input.shape[0] ) ]
-	mask = torch.tensor( seq, dtype=torch.bool, device=input.device )
-	return mask
+def _dropout_mask( input, p ):
+	return (torch.rand(input.shape[0], device=input.device) < p)
 
 def _create_mask(l, device):
 	"""1 is valid region and 0 is invalid."""
@@ -1383,13 +1376,14 @@ class Base(nn.Module):
 							)
 
 						# apply token dropout
+						"""
 						if token_dropout_rate > 0.0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
 							steps = embedding.shape[0] - (1 if quant_level == 0 else 0) # do not mess with stop token
 							for i in range( steps ):
 								if random.random() > token_dropout_rate:
 									continue
-								
 								embedding[i] = self.dropout_token
+						"""
 				elif name == "timestep" and self.time_emb is not None:
 					embedding = self.time_emb( input )
 				elif name == "len" and self.len_emb is not None:
