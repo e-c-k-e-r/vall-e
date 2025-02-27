@@ -629,7 +629,10 @@ class Engines(dict[str, Engine]):
 			if cfg.lora is not None:			
 				key_name = cfg.lora.full_name
 
-			stats.update(flatten_dict({key_name.split("-")[0]: model_stats}))
+			if len(self) == 1:
+				stats.update(flatten_dict(model_stats))
+			else:
+				stats.update(flatten_dict({key_name.split("-")[0]: model_stats}))
 
 		self._update()
 
