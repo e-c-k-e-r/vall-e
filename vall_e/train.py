@@ -35,7 +35,7 @@ def train_feeder(engine, batch, teacher=None):
 		engine.current_batch_size = batch_size
 
 		output = engine(
-			phn_list=batch["phns"],
+			phns_list=batch["phns"],
 			proms_list=batch["proms"],
 			resps_list=batch["resps"],
 			lang_list=batch["lang"],

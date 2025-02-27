@@ -707,6 +707,8 @@ def _get_duration_map( type="training" ):
 	return _durations_map[type] if type in _durations_map else {}
 
 def _load_paths(dataset, type="training", silent=not is_global_leader(), dataset_hash_key=None):
+	assert cfg.dataset.min_duration >= 1.0, "Minimum duration too low."
+
 	if not dataset_hash_key:
 		dataset_hash_key = cfg.dataset.hash_key(sorted(dataset))
 
@@ -862,6 +864,7 @@ class Dataset(_Dataset):
 		extra_paths_by_spkr_name: dict[str, list] = {},
 	):
 		super().__init__()
+
 		self._head = None
 		self.sampler = None
 
