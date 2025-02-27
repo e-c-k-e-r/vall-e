@@ -9,6 +9,8 @@ This should handle all the "low" level things such as:
 Additional functionality (preparing inputs, generating full audio) should be delegated to classes that inheret the base model
 """
 
+# to-do: clean this whole mess up
+
 import math
 import torch
 import torch.nn.functional as F
@@ -50,22 +52,22 @@ from ..utils.pattern import DelayedPatternProvider, VALLEPattern
 """
 
 summed_embeddings_task = [ "stt" ]
-special_tasks = [ "len", "stt", "phn", "un-phn" ]
+special_tasks = [ "len", "stt", "phn", "text", "un-phn" ]
 non_tokened_names = ["task", "dropout_mask", "classifier_level"]
 task_outputs = {
 	"tts": "resp",
 	"ns": "resp",
 	"sr": "resp",
-	"stt": "text",
+	"stt": "phn",
 	"len": "len",
-	"phn": "text",
-	"un-phn": "raw_text",
+	"phn": "phn",
+	"un-phn": "text",
 }
 
 # yuck
 def _get_offsets():
 	return {
-		"text": (0, 256), 
+		"phn": (0, 256), 
 		"quant_level": (256, 264), 
 		"lang": (264, 270), 
 		"task": (270, 279), 
@@ -125,15 +127,6 @@ def _interleave_sequence_reshape( input: list[torch.Tensor], dim=-1 ):
 
 def _interleave_sequence_flatten( input: list[torch.Tensor] ):
 	return torch.concat( [ i.t() for i in input ] ).t().flatten()
-
-# automagically parses a batch-list and returns it as a list
-"""
-class Embedding(ml.Embedding):
-	def forward(self, x_list: list[Tensor]) -> list[Tensor]:
-		if len(x_list) == 0:
-			return []
-		return super().forward(torch.cat(x_list)).split([*map(len, x_list)])
-"""
 
 # Deprecated implementation
 class MultiEmbedding(nn.Module):
@@ -334,92 +327,6 @@ def _dropout_codes( x, dropout_mask, dropout_token, swapped=False ):
 		x[..., level] = torch.where( dropout_mask, lhs, rhs )
 	return x
 
-# naively embeds each level of a codebook, then merges the embeddings with a Linear
-class AudioEncoder(nn.Module):
-	def __init__(
-		self,
-		n_tokens: int,
-		n_levels: int,
-		token_dim: int,
-	):
-		super().__init__()
-		self.embs = nn.ModuleList([ml.Embedding(n_tokens, token_dim) for l in range(n_levels)])
-		self.proj = nn.Linear(8 * token_dim, 1 * token_dim)
-
-	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None  ) -> Tensor:
-		# empty
-		if xi.shape[0] == 0:
-			dim = self.embs[0].weight.shape[-1] # self.proj.weight.shape[0]
-			return torch.zeros((0, dim), device=xi.device, dtype=xi.dtype)
-		if dropout_mask is not None:
-			xi = _dropout_codes( xi, dropout_mask, dropout_token )
-
-		# old way
-		# this probably is a tried and true good way to go about it
-		x = sum([ emb( xi[:, l] ) for l, emb in enumerate(self.embs) ])
-
-		# encode by interleaving
-		# this "works" but I imagine it being excessive and doesn't seem to help the model all that much
-		"""
-		x = torch.stack([emb(xi[:, l]) for l, emb in enumerate(self.embs)], dim=1)
-		x = x.view(x.shape[0], -1)
-		x = self.proj(x)
-		"""
-
-		return x
-
-class AudioDecoder(nn.Module):
-	def __init__(
-		self,
-		d_model,
-		hidden_size,
-		vocab_size,
-		resp_levels,
-	):
-		super().__init__()
-
-		self.resp_levels = resp_levels
-		self.head = nn.Linear( d_model, vocab_size * resp_levels )
-
-	def forward(self, x: Tensor, level: int | None = None, stack: bool = True, **kwargs ) -> Tensor:
-		# prior way up-projected then down-projected, but that's silly
-		x = self.head( x )
-
-		# interleave by reshaping / permuting
-		# at least I hope this does it properly, it checks out against my OCR classifier
-		batch_size, seq_len, dim = x.shape
-		x = x.view( batch_size, seq_len, self.resp_levels, -1 )
-		x = x.permute( 0, 2, 1, 3 )
-
-		return x
-"""
-
-"""
-# naively tries to extract multiple codebooks in parallel based on the last hidden state from the model
-# this doesn't work well
-"""
-class ClassifiersParallel(nn.Module):
-	def __init__(
-		self,
-		n_levels: int, # codebook levels
-		n_tokens: int, # output token count
-		token_dim: int, # dimensionality of the embedding
-		bias: bool = False,
-	):
-		super().__init__()
-		self.proj = nn.ModuleList([nn.Linear(token_dim, n_tokens, bias=bias) for _ in range(n_levels)])
-
-	def forward(self, xi: Tensor, stack: bool = True ) -> Tensor:
-		dtype = xi.dtype
-		device = xi.device
-
-		xi = [ proj( xi ) for l, proj in enumerate(self.proj) ]
-		xi = torch.stack( xi )
-		xi = xi.permute( 1, 0, 2, 3 ) # ( level, batch, token, classification => batch, level, token, classification )
-
-		return xi
-"""
-
 class Metrics(nn.Module):
 	def __init__(
 		self,
@@ -508,9 +415,9 @@ class Base(nn.Module):
 	def __init__(
 		self,
 		
-		n_text_tokens: int = 256,
+		n_phn_tokens: int = 256,
 		n_audio_tokens: int = 1024,
-		n_raw_text_tokens: int = 8575,
+		n_text_tokens: int = 8575,
 
 		d_model: int = 512,
 		d_ffn: int = 4,
@@ -531,9 +438,9 @@ class Base(nn.Module):
 		self.teaching = False
 		self.config = config
 
-		self.n_text_tokens = n_text_tokens
+		self.n_phn_tokens = n_phn_tokens
 		self.n_audio_tokens = n_audio_tokens
-		self.n_raw_text_tokens = n_raw_text_tokens
+		self.n_text_tokens = n_text_tokens
 
 		self.d_model = d_model
 		self.n_heads = n_heads
@@ -595,36 +502,30 @@ class Base(nn.Module):
 		n_tones = self.config.tones if self.config is not None else 1
 
 		# pure AR
-		if self.version < 7:
-			if "nar" not in self.capabilities:
-				n_resp_tokens = n_audio_tokens + 1
-				l_embedding_tokens = [n_resp_tokens] * self.n_resp_levels
-				l_embedding_names = [f'AR:{i}:{i}' for i in range( self.n_resp_levels )]
-				l_classifier_tokens = [n_resp_tokens] * self.n_resp_levels
-			# NAR-len model
-			elif "len" in self.capabilities:
-				# +1 to include the stop or mask token
-				n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
-				if "ar" in self.capabilities:
-					l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
-					l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens - 1]
-					l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )] + ['NAR:0:0']
-				else:
-					l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-					l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-					l_embedding_names = ['NAR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
-			# AR+NAR model
-			else:
-				# +1 to include the stop or mask token
-				n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
-				l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-				l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
-				l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-		else:
-			n_resp_tokens = n_audio_tokens + 2
+		if "nar" not in self.capabilities:
+			n_resp_tokens = n_audio_tokens + 1
 			l_embedding_tokens = [n_resp_tokens] * self.n_resp_levels
-			l_embedding_names = [] # [f'NAR:{i}' for i in range( self.n_resp_levels )]
-			l_classifier_tokens = [] # [n_audio_tokens] * self.n_resp_levels
+			l_embedding_names = [f'AR:{i}:{i}' for i in range( self.n_resp_levels )]
+			l_classifier_tokens = [n_resp_tokens] * self.n_resp_levels
+		# NAR-len model
+		elif "len" in self.capabilities:
+			# +1 to include the stop or mask token
+			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
+			if "ar" in self.capabilities:
+				l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
+				l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens - 1]
+				l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )] + ['NAR:0:0']
+			else:
+				l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+				l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+				l_embedding_names = ['NAR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
+		# AR+NAR model
+		else:
+			# +1 to include the stop or mask token
+			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
+			l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+			l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
+			l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
 
 		n_vocab = 17702 if not split_classifiers else n_resp_tokens + 1
 		
@@ -632,7 +533,7 @@ class Base(nn.Module):
 
 		# STT
 		l_classifier_names += [ "stt" ]
-		l_classifier_tokens += [ n_text_tokens ]
+		l_classifier_tokens += [ n_phn_tokens ]
 
 		# LEN
 		if "len" in self.capabilities:
@@ -641,8 +542,8 @@ class Base(nn.Module):
 
 		# TEXT => PHN / PHN => TEXT
 		if self.version >= 6:
-			l_classifier_tokens += [ n_raw_text_tokens ]
-			l_classifier_names = l_embedding_names + [ "raw_text" ]
+			l_classifier_tokens += [ n_text_tokens ]
+			l_classifier_names = l_embedding_names + [ "text" ]
 
 		self.n_vocab = n_vocab
 		self.unified_position_ids = unified_position_ids
@@ -651,7 +552,7 @@ class Base(nn.Module):
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 		self.noncausal_masks = noncausal_masks
 
-		self.text_emb = Embedding(n_text_tokens, d_model)
+		self.text_emb = Embedding(n_phn_tokens, d_model)
 		self.raw_text_emb = None
 		self.langs_emb = None
 		self.tones_emb = None
@@ -680,7 +581,7 @@ class Base(nn.Module):
 				levels=self.n_resp_levels if self.version > 3 else None,
 			)
 			self.audio_emb = None
-		elif self.version < 7:
+		else:
 			self.proms_emb = AudioEmbedding(
 				[n_audio_tokens] * self.n_resp_levels, d_model,
 				sums=audio_embedding_sums == "prom" or audio_embedding_sums == True,
@@ -690,10 +591,6 @@ class Base(nn.Module):
 				sums=audio_embedding_sums == "resp" or audio_embedding_sums == True,
 				l_embedding_names=l_embedding_names,
 			)
-			self.audio_emb = None
-		else:
-			self.proms_emb = None
-			self.resps_emb = None
 			self.audio_emb = None
 
 		if self.version >= 3:
@@ -716,34 +613,7 @@ class Base(nn.Module):
 			# experimental NAR-only mode
 			self.len_emb = Embedding(11, d_model)
 		if self.version >= 6:
-			self.raw_text_emb = Embedding(self.n_raw_text_tokens, d_model)
-
-		if self.version >= 7:
-			self.mask_token = self.stop_token + 1
-			if monolithic_audio_encoder:
-				self.audio_emb = AudioEncoder(
-					n_tokens=n_audio_tokens + 2, # stop + masked token
-					n_levels=self.n_resp_levels,
-					token_dim=d_model,
-				)
-			else:
-				self.proms_emb = AudioEncoder(
-					n_tokens=n_audio_tokens,
-					n_levels=self.n_resp_levels,
-					token_dim=d_model,
-				)
-				self.resps_emb = AudioEncoder(
-					n_tokens=n_audio_tokens + 2, # stop + masked token
-					n_levels=self.n_resp_levels,
-					token_dim=d_model,
-				)
-
-			self.audio_decoder = AudioDecoder(
-				d_model,
-				d_model * 2,
-				(n_audio_tokens + 1),
-				self.n_resp_levels,
-			)
+			self.raw_text_emb = Embedding(self.n_text_tokens, d_model)
 
 		if attention_backend == "auto":
 			attention_backend = "sdpa"
@@ -1009,8 +879,8 @@ class Base(nn.Module):
 	# takes a bunch of separate lists and parses them into an ordered array of tuples to guide input sequence creation
 	def inputs(
 		self,
+		phns_list: list[Tensor] | None = None,
 		text_list: list[Tensor] | None = None,
-		raw_text_list: list[Tensor] | None = None,
 
 		proms_list: list[Tensor] | None = None,
 		resps_list: list[Tensor] | None = None,
@@ -1023,12 +893,12 @@ class Base(nn.Module):
 
 		quant_levels: int | list[int] | Tensor | None = None
 	):
-		if text_list and text_list[0] is not None:
+		if phns_list and phns_list[0] is not None:
+			device = phns_list[0].device
+			batch_size = len(phns_list)
+		elif text_list and text_list[0] is not None:
 			device = text_list[0].device
 			batch_size = len(text_list)
-		elif raw_text_list and raw_text_list[0] is not None:
-			device = raw_text_list[0].device
-			batch_size = len(raw_text_list)
 		elif proms_list and proms_list[0] is not None:
 			device = proms_list[0].device
 			batch_size = len(proms_list)
@@ -1054,10 +924,10 @@ class Base(nn.Module):
 			# prom /may/ include <task> tokens inside to help guide things, per SpeechX
 			if task_type in get_task_symmap() and task_type not in special_tasks:
 				# insert the text prompt
-				if text_list is not None and text_list[i] is not None:
+				if phns_list is not None and phns_list[i] is not None:
+					inputs[i].append( ( "phn", phns_list[i] ) )
+				elif text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
-				elif raw_text_list is not None and raw_text_list[i] is not None:
-					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
@@ -1096,9 +966,6 @@ class Base(nn.Module):
 				if resps_list is not None and resps_list[i] is not None:
 					inputs[i].append( ( "resp", resps_list[i] ) )
 				
-				if self.version >= 7:
-					classifier_level = f"{'N' if timestep is not None else ''}AR:{quant_level}:{quant_level}"
-
 				inputs[i].append( ("classifier_level", classifier_level) )
 			# Audio length prediction task
 			# Sequence: <text><sep><rvq lvl><prom><sep><len>
@@ -1108,10 +975,10 @@ class Base(nn.Module):
 					raise Exception(f"Requesting task `{task_type}` but corresponding embedding is not defined.")
 
 				# insert the text prompt
-				if text_list is not None and text_list[i] is not None:
+				if phns_list is not None and phns_list[i] is not None:
+					inputs[i].append( ( "phn", phns_list[i] ) )
+				elif text_list is not None and text_list[i] is not None:
 					inputs[i].append( ( "text", text_list[i] ) )
-				elif raw_text_list is not None and raw_text_list[i] is not None:
-					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
@@ -1147,42 +1014,42 @@ class Base(nn.Module):
 				if self.rvq_l_emb is not None:
 					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert the output text prompt
-				if text_list is not None and text_list[i] is not None:
-					inputs[i].append( ( "text", text_list[i] ) )
+				if phns_list is not None and phns_list[i] is not None:
+					inputs[i].append( ( "phn", phns_list[i] ) )
 
-				inputs[i].append( ("classifier_level", "stt") )
+				inputs[i].append( ("classifier_level", "phn") )
 			# Text phonemizing task
-			# Sequence: <raw_text><sep><lang><sep><phonemes>
+			# Sequence: <text><sep><lang><sep><phonemes>
 			elif task_type == "phn":
 				# insert the text prompt
-				if raw_text_list is not None and raw_text_list[i] is not None:
-					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
+				if text_list is not None and text_list[i] is not None:
+					inputs[i].append( ( "text", text_list[i] ) )
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				if self.rvq_l_emb is not None:
 					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert the text prompt
-				if text_list is not None and text_list[i] is not None:
-					inputs[i].append( ( "text", text_list[i] ) )
+				if phns_list is not None and phns_list[i] is not None:
+					inputs[i].append( ( "phn", phns_list[i] ) )
 
-				inputs[i].append( ("classifier_level", "stt") )
+				inputs[i].append( ("classifier_level", "phn") )
 			# Text de-phonemizing task
-			# Sequence: <raw_text><sep><lang><sep><phonemes>
+			# Sequence: <text><sep><lang><sep><phonemes>
 			elif task_type == "un-phn":
 				# insert the text prompt
-				if text_list is not None and text_list[i] is not None:
-					inputs[i].append( ( "text", text_list[i] ) )
+				if phns_list is not None and phns_list[i] is not None:
+					inputs[i].append( ( "phn", phns_list[i] ) )
 				# insert lang token if we're trained for it
 				if "lang" in self.capabilities and lang_list is not None and lang_list[i] is not None:
 					inputs[i].append( ( "lang", lang_list[i] ) )
 				if self.rvq_l_emb is not None:
 					inputs[i].append( ( "quant_level", torch.tensor([ quant_level ], device=device, dtype=torch.int16) ) )
 				# insert the text prompt
-				if raw_text_list is not None and raw_text_list[i] is not None:
-					inputs[i].append( ( "raw_text", raw_text_list[i] ) )
+				if text_list is not None and text_list[i] is not None:
+					inputs[i].append( ( "text", text_list[i] ) )
 				
-				inputs[i].append( ("classifier_level", "raw_text") )
+				inputs[i].append( ("classifier_level", "text") )
 			else:
 				raise Exception(f'Unrecognized task: {task_type}')
 		return inputs
@@ -1240,17 +1107,11 @@ class Base(nn.Module):
 					input if quant_level == 0 else input[:, :quant_level]
 				)
 
-			if self.version < 7:
-				return self.proms_emb(
-					input if input.dim() == 1 else input[:, : 1 if quant_level == 0 else quant_level],
-					quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
-					offset = 0,
-				)
-
-			if self.audio_emb is not None:
-				return self.audio_emb( input )
-			
-			return self.proms_emb( input )
+			return self.proms_emb(
+				input if input.dim() == 1 else input[:, : 1 if quant_level == 0 else quant_level],
+				quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
+				offset = 0,
+			)
 
 		# yuck
 		token_dropout_rate = self.config.experimental.token_dropout_rate if self.config else 0.0
@@ -1293,11 +1154,11 @@ class Base(nn.Module):
 					# *maybe* inject a token for specifying task type
 					task_type = input
 					continue
-				elif name == "text":
+				elif name == "phn":
 					embedding = self.text_emb( input )
 
 					device = embedding.device
-				elif name == "raw_text" and self.raw_text_emb is not None:
+				elif name == "text" and self.raw_text_emb is not None:
 					embedding = self.raw_text_emb( input )
 
 					device = embedding.device
@@ -1316,13 +1177,8 @@ class Base(nn.Module):
 				elif name == "tone" and self.tones_emb is not None:
 					embedding = self.tones_emb( input )
 				elif name == "resp":
-					if self.version >= 7:
-						if self.audio_emb is not None:
-							embedding = self.audio_emb( input, dropout_mask=dropout_mask, dropout_token=self.mask_token )
-						else:
-							embedding = self.resps_emb( input, dropout_mask=dropout_mask, dropout_token=self.mask_token )
 					# if training NAR-len RVQ level 0
-					elif dropout_mask is not None:
+					if dropout_mask is not None:
 						embedding = self.resps_emb(
 							# if masked use masked token, else original token
 							torch.where( dropout_mask, self.stop_token, input if input.dim() == 1 else input[:, quant_level] ),
@@ -1494,13 +1350,10 @@ class Base(nn.Module):
 				return torch.tensor( [ get_task_symmap()[input] ], device=device, dtype=torch.int16)
 
 			# ignore prom, fill with mock tokens, because the prom embeddings don't directly map to tokens
-			if self.version < 4 or (self.version >= 5 and self.version < 7 and self.config and self.config.experimental.audio_embedding_sums):
+			if self.version < 4 or (self.version >= 5 and self.config and self.config.experimental.audio_embedding_sums):
 				return torch.full_like(input[..., 0], self.ignore_index)
-				
-			if self.version < 7:
-				return input if input.dim() == 1 else input[:, quant_level]
 
-			return input
+			return input if input.dim() == 1 else input[:, quant_level]
 
 		def _calc_loss( logit, sequence, causal = True ):
 			# filter tokens that exceed the vocab size
@@ -1579,18 +1432,11 @@ class Base(nn.Module):
 						token = token[..., 0]
 				elif name == "resp":
 					# mask found, apply it
-					if self.version < 7:
-						token = input if input.dim() == 1 else input[:, quant_level]
-						
-						# mask found, apply it
-						if dropout_mask is not None:
-							token = torch.where( dropout_mask, token, self.ignore_index )
-					else:
-						token = input
-
-						# mask found, apply it
-						if dropout_mask is not None:
-							token = _dropout_codes( token, dropout_mask, self.ignore_index, swapped = True )
+					token = input if input.dim() == 1 else input[:, quant_level]
+					
+					# mask found, apply it
+					if dropout_mask is not None:
+						token = torch.where( dropout_mask, token, self.ignore_index )
 				# not a special input, inject as-is
 				else:
 					token = input
@@ -1785,7 +1631,7 @@ class Base(nn.Module):
 		# needs to be done here as we still have our raw inputs
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		classifier_levels = self.get_input( inputs, name="classifier_level" )
-		causal_levels = [ "stt", "len", "phn" ] + [ f"AR:{_}:{_}" for _ in range( self.n_resp_levels) ]
+		causal_levels = [ "phn", "len", "phn" ] + [ f"AR:{_}:{_}" for _ in range( self.n_resp_levels) ]
 
 		# right now limit to new versions because I need to retrain the model for noncausal masks...
 		is_causal = [ l in causal_levels for l in classifier_levels ] if self.noncausal_masks else [ True for l in classifier_levels ]
@@ -1802,36 +1648,14 @@ class Base(nn.Module):
 		logits = output.logits
 		hidden_states = output.hidden_states
 		
-		# split between the two logit tasks, as audio logits become expanded
-		if self.version >= 7:
-			logits = [ logit for logit in logits ]
-
-			audio_decoder_levels = [ f"AR:{i}:{i}" for i in range(self.n_resp_levels) ] + [ f"NAR:{i}:{i}" for i in range(self.n_resp_levels) ]
-			
-			decoders_indices = [ batch_index for batch_index, level in enumerate( classifier_levels ) if level in audio_decoder_levels ]
-			classifiers_indices = [ batch_index for batch_index, level in enumerate( classifier_levels ) if level not in audio_decoder_levels ]
-
-			if decoders_indices:
-				decoders_logits = torch.stack([ logits[batch_index] for batch_index in decoders_indices ])
-				decoders_logits = self.audio_decoder( decoders_logits )
-				for batch_index, logit in zip( decoders_indices, decoders_logits ):
-					logits[batch_index] = logit
-			
-			if classifiers_indices:
-				classifiers_levels = [ classifier_levels[batch_index] for batch_index in classifiers_indices ]
-				classifiers_logits = torch.stack([ logits[batch_index] for batch_index in classifiers_indices ])
-				classifiers_logits = self.classifiers( classifiers_logits, levels = classifiers_levels )
-				for batch_index, logit in zip( classifiers_indices, classifiers_logits ):
-					logits[batch_index] = logit
-		else:
-			# output projection layer
-			# the very, very original implementation multiplied by the mask, but the mask only attends to padding, and the padding gets removed anyways
-			if self.classifier is not None:
-				logits = self.classifier(logits) # * m
-			# to-do: piece-wise classification, now that there's a head for text
-			# although again, one single monolithic head would be preferable instead......
-			elif self.classifiers is not None:
-				logits = self.classifiers(logits, levels = classifier_levels )
+		# output projection layer
+		# the very, very original implementation multiplied by the mask, but the mask only attends to padding, and the padding gets removed anyways
+		if self.classifier is not None:
+			logits = self.classifier(logits) # * m
+		# to-do: piece-wise classification, now that there's a head for text
+		# although again, one single monolithic head would be preferable instead......
+		elif self.classifiers is not None:
+			logits = self.classifiers(logits, levels = classifier_levels )
 
 		# Remove padding
 		logits = [ hi[..., :li, :] for hi, li in zip(logits, map(len, x_list)) ]
@@ -2206,7 +2030,7 @@ if __name__ == "__main__":
 			seq = seq[:rvq_l, :] if rvq_l > 0 else seq
 
 		sep_embd = embds["sep"](zero)
-		phn_embd = embds["text"](phn)
+		phn_embd = embds["phn"](phn)
 		rvq_l_embd = embds["rvq_l"](rvq_l)
 		lang_embd = embds["lang"](lang)
 		prom_embd = torch.zeros(prom.shape[-1], n_embd, device=device, dtype=dtype)

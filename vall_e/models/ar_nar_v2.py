@@ -6,7 +6,7 @@
 This model can fully handle being trained as a unified model (AR + NAR) or separate models (AR | NAR).
 It's recommended to train as a unified model, then "distill" knowledge of each tasks separately, just in case.
 """
-from .base import Base, list_to_tensor, Categorical
+from .base_v2 import Base_V2, list_to_tensor, Categorical
 from ..config import cfg
 
 import torch
@@ -31,7 +31,7 @@ from ..samplers import cfg_logits
 
 text_task = [ "stt", "phn", "un-phn" ]
 
-class AR_NAR(Base):
+class AR_NAR_V2(Base_V2):
 	# yikes
 	def forward_super(self, *args, **kwargs):
 		return super().forward(*args, **kwargs)
@@ -74,7 +74,7 @@ class AR_NAR(Base):
 		# RVQ levels to apply token dropout on
 		token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
 		# RVQ levels to apply masking training on
-		masking_train_rvq_levels = self.config.experimental.masking_train_rvq_levels
+		masking_train_rvq_levels = [0,self.n_resp_levels] # self.config.experimental.masking_train_rvq_levels
 			
 		if cfg.audio_backend == "nemo":
 			rvq_levels_p = [ i for i in range( quant_level_range[0], quant_level_range[1] + 1 ) ]
@@ -130,13 +130,10 @@ class AR_NAR(Base):
 				if masking_ratio == "rand":
 					timesteps[i] = (timesteps[i] * 0.6) + 0.2
 
-		# trim resps to only contain all levels below the target level
-		resps_list = [r if t in text_task else r[..., :l+1] for r, l, t in zip(resps_list, quant_levels, task_list)]
-
 		# tensor to cat for RVQ level 0
 		text_stop_sequence = torch.tensor([2], device=device, dtype=torch.int16)
 		text_start_stop_sequence = torch.tensor([1, 2], device=device, dtype=torch.int16)
-		audio_stop_sequence = torch.tensor([[self.stop_token] * 1], device=device, dtype=torch.int16)
+		audio_stop_sequence = torch.tensor([[self.stop_token]], device=device, dtype=torch.int16)
 
 		# final validations and stuff
 		for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
@@ -171,7 +168,7 @@ class AR_NAR(Base):
 			"""
 
 			# only apply stop token for RVQ level 0
-			if (quant_level <= 0 and timesteps[i] is None) or (self.predict_causally):
+			if timesteps[i] is None or (self.predict_causally):
 				# append stop tokens for AR
 				if task not in text_task:
 					resps_list[i] = torch.cat([ resps, audio_stop_sequence.repeat((1, resps.shape[-1])) ])
@@ -222,6 +219,8 @@ class AR_NAR(Base):
 			quant_levels=quant_levels,
 		)
 
+	# handles doing demasking inferencing in parallel to inference all tokens
+	# it works if the underlying model is trained properly (which is a pain)
 	def forward_nar_masked(
 		self,
 
@@ -235,7 +234,6 @@ class AR_NAR(Base):
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
 		text_list: list[Tensor] | None = None,
-		quant_levels: list[int] | None = None,
 
 		disable_tqdm=False,
 		use_lora=None,
@@ -244,23 +242,9 @@ class AR_NAR(Base):
 		device = phns_list[0].device
 		batch_size = len(phns_list)
 
-		if quant_levels is None:
-			level = 0
-		else:
-			level = quant_levels[0] # ugh
-
+		level = 0
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
-
-		"""
-		def log(t, eps=1e-10):
-			return torch.log(t + eps)
-		def gumbel_noise(t):
-			noise = torch.zeros_like(t).uniform_(0, 1)
-			return -log(-log(noise))
-		def gumbel_sample(t, temperature=1.0, dim=-1):
-			return ((t / max(temperature, 1e-10)) + gumbel_noise(t)).argmax(dim=dim)
-		"""
 
 		# convert (N)AR specific args
 		sampling_kwargs = convert_kwargs( sampling_kwargs, "ar_" )
@@ -287,9 +271,6 @@ class AR_NAR(Base):
 		vc_list = sampling_kwargs.pop("vc_list", None)
 		vc_threshold = sampling_kwargs.pop("vc_threshold", 0.25)
 		vc_mask_p = sampling_kwargs.pop("vc_mask_p", 0.25)
-		if vc_list is not None:
-			vc_list = [ x if x.dim() == 1 else x[:, 0] for x in vc_list ]
-			len_list = [ x.shape[0] for x in vc_list ]
 
 		len_list = [ clamp(l, min_length, max_length) for l in len_list ]
 		
@@ -298,31 +279,16 @@ class AR_NAR(Base):
 		cfg_strength = max( cfg_strength, minimum_cfg_strength )
 
 		prefix_context = sampling_kwargs.get("prefix_context", None)
-		# we can get away with just providing a list of resps to prefix later, and it will magically get removed anyways when masking and scoring
-		if prefix_context is not None:
-			phns_list = [ torch.concat([prefix[:-1], text[1:]]) for prefix, text in zip( prefix_context[0], phns_list ) ]
-			prefix_resps_list = [ resps if resps.dim() == 1 else resps[:, 0] for resps in prefix_context[1] ]
+		# fill with masked tokens (even though they get masked anyways)
+		resps_list = [ torch.ones((seq_len, self.n_resp_levels), dtype=torch.int16, device=device) * self.mask_token for seq_len in len_list ]
+		# fill scores
+		scores = [ torch.ones((seq_len), dtype=torch.float32, device=device) for seq_len in len_list ]
 
-		# if we're denoising from an existing sequence
-		if start_noise > 0.0 and resps_list is not None:
-			# flatten if needed
-			resps_list = [ resps if resps.dim() == 1 else resps[:, 0] for resps in resps_list ]
-			# gen masking ratio
-			noise_p = math.cos( start_noise * math.pi * 0.5 )
-			# generate scoring mask (because the above mask will get masked off per the scores, so we do not need to mask beforehand)
-			scores = [ torch.tensor( [ 1.0 if random.random() < noise_p else 0.0 for _ in range( seq_len ) ], dtype=torch.float32, device=device ) for seq_len in len_list ]
-		else:
-			# fill with masked tokens (even though they get masked anyways)
-			resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.mask_token for seq_len in len_list ]
-			# fill scores
-			scores = [ torch.ones((seq_len,), dtype=torch.float32, device=device) for seq_len in len_list ]
-
-		if quant_levels is None:
-			quant_levels = [ level for _ in range(batch_size) ]
+		quant_levels = [ level for _ in range(batch_size) ]
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
 
-		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc=f"NAR Masked Level {level}", disable=disable_tqdm)
+		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm)
 		for timestep in iterator:
 			# update previous list of tokens
 			prev_list = resps_list
@@ -335,43 +301,17 @@ class AR_NAR(Base):
 			# pick the worst scoring tokens to mask off
 			masked_indices = [ score.topk( clamp( int( noise_p * seq_len + remask_p * seq_len ), 1, seq_len), dim=-1 ).indices for score, seq_len in zip(scores, len_list) ]
 			# normal masking
-			if vc_list is None or timestep >= vc_threshold:
-				# mask off inputs
-				resps_list = [ resp.scatter(0, indices, self.mask_token) for resp, indices in zip( resps_list, masked_indices ) ]
-				# boolean mask
-				is_masked = [ resps == self.mask_token for resps in resps_list ]
-			else:
-				# mask off a random portion of the target
-				rand_mask_list = [ torch.rand(mask.shape).to(device=device) < vc_mask_p for mask in vc_list ]
-				half_mask_list = [ torch.where( rand_mask, self.mask_token, mask.clone() ) for mask, rand_mask in zip( vc_list, rand_mask_list ) ]
-				# always set the last end as masked off because it causes issues
-				for i, mask in enumerate(half_mask_list):
-					half_mask_list[i][-75:] = self.mask_token
-				# 
-				# mask off inputs per mask
-				resps_list = [ resp.scatter(0, indices, mask) for resp, indices, mask in zip( resps_list, masked_indices, half_mask_list ) ]
-				# boolean mask
-				is_masked = [ resps == mask for resps, mask in zip( resps_list, half_mask_list ) ]
-
+			# mask off inputs
+			resps_list = [ torch.stack([resp[:, l].scatter(0, indices, self.mask_token) for l in range(self.n_resp_levels)], dim=-1) for resp, indices in zip( resps_list, masked_indices ) ]
+			# boolean mask
+			is_masked = [ resps == self.mask_token for resps in resps_list ]
 			# timestep inputs
 			time_list = [ timestep for _ in range(batch_size) ]
 
 			sampling_temperature = temperature * annealing if annealed_sampling else temperature
 			sampling_cfg = cfg_strength * timestep if annealed_sampling else cfg_strength
 
-			# avoid useless CFG sampling
-			"""
-			if sampling_cfg < minimum_cfg_strength * 0.5:
-				sampling_cfg = 0
-			"""
-
-			if prefix_context is not None:
-				input_resps_list = [ torch.concat( [ prefix, resps ] ) for prefix, resps in zip( prefix_resps_list, resps_list ) ]
-				# originally requested no CFG, safe to ignore if we have a prefix
-				if original_cfg_strength < minimum_cfg_strength:
-					sampling_cfg = original_cfg_strength * timestep if annealed_sampling else original_cfg_strength
-			else:
-				input_resps_list = resps_list
+			input_resps_list = resps_list
 
 			# setup inputs
 			inputs = super().inputs(
@@ -389,7 +329,6 @@ class AR_NAR(Base):
 			)
 
 			logits = output.logits
-
 			if cfg_strength > 0:
 				null_inputs = super().inputs(
 					phns_list=null_text,
@@ -407,72 +346,73 @@ class AR_NAR(Base):
 
 				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ l for l in len_list ] )
 
-			# sample with sampler settings
-			filtered_sampled = super().sample(
-				logits=logits,
-				prev_list=prev_list,
-				quant_levels=quant_levels,
+			l_scores = []
+			l_resps_list = []
+			# cringe hack because we're able to sample multiple levels at once
+			for l in range(self.n_resp_levels):
+				# sample with sampler settings
+				filtered_sampled = super().sample(
+					logits=[ logit[l] for logit in logits ],
+					prev_list=[ resp[..., l] for resp in prev_list ],
+					quant_levels=quant_levels,
 
-				temperature=sampling_temperature,
-				**sampling_kwargs,
-			)
+					temperature=sampling_temperature,
+					**sampling_kwargs,
+				)
 
-			# retrieves unfiltered logits
-			unfiltered_sampled = super().sample(
-				logits=logits,
-				prev_list=prev_list,
-				quant_levels=quant_levels,
+				# retrieves unfiltered logits
+				unfiltered_sampled = super().sample(
+					logits=[ logit[l] for logit in logits ],
+					prev_list=[ resp[..., l] for resp in prev_list ],
+					quant_levels=quant_levels,
 
-				temperature=0.0,
-				**sampling_kwargs,
-			)
-			# get sampled tokens
-			sampled_ids = filtered_sampled.ids
-			# keep unmasked tokens
-			resps_list = [ torch.where( masked, input_ids, resps ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
-			# get probability scores
-			scores = [ 
-				# conjugate to have worse scoring tokens picked for topk
-				1.0 - 
-					# only keep scores of tokens we are predicting (and ignore the tokens previously finalized)
-					torch.where( masked, torch.tensor([score for index, score in enumerate(scores)], device=device), torch.ones(masked.shape, device=device) )
-				# use unmodified logit scores for this, as it offers better stability
-				for scores, masked in zip( unfiltered_sampled.scores, is_masked )
-			]
+					temperature=0.0,
+					**sampling_kwargs,
+				)
+
+				# get sampled tokens
+				sampled_ids = filtered_sampled.ids
+				# keep unmasked tokens
+				l_resps_list.append([ torch.where( masked[..., l], input_ids, resps[..., l] ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ])
+				# get probability scores
+				l_scores.append([ 
+					# conjugate to have worse scoring tokens picked for topk
+					1.0 - 
+						# only keep scores of tokens we are predicting (and ignore the tokens previously finalized)
+						torch.where( masked[..., l], torch.tensor([score for index, score in enumerate(scores)], device=device), torch.ones(masked[..., l].shape, device=device) )
+					# use unmodified logit scores for this, as it offers better stability
+					for scores, masked in zip( unfiltered_sampled.scores, is_masked )
+				])
+
+			resps_list = []
+			scores = []
+
+			for batch_index in range(batch_size):
+				score = sum([ l_scores[level][batch_index] for level in range(self.n_resp_levels) ]) / self.n_resp_levels
+				resp = torch.stack([ l_resps_list[level][batch_index] for level in range(self.n_resp_levels) ], dim=-1)
+
+				scores.append( score )
+				resps_list.append( resp )
 
 		return resps_list
 
-	def forward_nar(
+	def forward_ar_len(
 		self,
-		task_list: list[Tensor] | None = None,
-		
+
+		task_list: list[Tensor],
+
 		phns_list: list[Tensor] | None = None,
+		text_list: list[Tensor] | None = None,
 		proms_list: list[Tensor] | None = None,
 		resps_list: list[Tensor] | None = None,
-		
 		lang_list: list[Tensor] | None = None,
 		tone_list: list[Tensor] | None = None,
 		len_list: list[Tensor] | None = None,
-		
-		text_list: list[Tensor] | None = None,
 
 		disable_tqdm=False,
 		use_lora=None,
 		**sampling_kwargs,
 	):
-		# inference NAR level 0
-		if len_list is not None:
-			resps_list = self.forward_nar_masked(
-				phns_list=phns_list,
-				proms_list=proms_list,
-				resps_list=resps_list,
-				task_list=task_list,
-				lang_list=lang_list,
-				tone_list=tone_list,
-				len_list=len_list,
-				**sampling_kwargs,				
-			)
-		
 		# deduce batch_size
 		if phns_list:
 			device = phns_list[0].device
@@ -486,45 +426,51 @@ class AR_NAR(Base):
 		elif resps_list:
 			device = resps_list[0].device
 			batch_size = len(resps_list)
-		
-		# convert NAR specific args
-		sampling_kwargs = convert_kwargs( sampling_kwargs, "nar_" )
 
-		max_levels = sampling_kwargs.get("max_levels", 0)
+		if cfg.lora is not None:
+			enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
+
+		# convert AR specific args
+		sampling_kwargs = convert_kwargs( sampling_kwargs, "ar_" )
+
+		temperature = sampling_kwargs.get("temperature", 1.0)
 		cfg_strength = sampling_kwargs.get("cfg_strength", 0.0)
 		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.7)
+		min_temperature = sampling_kwargs.get("min_temperature", -1.0)
+		max_duration = sampling_kwargs.get("max_duration", 500)
+		beam_width = sampling_kwargs.get("beam_width", 0)
+		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
+		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
+		input_prompt_prefix = sampling_kwargs.get("input_prompt_prefix", False)
+		layer_skip = sampling_kwargs.get("layer_skip", False)
+		prefix_silence = sampling_kwargs.get("prefix_silence", 0.0)
+		mirostat_tau = sampling_kwargs.get("mirostat_tau", 0.0)
+		mirostat_eta = sampling_kwargs.get("mirostat_eta", 0.0)
 
-		if max_levels == 0:
-			max_levels = self.n_max_levels - 1
-
-		# expand if given a raw 1D tensor
-		for i, resp in enumerate(resps_list):
-			if resp.dim() == 1:
-				resps_list[i] = resp.unsqueeze(-1)
+		# inference len
+		sequence_list = [ torch.tensor([0], device=device,dtype=torch.int16) for _ in range(batch_size) ]
+		stopped = torch.zeros(batch_size, device=device).bool()
 		
-		prev_list = resps_list
+		stop_token = 10
+		task_list = [ "len" for _ in range(batch_size) ]
+		quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
 
-		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
-		null_prom = [ None for _ in range(batch_size) ]
-
-		iterator = trange( max_levels, desc="NAR", disable=disable_tqdm )
+		iterator = trange(10, desc="AR", disable=disable_tqdm)
 		for n in iterator:
-			level = prev_list[0].shape[-1]
-			if level >= max_levels + 1:
-				iterator.close()
-				break
-
-			if cfg.lora is not None:
-				enable_lora( self, cfg.lora.active_level( level ) if use_lora is None else use_lora )
-
-			quant_levels = [ level for _ in range(batch_size) ]
+			len_list = sequence_list
 
 			inputs = self.inputs(
+				task_list=task_list,
+				
 				phns_list=phns_list,
 				proms_list=proms_list,
-				resps_list=prev_list,
+				resps_list=resps_list,
+				
 				lang_list=lang_list,
 				tone_list=tone_list,
+				len_list=len_list,
+				text_list=text_list,
+				
 				quant_levels=quant_levels,
 			)
 
@@ -532,35 +478,28 @@ class AR_NAR(Base):
 				inputs=inputs,
 				quant_levels=quant_levels,
 			)
-			logits, state = output.logits, output.state
+			logits = output.logits
 
-			if cfg_strength > 0:
-				null_inputs = super().inputs(
-					phns_list=null_text,
-					proms_list=null_prom,
-					resps_list=prev_list,
-					lang_list=lang_list,
-					tone_list=tone_list,
-					quant_levels=quant_levels,
-				)
-				null_output = super().forward(
-					inputs=null_inputs,
-					quant_levels=quant_levels,
-				)
+			r = [ logit[-1:].argmax(dim=1) for logit in logits ]
+			# sanitize
+			for i, token in enumerate(r):
+				if token > stop_token:
+					r[i][0] = stop_token
 
-				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ resp.shape[0] for resp in resps_list ] )
+			# append tokens
+			for i, ri in enumerate(r):
+				if stop_token in ri:
+					stopped[i] = True
+				sequence_list[i] = torch.cat([sequence_list[i], ri.to(device)])
 
-			sampled = super().sample(
-				logits=logits,
-				prev_list=prev_list,
-				quant_levels=quant_levels,
-				**(sampling_kwargs),
-			)
+			# stop token found
+			stopped |= r == stop_token
+			if stopped.all().item():
+				iterator.close()
+				break
 
-			resps_list = sampled.ids
-			prev_list = [ torch.cat([rs, r.unsqueeze(-1).to(device=device)], dim=-1) for rs, r in zip(prev_list, resps_list) ]
-
-		return prev_list
+		# convert tokens into int
+		return [ int("".join([ str(token.item()) for token in r if token != stop_token ])) for r in sequence_list ]
 
 	def forward_ar(
 		self,
@@ -613,63 +552,8 @@ class AR_NAR(Base):
 		mirostat_tau = sampling_kwargs.get("mirostat_tau", 0.0)
 		mirostat_eta = sampling_kwargs.get("mirostat_eta", 0.0)
 
-		# inference len
-		if task_list is not None and task_list[0] == "len":
-			sequence_list = [ torch.tensor([0], device=device,dtype=torch.int16) for _ in range(batch_size) ]
-			stopped = torch.zeros(batch_size, device=device).bool()
-			
-			stop_token = 10
-			task_list = [ "len" for _ in range(batch_size) ]
-			quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
-
-			iterator = trange(10, desc="AR", disable=disable_tqdm)
-			for n in iterator:
-				len_list = sequence_list
-
-				inputs = self.inputs(
-					task_list=task_list,
-					
-					phns_list=phns_list,
-					proms_list=proms_list,
-					resps_list=resps_list,
-					
-					lang_list=lang_list,
-					tone_list=tone_list,
-					len_list=len_list,
-					text_list=text_list,
-					
-					quant_levels=quant_levels,
-				)
-
-				output = super().forward(
-					inputs=inputs,
-					quant_levels=quant_levels,
-				)
-				logits = output.logits
-
-				r = [ logit[-1:].argmax(dim=1) for logit in logits ]
-				# sanitize
-				for i, token in enumerate(r):
-					if token > stop_token:
-						r[i][0] = stop_token
-
-				# append tokens
-				for i, ri in enumerate(r):
-					if stop_token in ri:
-						stopped[i] = True
-					sequence_list[i] = torch.cat([sequence_list[i], ri.to(device)])
-
-				# stop token found
-				stopped |= r == stop_token
-				if stopped.all().item():
-					iterator.close()
-					break
-
-			# convert tokens into int
-			return [ int("".join([ str(token.item()) for token in r if token != stop_token ])) for r in sequence_list ]
-
 		start_slice = [ 0 for _ in range(batch_size) ]
-		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
+		sequence_list = [ torch.zeros((0, 8), device=device).to(torch.int16) for _ in range(batch_size) ]
 		stopped = torch.zeros(batch_size, device=device).bool()
 		
 		audio_stop_token = self.stop_token
@@ -683,56 +567,17 @@ class AR_NAR(Base):
 		scores = [ 1.0 ] * beam_width
 		metrics = []
 
-		"""
-		sampling_layer_skip_variables = {} if sampling_layer_skip else None
-
-		if sampling_layer_skip:
-			if sampling_layer_skip_entropy_threshold >= 0:
-				sampling_layer_skip_variables["entropy_threshold"] = sampling_layer_skip_entropy_threshold
-			if sampling_layer_skip_varentropy_threshold >= 0:
-				sampling_layer_skip_variables["varentropy_threshold"] = sampling_layer_skip_varentropy_threshold
-			if sampling_layer_skip_exit_layer >= 0:
-				sampling_layer_skip_variables["max_layer"] = sampling_layer_skip_exit_layer
-		"""
-
-		for i, sequence in enumerate( sequence_list ):
-			# add <bos> to text for STT
-			if task_list[i] in text_task:
-				start_slice[i] = 1
-				sequence_list[i] = torch.cat([sequence_list[i], torch.tensor([1], dtype=torch.int16, device=device)])
-			# treat input prompt as initial resp (by prefixing with the prompt instead)
-			elif input_prompt_prefix:
-				start_slice[i] = proms_list[i].shape[0]
-				sequence_list[i], proms_list[i] = proms_list[i][:, 0], sequence_list[i]
-			elif prefix_silence > 0:
-				sequence_list[i] = get_silence(prefix_silence, device=sequence_list[i].device)
-				sequence_list[i] = sequence_list[i][:, 0]
-				# start_slice[i] = sequence_list[i].shape[0]
-
-		# prefixed context provided
-		prefix_context = sampling_kwargs.get("prefix_context", None)
-		if prefix_context is not None:
-			prefix_text, prefix_resps, _ = prefix_context
-			# to-do: check if we actually need to drop the middle "<eos><bos>"
-			phns_list = [ torch.concat([prefix[:-1], text[1:]]) for prefix, text in zip( prefix_text, phns_list ) ]
-			# feeding this into the NAR-len should automatically handle things
-			sequence_list = [ resps if resps.dim() == 1 else resps[:, 0] for resps in prefix_resps ]
-
 		null_text = [ torch.tensor([1, 2], device=device, dtype=torch.int16) for _ in range(batch_size) ]
 		null_prom = [ None for _ in range(batch_size) ]
 
 		# get next in sequence
 		iterator = trange(max_duration // max(1, self.causal_size), desc="AR", disable=disable_tqdm)
 		for n in iterator:
-			if batch_size == 1 and task_list[0] in ["phn", "un-phn"]:
-				phns_list = [ sequence_list[i] if task in ["phn"] else phns_list[i] for i, task in enumerate(task_list) ]
-				text_list = [ sequence_list[i] if task in ["un-phn"] else text_list[i] for i, task in enumerate(task_list) ]
+			if text_list is not None:
+				text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
 			else:
-				if text_list is not None:
-					text_list = [ sequence_list[i] if task in text_task else text_list[i] for i, task in enumerate(task_list) ]
-				else:
-					phns_list = [ sequence_list[i] if task in text_task else phns_list[i] for i, task in enumerate(task_list) ]
-				resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
+				phns_list = [ sequence_list[i] if task in text_task else phns_list[i] for i, task in enumerate(task_list) ]
+			resps_list = [ sequence_list[i] if task not in text_task else resps_list[i] for i, task in enumerate(task_list) ]
 
 			quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
 
@@ -777,45 +622,24 @@ class AR_NAR(Base):
 			
 			logits, state = output.logits, output.state
 
-			sampled = super().sample(
-				logits=logits,
-				prev_list=[ resps_list[i] if task not in text_task else phns_list[i] for i, task in enumerate( task_list ) ],
-				**(sampling_kwargs | {"attentions": output.attentions if entropix_sampling else None}),
-			)
+			l_resps_list = [ [] for _ in range(batch_size) ]
+			for l in range(self.n_resp_levels):
+				sampled = super().sample(
+					logits=[ logit[l] for logit in logits ],
+					#prev_list=[ resp[..., l] for resp in resps_list ],
+					**(sampling_kwargs | {"attentions": output.attentions if entropix_sampling else None}),
+				)
 
-			ids = sampled.ids
+				ids = sampled.ids
 
-			if cfg.experimental:
-				if sampled.entropy:
-					metrics.append( sampled.entropy )
-				elif sampled.scores:
-					#metrics.append( [ { "p": p[0], "exited_layer": output.exited_layer } for p in sampled.scores ] )
-					metrics.append( [ { "p": p[0] } for p in sampled.scores ] )
+				# append tokens
+				for i, token in enumerate(ids):
+					if audio_stop_token in token:
+						stopped[i] = True
+					l_resps_list[i].append(token.to(device))
 
-			if mirostat is not None:
-				mirostat = sampled.scores
-			elif beam_width > 0:
-				# expand tuple
-				s = sampled.scores
-				# first step, expand batch
-				if batch_size == 1:
-					batch_size = beam_width
-					phns_list = phns_list * beam_width
-					proms_list = proms_list * beam_width
-					sequence_list = sequence_list * beam_width
-					task_list = task_list * beam_width
-					start_slice = start_slice * beam_width
-					stopped = torch.zeros(batch_size, device=device).bool()
-
-				scores = [ scores[i] + score for i, score in enumerate(s) ]
-
-			# append tokens
-			for i, token in enumerate(ids):
-				task = task_list[i]
-				stop_token = audio_stop_token if task not in text_task else text_stop_token
-				if stop_token in token:
-					stopped[i] = True
-				sequence_list[i] = torch.cat([sequence_list[i], token.to(device)])
+			for i, l in enumerate(l_resps_list):
+				sequence_list[i] = torch.cat([sequence_list[i], torch.stack(l, dim=-1)])
 
 			# stop token found
 			# stopped |= r == stop_token
@@ -823,45 +647,14 @@ class AR_NAR(Base):
 				iterator.close()
 				break
 
-		# to-do for layerskip / speculative sampling: rerun the last sequence again at max depth
-		"""
-		if metrics:
-			from ..plot import plot_sample_metrics
-			filename = "metrics"
-			if entropix_sampling:
-				filename += f'[entropix_sampling]'
-			if sampling_layer_skip_exit_layer >= 0:
-				filename += f'[{sampling_layer_skip_exit_layer+1}]'
-
-			plot_sample_metrics( metrics, filename=f'{filename}.png' )
-		"""
-
-		# pick the best scoring candidate
-		# desu this is always going to be candidate 0
-		if beam_width:
-			sequence_list = sequence_list[:1]
-			task_list = task_list[:1]
-
-		# remove stop token
-		sequence_list = [self._prune(r, audio_stop_token if task_list[i] not in text_task else text_stop_token) for i, r in enumerate(sequence_list)]
-		# remove <bos>
-		sequence_list = [ sequence_list[i][start_slice[i]:] for i, task in enumerate( task_list ) ]
-
-		if refine_on_stop:
-			# get how much we need to slice from the end
-			slice_lengths = [ sequence.shape[-1] for sequence in sequence_list ]
-			# -1 for the stop token
-			logits = [ logit[-length-1:-1] for logit, length in zip(logits, slice_lengths) ]
-			# greedy sample from the sequence
-			refined_list = [ logit.argmax(dim=-1) for logit in logits ]
-			# to-do: compare scores
-			# set the "refined" list as the output
-			sequence_list = refined_list
-
-		# slice out prefix
-		if prefix_context is not None:
-			prefix_text, prefix_resps, prefix_lens = prefix_context
-			sequence_list = [ resps[l:] for resps, l in zip(sequence_list, prefix_lens) ]
+		for i, l in enumerate( sequence_list ):
+			index = (l == audio_stop_token).nonzero()
+			# kludge for when it doesnt actually hit a stop token but i cant be bothered to properly address it right now since it only came up in test training at the moment
+			try:
+				index = index[:, 0].min()
+				sequence_list[i] = sequence_list[i][:index]
+			except Exception as e:
+				pass
 
 		return sequence_list
 
@@ -923,9 +716,61 @@ class AR_NAR(Base):
 
 		# is NAR
 		if (len_list is not None or resps_list is not None) and phns_list is not None:
-			return self.forward_nar(
+			return self.forward_nar_masked(
 				task_list=task_list,
 
+				phns_list=phns_list,
+				proms_list=proms_list,
+				resps_list=resps_list,
+				
+				lang_list=lang_list,
+				tone_list=tone_list,
+				len_list=len_list,
+				text_list=text_list,
+
+				disable_tqdm=disable_tqdm,
+				use_lora=use_lora,
+				**sampling_kwargs,
+			)
+
+			# NAR demasking for all levels
+			"""
+			resps_lists = [ None for _ in range(batch_size) ]
+			for level in range(self.n_resp_levels):
+				resp_list = self.forward_nar_masked(
+					task_list=task_list,
+
+					phns_list=phns_list,
+					proms_list=proms_list,
+					resps_list=resps_list,
+					
+					lang_list=lang_list,
+					tone_list=tone_list,
+					len_list=len_list,
+					text_list=text_list,
+
+					disable_tqdm=disable_tqdm,
+					use_lora=use_lora,
+					quant_levels=[ level for _ in range(batch_size) ],
+					**sampling_kwargs,
+				)
+
+				for batch_index, resp in enumerate(resp_list):
+					if resps_lists[batch_index] is None:
+						resps_lists[batch_index] = []
+					
+					resps_lists[batch_index].append( resp )
+
+			for batch_index, resps in enumerate(resps_lists):
+				resps_lists[batch_index] = torch.stack( resps, dim=-1 )
+
+			return resps_lists
+			"""
+
+		if task_list is not None and task_list[0] == "len":
+			return self.forward_ar_len(
+				task_list=task_list,
+				
 				phns_list=phns_list,
 				proms_list=proms_list,
 				resps_list=resps_list,
@@ -1021,7 +866,7 @@ def example_usage():
 	elif cfg.model.experimental.masking_train_p == 1:
 		available_tasks = ["tts-nar"]
 
-	model = AR_NAR(**kwargs).to(cfg.device)
+	model = AR_NAR_V2(**kwargs).to(cfg.device)
 	steps = 250 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
@@ -1173,7 +1018,7 @@ def example_usage():
 		phns_list, proms_list, resp_list, task_list = sample_data( task )
 
 		if task == "tts-nar":
-			len_list = engine( phns_list=phns_list, proms_list=proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
+			# len_list = engine( phns_list=phns_list, proms_list=proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
 			len_list = [ r.shape[0] for r in resp_list ]
 			resps_list = engine( phns_list=phns_list, proms_list=proms_list, len_list=len_list )
 		else:

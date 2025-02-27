@@ -382,6 +382,12 @@ class Model:
 	def text_tokens(self):
 		if isinstance(self.size, dict) and hasattr(self.size, "text_tokens"):
 			return self.size['text_tokens']
+		return 8575
+
+	@property
+	def phoneme_tokens(self):
+		if isinstance(self.size, dict) and hasattr(self.size, "phoneme_tokens"):
+			return self.size['phoneme_tokens']
 		return 256
 
 	@property

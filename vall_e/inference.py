@@ -306,7 +306,7 @@ class TTS():
 			seed = set_seed(seed)
 			batch_size = len(texts)
 			input_kwargs = dict(
-				text_list=texts,
+				phns_list=texts,
 				proms_list=proms,
 				lang_list=langs,
 				disable_tqdm=not use_tqdm,
@@ -421,8 +421,8 @@ class TTS():
 			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				model = model_ar if model_ar is not None else model_nar
 				if model is not None:
-					text_list = model(
-						text_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=[task],
+					phns_list = model(
+						phns_list=None, proms_list=[resp], lang_list=[lang], resps_list=[resp], task_list=[task],
 						disable_tqdm=not use_tqdm,
 						use_lora=use_lora,
 						**sampling_kwargs,
@@ -430,9 +430,9 @@ class TTS():
 				else:
 					raise Exception("!")
 				
-				text_list = [ cfg.tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
+				phns_list = [ cfg.tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in phns_list ]
 
-			return text_list[0]
+			return phns_list[0]
 		elif task in ["phn", "un-phn"]:
 			lang = self.encode_lang( language )
 			lang = to_device(lang, device=self.device, dtype=torch.uint8)
@@ -440,17 +440,17 @@ class TTS():
 			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				model = model_ar if model_ar is not None else model_nar
 				if task == "phn":
-					text_list = None
-					raw_text_list = [ self.encode_text( text, phonemize=False ).to(device=self.device, dtype=torch.int16) ]
+					phns_list = None
+					text_list = [ self.encode_text( text, phonemize=False ).to(device=self.device, dtype=torch.int16) ]
 					output_tokenizer = cfg.tokenizer
 				else:
-					text_list = [ self.encode_text( text ).to(device=self.device, dtype=torch.int16) ]
-					raw_text_list = None
+					phns_list = [ self.encode_text( text ).to(device=self.device, dtype=torch.int16) ]
+					text_list = None
 					output_tokenizer = cfg.text_tokenizer
 
 				if model is not None:
-					text_list = model(
-						text_list=text_list, raw_text_list=raw_text_list, lang_list=[lang], task_list=[task],
+					phns_list = model(
+						phns_list=phns_list, text_list=text_list, lang_list=[lang], task_list=[task],
 						disable_tqdm=not use_tqdm,
 						use_lora=use_lora,
 						**sampling_kwargs,
@@ -458,9 +458,9 @@ class TTS():
 				else:
 					raise Exception("!")
 				
-				text_list = [ output_tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in text_list ]
+				phns_list = [ output_tokenizer.decode( text ).replace("   ", "_").replace(" ", "").replace("_", " ") for text in phns_list ]
 
-			return text_list[0]
+			return phns_list[0]
 
 
 		# stuff for rolling context
@@ -504,8 +504,8 @@ class TTS():
 
 			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				input_kwargs = dict(
-					text_list=[phns] if phonemize else None,
-					raw_text_list=[phns] if not phonemize else None,
+					phns_list=[phns] if phonemize else None,
+					text_list=[phns] if not phonemize else None,
 					proms_list=[prom],
 					lang_list=[lang],
 					disable_tqdm=not use_tqdm,

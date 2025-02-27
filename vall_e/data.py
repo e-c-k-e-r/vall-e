@@ -1611,10 +1611,11 @@ class Dataset(_Dataset):
 			task=task,
 			lang=lang,
 			tone=tone,
-			text=text,
 			proms=proms,
 			resps=resps,
-			raw_text=raw_text,
+			
+			phns=text,
+			text=raw_text,
 			
 			metadata=metadata,
 		)
