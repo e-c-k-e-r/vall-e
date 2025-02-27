@@ -898,11 +898,10 @@ class Base_V2(nn.Module):
 									nlls.append( nll )
 								if metrics:
 									accs.append( metrics )
-						else:
-							if nlls:
-								nll = sum(nlls) / len(nlls)
-							if accs:
-								accs = sum(accs) / len(accs)
+						if nlls:
+							nll = sum(nlls) / len(nlls)
+						if accs:
+							accs = sum(accs) / len(accs)
 
 					if nll is not None:
 						if f'{name}.nll' not in loss:
