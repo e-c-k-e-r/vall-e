@@ -1037,7 +1037,8 @@ def example_usage():
 			texts, proms, resps, tasks = sample_data()
 
 			stats = {"step": i}
-			stats |= engine.traverse(phns_list=texts, proms_list=proms, resps_list=resps, task_list=tasks, training=True)
+			with torch.autograd.set_detect_anomaly(cfg.trainer.detect_grad_anomaly):
+				stats |= engine.traverse(phns_list=texts, proms_list=proms, resps_list=resps, task_list=tasks, training=True)
 			stats |= {"grad_norm": engine.get_global_grad_norm()}
 
 			tqdm.write(f"{stats}")
