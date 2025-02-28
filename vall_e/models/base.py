@@ -456,7 +456,8 @@ class Base(nn.Module):
 		elif attention_backend == "fused_attn":
 			self.l_padding = 128
 
-		self.model = LlamaModel(LlamaConfig(
+
+		self.model_config = LlamaConfig(
 			vocab_size=n_vocab,
 			hidden_size=d_model,
 			max_position_embeddings=max_position_embeddings,
@@ -468,9 +469,10 @@ class Base(nn.Module):
 			hidden_act="gelu",
 			is_encoder_decoder=False,
 			is_decoder=True,
-			attn_implementation=hf_attention,
 			#gradient_checkpointing=self.gradient_checkpointing,
-		))
+		)
+		self.model_config.attn_mode = attention_backend
+		self.model = LlamaModel(self.model_config)
 
 		if not split_classifiers:
 			self.classifier = nn.Linear(d_model, n_vocab, bias=classifiers_bias)

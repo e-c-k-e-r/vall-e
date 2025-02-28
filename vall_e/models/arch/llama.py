@@ -116,10 +116,11 @@ class RotaryEmbedding(nn.Module):
 		return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 class Attention(nn.Module):
-	def __init__(self, config, layer_idx, mode = "default"):
+	def __init__(self, config, layer_idx):
 		super().__init__()
 
 		self.config = config
+		self.attn_mode = config.attn_mode
 		self.layer_idx = layer_idx
 		self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 		self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
@@ -128,7 +129,6 @@ class Attention(nn.Module):
 		self.num_heads = config.num_attention_heads
 		self.num_key_value_heads = config.num_key_value_heads
 
-		self.attn_mode = mode
 		if self.attn_mode == "math":
 			self.attn_mode = torch.nn.attention.SDPBackend.MATH
 		elif self.attn_mode == "mem_efficient":
