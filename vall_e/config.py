@@ -277,6 +277,7 @@ class ModelExperimentalSettings:
 	predict_causally: bool = False # predicts the next token even for the non-causal/NAR tasks, in theory this should also bolster the model, as
 	# * NAR-demask would semi-doubly train for AR
 	# * the model wouldn't also need to learn when to predict the token in place
+	audio_encoder_mode: str = "sum" # audio encoder mode for version >= 7, because I cannot make up my damn mind
 
 	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors
@@ -737,6 +738,7 @@ class Trainer:
 
 	activation_checkpointing: bool | None = None # deprecated, should technically be used for only on activations and not the entire gradients, but HF only has gradient checkpointing
 	gradient_checkpointing: bool = True # enables gradient checkpointing to save VRAM at the cost of slightly reduced performance when training
+	detect_grad_anomaly: bool = False # torch.autograd.set_detect_anomaly
 
 	check_for_oom: bool = True # checks for OOMs thrown during forward/backwards
 	gc_mode: str | None = None # deprecated, but marks when to do GC

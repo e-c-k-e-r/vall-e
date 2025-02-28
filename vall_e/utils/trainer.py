@@ -180,7 +180,9 @@ def train(
 			break
 
 		#batch = to_device(batch, torch.cuda.current_device())
-		stats = engines.step(batch=batch, feeder=train_feeder)
+		with torch.autograd.set_detect_anomaly(cfg.trainer.detect_grad_anomaly):
+			stats = engines.step(batch=batch, feeder=train_feeder)
+
 		stats['epoch'] = engines.global_samples / (len(train_dl.dataset.paths) * world_size())
 
 		elapsed_time = stats.get("elapsed_time", 0)
