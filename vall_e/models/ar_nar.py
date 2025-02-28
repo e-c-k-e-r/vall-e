@@ -76,9 +76,6 @@ class AR_NAR(Base):
 		# RVQ levels to apply masking training on
 		masking_train_rvq_levels = self.config.experimental.masking_train_rvq_levels
 			
-		if cfg.audio_backend == "nemo":
-			rvq_levels_p = [ i for i in range( quant_level_range[0], quant_level_range[1] + 1 ) ]
-
 		# CFG
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
@@ -105,8 +102,19 @@ class AR_NAR(Base):
 			# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 			if rvq_levels_p == "equal":
 				rvq_levels_p = [ i for i in range( lo, hi ) ]
-			else:
+			elif rvq_levels_p == "normal":
 				# yuck
+				rvq_levels_p = [
+					0,
+					1, 1,
+					2, 2, 2, 2,
+					3, 3, 3, 3, 3, 3, 3, 3,
+					4, 4, 4, 4, 4, 4, 4, 4,
+					5, 5, 5, 5,
+					6, 6,
+					7,
+				]
+			else:
 				rvq_levels_p = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
 
 		# input RVQ levels

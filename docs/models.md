@@ -1,5 +1,8 @@
 # Model Notes
 
+> [!NOTE]
+> Most of this information is outdated due to slightly wrong assumptions
+
 The underlying model is a robust transformer, where:
 * inputs are passed through an embedding
 * the embedded inputs are then passed through each layer of the transformer (or other model type)
@@ -11,9 +14,6 @@ The inputs are automatically sequenced in a way that a given task requires, and 
 
 While the original paper called for a separate AR model and a NAR model, by treating the AR and the NAR as unique tasks, you can actually train a unified model (`AR+NAR`) for effectively free, as the internal states of the two should overlap quite a lot.
 * Additionally, you can even train a `NAR-len` model on top of an existing model.
-
-Later papers for discrete TTS solutions work around the multiple codebook problem by introducing exotic interleaving patterns to work around existing problems. For all intents and purposes, these aren't necessary, as the current sequencing of prioritizng the first codebook (RVQ level 0). The remaining RVQ levels can be easily deduced from the prior level in parallel.
-* Exotic solutions aren't necessary at all, as the summed embeddings can be good enough to represent the original waveform. Output codes can be inferenced in parallel with a wider head, neglecting the need to train separate levels.
 
 ## The AR (Autoregressive) Model
 
@@ -28,7 +28,7 @@ One way to work around the time cost is to instead decode more than one token at
 * In theory, for a unified AR+NAR model, this *should* be an easy task, as the model can already decode tokens in parallel.
 * In reality, this isn't the case. Specifying a `cfg.model.experimental.causal_size > 1` with adequate training will have the output sound *fine* every Nth timestep and every other timestep not so fine, as the following tokens aren't predictable enough.
   + *However*, this may simply be a sampling problem, as this experiment was done with outdated ideas on how to sample the AR, and should be worth revisiting.
-* VALL-E 2's paper proposes merging code sequences together into one embedded token for a speedup, but their solution seems rather complex to warrant a fundamental retrain.
+* VALL-E 2's paper proposes merging code sequences together into one embedded token for a speedup.
 
 Sampling the AR does not necessarily require a specific sampling temperature, as:
 * lower temperatures follow the prompt better, at the cost of variety in the outputs, and the need to either use classifier-free guidance or repetition penalty to wrangle the output.
@@ -37,10 +37,6 @@ Sampling the AR does not necessarily require a specific sampling temperature, as
 Traditional samplers for text-gen models can apply to the AR (especially rep/len pen), but more exotic samplers (mirostat, DRY, etc.) don't seem to offer much besides serving as bandaid solutions for a lacking AR.
 
 Compared to non-autoregressive decoding, I personally feel that autoregressive encoding offers a specific-yet-hard-to-quantify expressive quality that the NAR (and pure NAR solutions) does not offer.
-
-### Pure AR
-
-Technically, with `cfg.model.version >= 7`, a model can be purely AR, as that version of the model encodes and decodes all codebooks of audio in a single pass.
 
 ## The NAR (Non-autoregressive) Model
 
@@ -119,15 +115,9 @@ It is not required to train a model from scratch to use this modality, as traini
 
 The "magic" of subjugating a transformer for audio use lies within the ensemble of the embeddings. This is necessary as each piece of a sequence is fundamentally different, but a HF-compatible model can get away with treating each sequence as separate ranges within a total token sequence.
 
-While embeddings *can* be tied to the output head, testing showed that the model ***really*** does not like to do this, although my implementation could very well be flawed.
-
-With attention-based transformers, most embeddings can serve as a token itself and have the attention mechanism attend to it. Theoretically, there should be little to no functional differences between "tokenizing" an embedding, and summing a modifying embedding, but experimentation is needed for this assertion.
-* EnCodec seems to function perfectly fine with summing and without, but other codecs such as Descript-Audio-Codec might absolutely require summing.
+With attention-based transformers, most embeddings can serve as a token itself and have the attention mechanism attend to it.
 
 Other solutions such as TorToiSe makes use of additional embeddings/classifiers for each portion of the sequence as well.
-
-Other solutions will rely on conditioning latents or extracted features as the input. This *technically* isn't necessary since portions of the model seem to be allocated as an encoder anyways from the embeddings to some arbitrary depth, and as a decoder from some arbitrary depth to the output heads.
-* This might also mean it makes more sense to increase the model's size in-post by injecting new layers in the middle where it's outside these pseudo-encoder/decoder layers where it won't make any difference.
 
 ### Classifiers
 
@@ -332,6 +322,12 @@ This script implements the core underlying model for VALL-E. This handle:
 This script aims to implement everything as required per VALL-E agnostically, to allow for different implementations to contain little extra code.
 
 A very naive implementation of using the model can be found under the `__main__` invocation.
+
+### `models/base_v2.py`
+
+This script implements a newer model aimed to sample *all* codebooks for a given step.
+
+Due to major enough differences, this code is segregated from the original `models/base.py` to not break things further.
 
 ## `models/ar_nar.py`
 

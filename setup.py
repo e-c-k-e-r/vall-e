@@ -102,6 +102,12 @@ setup(
 			
 			# other audio backend that doesn't prove fruitful
 			"descript-audio-codec",
+
+			# nemo (to-do: cut this down)
+			"nemo-toolkit",
+			"hydra-core",
+			"lightning",
+			"sentencepiece"
 		]
 	},
 	url="https://git.ecker.tech/mrq/vall-e",

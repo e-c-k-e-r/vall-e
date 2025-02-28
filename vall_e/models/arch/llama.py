@@ -510,7 +510,7 @@ class Model(LlamaPreTrainedModel):
 		self.layers = nn.ModuleList(
 			[DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
 		)
-		self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+		self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps) if config.output_norm else nn.Identity()
 		self.rotary_emb = RotaryEmbedding(config=config)
 		self.gradient_checkpointing = False
 
@@ -728,7 +728,6 @@ class Model(LlamaPreTrainedModel):
 
 			if output_attentions:
 				all_self_attns += (layer_outputs[1],)
-
 
 		hidden_states = self.norm(hidden_states)
 

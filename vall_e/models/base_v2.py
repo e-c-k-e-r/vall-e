@@ -81,49 +81,20 @@ def _dropout_codes( x, dropout_mask, dropout_token, swapped=False ):
 		x[..., level] = torch.where( dropout_mask, lhs, rhs )
 	return x
 
-# naively embeds each level of a codebook, then merges the embeddings with a Linear
-class AudioEncoder(nn.Module):
+# aims to properly encode RVQ-encoded token sequence into an embedding
+class ResidualAudioEncoder(nn.Module):
 	def __init__(
 		self,
 		n_tokens: int,
 		n_levels: int,
 		token_dim: int,
-		enc_mode: str = "sum",
-		l_weights: list[float] | None = None,
+		training: bool = True,
 	):
 		super().__init__()
-		self.enc_mode = enc_mode
-
-		d_ffn = 4
-		if not l_weights:
-			l_weights = [1 for _ in range(n_levels)]
-		
-		if enc_mode == "sum":
-			self.embs = nn.ModuleList([ml.Embedding(n_tokens, token_dim) for l in range(n_levels)])
-			self.proj = None
-			self.weights = nn.Parameter(torch.tensor(l_weights))
-		elif enc_mode == "sub_interleave":
-			self.embs = nn.ModuleList([ml.Embedding(n_tokens, token_dim // n_levels) for l in range(n_levels)])
-			self.proj = None
-		elif enc_mode == "interleave":
-			self.embs = nn.ModuleList([ml.Embedding(n_tokens, token_dim) for l in range(n_levels)])
-			#self.proj = nn.Linear(n_levels * token_dim, token_dim)
-			self.proj = nn.Sequential(
-				nn.Linear(n_levels * token_dim, d_ffn * token_dim),
-				nn.GELU(),
-				nn.Linear(d_ffn * token_dim, token_dim)
-			)
-		elif enc_mode == "attn":
-			self.embs = nn.ModuleList([ml.Embedding(n_tokens, token_dim) for l in range(n_levels)])
-			self.cross_attn = nn.MultiheadAttention(embed_dim=token_dim,num_heads=n_levels,dropout=0.1)
-			self.proj = nn.Sequential(
-				nn.Linear(n_levels * token_dim, d_ffn * token_dim),
-				nn.GELU(),
-				nn.Linear(d_ffn * token_dim, token_dim)
-			)
-
-		for emb in self.embs:
-			nn.init.normal_(emb.weight, mean=0.0, std=0.02)
+		self.embs = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(n_levels)])
+		self.pos_embedding = nn.Parameter(torch.randn(1, n_levels, token_dim)) # i still don't understand why this needs to be explicitly added instead of it being deduced in the embedding itself
+		self.cross_attn = nn.MultiheadAttention( embed_dim=token_dim, num_heads=8, dropout=0.1 if training else 0.0, batch_first=True )
+		self.proj = nn.Linear(token_dim, token_dim) # i don't understand why this is necessary
 
 	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None ) -> Tensor:
 		# empty
@@ -133,58 +104,130 @@ class AudioEncoder(nn.Module):
 		if dropout_mask is not None:
 			xi = _dropout_codes( xi, dropout_mask, dropout_token )
 
-		# old way
-		# in theory RVQ-based codecs should prefer this, but this doesn't yield good results
-		if self.enc_mode == "sum":
-			weights = F.softmax( self.weights, dim=0 )
-			x = sum([ weights[l] * emb( xi[:, l] ) for l, emb in enumerate(self.embs) ])
-		# attention-based crunge
-		elif self.enc_mode == "attn":
-			x = torch.stack([emb(xi[:, l]) for l, emb in enumerate(self.embs)], dim=1)
-			attn, _ = self.cross_attn(
-				x.permute(1, 0, 2),
-				x.permute(1, 0, 2),
-				x.permute(1, 0, 2),
-			)
-			attn = attn.permute(1, 0, 2)
-			x = x + attn
-			x = x.view(x.shape[0], -1)
-			# x = attn.reshape(x.shape[0], -1)
-		# encode by interleaving embeddings into one "token"
-		# this "works" but I imagine it being excessive and doesn't seem to help the model all that much
-		else:
-			x = torch.stack([emb(xi[:, l]) for l, emb in enumerate(self.embs)], dim=1)
-			x = x.view(x.shape[0], -1)
-		
-		if self.proj is not None:
-			x = self.proj(x)
+		# ( seq_len, dim ) => ( seq_len, levels, dim )
+		x = torch.stack([ emb(xi[:, i]) for i, emb in enumerate(self.embs) ], dim=1)
+		x = x + self.pos_embedding
+		x, _ = self.cross_attn( x, x, x )
+		x = self.proj( x.mean(dim=1) )
 
 		return x
-
-class AudioDecoder(nn.Module):
+# aims to properly decode the last hidden states from a model into logits for an RVQ-encoded token sequence
+class ResidualAudioDecoder(nn.Module):
 	def __init__(
 		self,
 		d_model,
 		vocab_size,
 		resp_levels,
+		training: bool = True,
+		use_ln: bool = False,
 	):
 		super().__init__()
 
-		self.resp_levels = resp_levels
-		self.head = nn.Linear( d_model, vocab_size * resp_levels )
+		self.projs = nn.ModuleList([nn.Sequential(
+			(nn.LayerNorm(d_model) if use_ln else nn.Identity()),
+			nn.Linear(d_model, d_model),
+		) for _ in range(resp_levels)]) # per-level projs
 
-	def forward(self, x: Tensor, level: int | None = None, stack: bool = True, **kwargs ) -> Tensor:
-		# prior way up-projected then down-projected, but that's silly
+		self.cross_attn = nn.MultiheadAttention( embed_dim=d_model, num_heads=8, dropout=0.1 if training else 0.0, batch_first=True ) # xattn so each level can attend to others per residual-ness
+		self.head = nn.Linear(d_model, vocab_size) # final output head, i feel it would be better to have it per-level but i assume the proj handles it
+
+	# forward for one sequence
+	def _forward( self, x: Tensor ) -> Tensor:
+		seq_len, resp_levels = x.shape[0], len(self.projs)
+		x = torch.stack([proj(x) for proj in self.projs], dim=1)
+		x, _ = self.cross_attn( x, x, x )
 		x = self.head( x )
+		x = x.view( resp_levels, seq_len, -1 )
+		return x
 
-		# interleave by reshaping / permuting
-		# at least I hope this does it properly, it checks out against my OCR classifier
-		batch_size, seq_len, dim = x.shape
-		x = x.view( batch_size, seq_len, self.resp_levels, -1 )
-		x = x.permute( 0, 2, 1, 3 )
+	# required to act on per sequence and not a batch due to headed-ness
+	def forward( self, x_i: Tensor ) -> Tensor:
+		return torch.stack([ self._forward(x) for x in x_i ], dim=0)
+
+# the above, but for FSQ codecs, as each level is independent from one another
+class FiniteAudioEncoder(nn.Module):
+	def __init__(
+		self,
+		n_tokens: int,
+		n_levels: int,
+		token_dim: int,
+		training: bool = True,
+	):
+		super().__init__()
+		self.embs = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(n_levels)])
+		self.pos_embedding = nn.Parameter(torch.randn(1, n_levels, token_dim))
+		self.proj = nn.Linear(token_dim, token_dim)
+		self.level_weights = nn.Parameter(torch.ones(n_levels))
+
+	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None ) -> Tensor:
+		# empty
+		if xi.shape[0] == 0:
+			dim = self.embs[0].weight.shape[-1] # self.proj.weight.shape[0]
+			return torch.zeros((0, dim), device=xi.device, dtype=xi.dtype)
+		if dropout_mask is not None:
+			xi = _dropout_codes( xi, dropout_mask, dropout_token )
+
+		x = torch.stack([ emb(xi[:, i]) for i, emb in enumerate(self.embs) ], dim=1)
+		x = x + self.pos_embedding
+		x = self.proj( x )
+		
+		weights = F.softmax(self.level_weights, dim=0).view(1, -1, 1)
+		x = (x * weights).sum(dim=1)
 
 		return x
 
+# aims to decode the last hidden state into independent codebooks
+# uses an MLP instead of Attn since it's not residual I guess (the problem with caving to consult claude-3-5-sonnet is that it will blindly agree with you if you suggest anything)
+# optional per-level LN, might be beneficial
+class FiniteAudioDecoder(nn.Module):
+	def __init__(
+		self,
+		d_model: int,
+		vocab_size: int,
+		n_levels: int,
+		d_ffn: int = 4,
+		use_ln: bool = True,
+		shared_levels: bool = False,
+		training: bool = False,
+	):
+		super().__init__()
+		self.n_levels = n_levels
+		self.shared_levels = shared_levels
+
+		if not shared_levels:
+			self.head = nn.ModuleList([nn.Sequential(
+				# ln
+				(nn.LayerNorm(d_model) if use_ln else nn.Identity()),
+				# ffn
+				nn.Linear(d_model, d_ffn * d_model),
+				nn.GELU(),
+				nn.Linear(d_ffn * d_model, d_model),
+				# head
+				nn.Linear(d_model, vocab_size)
+			) for _ in range(n_levels)])
+		else:
+			self.head = nn.Sequential(
+				# ffn
+				nn.Linear(d_model, d_ffn * d_model),
+				nn.GELU(),
+				nn.Linear(d_ffn * d_model, d_model),
+				# head
+				nn.Linear(d_model, vocab_size * n_levels)
+			)
+
+	def forward(self, x: Tensor) -> Tensor:
+		batch_size, seq_len, _ = x.shape
+
+		if not self.shared_levels:
+			x = torch.stack([head(x) for head in self.head], dim=1)
+		else:
+			x = self.head(x)
+			x = x.view(batch_size, seq_len, self.n_levels, -1)
+			x = x.transpose(1, 2)
+
+		return x
+
+# handles simple output projections into logits for other tasks
 class AuxDecoder(nn.Module):
 	def __init__(
 		self,
@@ -255,8 +298,9 @@ class Base_V2(nn.Module):
 		resp_parallel_training = config.experimental.resp_parallel_training if config is not None else True
 		predict_causally = config.experimental.predict_causally if config is not None else False
 		monolithic_audio_encoder = config.experimental.monolithic_audio_encoder if config is not None else False
-		audio_encoder_mode = config.experimental.audio_encoder_mode if config is not None else "sum"
 		audio_level_weights = [1.0 / (i + 1) for i in range(n_resp_levels)] # to-do: find the weights for FSQ
+		logit_normalization = config.experimental.logit_normalization if config is not None else 0
+		per_level_normalization = config.experimental.per_level_normalization if config is not None else True
 
 		n_vocab = 256
 		n_tasks = config.tasks if config is not None else 8
@@ -273,6 +317,12 @@ class Base_V2(nn.Module):
 			hf_attention = None
 			if attention_backend not in AVAILABLE_ATTENTIONS:
 				raise ValueError(f"Requesting attention `{attention_backend}` but is not available. Currently available: {AVAILABLE_ATTENTIONS}")
+
+		# to-do: deduce nemo better-er
+		if n_audio_tokens == 1000:
+			# assume midrage contains important details
+			center = n_resp_levels // 2
+			audio_level_weights = [1.0 - abs(i - center) / n_resp_levels for i in range(n_resp_levels)]
 
 		self.training = training
 		self.teaching = False
@@ -323,6 +373,7 @@ class Base_V2(nn.Module):
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 		self.noncausal_masks = noncausal_masks
 		self.audio_level_weights = audio_level_weights
+		self.logit_normalization = logit_normalization
 		
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -337,34 +388,41 @@ class Base_V2(nn.Module):
 		self.proms_emb = None
 		self.resps_emb = None
 
+		# to-do: deduce nemo-ness better-er
+		if n_audio_tokens == 1000:
+			AudioEncoder = FiniteAudioEncoder
+			AudioDecoder = FiniteAudioDecoder
+		else:
+			AudioEncoder = ResidualAudioEncoder
+			AudioDecoder = ResidualAudioDecoder
+
 		if monolithic_audio_encoder:
 			self.audio_emb = AudioEncoder(
 				n_tokens=n_audio_tokens + 2, # stop + masked token
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
-				enc_mode=audio_encoder_mode,
-				l_weights=audio_level_weights,
+				training=training,
 			)
 		else:
 			self.proms_emb = AudioEncoder(
 				n_tokens=n_audio_tokens,
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
-				enc_mode=audio_encoder_mode,
-				l_weights=audio_level_weights,
+				training=training,
 			)
 			self.resps_emb = AudioEncoder(
 				n_tokens=n_audio_tokens + 2, # stop + masked token
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
-				enc_mode=audio_encoder_mode,
-				l_weights=audio_level_weights,
+				training=training,
 			)
 
 		self.audio_decoder = AudioDecoder(
 			d_model,
 			(n_audio_tokens + 1),
 			self.n_resp_levels,
+			training=training,
+			use_ln=per_level_normalization,
 		)
 		self.len_decoder = AuxDecoder( d_model, 11 )
 		self.phn_decoder = AuxDecoder( d_model, n_phn_tokens )
@@ -391,6 +449,7 @@ class Base_V2(nn.Module):
 				hidden_act="gelu",
 				is_encoder_decoder=False,
 				is_decoder=True,
+				output_norm=not per_level_normalization, # moves the LN out to the decoder
 				#gradient_checkpointing=self.gradient_checkpointing,
 			)
 			self.model_config.attn_mode = attention_backend
@@ -540,7 +599,7 @@ class Base_V2(nn.Module):
 					p = self.masking_ratio
 
 					# store dropout mask (if training, as this gets used later to mask the input embeddings if provided)
-					if self.training:
+					if self.training and p > 0:
 						dropout_mask = _dropout_mask( resps_list[i], p )
 						inputs[i].append( ("dropout_mask", dropout_mask ) )
 				# insert the current output response
@@ -806,6 +865,10 @@ class Base_V2(nn.Module):
 
 			return input
 
+		def _logit_normalization( logit ):
+			norms = torch.norm(logit, p=2, dim=-1, keepdim=True) + 1e-7
+			return torch.div(logit, norms) / self.logit_normalization
+
 		def _calc_loss( logit, sequence, causal = True, level = None ):
 			# filter tokens that exceed the vocab size
 			sequence = torch.where( sequence >= logit.shape[-1], self.ignore_index, sequence )
@@ -818,10 +881,20 @@ class Base_V2(nn.Module):
 				l = self.causal_size
 				logit = logit[..., :-l, :] # shift the target so that token n...
 				sequence = sequence[..., l:] # ...predicts token n + 1
+			
+			batched = sequence.dim() > 1
+
+			# logit normalization
+			if self.logit_normalization:
+				# it would probably be better to unsqueeze then squeeze to avoid code duplication but who cares
+				if not batched:
+					logit = _logit_normalization( logit )
+				else:
+					for i, l in enumerate( logit ):
+						logit[i] = _logit_normalization( l )
 
 			# flatten batch
-			parallel = sequence.dim() > 1
-			if parallel:
+			if batched:
 				logit = logit.reshape(-1, logit.shape[-1])
 				sequence = sequence.reshape(-1)
 
@@ -829,10 +902,12 @@ class Base_V2(nn.Module):
 			metrics = None
 
 			if compute_hard_loss:
-				nll = F.cross_entropy( logit, sequence, ignore_index=self.ignore_index, reduction='mean' if not parallel else 'none' ) * (level_weights[level] if level is not None and not parallel else 1)
+				reduction = 'mean' if not batched else 'none'
+				weight = level_weights[level] if level is not None and not batched else 1
 
+				nll = F.cross_entropy( logit, sequence, ignore_index=self.ignore_index, reduction=reduction ) * weight
 				# manually weigh each level
-				if parallel:
+				if batched:
 					nll = nll.view( self.n_resp_levels, -1 ).mean(dim=-1) * torch.tensor(level_weights, device=device)
 
 			if compute_acc:
@@ -844,6 +919,7 @@ class Base_V2(nn.Module):
 					ignore_index = -100
 				).to(logit.device)
 				metrics = accuracy_metric( logit, sequence )
+			
 			return nll, metrics
 		
 		for batch_index, batch in enumerate(inputs):
@@ -949,7 +1025,7 @@ class Base_V2(nn.Module):
 						nll, metrics = _calc_loss( logits[batch_index][:, start:end], sequence.long(), causal )
 
 						if nll is not None:
-							nll = nll.sum()
+							nll = nll.mean()
 
 					loss_key = f'{name}.nll'
 					acc_key = f'{name}.acc'
@@ -966,7 +1042,8 @@ class Base_V2(nn.Module):
 				else:
 					target.append( token )
 			
-			# perofrm loss calculation on the entire sequence
+
+			# perform loss calculation on the entire sequence
 			if not self.config.loss_factors:
 				if logits[batch_index].dim() < 3:
 					sequence = _join( target, torch.tensor(self.ignore_index, device=target[-1].device) )
@@ -984,18 +1061,22 @@ class Base_V2(nn.Module):
 					nll, metrics = _calc_loss( logits[batch_index][level], sequence.long(), causal )
 				else:
 					nlls = []
-					metrics = []
+					accs = []
 					
 					for level, logit in enumerate( logits[batch_index] ):
 						sequence = [ x if x.dim() <= 1 else x[:, level] for x in target ] 
 						sequence = _join( sequence, torch.tensor(self.ignore_index, device=sequence[-1].device) )
-						nll, metric = _calc_loss( logit, sequence, causal, level )
-						
-						nlls.append( nll )
-						metrics.append( metric )
-					
-					nll = sum(nlls)
-					metrics = mean(metrics)
+						nll, metrics = _calc_loss( logit, sequence, causal, level )
+
+						if nll:
+							nlls.append( nll )
+						if metrics:
+							accs.append( metrics )
+
+					if nlls:
+						nll = sum(nlls) / len(nlls)
+					if accs:
+						metrics = sum(accs) / len(accs)
 
 				if nll is not None:
 					if 'nll' not in loss:
@@ -1008,8 +1089,8 @@ class Base_V2(nn.Module):
 					stats["acc"].append( metrics )
 
 		# average
-		loss = { name: mean( loss[name] ) for name in loss.keys() }
-		stats = { name: mean( stats[name] ) for name in stats.keys() }
+		loss = { name: sum( loss[name] ) / len( loss[name] ) for name in loss.keys() }
+		stats = { name: sum( stats[name] ) / len( stats[name] ) for name in stats.keys() }
 
 		return LossStats(loss, stats)
 
@@ -1076,7 +1157,6 @@ class Base_V2(nn.Module):
 		logits = [ logit for logit in output.logits ]
 		hidden_states = output.hidden_states
 		
-
 		grouped_logits = {}
 		
 		for batch_index in range( batch_size ):

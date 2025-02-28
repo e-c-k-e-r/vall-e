@@ -277,7 +277,10 @@ class ModelExperimentalSettings:
 	predict_causally: bool = False # predicts the next token even for the non-causal/NAR tasks, in theory this should also bolster the model, as
 	# * NAR-demask would semi-doubly train for AR
 	# * the model wouldn't also need to learn when to predict the token in place
-	audio_encoder_mode: str = "sum" # audio encoder mode for version >= 7, because I cannot make up my damn mind
+
+	# 
+	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298
+	per_level_normalization: bool = True # moves the final norm out from the underlying model into the decoder
 
 	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors

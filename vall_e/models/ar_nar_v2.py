@@ -105,8 +105,19 @@ class AR_NAR_V2(Base_V2):
 			# randomly select a target RVQ-bin level (0 being AR, 1+ being NAR)
 			if rvq_levels_p == "equal":
 				rvq_levels_p = [ i for i in range( lo, hi ) ]
-			else:
+			elif rvq_levels_p == "normal":
 				# yuck
+				rvq_levels_p = [
+					0,
+					1, 1,
+					2, 2, 2, 2,
+					3, 3, 3, 3, 3, 3, 3, 3,
+					4, 4, 4, 4, 4, 4, 4, 4,
+					5, 5, 5, 5,
+					6, 6,
+					7,
+				]
+			else:
 				rvq_levels_p = sum([[i for _ in range(hi - i)] for i in range( lo, hi ) ], [])
 
 		# input RVQ levels
