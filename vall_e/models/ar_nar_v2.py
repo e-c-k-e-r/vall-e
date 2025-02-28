@@ -845,14 +845,12 @@ def example_usage():
 	kwargs = {
 		'n_audio_tokens': cfg.model.audio_tokens,
 
-		'd_model': 1024, # 256, # 1024, # 1536
-		'n_heads': 16, # 4, # 16, # 24
-		'n_layers': 12, # 32
-		'n_experts': 1 if not cfg.model else cfg.model.experts,
-
+		'd_model': cfg.model.dim,
+		'd_ffn': cfg.model.ffn,
+		'n_heads': cfg.model.heads,
+		'n_layers': cfg.model.layers,
+		'n_experts': cfg.model.experts,
 		'p_dropout': 0.1,
-
-		'l_padding': 8 if cfg.optimizations.fp8 else 0,
 
 		'config': cfg.model
 	}
