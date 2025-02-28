@@ -47,10 +47,6 @@ Logits = namedtuple('Logits', ['logits', 'state', 'inputs', 'loss', 'attentions'
 Sampled = namedtuple('Sampled', ['ids', 'logits', 'scores', 'entropy'])
 LossStats = namedtuple('LossStats', ['loss', 'stats'])
 
-"""
-from ..utils.pattern import DelayedPatternProvider, VALLEPattern
-"""
-
 summed_embeddings_task = [ "stt" ]
 special_tasks = [ "len", "stt", "phn", "text", "un-phn" ]
 non_tokened_names = ["task", "dropout_mask", "classifier_level"]
@@ -128,73 +124,6 @@ def _interleave_sequence_reshape( input: list[torch.Tensor], dim=-1 ):
 def _interleave_sequence_flatten( input: list[torch.Tensor] ):
 	return torch.concat( [ i.t() for i in input ] ).t().flatten()
 
-# Deprecated implementation
-class MultiEmbedding(nn.Module):
-	def __init__(self, max_n_levels, n_tokens, token_dim, monolithic=False):
-		super().__init__()
-		self.monolithic = monolithic
-		self.max_n_levels = max_n_levels
-		self.n_tokens = n_tokens
-		self.weight = nn.Parameter(torch.randn(max_n_levels, n_tokens, token_dim))
-
-	# to-do: select quant level from given quant_levels tensor if given (i.e. through the resps_emb)
-	# I imagine this is an oversight in the NAR.
-	def forward(self, x_list: list[Tensor], quant_level: int | list[int] | Tensor | None = None) -> list[Tensor]:
-		if len(x_list) == 0:
-			return []
-
-		# this "strategy" will reserve the weight[0] for te AR and weight[1:] for the NAR
-		# the NAR cannot share RVQ-bin level 0 with the AR for the resps_emb
-		if self.monolithic:
-			w = self.weight[:1] if quant_level is None or quant_level == 0 else self.weight[1:]
-		else:
-			w = self.weight
-
-		padded_x_list = []
-
-		for i, xi in enumerate(x_list):
-			xi = F.one_hot(xi.to(torch.int64), num_classes=self.n_tokens)  # t l' k
-			wi = w.shape[0] - xi.shape[1]
-			xi = F.pad(xi, (0, 0, 0, wi))  # t l k
-			padded_x_list.append(xi.to(w))
-
-		x = torch.cat(padded_x_list)  # n l k
-		x = einsum("l k d, n l k -> n d", w, x)
-
-		x_list = x.split([*map(len, x_list)])
-
-		return x_list
-
-# Embedding that sums each RVQ-bin level within a given input acoustic prompt
-# _Old, to preserve compat with previous models.
-class AudioEmbedding_Old(nn.Module):
-	def __init__(
-		self,
-		l_embedding_tokens: int, # list of number of tokens (needed because AR resps includes stop token)
-		token_dim: int, # dimensionality of the embedding
-		levels: int | None = None, # number of RVQ-bins (I don't remember the specifics)
-	):
-		super().__init__()
-		# array of embeddings
-		#   proms are [0, resp_levels]
-		#   resp are split to where [0] is for the AR, and [1:] are reserved for NAR
-		self.embeddings = nn.ModuleList([ml.Embedding(n_tokens, token_dim) for n_tokens in l_embedding_tokens])
-		# weight influencer for the influence for each level (desu this should be really useless because the weights in the embedding themselves should factor this)
-		self.weight = nn.ParameterList([nn.Parameter( torch.tensor([1]) ) for i in range(levels)]) if levels is not None else None
-
-	def forward(self, xi: Tensor, quant_level: Tensor | None = None ) -> Tensor:
-		# prom
-		if quant_level is None and xi.shape[-1] > 1:
-			x = sum( [ self.embeddings[k]( xi[:, k] ) * (self.weight[k] if self.weight is not None else 1) for k in range(xi.shape[-1]) ] )
-		# prom / AR resp
-		elif quant_level is None or quant_level == 0:
-			x = self.embeddings[0]( xi if xi.dim() == 1 else xi[:, 0] )
-		# NAR resp
-		else:
-			x = sum( [ self.embeddings[k+1]( xi[:, k] ) * (self.weight[k+1] if self.weight is not None else 1) for k in range(xi.shape[-1]) ] )
-
-		return x
-
 # Embedding that sums each RVQ-bin level within a given input acoustic prompt
 # Mostly to handle some oversights and errors during testing
 class AudioEmbedding(nn.Module):
@@ -234,27 +163,6 @@ class AudioEmbedding(nn.Module):
 			x = self.embeddings[k + offset]( xi if xi.dim() == 1 else xi[:, k] )
 
 		return x
-
-# time-step embedding
-# for the NAR-len, since it probably most likely requires encoding the timestep
-class TimeEmbedding(nn.Module):
-	def __init__(
-		self,
-		d_model
-	):
-		super().__init__()
-		self.emb = SinusoidalEmbedding(d_model)
-		self.mlp = nn.Sequential(
-			nn.Linear(d_model, d_model*4),
-			nn.SiLU(),
-			nn.Linear(d_model*4, d_model),
-		)
-
-	def forward( self, t ):
-		t = self.emb(t)
-		t = self.mlp(t)
-
-		return t
 
 # per-level classification
 # it might actually be "better" in the long run to only have one output head like a traditional LM, and just de-stitch it here instead of doing modulus math and whatever like the HF/experimental impl
@@ -380,38 +288,6 @@ class Base(nn.Module):
 
 		return l[: indices.min().item()]
 
-	# these probably need to live in an interleaved model, as pattern-ing is targeted for a sole AR model
-	"""
-	def codes_to_pattern(self, codes):
-		# expand if not batched
-		if codes.dim() == 2:
-			codes = codes.unsqueeze(0)
-		# [batch, timestep, rvq level] (B, T, K) =>  [batch, rvq level, timestep] (B, K, T)
-		codes = codes.permute(0, 2, 1)
-		
-		B, K, T = codes.shape
-		
-		# map codes [B, K, T] into pattern sequence [B, K, S] using special_token_id for masked tokens
-		pattern = self.pattern_provider.get_pattern(T)
-		sequence_codes, sequence_indexes, sequence_mask = pattern.build_pattern_sequence(
-			codes.contiguous(), self.stop_token, keep_only_valid_steps=False,
-		)
-
-		# (B, K, T) => (B, T, K)
-		return sequence_codes.permute(0, 2, 1)
-
-	def logits_from_pattern(self, logits, pattern):
-		logits = logits.permute(0, 3, 1, 2)  # [B, card, K, S]
-
-		logits, logits_indexes, logits_mask = pattern.revert_pattern_logits(
-			logits, float('nan'), keep_only_valid_steps=False
-		)
-		logits = logits.permute(0, 2, 3, 1)  # [B, K, T, card]
-		logits_mask = logits_mask[None, :, :].expand(B, -1, -1)  # [K, T] -> [B, K, T]
-
-		return logits, logits_mask
-	"""
-
 	def __init__(
 		self,
 		
@@ -453,13 +329,13 @@ class Base(nn.Module):
 
 		self.n_resp_levels = self.config.resp_levels if self.config else n_resp_levels
 		self.n_max_levels = self.config.max_levels if self.config else n_resp_levels
-		self.capabilities = self.config.capabilities if self.config else ["ar", "nar"]
+		self.capabilities = self.config.capabilities if self.config else ["ar", "nar", "len"]
 		self.gradient_checkpointing = self.config.gradient_checkpointing if self.config is not None else True
 
 		self.stop_token = self.n_audio_tokens
 		self.mask_token = self.stop_token
-		self.causal = "ar" in self.capabilities or "len" in self.capabilities
-		self.version = self.config.version if self.config is not None else 5
+		self.causal = True
+		self.version = self.config.version if self.config is not None else 6
 		self.causal_size = self.config.experimental.causal_size if self.config is not None else (1 if self.causal else 0)
 
 		self.arch_type = self.config.arch_type if self.config is not None else "llama"
@@ -500,32 +376,11 @@ class Base(nn.Module):
 		n_tasks = self.config.tasks if self.config is not None else 8
 		n_langs = self.config.langs if self.config is not None else 2
 		n_tones = self.config.tones if self.config is not None else 1
-
-		# pure AR
-		if "nar" not in self.capabilities:
-			n_resp_tokens = n_audio_tokens + 1
-			l_embedding_tokens = [n_resp_tokens] * self.n_resp_levels
-			l_embedding_names = [f'AR:{i}:{i}' for i in range( self.n_resp_levels )]
-			l_classifier_tokens = [n_resp_tokens] * self.n_resp_levels
-		# NAR-len model
-		elif "len" in self.capabilities:
-			# +1 to include the stop or mask token
-			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
-			if "ar" in self.capabilities:
-				l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
-				l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens - 1]
-				l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )] + ['NAR:0:0']
-			else:
-				l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-				l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-				l_embedding_names = ['NAR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
-		# AR+NAR model
-		else:
-			# +1 to include the stop or mask token
-			n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
-			l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
-			l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )]
-			l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1)
+		
+		n_resp_tokens = n_audio_tokens + ( 1 if self.causal_size > 0 else 0 )
+		l_embedding_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens]
+		l_classifier_tokens = [n_resp_tokens] + [n_resp_tokens - 1] * (self.n_resp_levels - 1) + [n_resp_tokens - 1]
+		l_embedding_names = ['AR:0:0'] + [f'NAR:{i}:{i+1}' for i in range( self.n_resp_levels - 1 )] + ['NAR:0:0']
 
 		n_vocab = 17702 if not split_classifiers else n_resp_tokens + 1
 		
@@ -564,65 +419,28 @@ class Base(nn.Module):
 		self.sep = nn.Parameter(torch.randn(d_model))
 		self.dropout_token = nn.Parameter(torch.randn(d_model))
 
-		if self.version == 1: # legacy
-			n_audio_tokens += (n_tasks - 1) # old models have the task tokens in the prom
-			self.proms_emb = MultiEmbedding(self.n_resp_levels, n_audio_tokens, d_model)
-			self.resps_emb = MultiEmbedding(self.n_resp_levels, n_resp_tokens, d_model, monolithic=self.monolithic)
-			self.audio_emb = None
-		elif self.version < 5:
-			# [1024] * 8
-			self.proms_emb = AudioEmbedding_Old(
-				[n_audio_tokens] * self.n_resp_levels, d_model,
-				levels=self.n_resp_levels if self.version > 3 else None,
-			)
-			# [1024 + STOP] + [1024] * 8
-			self.resps_emb = AudioEmbedding_Old(
-				l_embedding_tokens, d_model,
-				levels=self.n_resp_levels if self.version > 3 else None,
-			)
-			self.audio_emb = None
-		else:
-			self.proms_emb = AudioEmbedding(
-				[n_audio_tokens] * self.n_resp_levels, d_model,
-				sums=audio_embedding_sums == "prom" or audio_embedding_sums == True,
-			)
-			self.resps_emb = AudioEmbedding(
-				l_embedding_tokens, d_model,
-				sums=audio_embedding_sums == "resp" or audio_embedding_sums == True,
-				l_embedding_names=l_embedding_names,
-			)
-			self.audio_emb = None
+		self.proms_emb = AudioEmbedding(
+			[n_audio_tokens] * self.n_resp_levels, d_model,
+			sums=audio_embedding_sums == "prom" or audio_embedding_sums == True,
+		)
+		self.resps_emb = AudioEmbedding(
+			l_embedding_tokens, d_model,
+			sums=audio_embedding_sums == "resp" or audio_embedding_sums == True,
+			l_embedding_names=l_embedding_names,
+		)
 
-		if self.version >= 3:
-			self.langs_emb = Embedding(n_langs, d_model) if n_langs > 0 else None
-			self.tasks_emb = Embedding(n_tasks, d_model) if n_tasks > 0 else None
-
-			self.capabilities += ["lang"]
+		self.langs_emb = Embedding(n_langs, d_model) if n_langs > 0 else None
+		self.tasks_emb = Embedding(n_tasks, d_model) if n_tasks > 0 else None
+		self.capabilities += ["lang"]
 		# never actually got added... I kept forgetting to classify all my audio for speaker's tone
-		if self.version >= 4:
-			self.tones_emb = Embedding(n_tones, d_model) if n_tones > 0 else None
+		self.tones_emb = Embedding(n_tones, d_model) if n_tones > 0 else None
 
-		# mamba requires this if a model does both AR and NAR tasks
-		# this *might* help for AR and NAR tasks since we explicitly specify the current RVQ level for a sequence, rather than having it "encoded" in the embeddings
-		# this ***might*** let me also unify the proms_emb and resps_embedding
-		if self.version >= 5:
-			# "len" RVQ level-0 gets an additional token
-			if self.version < 7:
-				self.rvq_l_emb = Embedding(self.n_resp_levels, d_model)
-		
-			# experimental NAR-only mode
-			self.len_emb = Embedding(11, d_model)
-		if self.version >= 6:
-			self.raw_text_emb = Embedding(self.n_text_tokens, d_model)
+		self.rvq_l_emb = Embedding(self.n_resp_levels, d_model)
+		self.len_emb = Embedding(11, d_model)
+		self.raw_text_emb = Embedding(self.n_text_tokens, d_model)
 
 		if attention_backend == "auto":
 			attention_backend = "sdpa"
-			"""
-			if AVAILABLE_ATTENTIONS:
-				attention_backend = AVAILABLE_ATTENTIONS[0]
-			else:
-				attention_backend = "default"
-			"""
 
 		hf_attention = attention_backend
 		HF_ATTENTIONS = ["eager", "sdpa", "flash_attention_2"]
@@ -638,132 +456,21 @@ class Base(nn.Module):
 		elif attention_backend == "fused_attn":
 			self.l_padding = 128
 
-		if self.arch_type == "transformer":
-			self.sin_emb = SinusoidalEmbedding(d_model)
-			self.blocks = nn.ModuleList([TransformerBlock(
-				d_model=d_model,
-				n_heads=n_heads,
-				p_dropout=p_dropout if training else 0.0,
-				causal=self.causal,
-				norm_type="ln", # adaln
-				n_levels=self.n_resp_levels,
-			) for _ in range(n_layers) ])
-		elif self.arch_type in ["llama", "mistral", "mixtral"]:
-			if n_experts <= 1:
-				self.model = LlamaModel_Adapted(LlamaConfig(
-					vocab_size=n_vocab,
-					hidden_size=d_model,
-					max_position_embeddings=max_position_embeddings,
-					intermediate_size=d_model*d_ffn,
-					num_hidden_layers=n_layers,
-					num_attention_heads=n_heads,
-					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=n_heads,
-					#sliding_window=75 * 12, # 12 second context window
-					hidden_act="gelu",
-					is_encoder_decoder=False,
-					is_decoder=True,
-					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.gradient_checkpointing,
-				))
-
-				self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
-				"""
-				# replace with desired attention
-				if attention_backend not in HF_ATTENTIONS:
-					self.model = ml.replace_attention( self.model, klass=LlamaAttention_Adapted, target=LlamaAttention, mode=attention_backend )
-				"""
-			else:
-				self.model = MixtralModel_Adapted(MixtralConfig(
-					vocab_size =n_resp_tokens,
-					hidden_size=d_model,
-					max_position_embeddings=max_position_embeddings,
-					intermediate_size=d_model*4,
-					num_hidden_layers=n_layers,
-					num_attention_heads=n_heads,
-					attention_dropout=p_dropout if training else 0.0,
-					num_key_value_heads=n_heads,
-					#sliding_window=75 * 12, # 12 second context window
-					output_router_logits=training,
-					hidden_act="gelu",
-					is_encoder_decoder=False,
-					is_decoder=True,
-					num_local_experts=n_experts,
-					num_experts_per_tok=min(2, n_experts),
-					attn_implementation=hf_attention,
-					#gradient_checkpointing=self.gradient_checkpointing,
-				))
-				self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
-				"""
-				if attention_backend not in HF_ATTENTIONS:
-					self.model = ml.replace_attention( self.model, klass=MixtralAttention_Adapted, target=MixtralAttention, mode=attention_backend )
-				"""
-
-			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
-					use_reentrant=False
-				))
-		elif self.arch_type == "retnet":
-			kwargs = dict(
-				vocab_size=n_vocab,
-				decoder_embed_dim=d_model,
-				decoder_value_embed_dim =d_model * 2,
-				decoder_retention_heads=n_heads,
-				decoder_ffn_embed_dim=d_model * 4,
-				decoder_layers=n_layers,
-				dropout=p_dropout if training else 0.0,
-				checkpoint_activations=self.gradient_checkpointing,
-				activation_fn="gelu",
-				use_layernorm=self.version < 3,
-				use_biases=self.version < 3,
-				use_glu=self.version >= 3,
-
-				chunkwise_recurrent=self.causal and self.causal_size > 0,
-				recurrent_chunkwise_size=self.causal_size if self.causal else 0,
-				no_output_layer=True,
-				decoder_normalize_before=True,
-
-				rotary_embedding_base=10000
-			)
-
-			if n_experts > 1:
-				kwargs.update(dict(
-					use_xmoe=True,
-					moe_freq=1,
-					moe_expert_count=n_experts,
-					moe_gating_use_fp32=False,
-				))
-
-			self.model = RetNetDecoder(RetNetConfig(**kwargs))
-		elif self.arch_type in ["mamba2"]:
-			self.model = Mamba2Model(Mamba2Config(
-				vocab_size=n_vocab,
-				hidden_size=d_model,
-				expand=2,
-				num_hidden_layers=n_layers*2,
-				residual_in_fp32=True,
-			))
-			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
-					use_reentrant=False
-				))
-		elif self.arch_type in ["mamba"]:
-			self.model = MambaModel(MambaConfig(
-				vocab_size=n_vocab,
-				hidden_size=d_model,
-				expand=2,
-				num_hidden_layers=n_layers*2,
-				residual_in_fp32=True,
-			))
-			if self.gradient_checkpointing and not self.model.gradient_checkpointing:
-				self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=dict(
-					use_reentrant=False
-				))
-		else:
-			raise RuntimeError(f'Unknown arch specified: {self.arch_type}')
-
-		if hasattr( self.model, "embeddings" ):
-			del self.model.embeddings
+		self.model = LlamaModel(LlamaConfig(
+			vocab_size=n_vocab,
+			hidden_size=d_model,
+			max_position_embeddings=max_position_embeddings,
+			intermediate_size=d_model*d_ffn,
+			num_hidden_layers=n_layers,
+			num_attention_heads=n_heads,
+			attention_dropout=p_dropout if training else 0.0,
+			num_key_value_heads=n_heads,
+			hidden_act="gelu",
+			is_encoder_decoder=False,
+			is_decoder=True,
+			attn_implementation=hf_attention,
+			#gradient_checkpointing=self.gradient_checkpointing,
+		))
 
 		if not split_classifiers:
 			self.classifier = nn.Linear(d_model, n_vocab, bias=classifiers_bias)
@@ -794,77 +501,38 @@ class Base(nn.Module):
 		hidden_states = None
 
 		# HF transformer derived model
-		if self.arch_type in ["llama", "mistral", "mixtral"]:
-			kwargs = dict(
-				inputs_embeds=x,
-				attention_mask=m,
-				past_key_values=state,
-				position_ids=position_ids,
-				use_cache=False, # not self.training,
-				output_attentions=output_attentions,
-				output_hidden_states=output_hidden_states,
-				return_dict=True,
-				is_causal=is_causal,
-			)
+		kwargs = dict(
+			inputs_embeds=x,
+			attention_mask=m,
+			past_key_values=state,
+			position_ids=position_ids,
+			use_cache=False, # not self.training,
+			output_attentions=output_attentions,
+			output_hidden_states=output_hidden_states,
+			return_dict=True,
+			is_causal=is_causal,
+		)
 
-			if self.n_experts > 1 and self.training:
-				kwargs["output_router_logits"] = True
+		if self.n_experts > 1 and self.training:
+			kwargs["output_router_logits"] = True
 
-			output = self.model(**kwargs)
-			x = output["last_hidden_state"]
-			
-			# to-do: figure out why KV caching doesn't work
-			#if not self.training:
-			if state is not None:
-				state = output["past_key_values"]
+		output = self.model(**kwargs)
+		x = output["last_hidden_state"]
+		
+		# to-do: figure out why KV caching doesn't work
+		#if not self.training:
+		if state is not None:
+			state = output["past_key_values"]
 
-			if output_attentions:
-				attentions = output["attentions"]
-			
-			if output_hidden_states:
-				hidden_states = output["hidden_states"]
-			
-			if self.n_experts > 1 and self.training:
-				router_logits = output["router_logits"]
-				aux_loss = self.model.config.router_aux_loss_coef * load_balancing_loss_func( router_logits, self.model.config.num_local_experts, self.model.config.num_experts_per_tok, m )
-
-		elif self.arch_type == "transformer":
-			# ensures we specify a quant_level for the transformer implementation's AdaLN
-			l = torch.zeros((batch_size,), dtype=torch.int32) if quant_levels is None else quant_levels
-			l = l.to(device)
-			# inject position information
-			x = self.sin_emb.add_pe(x)
-			# pass our inputs through the transformer
-			for block in self.blocks:
-				x = block(x, m, l)
-		elif self.arch_type == "retnet":
-			# pass our inputs through the RetNet
-			x, _ = self.model(x, incremental_state=state, token_embeddings=x, features_only=True)
-			if _ is not None and "l_aux" in _ and self.n_experts > 1:
-				aux_loss = torch.sum(torch.stack([ t for t in _["l_aux"] if t is not None])) * 0.001
-		elif self.arch_type in ["mamba","mamba2"]:
-			kwargs = dict(
-				inputs_embeds=x,
-				attention_mask=m,
-				#cache_params=state,
-				use_cache=False, # not self.training,
-				#position_ids=position_ids,
-				#output_attentions=output_attentions,
-				output_hidden_states=output_hidden_states,
-				return_dict=True,
-			)
-
-			output = self.model(**kwargs)
-			x = output["last_hidden_state"]
-			
-			if state is not None:
-				state = output["cache_params"]
-
-			if output_attentions:
-				attentions = output["attentions"]
-			
-			if output_hidden_states:
-				hidden_states = output["hidden_states"]
+		if output_attentions:
+			attentions = output["attentions"]
+		
+		if output_hidden_states:
+			hidden_states = output["hidden_states"]
+		
+		if self.n_experts > 1 and self.training:
+			router_logits = output["router_logits"]
+			aux_loss = self.model.config.router_aux_loss_coef * load_balancing_loss_func( router_logits, self.model.config.num_local_experts, self.model.config.num_experts_per_tok, m )
 
 		# process it into a format that I like
 		if output_hidden_states:
@@ -1210,20 +878,6 @@ class Base(nn.Module):
 								quant_level
 							)
 						else:
-							"""
-							offset = 0
-							if "nar" not in self.capabilities:
-								offset = 0
-							elif quant_level > 0:
-								offset = 1
-
-							embedding = self.resps_emb(
-								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
-								offset = offset,
-								quant_level = 0 if quant_level == 0 else quant_level - 1, # input is one below the target quant level
-							)
-							"""
-
 							embedding = self.resps_emb(
 								input if input.dim() == 1 or quant_level == 0 else input[:, :quant_level],
 								#offset = 0 if classifier_level.startswith("AR:") else 1,
@@ -1477,6 +1131,9 @@ class Base(nn.Module):
 					if name == "resp":
 						name = f'{name}[{quant_level}]'
 					"""
+
+					nll, metrics = _calc_loss( logits[batch_index][start:end], token.long(), causal )
+
 					if nll is not None:
 						if f'{name}.nll' not in loss:
 							loss[f'{name}.nll'] = []
@@ -1690,7 +1347,7 @@ class Base(nn.Module):
 			logits = [ logit[-self.causal_size:] for logit in logits ]
 
 		# (NAR) disable stop token
-		if quant_levels is not None and "ar" in self.capabilities:
+		if quant_levels is not None:
 			logits = [ ban_tokens(logit, tokens=[self.stop_token]) for logit, l in zip( logits, map(len, prev_list) ) ]
 		# (AR-len) disable extraneous tokens
 		"""

@@ -51,6 +51,7 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
 * [ ] train a serviceable model for 44KHz audio (instead of 24KHz)
 * [ ] well-integrated training through the Web UI (without the kludge from ai-voice-cloning)
 * [x] clean up the README, and document, document, document.
+  * [ ] cleanup the documentation again, as most of it feels like schizorambling......
 * [x] extend to multiple languages ([VALL-E X](https://arxiv.org/abs/2303.03926)).
   - reference model is trained against English, Japanese, French, German, Korean, and Chinese (Mandarin?).
   - [x] improve multi-lingual support
@@ -78,6 +79,7 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
     * these features are predicated on the model being trained for it
 * [ ] smarter/clever inferencing, such as:
   * [x] inference *all* codebooks in one pass, rather than each level being its own discrete pass.
+      * `cfg.model.version >= 7` models will rely on this
       * these features are predicated on the model being trained for it
   * [x] "rolling" context, where the last generated sentence is the prefix for the next sentence.
   * [ ] for the AR, stop inferencing sequences in the batch that has already hit its stop token
@@ -86,6 +88,9 @@ The reference model (`ar+nar-llama-8`/`ar+nar-len-llama-8`):
   * [x] SIM-O requires passing the raw waveform through a speaker-similarity model
 * [x] valle.cpp through llama.cpp + encodec.cpp
   * extend to decode with vocos.cpp, instead, for a quality improvement
+* [ ] 44KHz audio, through either DAC or `nvidia/audio-codec-44khz`
+  * the former has quality issues in the higher RVQ levels, but may be resolved with the experimental implementation
+  * the latter needs testing, as it being an FSQ codec requires extra care
 
 ## "Postmortem"
 

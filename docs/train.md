@@ -39,6 +39,11 @@ With the other "hyperparameters" such as ratios for RVQ levels, tasks, etc:
   * it might be needed to later prefer a more balanced distribution (such as `[0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7]`) to get rid of any confidence issues in RVQ levels 1+, but I felt naively doing this harms the RVQ 0.
 * `prompt_similar_p` can be pretty much whatever > `0.5`. I've stuck with either `0.75` or `0.825` to prioritize adhering closely-er to the prompt, but still have random prompts used to help the model interanlly "model" what a speaker should sound like. In theory.
 
+The optimizer used *mostly* doesn't matter, as AdamW seems to get moving faster, while Prodigyopt keeps things stable in the long run.
+* `APOLLO` needs more testing, but seemed adequate in cursory tests
+* `Muon` requires much more testing, but absolutely cannot be used for predicting tokens in place (NAR demasking), and requires `cfg.model.experimental.predict_causally=True`
+  * I honestly don't think it gives good enough results from curosry tests for this application
+
 ## Try Me
 
 To quickly test if a configuration works, you can run `python -m vall_e.models.ar_nar --yaml="./data/config.yaml"`; a small trainer will overfit a provided utterance.
