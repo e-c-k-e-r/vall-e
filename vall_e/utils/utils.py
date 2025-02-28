@@ -32,6 +32,12 @@ from datetime import datetime
 
 T = TypeVar("T")
 
+def mean( l ):
+	if not l:
+		return 0
+	_l = [ _ for _ in l if _ is not None ]
+	return sum(_l) / len(_l)
+
 # removes prefix from key in a dict
 # useful for mapping args like ar_temperature => temperature
 def convert_kwargs( kwargs, prefix ):

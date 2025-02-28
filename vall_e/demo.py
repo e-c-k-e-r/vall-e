@@ -31,13 +31,10 @@ from .config import cfg
 from .data import create_train_dataloader, create_val_dataloader, get_random_prompt
 from .emb.qnt import decode_to_file
 from .metrics import wer, sim_o
-from .utils import setup_logging
+from .utils import setup_logging, mean
 from .utils.io import json_read, json_write
 
 from tqdm import tqdm, trange
-
-def mean( l ):
-	return sum(l) / len(l)
 
 def encode(path):
 	if path is None or not path.exists():
