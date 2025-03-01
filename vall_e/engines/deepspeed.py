@@ -47,7 +47,7 @@ class Engine(DeepSpeedEngine):
 		}
 
 		# kwargs['stats'] = None will return None when popped
-		maybe_stats = kwargs.get('stats', stats)
+		maybe_stats = kwargs.pop('stats', stats)
 		if maybe_stats is not None:
 			stats = maybe_stats
 

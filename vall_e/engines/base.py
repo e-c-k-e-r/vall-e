@@ -446,7 +446,7 @@ class Engines(dict[str, Engine]):
 				engine.tokens_processed = 0
 
 		# update the LR because for some god awful reason it gets overwritten when loading from a checkpoint but only when it's not using a scheduler
-		if cfg.hyperparameters.scheduler_type == "":
+		if cfg.hyperparameters.scheduler == "":
 			self.set_lr(cfg.hyperparameters.learning_rate)
 
 		self._update()
