@@ -1019,7 +1019,7 @@ class Base_V2(nn.Module):
 							name = f'{name}[{level}]'
 
 						sequence = token if token.dim() <= 1 else token[:, level]
-						nll, metrics = _calc_loss( logits[batch_index][level][start:end], sequence.long(), causal )
+						nll, metrics = _calc_loss( logits[batch_index][level][start:end], sequence.long(), causal, level )
 					else:
 						sequence = token.t()
 						nll, metrics = _calc_loss( logits[batch_index][:, start:end], sequence.long(), causal )
@@ -1058,7 +1058,7 @@ class Base_V2(nn.Module):
 
 					sequence = [ x if x.dim() <= 1 else x[:, level] for x in target ] 
 					sequence = _join( sequence, torch.tensor(self.ignore_index, device=sequence[-1].device) )
-					nll, metrics = _calc_loss( logits[batch_index][level], sequence.long(), causal )
+					nll, metrics = _calc_loss( logits[batch_index][level], sequence.long(), causal, level )
 				else:
 					nlls = []
 					accs = []

@@ -172,6 +172,9 @@ def unload_model():
 # to-do: clean up this mess
 @torch.inference_mode()
 def decode(codes: Tensor, device="cuda", dtype=None, metadata=None, window_duration=None):
+	# dirty hack during model training
+	codes = torch.where( codes >= (max_token = 1000 if cfg.audio_backend == "nemo" else 1024 ), 0, codes )
+
 	# upcast so it won't whine
 	if codes.dtype in [torch.int8, torch.int16, torch.uint8]:
 		codes = codes.to(torch.int32)
