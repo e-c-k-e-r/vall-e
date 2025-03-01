@@ -450,9 +450,9 @@ class Base_V2(nn.Module):
 				is_encoder_decoder=False,
 				is_decoder=True,
 				#gradient_checkpointing=self.gradient_checkpointing,
+				output_norm = not per_level_normalization, # moves the LN out to the decoder
+				attn_mode = attention_backend,
 			)
-			self.model_config.output_norm = not per_level_normalization # moves the LN out to the decoder
-			self.model_config.attn_mode = attention_backend
 			self.model = LlamaModel(self.model_config)
 
 			if self.gradient_checkpointing and not self.model.gradient_checkpointing:

@@ -7,7 +7,7 @@ from typing import Literal, overload, Optional, Tuple, Union, List
 from torch import Tensor, nn
 
 # lazy
-from transformers.models.llama.configuration_llama import LlamaConfig as Config
+from transformers.models.llama.configuration_llama import LlamaConfig as BaseConfig
 from transformers.models.llama.modeling_llama import LlamaPreTrainedModel
 
 from transformers.modeling_utils import PreTrainedModel
@@ -18,6 +18,18 @@ from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.activations import ACT2FN
 
 from .attention import *
+
+class Config(BaseConfig):
+	def __init__(
+		self,
+		attn_mode = "sdpa",
+		output_norm = True,
+		*args, **kwargs
+	):
+		super().__init__(*args, **kwargs)
+
+		self.attn_mode = attn_mode
+		self.output_norm = output_norm
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 	batch, num_key_value_heads, slen, head_dim = hidden_states.shape

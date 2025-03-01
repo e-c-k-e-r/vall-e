@@ -751,10 +751,7 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 	metadata = {}
 
 	if cfg.dataset.use_metadata and metadata_path.exists():
-		try:
-			metadata = json_read( metadata_path )
-		except Exception as e:
-			return {}
+		metadata = json_read( metadata_path )
 
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_artifact_extension(), validate )
@@ -820,7 +817,7 @@ def _get_paths_of_extensions( path, extensions=_get_artifact_extension(), valida
 	if isinstance(path, str):
 		path = Path(path)
 	
-	return [ p for p in list(path.iterdir()) ] if path.exists() and path.is_dir() else []
+	return [ str(p) for p in list(path.iterdir()) ] if path.exists() and path.is_dir() else []
 
 def _load_artifact(path, return_metadata=False, return_artifact=False, validate=True) -> Tensor:
 	artifact = np.load(_get_artifact_path(path), allow_pickle=True)[()]

@@ -586,7 +586,7 @@ class Engines(dict[str, Engine]):
 			loss_scale = 1
 			if hasattr(engine.optimizer, "loss_scale") and engine.optimizer.loss_scale is not None:
 				loss_scale = engine.optimizer.loss_scale
-			elif engine.loss_scaler is not None:
+			elif hasattr(engine, "loss_scaler") and engine.loss_scaler is not None:
 				loss_scale = engine.loss_scaler.get_scale()
 
 			if grad_norm is not None:
