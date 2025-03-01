@@ -1,9 +1,11 @@
 from contextlib import contextmanager
 
 import math
+import logging
+
 import torch
 import torch.nn.functional as F
-import logging
+from torch.optim.lr_scheduler import _LRScheduler
 
 from ..config import cfg
 
@@ -16,6 +18,43 @@ Adam = torch.optim.Adam
 AdamW = torch.optim.AdamW
 SGD = torch.optim.SGD
 Adagrad = torch.optim.Adagrad
+
+OneCycleLR = torch.optim.lr_scheduler.OneCycleLR
+CosineAnnealingLR = torch.optim.lr_scheduler.CosineAnnealingLR
+LambdaLR = torch.optim.lr_scheduler.LambdaLR
+
+# implements Noam scheduling
+# it's cringe
+class NoamLR(_LRScheduler):
+	def __init__(self, optimizer, warmup_steps, d_model=1024, last_epoch=-1):
+		self.base_factor = d_model ** (-0.5)
+		self.warmup_steps = warmup_steps
+	
+		super().__init__(optimizer, last_epoch)
+
+	def get_lr(self):
+		step = max(1, self.last_epoch)
+		scale = self.base_factor * min(step ** (-0.5), step * self.warmup_steps ** (-1.5))
+
+		return [base_lr * scale for base_lr in self.base_lrs]
+
+# gradually warms up LR then holds or decays
+class WarmupLR(_LRScheduler):
+	def __init__(self, optimizer, warmup_steps, decay_factor=0.0, last_epoch=-1):
+		self.warmup_steps = warmup_steps
+		self.decay_factor = decay_factor
+
+		super().__init__(optimizer, last_epoch)
+
+	def get_lr(self):
+		step = self.last_epoch + 1
+		scale = 1
+		if step < self.warmup_steps:
+			scale = float(step) / float(max(1, self.warmup_steps))
+		elif self.decay_factor != 0:
+			scale = (1.0 - self.decay_factor) ** (step - self.warmup_steps)
+
+		return [base_lr * scale for base_lr in self.base_lrs]
 
 # https://github.com/kyegomez/BitNet
 if cfg.optimizations.bitnet:

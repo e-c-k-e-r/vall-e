@@ -64,21 +64,20 @@ class Engine():
 			kwargs.pop("hyper_config")
 
 		self.module = kwargs['model'].to(cfg.device).to(torch.float32 if cfg.trainer.amp else cfg.trainer.dtype)
-		self.optimizer = kwargs['optimizer'] if 'optimizer' in kwargs else None
-		self.lr_scheduler = kwargs['lr_scheduler'] if 'lr_scheduler' in kwargs else None
-
-		stats = kwargs.pop("stats", {})
-		if stats is None:
-			stats = {}
-		self.global_steps = stats.pop("global_step", 0)
-		self.micro_steps = stats.pop("micro_step", 0)
-		self.global_samples = stats.pop("global_samples", 0)
-		self.tokens_processed = stats.pop("tokens_processed", 0)
-
-		self._frozen_params = set()
-
+		self.optimizer = kwargs.get('optimizer', None)
+		self.lr_scheduler = kwargs.get('lr_scheduler', None)
 		self.loss_scaler = torch.cuda.amp.GradScaler() if cfg.trainer.scale_loss else None
 
+		stats = kwargs.get("stats", {})
+		if stats is None:
+			stats = {}
+		
+		self.global_steps = stats.get("global_step", 0)
+		self.micro_steps = stats.get("micro_step", 0)
+		self.global_samples = stats.get("global_samples", 0)
+		self.tokens_processed = stats.get("tokens_processed", 0)
+
+		self._frozen_params = set()
 		self.current_batch_size = 0
 		self._global_grad_norm = None
 
@@ -256,9 +255,11 @@ class Engine():
 					self.loss_scaler.update()
 				else:
 					self.optimizer.step()
+				
+				if self.lr_scheduler is not None:
+					self.lr_scheduler.step()
+				
 				self.optimizer.zero_grad()
-
-				# self._get_grad_norm()
 	
 	# doesn't actually work
 	def _get_grad_norm(self):

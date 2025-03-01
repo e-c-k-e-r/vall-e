@@ -504,7 +504,6 @@ class Hyperparameters:
 	warmup_steps: int = 0 # number of steps to warm up the optimizer before performing updates, I think, this is just passed to deepspeed
 
 	scheduler: str = "" # scheduler to use, currently don't ever use one so this doesn't really matter
-	scheduler_type: str = "" # deprecated
 	scheduler_params: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 
 	autotune: bool = False # to do deepspeed's autotuning
@@ -1062,10 +1061,6 @@ class Config(BaseConfig):
 				model.training = False
 			if model.training:
 				model.teacher = False
-
-		if self.hyperparameters.scheduler_type and not self.hyperparameters.scheduler:
-			self.hyperparameters.scheduler = self.hyperparameters.scheduler_type
-			self.hyperparameters.scheduler_type = ""
 
 		# do not combine the two
 		if self.hyperparameters.scheduler == "schedulefree" and self.optimizations.dadaptation:

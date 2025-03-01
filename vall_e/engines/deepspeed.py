@@ -34,10 +34,7 @@ if not distributed_initialized() and cfg.trainer.backend == "deepspeed":
 
 class Engine(DeepSpeedEngine):
 	def __init__(self, *args, **kwargs):
-		self.hyper_config = None
-		if 'hyper_config' in kwargs:
-			self.hyper_config = kwargs['hyper_config']
-			kwargs.pop("hyper_config")
+		self.hyper_config = kwargs.pop('hyper_config', None)
 
 		kwargs['config'] = cfg.trainer.deepspeed.ds_cfg
 		kwargs['config_class'] = DeepSpeedConfig(kwargs['config'])
@@ -50,18 +47,18 @@ class Engine(DeepSpeedEngine):
 		}
 
 		# kwargs['stats'] = None will return None when popped
-		maybe_stats = kwargs.pop('stats', stats)
+		maybe_stats = kwargs.get('stats', stats)
 		if maybe_stats is not None:
 			stats = maybe_stats
 
 		super().__init__(None, *args, **kwargs)
-		self._frozen_params = set()
 
 		self.global_steps = stats["global_step"]
 		self.micro_steps = stats["micro_step"]
 		self.global_samples = stats["global_samples"]
 		self.tokens_processed = stats["tokens_processed"]
 
+		self._frozen_params = set()
 		self.current_batch_size = 0
 
 	def freeze(self, freeze_all=True):

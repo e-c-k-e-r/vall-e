@@ -952,6 +952,31 @@ def example_usage():
 		if scheduler is not None:
 			_logger.info(f"Scheduler: {scheduler}")
 			optimizer = scheduler( model.parameters(), lr = learning_rate )
+	elif cfg.hyperparameters.scheduler:
+		scheduler_kwargs = {}
+		if scheduler == "onecycle":
+			scheduler_class = ml.OneCycleLR
+			scheduler_kwargs["max_lr"] = params['lr']
+		elif scheduler == "cosineannealing":
+			scheduler_class = ml.CosineAnnealingLR
+		elif scheduler == "noam":
+			scheduler_class = ml.NoamLR
+			scheduler_kwargs["d_model"] = model.d_model
+			scheduler_kwargs["warmup_steps"] = cfg.hyperparameters.warmup_steps
+		elif scheduler == "warmup":
+			scheduler_class = ml.WarmupLR
+			scheduler_kwargs["warmup_steps"] = cfg.hyperparameters.warmup_steps
+		else:
+			raise ValueError(f'Scheduler specified not implemented: {cfg.hyperparameters.scheduler}')
+
+		scheduler_kwargs.update(cfg.hyperparameters.scheduler_params)
+		scheduler = scheduler_class(
+			optimizer,
+			**scheduler_kwargs,
+		)
+
+	if isinstance(scheduler, str):
+		scheduler = None
 
 	if cfg.optimizations.replace and cfg.optimizations.linear:
 		model = ml.replace_linear( model )
@@ -968,7 +993,7 @@ def example_usage():
 	}
 	"""
 	
-	engine = Engine(model=model, optimizer=optimizer)
+	engine = Engine(model=model, optimizer=optimizer, lr_scheduler=scheduler)
 	engines = Engines({"ar+nar": engine})
 	engines.setup()
 	
@@ -1047,7 +1072,7 @@ def example_usage():
 		for i in t:
 			texts, proms, resps, tasks = sample_data()
 
-			stats = {"step": i}
+			stats = {"step": i, "lr": engine.get_lr()[0]}
 			with torch.autograd.set_detect_anomaly(cfg.trainer.detect_grad_anomaly):
 				stats |= engine.traverse(phns_list=texts, proms_list=proms, resps_list=resps, task_list=tasks, training=True)
 			stats |= {"grad_norm": engine.get_global_grad_norm()}

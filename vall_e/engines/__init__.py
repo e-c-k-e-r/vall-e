@@ -175,10 +175,32 @@ def load_engines(training=True, **model_kwargs):
 					lr = params['lr'],
 					warmup_steps = cfg.hyperparameters.warmup_steps
 				)
+			elif cfg.hyperparameters.scheduler:
+				scheduler_kwargs = {}
+				if cfg.hyperparameters.scheduler.lower() == "onecycle":
+					scheduler_class = ml.OneCycleLR
+					scheduler_kwargs["max_lr"] = params['lr']
+				elif cfg.hyperparameters.scheduler.lower() == "cosineannealing":
+					scheduler_class = ml.CosineAnnealingLR
+				elif cfg.hyperparameters.scheduler.lower() == "noam":
+					scheduler_class = ml.NoamLR
+					scheduler_kwargs["d_model"] = model.d_model
+					scheduler_kwargs["warmup_steps"] = cfg.hyperparameters.warmup_steps
+				elif cfg.hyperparameters.scheduler.lower() == "warmup":
+					scheduler_class = ml.WarmupLR
+					scheduler_kwargs["warmup_steps"] = cfg.hyperparameters.warmup_steps
+				else:
+					raise ValueError(f'Scheduler specified not implemented: {cfg.hyperparameters.scheduler}')
 
-		"""
-		# set up our LR scheduler here
-		"""
+				scheduler_kwargs.update(cfg.hyperparameters.scheduler_params)
+				lr_scheduler = scheduler_class(
+					optimizer,
+					**scheduler_kwargs,
+				)
+			"""
+			# set up our LR scheduler here
+			"""
+
 
 		if inferencing:
 			optimizer = None
