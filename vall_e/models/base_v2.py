@@ -449,9 +449,9 @@ class Base_V2(nn.Module):
 				hidden_act="gelu",
 				is_encoder_decoder=False,
 				is_decoder=True,
-				output_norm=not per_level_normalization, # moves the LN out to the decoder
 				#gradient_checkpointing=self.gradient_checkpointing,
 			)
+			self.model_config.output_norm = not per_level_normalization # moves the LN out to the decoder
 			self.model_config.attn_mode = attention_backend
 			self.model = LlamaModel(self.model_config)
 
