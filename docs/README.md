@@ -105,6 +105,14 @@ However, while this solution boasts being lightweight, there are some caveats fo
 * speaker similarity is rather mediocre for unseen speakers, the model isn't as robust for mapping speakers to its latent space as it is for seen speakers.
 * despite being rather robust, some vocal stutters makes it way in.
 
+### "Postmortem" ""Postmortem""
+
+The model even working at all might entirely be a fluke.
+
+A naive embedding implementation (`./vall_e/models/base.py`) manages to "just work" for EnCodec, while other audio codecs (DAC, `nvidia/audio-codec-44khz`) fail to converge meaningfully.
+
+A more codec-aware embedding/classifier implementation (`./vall_e/models/base_v2.py`) fails to properly learn all levels for any codec, even with all the additional cruft to help things. Even scaling the model up just has the gradients seem a little more chaotic with about the same training progression.
+
 ## Notices and Citations
 
 Unless otherwise credited/noted in this repo or within the designated Python file, this repository is [licensed](/LICENSE) under AGPLv3.
