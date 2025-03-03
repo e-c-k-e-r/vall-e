@@ -751,7 +751,10 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 	metadata = {}
 
 	if cfg.dataset.use_metadata and metadata_path.exists():
-		metadata = json_read( metadata_path )
+		try:
+			metadata = json_read( metadata_path )
+		except Exception as e:
+			return {}
 
 	if len(metadata) == 0:
 		return _fn( data_dir, type if cfg.dataset.use_hdf5 else _get_artifact_extension(), validate )

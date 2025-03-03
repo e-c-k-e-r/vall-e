@@ -112,6 +112,7 @@ The model even working at all might entirely be a fluke.
 A naive embedding implementation (`./vall_e/models/base.py`) manages to "just work" for EnCodec, while other audio codecs (DAC, `nvidia/audio-codec-44khz`) fail to converge meaningfully.
 
 A more codec-aware embedding/classifier implementation (`./vall_e/models/base_v2.py`) fails to properly learn all levels for any codec, even with all the additional cruft to help things. Even scaling the model up just has the gradients seem a little more chaotic with about the same training progression.
+* However it seems just giving it time will have things eventually sort itself out, maybe.
 
 ## Notices and Citations
 

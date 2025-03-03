@@ -37,6 +37,10 @@ def mean( l ):
 		return 0
 	return sum(l) / len(l)
 
+def logit_normalization( logit, factor=1, eps=1.0e-7 ):
+	norms = torch.norm(logit, p=2, dim=-1, keepdim=True) + eps
+	return torch.div(logit, norms) / factor
+
 # removes prefix from key in a dict
 # useful for mapping args like ar_temperature => temperature
 def convert_kwargs( kwargs, prefix ):

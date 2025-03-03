@@ -18,7 +18,7 @@ from torch.utils.checkpoint import checkpoint
 from torchmetrics.classification import BinaryAccuracy, MulticlassAccuracy, MulticlassPrecision
 
 from .arch import *
-from ..utils import ml, clamp, mean
+from ..utils import ml, clamp, mean, logit_normalization
 from ..samplers import *
 
 # yuck, kind of needed
@@ -107,7 +107,8 @@ class ResidualAudioEncoder(nn.Module):
 		# ( seq_len, dim ) => ( seq_len, levels, dim )
 		x = torch.stack([ emb(xi[:, i]) for i, emb in enumerate(self.embs) ], dim=1)
 		x = x + self.pos_embedding
-		x, _ = self.cross_attn( x, x, x )
+		attn, _ = self.cross_attn( x, x, x )
+		x = x + attn
 		x = self.proj( x.mean(dim=1) )
 
 		return x
@@ -135,7 +136,8 @@ class ResidualAudioDecoder(nn.Module):
 	def _forward( self, x: Tensor ) -> Tensor:
 		seq_len, resp_levels = x.shape[0], len(self.projs)
 		x = torch.stack([proj(x) for proj in self.projs], dim=1)
-		x, _ = self.cross_attn( x, x, x )
+		attn, _ = self.cross_attn( x, x, x )
+		x = x + attn
 		x = self.head( x )
 		x = x.view( resp_levels, seq_len, -1 )
 		return x
@@ -865,10 +867,6 @@ class Base_V2(nn.Module):
 
 			return input
 
-		def _logit_normalization( logit ):
-			norms = torch.norm(logit, p=2, dim=-1, keepdim=True) + 1e-7
-			return torch.div(logit, norms) / self.logit_normalization
-
 		def _calc_loss( logit, sequence, causal = True, level = None ):
 			# filter tokens that exceed the vocab size
 			sequence = torch.where( sequence >= logit.shape[-1], self.ignore_index, sequence )
@@ -888,10 +886,10 @@ class Base_V2(nn.Module):
 			if self.logit_normalization:
 				# it would probably be better to unsqueeze then squeeze to avoid code duplication but who cares
 				if not batched:
-					logit = _logit_normalization( logit )
+					logit = logit_normalization( logit, self.logit_normalization )
 				else:
 					for i, l in enumerate( logit ):
-						logit[i] = _logit_normalization( l )
+						logit[i] = logit_normalization( l, self.logit_normalization )
 
 			# flatten batch
 			if batched:
