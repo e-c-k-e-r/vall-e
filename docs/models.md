@@ -1,7 +1,7 @@
 # Model Notes
 
 > [!NOTE]
-> Most of this information is outdated due to slightly wrong assumptions
+> A rework of this page is required, as most of this information is outdated due to slightly wrong assumptions, and confusing terminology and conflations
 
 The underlying model is a robust transformer, where:
 * inputs are passed through an embedding

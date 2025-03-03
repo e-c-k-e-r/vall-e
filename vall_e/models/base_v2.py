@@ -325,6 +325,12 @@ class Base_V2(nn.Module):
 			# assume midrage contains important details
 			center = n_resp_levels // 2
 			audio_level_weights = [1.0 - abs(i - center) / n_resp_levels for i in range(n_resp_levels)]
+			# to-do: proper cirriculum
+			# prioritizes midrange, maybe good for epoch 0?
+			# [0.5, 0.625, 0.75, 0.875, 0.875, 0.75, 0.625, 0.5]
+			
+			# deprioritizes midrange, good for epoch 1?
+			# [0.875, 0.75, 0.625, 0.5, 0.5, 0.625, 0.75, 0.875]
 
 		self.training = training
 		self.teaching = False

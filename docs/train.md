@@ -1,43 +1,72 @@
 # Training Notes
 
-Training is very dependent on:
-* the quality of your dataset.
-  * clean utterances and accurate transcriptions go a long way.
-  * a diverse dataset in prosody and speakers help a ton.
-* how much data you have.
-  * training from scratch requires upwards of 15K hours at minimum.
-  * training new languages from the base model simply requires maybe ~2K hours each.
-* the bandwidth you quantized your audio to, as this affects the how many tokens are processed per step.
-* the underlying model architecture used.
-  * some models behave better than others for a unified approach, others do not.
+Training is (obviously) *very* dependent on:
+* the size of your dataset
+  * for getting a model to speak, prioritizing lots of samples over lots of speakers is preferred
+  * for getting the model to adhere to the prompt, prioritizing lots of speakers over samples is preferred
+  * smaller utterances are better to train the model faster in aggregate
+    * but longer utterances are still required to have the model able to output longer utterances
+      * *technically* can be augmented by concatting utterances together, as long as there's some coherency between them.
+* the quality of your dataset
+  * an automatically transcribed / segmented is *fine* enough with some slight start/end offsets
+    * if you *can* avoid relying on segmenting, go for it
+  * while I feel having 100% accurate annotations goes a long way, the absolute size of a good dataset can have it robust enough from small errors
+  * exotic datasets with annotated non-speech utterances (gasps, sighs, etc.) would *really* go the long way, but the current annotation stack does not account for it
+  * annotating each utterance with it's top-k similar utterances through `vall_e.emb.similar` help with prompt adherence in any stage of training
+* how patient you are
+  * the original (`base.py`) implementation serendipitously has a cirriculum that allows for speech to realize relatively fast with EnCodec (from what I remember)
+    * this is from how selecting which RVQ level to train naturally "scales the loss" for higher, less important levels, and the model doesn't train each level in parallel at all
+  * the new (`base_v2.py`) implementation requires lots of patience, as it seems to require 8M samples for speech to properly realize 
+    * this is from how several "stabilizers" are required to train it as every sequence is inherently trained in parallel, but not the loss calculation.
+* the audio codec, to an extent
 
-A training paradigm that works for me is:
-* setting the dataloader to sort by duration, then training until coherent speech emerges, so the model can start with the bulk of learning on small, insignificant utterances, then working its way up to larger ones.
-  * ~80% of the epoch from duratio ranges 1.0seconds to 0.8seconds is good enough, as most of the training from this part is just to train the model to speak at all.
-* additional training using a shuffled dataloader, as the model will be fixated towards whatever duration range it was trained under.
-  * the remaining bulk is to try and have the model better adhere to the prompt as well.
-* additional training for sampling per speaker, to better help diversify how well it can perform for a range of speakers, rather than just speaking itself
-  * I don't think this is crucial, but speaker-based sampling seems to be a placebo if anything.
+Training is (not-so-obviously) not dependent on:
+* the model size, to an extent
+  * for the old (`base.py`) implementation, further experimentation is required, but from what I remember the smaller models don't have speech emerge as fast, while the larger size models don't seem to benefit much.
+  * for the new (`base_v2.py`) implementation, it seems that model size doesn't affect quality at all, at least in the primary phase of getting it to speak.
+    * the "training progression" (how the loss/accuracy/grad norm curves look) are about the exact same between the "normal" (1024 dim, 12 layers, 12 heads) size and the "half" (512 dim, 12 layers, 8 heads) size, and presumably for the "double" size (1538 dim, 24 layers, 24 heads).
+    * it *probably* is necessary to have a larger model to better adhere to the reference clip, but experimentation is not at the point yet to verify this.
+* the audio codec, to an extent
+  * for the old (`base.py`) implementation, EnCodec only seems to work well for it, as DAC might requires some hacks or patience for the higher RVQ levels to train, while `nvidia/audio-codec-44khz` requires an exotic training cirriculum, assumedly.
+  * for the new (`base_v2.py`), given how EnCodec and `nvidia/audio-codec-44khz` both seem to behave the same, I assume this implementation is almost agnostic to any codec (as long as RVQ/FSQ-ness is signaled proper).
+  * each codec will have different cirriculum requirements and the ease for coherent speech to emerge from each levels will vary
+
+A training paradigm that seems to work for me is to:
+* set the dataloader to sort by duration, and get one to two epochs in.
+  * this phase of training focuses on getting speech to emerge in the first place
+  * this lets the model train on lots of smaller utterances, faster, before scaling it up to longer utterances
+* when the output is adequate enough, switch to setting the dataloader to shuffle batches of durations instead
+  * this phase of training focuses targeting the model's prompt adherence capabilities
+  * this also benefits from the model training on a variety of durations to avoid it overfitting for the last duration set trained against
+* optionally, you can sample based on speaker instead to balance out the speakers trained against, but this isn't all that necessary
+
 
 Training under `float16` (+AMP) should be fairly simple, but it's practically required to use the `deepspeed` backend.
-* This is because `deepspeed` will automatically wrap the optimizer to handle training under `float16`, while the `local` backend does not do this. Training will *not* converge.
-* Training under `bfloat16` does not have to worry about this.
+* This is because `deepspeed` will automatically wrap the optimizer to handle training under `float16` and does some extra magic for stability. The `local` backend does do loss scaling, but not the extra steps.
+* Training under `bfloat16` does not have to worry about this, but I feel `bfloat16` training sessions don't have a specific training trait that `float16` does have, personally.
 
-When training from scratch, maybe 30% of the time spent training is getting coherent speech, with a loose following of the prompt. The remaining bulk of the work is getting the model to closely-er resemble the input prompt.
-* an accuracy of at least 50% seems to be where coherent speech emerges.
-* an accuracy of at least 68% is about where it's a good enough model that adheres to the prompt, but requires quite a lot of work to get there.
+Previously, I had a good eye on when speech emerges from the loss and accuracy with the old (`base.py`) implementation, but the new (`base_v2.py`) implementation doesn't have that quality. Set the evaluation/validation frequency at a decent enough rate to not interrupt training so often, but not seldom enough that it's useless, and keep an ear on the samples. If it sounds one specific set of the audio is wrong, while other portions of the speech sounds fine, you might need to adjust which levels gets selected for training and/or the per-level loss scaling factors.
 
 As far as typical hyperparameters go:
-* as I'm using a batched dataloader, I don't have a uniform size amongst the batches, but I believe my average batch size is between 96 to 128 samples per batch (24-32 samples per GPU for 4 GPUs) per step.
-* the gradient accumulation factor gets adjusted where I feel is best, where I keep it to 1 (no gradient accumulation) for the first milestone of getting coherent speech, and then ramping it up to 2 then 4 as training further goes on, to try and smooth out the gradients.
-  * more effective samples per update step is technically better, but getting coherent speech as fast as possible is preferable, so prioritizing many updates until then is the goal.
-  * afterwards, reducing the gradient norm is the goal, increasing the amount of samples per update step.
-* as I primarily use prodigyopt, I don't need to worry about the learning rate. Sure, you can lower the `d_coef` (which the trainer will adjust in lieu of the learning rate itself), but I don't feel like it effects things moreso than just adjusting the gradient accumulation factor.
-
-With the other "hyperparameters" such as ratios for RVQ levels, tasks, etc:
-* `rvq_levels_p` to `auto` is fine. The primary level is RVQ level 0, so having it majorly represented is fine.
-  * it might be needed to later prefer a more balanced distribution (such as `[0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7]`) to get rid of any confidence issues in RVQ levels 1+, but I felt naively doing this harms the RVQ 0.
-* `prompt_similar_p` can be pretty much whatever > `0.5`. I've stuck with either `0.75` or `0.825` to prioritize adhering closely-er to the prompt, but still have random prompts used to help the model interanlly "model" what a speaker should sound like. In theory.
+* the very initial phase of training targets:
+  * 64 samples per batch (4 GPUs * 8 samples per batch)
+  * an AdamW optimizer set to an `1.0e-4` learning rate
+  * warm up scheduler for 2000 steps, then hold to the peak learning rate
+  * these settings can definitely be tweaked, but this focuses on prioritizing amount of weight updates over raw throughput and "accurately modeling the probability density"
+* later phases of training can switch to:
+  * 128 samples per batch (4 GPUS * 16 samples per batch)
+  * `prodigyopt` optimizer with the default `lr`/`d_coef` of 1.0
+  * these settings focuses on stabilizing gradient flow, or some such.
+* during the "target prompt adherence" phase, either a larger batch size or a `>1` gradient accumulation factor can be considered to further stabilize gradient flow.
+* I feel given the nature of the model, there isn't much gain with minmaxing hyperparameter settings, as training progresses similarly regardless
+* the pseudo-hyperparameter that matters more is the audio codec level cirriculum, where:
+  * RVQ based codecs like EnCodec prioritizes the highest level the most, but as training progresses, the lower levels can be trained against more and more
+  * for FSQ based codecs, shuffling between targetting the midrange and then the lows/highs helps
+  * in the future, a (semi)-automatic cirriculum selector should be added to help with training, but the right cirriculum needs to be explored for
+  * `prompt_similar_p` definitely needs further exploration, as it would govern model behavior, such as:
+    * low values would guide the model to reconstruct a generalized representation of the speaker from the given prompt
+    * high values would better align the reconstructed representation of a speaker to the prompt, but that representation won't generalize to other outputs
+    * in other words, as a zero-shot model, low values would have it generalize better but weaken prompt adherence with having any clip be used, while high values would benefit from prompt adherence, but requires the user to have a better representation of what they want provided through the reference clip
 
 The optimizer used *mostly* doesn't matter, as AdamW seems to get moving faster, while Prodigyopt keeps things stable in the long run.
 * `APOLLO` needs more testing, but seemed adequate in cursory tests
