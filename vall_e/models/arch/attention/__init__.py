@@ -1,3 +1,8 @@
+"""
+Contains the zoo of alternative attention mechanisms
+To-do: align it better with nu-modelling_llama.py's attention selection mechanism
+"""
+
 import logging
 import torch
 
@@ -36,6 +41,63 @@ try:
 except Exception as e:
 	_logger.warning(f"Error while querying for `fused_attn` support: {str(e)}")
 
+# https://github.com/lucidrains/native-sparse-attention-pytorch/
+try:
+	from native_sparse_attention_pytorch.native_sparse_attention import SparseAttention
+	from native_sparse_attention_pytorch.compress_networks import GroupedMLP
+
+	# patiently waiting for specifying attention masks both for padded sequences and non-causal ones
+	# it might not be necessary since ar+nar-len-llama-8 was able to be "repaired" from the NAR being trained with a causal mask initially
+	class NativeSparseAttention(SparseAttention):
+		def __init__(self, config, layer_idx):
+			dim = config.hidden_size
+			heads = config.num_attention_heads
+			dim_head = getattr(config, "head_dim", dim // heads)
+			kv_heads = config.num_key_value_heads
+
+			# to-do: figure out these settings best for VALL-E
+			compress_block_size = 16
+			sliding_window_size = 64 # really don't want sliding attention due to the nature of the sequence
+			selection_block_size = 16
+			num_selected_blocks = 4
+			num_compressed_mem_kv = 1
+			
+			compress_mlp = GroupedMLP(
+				dim_head = dim_head,
+				compress_block_size = compress_block_size,
+				heads = heads,
+			)
+			
+			self.config = config
+			self.layer_idx = layer_idx
+
+			super().__init__(
+				dim = dim,
+				dim_head = dim_head,
+				heads = heads,
+				kv_heads = kv_heads,
+
+				sliding_window_size = sliding_window_size,
+				compress_block_size = compress_block_size,
+				selection_block_size = selection_block_size,
+				num_selected_blocks = num_selected_blocks,
+				num_compressed_mem_kv = num_compressed_mem_kv,
+
+				norm = False, # pre/post norm is done here already
+				use_diff_topk = True,
+				use_triton_kernel = False,
+				interpolated_importance_score = False,
+				query_heads_share_selected_kv = True, # if set to True, importance score is averaged across query heads to select top-n buckets of kv per kv head - but can be set to False for each query head within a group to look at different sets of kv buckets. will be more memory and compute of course
+				compress_mlp = compress_mlp,
+				compress_mlp_expand_factor = 4.,
+				strategy_combine_mlp = None
+			)
+
+	AVAILABLE_ATTENTIONS.append("sparse")
+except Exception as e:
+	raise e
+	_logger.warning(f"Error while querying for `SparseAttention` support: {str(e)}")
+	pass
 
 is_rocm = any("AMD" in torch.cuda.get_device_properties(i).name for i in range(torch.cuda.device_count()))
 is_ampere_or_newer_gpu = any(torch.cuda.get_device_properties(i).major >= 8 for i in range(torch.cuda.device_count()))

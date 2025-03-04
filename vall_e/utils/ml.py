@@ -18,6 +18,7 @@ Adam = torch.optim.Adam
 AdamW = torch.optim.AdamW
 SGD = torch.optim.SGD
 Adagrad = torch.optim.Adagrad
+Adafactor = torch.optim.Adafactor
 
 OneCycleLR = torch.optim.lr_scheduler.OneCycleLR
 CosineAnnealingLR = torch.optim.lr_scheduler.CosineAnnealingLR

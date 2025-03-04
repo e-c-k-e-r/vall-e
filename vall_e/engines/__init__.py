@@ -143,6 +143,8 @@ def load_engines(training=True, **model_kwargs):
 					"update_proj_gap": 1,
 					"proj_type": "std",
 				})
+			elif cfg.hyperparameters.optimizer.lower() == "adafactor":
+				optimizer_class = ml.Adafactor
 			elif cfg.hyperparameters.optimizer.lower() == "adagrad":
 				optimizer_class = ml.Adagrad
 			elif cfg.hyperparameters.optimizer.lower() == "muon":

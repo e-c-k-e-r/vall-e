@@ -451,9 +451,13 @@ class DecoderLayer(nn.Module):
 	def __init__(self, config, layer_idx):
 		super().__init__()
 	
+		self.config = config
 		self.hidden_size = config.hidden_size
 
-		self.self_attn = Attention(config=config, layer_idx=layer_idx)
+		if config.attn_mode == "sparse":
+			self.self_attn = NativeSparseAttention(config=config, layer_idx=layer_idx)
+		else:
+			self.self_attn = Attention(config=config, layer_idx=layer_idx)
 
 		self.mlp = MLP(config)
 		self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -481,18 +485,23 @@ class DecoderLayer(nn.Module):
 			is_causal = is_causal[0]
 
 		# Self Attention
-		hidden_states, self_attn_weights, present_key_value = self.self_attn(
-			hidden_states=hidden_states,
-			attention_mask=attention_mask,
-			is_causal=is_causal,
-			position_ids=position_ids,
-			past_key_value=past_key_value,
-			output_attentions=output_attentions,
-			use_cache=use_cache,
-			cache_position=cache_position,
-			position_embeddings=position_embeddings,
-			**kwargs,
-		)
+		if self.config.attn_mode == "sparse":
+			hidden_states = self.self_attn(
+				hidden_states
+			)
+		else:
+			hidden_states, self_attn_weights, present_key_value = self.self_attn(
+				hidden_states=hidden_states,
+				attention_mask=attention_mask,
+				is_causal=is_causal,
+				position_ids=position_ids,
+				past_key_value=past_key_value,
+				output_attentions=output_attentions,
+				use_cache=use_cache,
+				cache_position=cache_position,
+				position_embeddings=position_embeddings,
+				**kwargs,
+			)
 		hidden_states = residual + hidden_states
 
 		# Fully Connected

@@ -876,7 +876,7 @@ def example_usage():
 		available_tasks = ["tts-nar"]
 
 	model = AR_NAR_V2(**kwargs).to(cfg.device)
-	steps = 250 // batch_size
+	steps = 500 // batch_size
 
 	optimizer = cfg.hyperparameters.optimizer.lower() if cfg.yaml_path is not None else "prodigy"
 	scheduler = cfg.hyperparameters.scheduler.lower() if cfg.yaml_path is not None else ""
