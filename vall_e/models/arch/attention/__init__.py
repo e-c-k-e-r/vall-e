@@ -95,7 +95,6 @@ try:
 
 	AVAILABLE_ATTENTIONS.append("sparse")
 except Exception as e:
-	raise e
 	_logger.warning(f"Error while querying for `SparseAttention` support: {str(e)}")
 	pass
 
