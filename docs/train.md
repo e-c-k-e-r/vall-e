@@ -72,6 +72,7 @@ The optimizer used *mostly* doesn't matter, as AdamW seems to get moving faster,
 * `APOLLO` needs more testing, but seemed adequate in cursory tests
 * `Muon` requires much more testing, but absolutely cannot be used for predicting tokens in place (NAR demasking), and requires `cfg.model.experimental.predict_causally=True`
   * I honestly don't think it gives good enough results from curosry tests for this application
+* `Adagrad` surprisingly seems to "fix" (for now) my problems with the loss / accuracy bouncing.
 
 ## Try Me
 

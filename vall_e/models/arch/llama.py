@@ -24,12 +24,14 @@ class Config(BaseConfig):
 		self,
 		attn_mode = "sdpa",
 		output_norm = True,
+		causal = True,
 		*args, **kwargs
 	):
 		super().__init__(*args, **kwargs)
 
 		self.attn_mode = attn_mode
 		self.output_norm = output_norm
+		self.causal = causal
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 	batch, num_key_value_heads, slen, head_dim = hidden_states.shape

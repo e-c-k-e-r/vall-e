@@ -458,8 +458,11 @@ class Base_V2(nn.Module):
 				is_encoder_decoder=False,
 				is_decoder=True,
 				#gradient_checkpointing=self.gradient_checkpointing,
+
+				# extra parameters
 				output_norm = not per_level_normalization, # moves the LN out to the decoder
 				attn_mode = attention_backend,
+				causal = self.causal,
 			)
 			self.model = LlamaModel(self.model_config)
 

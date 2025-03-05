@@ -54,6 +54,8 @@ try:
 			heads = config.num_attention_heads
 			dim_head = getattr(config, "head_dim", dim // heads)
 			kv_heads = config.num_key_value_heads
+			causal = False # config.causal # to-do: handle split-causal attention like I do for normal attention
+			# for now though leave it as false since the mask transformer variant of VALL-E is much more preferable to the causal variant
 
 			# to-do: figure out these settings best for VALL-E
 			compress_block_size = 16
@@ -82,6 +84,8 @@ try:
 				selection_block_size = selection_block_size,
 				num_selected_blocks = num_selected_blocks,
 				num_compressed_mem_kv = num_compressed_mem_kv,
+
+				causal = causal,
 
 				norm = False, # pre/post norm is done here already
 				use_diff_topk = True,
