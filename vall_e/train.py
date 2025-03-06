@@ -246,9 +246,19 @@ def run_eval(engines, eval_name, dl, args=None):
 
 	stats = {k: sum(v) / len(v) for k, v in stats.items() if v}
 	engines_stats = {
-		f'{name}.{eval_name}': stats,
+		eval_name: stats,
 		"it": engines.global_step,
 	}
+
+	try:
+		for engine in engines:	
+			if engine.wandb is not None:
+				engine.wandb.log({
+					f'{eval_name}.loss.mstft': stats['loss'],
+				}, step=engine.global_step)
+	except Exception as e:
+		print(e)
+
 	#engines_stats['epoch'] = iteration * cfg.hyperparameters.gradient_accumulation_steps / len(dl)
 
 	_logger.info(f"Validation Metrics: {json.dumps(engines_stats)}.")
