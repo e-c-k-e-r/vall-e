@@ -251,7 +251,7 @@ def run_eval(engines, eval_name, dl, args=None):
 	}
 
 	try:
-		for engine in engines:	
+		for name, engine in engines.items():
 			if engine.wandb is not None:
 				engine.wandb.log({
 					f'{eval_name}.loss.mstft': stats['loss'],
