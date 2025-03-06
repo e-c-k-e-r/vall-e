@@ -282,6 +282,20 @@ class Engine():
 			elif 'lr' in param_group:
 				param_group['lr'] = lr
 
+	def get_loss_scale(self):
+		if not hasattr(self, "loss_scaler") or self.loss_scaler is None:
+			return 1
+
+		return self.loss_scaler.get_scale()
+
+	def set_loss_scale(self, value):
+		if not hasattr(self, "loss_scaler") or self.loss_scaler is None:
+			return
+		
+		"""
+		self.optimizer.loss_scale = value
+		"""
+
 	def get_global_grad_norm(self):
 		return self._global_grad_norm
 
@@ -457,6 +471,12 @@ class Engines(dict[str, Engine]):
 				continue
 			engine.set_lr(lr)
 
+	def set_loss_scale(self, lr):
+		for engine in self.values():
+			if not engine._training:
+				continue
+			engine.set_loss_scale(lr)
+
 	def _update(self):
 		for engine in self.values():
 			self._global_step = max(self._global_step, engine.global_step)
@@ -584,11 +604,11 @@ class Engines(dict[str, Engine]):
 			elapsed_time = time.time() - start_time
 			total_elapsed_time += elapsed_time
 			grad_norm = engine.get_global_grad_norm()
-			loss_scale = 1
-			if hasattr(engine.optimizer, "loss_scale") and engine.optimizer.loss_scale is not None:
-				loss_scale = engine.optimizer.loss_scale
-			elif hasattr(engine, "loss_scaler") and engine.loss_scaler is not None:
-				loss_scale = engine.loss_scaler.get_scale()
+			loss_scale = engine.get_loss_scale()
+
+			if cfg.trainer.deepspeed.max_loss_scale > 0 and loss_scale > cfg.trainer.deepspeed.max_loss_scale:
+				_logger.warning(f'Loss scale ({loss_scale}) exceeds max_loss_scale ({cfg.trainer.deepspeed.max_loss_scale}), capping...')
+				engine.set_loss_scale(cfg.trainer.deepspeed.max_loss_scale)
 
 			if grad_norm is not None:
 				grad_norm /= loss_scale

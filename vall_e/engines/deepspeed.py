@@ -119,6 +119,19 @@ class Engine(DeepSpeedEngine):
 		except Exception as e:
 			_logger.warning(str(e))
 
+	# cur_scale, because _get_loss_scale has a typo in the def and I can't be assed to inject a fix into it or push a PR
+	def get_loss_scale(self):
+		if not hasattr(self.optimizer, "cur_scale") or self.optimizer.cur_scale is None:
+			return 1.0
+
+		return self.optimizer.cur_scale
+
+	def set_loss_scale(self, value):
+		if not hasattr(self.optimizer, "cur_scale") or self.optimizer.cur_scale is None:
+			return
+		
+		self.optimizer.cur_scale = value
+
 	# we'll just have to live with the LoRA weights living within our main weights
 	# they're easy to extract anyways
 	def load_checkpoint(self, load_dir, **kwargs ):

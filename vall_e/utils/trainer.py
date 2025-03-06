@@ -233,7 +233,16 @@ def train(
 					engines.set_lr(rate)
 					_logger.info(f"Updating LR to: {rate}")
 				except Exception as e:
-					_logger.warning(f"Failed to set LR rate to: {rate}, {str(e)}")
+					_logger.warning(f"Failed to set LR to: {rate}, {str(e)}")
+
+			if "loss_scale" in command:
+				value = float(command.split(" ")[-1])
+				try:
+					engines.set_loss_scale(value)
+					_logger.info(f"Updating loss scale to: {value}")
+				except Exception as e:
+					raise e
+					_logger.warning(f"Failed to set loss scale to: {value}, {str(e)}")
 
 			if "export" in command:
 				train_dl.dataset.save_state_dict()

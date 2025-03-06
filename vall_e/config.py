@@ -569,6 +569,7 @@ class DeepSpeed:
 
 	loss_scale_window: int = 1000
 	min_loss_scale: float = 32768.0
+	max_loss_scale: float = 1048576.0
 	loss_scale = 0.0
 
 	config: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
