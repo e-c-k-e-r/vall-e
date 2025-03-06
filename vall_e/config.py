@@ -281,6 +281,12 @@ class ModelExperimentalSettings:
 	# 
 	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298
 	per_level_normalization: bool = True # moves the final norm out from the underlying model into the decoder
+	audio_level_loss_factors: list[float] | str = "auto" # the loss factors per-level when training
+	# "auto" will pick best for codec
+	# "decreasing" will do the RVQ strat (prioritize lower levels)
+	# "normal" will do the FSQ strat (prioritize midrange)
+	# "equal" or "none" will set do no leveling
+	# list of floats to manually set
 
 	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors
@@ -561,8 +567,9 @@ class DeepSpeed:
 	optimizer: bool = True # use DeepSpeed optimizer wrapper
 	amp: bool = False # use DeepSpeed's AMP (requires some other package installed apparently)
 
-	loss_scale_window: int = 100
-	min_loss_scale: float = 8192.0
+	loss_scale_window: int = 1000
+	min_loss_scale: float = 32768.0
+	loss_scale = 0.0
 
 	config: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 
@@ -614,9 +621,9 @@ class DeepSpeed:
 			"fp16": {
 				"enabled": cfg.trainer.weight_dtype.lower() == "float16",
 				"auto_cast": True, # ???
-				"loss_scale_window": self.loss_scale_window, # raise every 100 consecutive good steps
-				"min_loss_scale": self.min_loss_scale, # loss scale hitting 8K fries the model, 16K is fine but 32K is comfy
-				"loss_scale": 0.0 if cfg.trainer.scale_loss else 1.0,
+				"loss_scale_window": self.loss_scale_window,
+				"min_loss_scale": self.min_loss_scale,
+				"loss_scale": self.loss_scale if cfg.trainer.scale_loss else 1.0, # use defined loss scale (defaults to 0, which is dynamic) if requested, or 1.0 (none) if not
 			},
 			"bf16": {
 				"enabled": cfg.trainer.weight_dtype.lower() == "bfloat16",

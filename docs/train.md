@@ -25,6 +25,8 @@ Training is (not-so-obviously) not dependent on:
   * for the old (`base.py`) implementation, further experimentation is required, but from what I remember the smaller models don't have speech emerge as fast, while the larger size models don't seem to benefit much.
   * for the new (`base_v2.py`) implementation, it seems that model size doesn't affect quality at all, at least in the primary phase of getting it to speak.
     * the "training progression" (how the loss/accuracy/grad norm curves look) are about the exact same between the "normal" (1024 dim, 12 layers, 12 heads) size and the "half" (512 dim, 12 layers, 8 heads) size, and presumably for the "double" size (1538 dim, 24 layers, 24 heads).
+      * the "half" size might actually be too small for it to have enough "capacity" to attend to all the speakers I'm training against.
+      * per E2/F5's paper, a size of 1024 dim, 4x FFN, 16 heads, 24 layers might be preferable?
     * it *probably* is necessary to have a larger model to better adhere to the reference clip, but experimentation is not at the point yet to verify this.
 * the audio codec, to an extent
   * for the old (`base.py`) implementation, EnCodec only seems to work well for it, as DAC might requires some hacks or patience for the higher RVQ levels to train, while `nvidia/audio-codec-44khz` requires an exotic training cirriculum, assumedly.
@@ -39,7 +41,6 @@ A training paradigm that seems to work for me is to:
   * this phase of training focuses targeting the model's prompt adherence capabilities
   * this also benefits from the model training on a variety of durations to avoid it overfitting for the last duration set trained against
 * optionally, you can sample based on speaker instead to balance out the speakers trained against, but this isn't all that necessary
-
 
 Training under `float16` (+AMP) should be fairly simple, but it's practically required to use the `deepspeed` backend.
 * This is because `deepspeed` will automatically wrap the optimizer to handle training under `float16` and does some extra magic for stability. The `local` backend does do loss scaling, but not the extra steps.
@@ -72,7 +73,6 @@ The optimizer used *mostly* doesn't matter, as AdamW seems to get moving faster,
 * `APOLLO` needs more testing, but seemed adequate in cursory tests
 * `Muon` requires much more testing, but absolutely cannot be used for predicting tokens in place (NAR demasking), and requires `cfg.model.experimental.predict_causally=True`
   * I honestly don't think it gives good enough results from curosry tests for this application
-* `Adagrad` surprisingly seems to "fix" (for now) my problems with the loss / accuracy bouncing.
 
 ## Try Me
 
