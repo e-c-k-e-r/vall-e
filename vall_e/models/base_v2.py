@@ -331,6 +331,7 @@ class Base_V2(nn.Module):
 		audio_level_loss_factors = config.experimental.audio_level_loss_factors if config is not None else "auto"
 		logit_normalization = config.experimental.logit_normalization if config is not None else 0
 		per_level_normalization = config.experimental.per_level_normalization if config is not None else True
+		use_segmented_attention_mask = config.experimental.use_segmented_attention_mask if config is not None else True
 
 		n_vocab = 256
 		n_tasks = config.tasks if config is not None else 8
@@ -419,6 +420,7 @@ class Base_V2(nn.Module):
 		self.noncausal_masks = noncausal_masks
 		self.audio_level_loss_factors = audio_level_loss_factors
 		self.logit_normalization = logit_normalization
+		self.use_segmented_attention_mask = use_segmented_attention_mask
 		
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -1216,6 +1218,24 @@ class Base_V2(nn.Module):
 
 		# right now limit to new versions because I need to retrain the model for noncausal masks...
 		is_causal = [ l in causal_levels for l in classifier_levels ] if self.noncausal_masks else [ True for l in classifier_levels ]
+
+		# create special masks
+		# to-do, create it if mixed (although I expect this model to be purely non-causal)
+		if self.use_segmented_attention_mask and not any(is_causal):
+			aux_lens = torch.zeros((batch_size, 2), device=x.device, dtype=torch.int32)
+			# fill aux lens
+			for batch_index, batch_input in enumerate( inputs ):
+				for name, input in batch_input:
+					if name in ["phn", "text"]:
+						aux_lens[batch_index][0] = input.shape[0]
+					elif name == "lang":
+						aux_lens[batch_index][0] += 2
+					elif name == "prom":
+						aux_lens[batch_index][1] = input.shape[0]
+					elif name == "tone":
+						aux_lens[batch_index][1] += 2
+
+			mask = self.model._update_segmented_mask( mask, x, aux_lens )
 
 		output = self._forward(
 			inputs=x,
