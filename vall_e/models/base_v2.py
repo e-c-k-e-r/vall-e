@@ -1222,7 +1222,7 @@ class Base_V2(nn.Module):
 		# create special masks
 		# to-do, create it if mixed (although I expect this model to be purely non-causal)
 		if self.use_segmented_attention_mask and not any(is_causal):
-			aux_lens = torch.zeros((batch_size, 2), device=x.device, dtype=torch.int32)
+			aux_lens = torch.ones((batch_size, 2), device=x.device, dtype=torch.int32) * 2
 			# fill aux lens
 			for batch_index, batch_input in enumerate( inputs ):
 				for name, input in batch_input:

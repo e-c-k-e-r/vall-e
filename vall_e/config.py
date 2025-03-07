@@ -574,6 +574,7 @@ class DeepSpeed:
 	max_loss_scale: float = 1048576.0
 	loss_scale = 0.0
 
+	profile: bool = False
 	config: dict = field(default_factory=lambda: {}) # to pass through deepspeed config
 
 	@cached_property
@@ -591,6 +592,12 @@ class DeepSpeed:
 			scheduler_params['total_num_steps'] = cfg.trainer.iterations
 
 		autotune_params = cfg.hyperparameters.autotune_params
+
+		profiler_path = str( cfg.rel_path / "profiler.log" )
+		
+		ds_cfg_path = cfg.rel_path / "ds_config.json"
+		if not ds_cfg_path.exists():
+			ds_cfg_path = Path("./data/ds_config.json")
 
 		if "enabled" not in autotune_params:
 			autotune_params['enabled'] = True
@@ -710,6 +717,14 @@ class DeepSpeed:
 			} if self.zero_optimization_level > 0 else None,
 			"comms_logger": {
 				"enabled": False
+			},
+			"flops_profiler": {
+				"enabled": self.profile,
+				"profile_step": 1,
+				"module_depth": -1,
+				"top_modules": 1,
+				"detailed": True,
+				"output_file": profiler_path
 			}
 		}
 
@@ -717,10 +732,9 @@ class DeepSpeed:
 		for k in null_keys:
 			del ds_cfg[k]
 
-		if os.path.exists("./data/ds_config.json"):
-			ds_cfg.update(json.loads(open("./data/ds_config.json", "r", encoding="utf-8")).read())
-		else:
-			ds_cfg.update(self.config)
+		ds_cfg.update(self.config)
+		if ds_cfg_path.exists():
+			ds_cfg.update( json_read( ds_cfg_path ) )
 
 		return ds_cfg
 
