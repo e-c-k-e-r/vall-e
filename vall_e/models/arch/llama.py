@@ -591,10 +591,6 @@ class Model(LlamaPreTrainedModel):
 			prom_start, prom_end = text_end, text_end + aux_len[1]
 			output_start = prom_end
 
-			print( text_start, text_end )
-			print( prom_start, prom_end )
-			print( output_start )
-
 			expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = 1.0
 			expanded_mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = 1.0
 			expanded_mask[batch_index, 0, output_start:, :] = 1.0
