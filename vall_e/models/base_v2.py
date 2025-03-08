@@ -1300,7 +1300,10 @@ class Base_V2(nn.Module):
 			nll = 0
 			nlls = F.cross_entropy( loss_logit, loss_target, reduction='none', ignore_index=self.ignore_index )
 
+			# not my best code
 			it = 0
+			weights = 0
+			bsz = len( loss_targets )
 			for seq, level in zip( loss_targets, loss_levels ):
 				seq_len = seq.shape[0]
 				start = it
@@ -1308,8 +1311,13 @@ class Base_V2(nn.Module):
 				end = it
 
 				nll += nlls[start:end].mean() * level_loss_factors[level]
+				weights += level_loss_factors[level]
 
-			nll /= len( loss_targets )
+			# normalize by batch
+			nll /= bsz
+			# re-scale by summed weights
+			nll /= (weights / bsz)
+			# no this isn't redundant I swear, it'll propagate properly
 
 		if compute_acc:
 			n_vocab = loss_logit.shape[-1]

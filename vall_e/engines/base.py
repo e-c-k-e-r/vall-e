@@ -610,7 +610,8 @@ class Engines(dict[str, Engine]):
 				_logger.warning(f'Loss scale ({loss_scale}) exceeds max_loss_scale ({cfg.trainer.deepspeed.max_loss_scale}), capping...')
 				engine.set_loss_scale(cfg.trainer.deepspeed.max_loss_scale)
 
-			if grad_norm is not None:
+			# scale the grad norm to normal, if not using ZeRO because ZeRO does this already
+			if grad_norm is not None and not cfg.trainer.deepspeed.zero_optimization_level:
 				grad_norm /= loss_scale
 
 			model_stats = dict(
