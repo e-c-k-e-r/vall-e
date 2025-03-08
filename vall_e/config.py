@@ -289,6 +289,7 @@ class ModelExperimentalSettings:
 	# list of floats to manually set
 	use_segmented_attention_mask: bool = False # instead of naively using a full attention mask, use one where each segment cannot attend after itself
 	# this is a flag since I am cautious
+	use_streamlined_calc_loss: bool = False # explicitly request the faster pathway for loss calc, in case doing loss one by one instead of one batch is a bottleneck
 
 	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors

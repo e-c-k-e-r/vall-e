@@ -1672,7 +1672,7 @@ def _create_dataloader(dataset, training):
 		num_workers=cfg.dataset.workers,
 		collate_fn=collate_fn,
 		persistent_workers=cfg.dataset.workers > 1,
-		pin_memory=False,
+		pin_memory=True,
 		worker_init_fn=_seed_worker,
 		**kwargs,
 	)
