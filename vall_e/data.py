@@ -703,8 +703,13 @@ def _get_artifact_path(path):
 	return _replace_file_extension(path, _get_artifact_extension())
 
 _durations_map = {}
+_similar_map = {}
+
 def _get_duration_map( type="training" ):
 	return _durations_map[type] if type in _durations_map else {}
+
+def _get_similar_map( type="training" ):
+	return _similar_map[type] if type in _similar_map else {}
 
 def _load_paths(dataset, type="training", silent=not is_global_leader(), dataset_hash_key=None):
 	assert cfg.dataset.min_duration >= 1.0, "Minimum duration too low."
@@ -716,10 +721,14 @@ def _load_paths(dataset, type="training", silent=not is_global_leader(), dataset
 	
 	cached_durations_path = cached_dir / f"durations[{type}].json"
 	cached_paths_path = cached_dir / f"dataloader[{type}].json"
+	cached_similar_path = cached_dir / f"similar[{type}].json"
 	
 	# load the duration table first, since this is independent from the loaded paths
 	if cached_durations_path.exists():
 		_durations_map[type] = json_read( cached_durations_path )
+	# load the similar paths table as well, since this is also independent
+	if cached_similar_path.exists():
+		_similar_map[type] = json_read( cached_similar_path )
 	
 	# load the cached valid paths (if we're requesting cache use)
 	if cached_paths_path.exists() and cfg.dataset.cache:
@@ -734,6 +743,7 @@ def _load_paths(dataset, type="training", silent=not is_global_leader(), dataset
 		if not cached_dir.exists():
 			cached_dir.mkdir(parents=True, exist_ok=True)
 
+		json_write( _similar_map[type], cached_similar_path, truncate=True )
 		json_write( _durations_map[type], cached_durations_path, truncate=True )
 		json_write( paths, cached_paths_path, truncate=True )
 
@@ -769,9 +779,11 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 
 		return (data_dir / id).with_suffix(_get_artifact_extension()).exists()
 
+	metadata_keys = list(metadata.keys())
 	def _validate( id, entry ):
-		phones = entry['phones'] if "phones" in entry else 0
-		duration = entry['duration'] if "duration" in entry else 0
+		phones = entry.get('phones', 0)
+		duration = entry.get('duration', 0)
+		similar = entry.get('similar', None)
 
 		k = key(id, entry)
 
@@ -779,6 +791,11 @@ def _load_paths_from_metadata(group_name, type="training", validate=False):
 		if type not in _durations_map:
 			_durations_map[type] = {}
 		_durations_map[type][k] = duration
+
+		# add to similar bucket
+		if type not in _similar_map:
+			_similar_map[type] = {}
+		_similar_map[type][k] = [ metadata_keys[idx] for idx in similar ] if similar else None
 
 		if not validate:
 			return True
@@ -1188,43 +1205,28 @@ class Dataset(_Dataset):
 		if offset is None:
 			offset = cfg.dataset.prompt_similar_top_k_offset
 
+		root = Path( *path.parts[:-1] )
 		reference = path.name
+		similars = _similar_map[self.dataset_type].get(str(path), None)
 
-		if cfg.dataset.use_hdf5:
-			root = Path( *path.parts[:-1] )
-			path = Path( *path.parts[2:-1] )
-		else:
-			root = Path( *path.parts[:-1] )
-			path = Path(*path.parts[len(cfg.data_dir.parts):-1])
-
-		metadata = json_read( cfg.metadata_dir / path.with_suffix(".json"), default={} )
-
-		if reference not in metadata:
+		if not similars:
 			return None
 
-		reference_metadata = metadata[reference]
-
-		if "similar" not in reference_metadata:
-			return None
-
-		if len(reference_metadata["similar"]) >= offset:
+		if len(similars) >= offset:
 			offset = 0
 
 		# cringe stopgap
 		offset_end = offset + cfg.dataset.prompt_similar_top_k
-		if offset >= len( reference_metadata["similar"] ):
-			return None
-		if offset_end >= len( reference_metadata["similar"] ):
-			return None
 
-		metadata_keys = list(metadata.keys())
+		if offset >= len( similars ):
+			return None
+		if offset_end >= len( similars ):
+			return None
 
 		if cfg.dataset.prompt_similar_top_k > 1:
-			indices = reference_metadata["similar"][offset:offset_end]
-			index = random.choice( indices )
+			name = random.choice( similars[offset:offset_end] )
 		else:
-			index = reference_metadata["similar"][offset]
-		name = metadata_keys[index]
+			name = similars[offset]
 
 		path = root / name
 

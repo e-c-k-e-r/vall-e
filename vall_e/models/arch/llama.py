@@ -409,6 +409,16 @@ class Attention(nn.Module):
 					f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
 					f" {attn_output.size()}"
 				)
+		elif mode in [torch.nn.attention.SDPBackend.FLASH_ATTENTION]:
+			with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+				attn_output = torch.nn.functional.scaled_dot_product_attention(
+					query_states,
+					key_states,
+					value_states,
+					attn_mask=None, # ROCm FA2 through SDPA doesn't allow masks, bummer
+					dropout_p=dropout_rate,
+					is_causal=is_causal,
+				)
 		else:
 			# We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
 			# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
