@@ -835,6 +835,7 @@ def example_usage():
 	# cfg.model.experimental.masking_train_p = 0.5
 	cfg.hyperparameters.batch_size = 1
 	cfg.hyperparameters.gradient_accumulation_steps = 1
+	cfg.model.experimental.use_raw_text_p = 0
 
 	setup_logging()
 
