@@ -563,7 +563,7 @@ class Evaluation:
 
 @dataclass()
 class DeepSpeed:
-	zero_optimization_level: int = 0 # doesn't seem to work
+	zero_optimization_level: int = 0
 	use_compression_training: bool = False # cope
 	compression_bits: int = 8 # cope
 	inferencing: bool = False # for using DeepSpeed's inferencing wrapper instead
@@ -697,24 +697,16 @@ class DeepSpeed:
 			} if self.use_compression_training else None,
 			"zero_optimization": {
 				"stage": self.zero_optimization_level,
+				"allgather_partitions": True,
 				"contiguous_gradients": True,
 				"overlap_comm": True,
 				"reduce_scatter": True,
-				"reduce_bucket_size": 5e8,
-				"allgather_bucket_size": 5e8,
-				"sub_group_size": 5e8,
-				"round_robin_gradients": True,
-				"offload_optimizer": {
-					"device": "cpu",
-					"pin_memory": True
-				},
-				"offload_param": {
-					"device": "cpu",
-					"pin_memory": True
-				},
-				"zero_quantized_weights": self.use_compression_training,
-				"zero_hpz_partition_size": world_size(),
-				"zero_quantized_gradients": self.use_compression_training,
+				#"reduce_bucket_size": 5e8,
+				#"allgather_bucket_size": 5e8,
+				#"sub_group_size": 5e8,
+				#"zero_quantized_weights": self.use_compression_training,
+				#"zero_hpz_partition_size": world_size(),
+				#"zero_quantized_gradients": self.use_compression_training,
 			} if self.zero_optimization_level > 0 else None,
 			"comms_logger": {
 				"enabled": False

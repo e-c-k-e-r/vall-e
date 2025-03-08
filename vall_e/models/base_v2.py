@@ -1424,7 +1424,7 @@ class Base_V2(nn.Module):
 		hidden_states = output.hidden_states
 		
 		if self.use_streamlined_calc_loss:
-			logits = head( output.logits )
+			logits = self.audio_decoder( output.logits )
 		else:
 			logits = [ logit for logit in output.logits ]
 			grouped_logits = {}
