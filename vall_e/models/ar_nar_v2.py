@@ -79,6 +79,9 @@ class AR_NAR_V2(Base_V2):
 		if cfg.audio_backend == "nemo":
 			rvq_levels_p = [ i for i in range( quant_level_range[0], quant_level_range[1] + 1 ) ]
 
+		# cringe
+		self.audio_frames_per_second = cfg.dataset.frames_per_second
+
 		# CFG
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0

@@ -1113,7 +1113,7 @@ class Base_V2(nn.Module):
 			#aux_loss_target = torch.tensor( resp_durations, device=aux_loss_logit.device, dtype=torch.int64 )
 			#loss['len'] = F.cross_entropy( aux_loss_logit, aux_loss_target ) * len_factor
 			
-			aux_loss_target = torch.tensor( resp_durations, device=aux_loss_logit.device, dtype=aux_loss_logit.dtype )
+			aux_loss_target = torch.tensor( resp_durations, device=aux_loss_logit.device, dtype=aux_loss_logit.dtype ) / self.audio_frames_per_second
 			loss['len'] = F.mse_loss( aux_loss_logit, aux_loss_target ) * len_factor
 
 		return LossStats(loss, stats)
