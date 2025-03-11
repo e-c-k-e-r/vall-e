@@ -277,6 +277,7 @@ class ModelExperimentalSettings:
 	predict_causally: bool = False # predicts the next token even for the non-causal/NAR tasks, in theory this should also bolster the model, as
 	# * NAR-demask would semi-doubly train for AR
 	# * the model wouldn't also need to learn when to predict the token in place
+	len_parallel_training: bool = True # used for version >= 7, computes len loss alongside normal training through using the input sequence (surely nothing can go wrong)
 
 	# 
 	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298

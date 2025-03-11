@@ -386,6 +386,21 @@ class Attention(nn.Module):
 				tensor_layout="HND",
 				is_causal=is_causal
 			)
+		elif mode in ["flex"]:
+			def causal_mod(score, b, h, q_idx, kv_idx):
+				if x_mask is not None:
+					score = score + x_mask[b][0][q_idx][kv_idx]
+				return score
+
+			attn_output, attn_weights = flex_attention(
+				query_states,
+				key_states,
+				value_states,
+				score_mod=causal_mod,
+				enable_gqa=True,
+				scale=self.head_dim**-0.5,
+				return_lse=True,
+			)
 		elif mode in ["fused_attn"]:
 			attn_output = fused_attn_func(
 				query_states,
@@ -411,6 +426,8 @@ class Attention(nn.Module):
 				)
 		elif mode in [torch.nn.attention.SDPBackend.FLASH_ATTENTION]:
 			with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+				if isinstance( is_causal, list ):
+					is_causal = is_causal[0]
 				attn_output = torch.nn.functional.scaled_dot_product_attention(
 					query_states,
 					key_states,
@@ -419,10 +436,20 @@ class Attention(nn.Module):
 					dropout_p=dropout_rate,
 					is_causal=is_causal,
 				)
-		else:
+		elif mode == "sdpa": 
 			# We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
 			# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
 			# is_causal = True if x_mask is None and q_len > 1 else False
+			is_causal = True if x_mask is None and q_len > 1 else False
+			attn_output = torch.nn.functional.scaled_dot_product_attention(
+				query_states,
+				key_states,
+				value_states,
+				attn_mask=x_mask,
+				dropout_p=dropout_rate,
+				is_causal=is_causal,
+			)
+		else:
 			is_causal = True if x_mask is None and q_len > 1 else False
 			with torch.nn.attention.sdpa_kernel(self.attn_mode):
 				attn_output = torch.nn.functional.scaled_dot_product_attention(
@@ -599,11 +626,11 @@ class Model(LlamaPreTrainedModel):
 			text_start, text_end = 0, aux_len[0]
 			
 			prom_start, prom_end = text_end, text_end + aux_len[1]
-			output_start = prom_end
+			output_start, output_end = prom_end, prom_end + aux_len[2]
 
 			expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = 1.0
 			expanded_mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = 1.0
-			expanded_mask[batch_index, 0, output_start:, :] = 1.0
+			expanded_mask[batch_index, 0, output_start:output_end, text_start:output_end] = 1.0
 
 		# apply the original attention mask
 		expanded_mask = expanded_mask * attention_mask[:, None, None, :].expand(bsz, 1, seq_len, seq_len)

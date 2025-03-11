@@ -548,7 +548,12 @@ class TTS():
 					)
 				else:
 					raise Exception("!")
-
+				"""
+				len_list = [ 3 * cfg.dataset.frames_per_second ]
+				resps_list = model_nar( **input_kwargs, len_list=len_list, task_list=["tts"],
+					**(sampling_kwargs),
+				)
+				"""
 
 			# to-do: care about batching later
 			resps = resps_list[0]
