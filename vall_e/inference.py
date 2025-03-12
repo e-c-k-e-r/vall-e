@@ -523,8 +523,6 @@ class TTS():
 						# add an additional X seconds
 						len_list = [ int(l * duration_padding) for l in len_list ]
 
-					print( len_list )
-
 					kwargs = {}
 					if prefix_context is not None:
 						kwargs["prefix_context"] = prefix_context

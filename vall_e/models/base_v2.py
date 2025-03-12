@@ -1250,11 +1250,11 @@ class Base_V2(nn.Module):
 			tasks = self.get_input( inputs, name="task" )
 
 			# grab duration if no resp is provided or len task is requested
-			if tasks[0] == "len" or aux_lens[0][2] == 0:
+			if tasks[0] == "len":
 				# do duration prediction
 				logits_aux = self.len_decoder( output.logits )
-				# only keep the designated token (although this should technically be logit[-1, :1])
-				logits_aux = [ logit[..., aux_len[0] + aux_len[1], :1] for logit, aux_len in zip(logits_aux, aux_lens) ]
+				# it's more accurate this way
+				logits_aux = [ logit[..., -1, :1] for logit, aux_len in zip(logits_aux, aux_lens) ]
 
 				logits = logits_aux
 
