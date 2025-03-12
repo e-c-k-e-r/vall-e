@@ -628,9 +628,12 @@ class Model(LlamaPreTrainedModel):
 			prom_start, prom_end = text_end, text_end + aux_len[1]
 			output_start, output_end = prom_end, prom_end + aux_len[2]
 
-			expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = 1.0
-			expanded_mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = 1.0
-			expanded_mask[batch_index, 0, output_start:output_end, text_start:output_end] = 1.0
+			if aux_len[0]:
+				expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = 1.0
+			if aux_len[1]:
+				expanded_mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = 1.0
+			if aux_len[2]:
+				expanded_mask[batch_index, 0, output_start:output_end, text_start:output_end] = 1.0
 
 		# apply the original attention mask
 		expanded_mask = expanded_mask * attention_mask[:, None, None, :].expand(bsz, 1, seq_len, seq_len)

@@ -280,7 +280,6 @@ class ModelExperimentalSettings:
 	len_parallel_training: bool = True # used for version >= 7, computes len loss alongside normal training through using the input sequence (surely nothing can go wrong)
 
 	# 
-	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298
 	per_level_normalization: bool = True # moves the final norm out from the underlying model into the decoder
 	audio_level_loss_factors: list[float] | str = "auto" # the loss factors per-level when training
 	# "auto" will pick best for codec

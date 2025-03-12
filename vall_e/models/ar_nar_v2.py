@@ -410,7 +410,7 @@ class AR_NAR_V2(Base_V2):
 
 		return resps_list
 
-	def forward_ar_len(
+	def forward_len(
 		self,
 
 		task_list: list[Tensor],
@@ -437,83 +437,35 @@ class AR_NAR_V2(Base_V2):
 		elif proms_list:
 			device = proms_list[0].device
 			batch_size = len(proms_list)
-		elif resps_list:
-			device = resps_list[0].device
-			batch_size = len(resps_list)
 
 		if cfg.lora is not None:
 			enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
 
-		# convert AR specific args
-		sampling_kwargs = convert_kwargs( sampling_kwargs, "ar_" )
+		task_list = [ "len" for _ in range( batch_size ) ]
+		quant_levels = [ 0 for _ in range( batch_size ) ]
 
-		temperature = sampling_kwargs.get("temperature", 1.0)
-		cfg_strength = sampling_kwargs.get("cfg_strength", 0.0)
-		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.7)
-		min_temperature = sampling_kwargs.get("min_temperature", -1.0)
-		max_duration = sampling_kwargs.get("max_duration", 500)
-		beam_width = sampling_kwargs.get("beam_width", 0)
-		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
-		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
-		input_prompt_prefix = sampling_kwargs.get("input_prompt_prefix", False)
-		layer_skip = sampling_kwargs.get("layer_skip", False)
-		prefix_silence = sampling_kwargs.get("prefix_silence", 0.0)
-		mirostat_tau = sampling_kwargs.get("mirostat_tau", 0.0)
-		mirostat_eta = sampling_kwargs.get("mirostat_eta", 0.0)
+		inputs = self.inputs(
+			task_list=task_list,
+			
+			phns_list=phns_list,
+			proms_list=proms_list,
+			resps_list=None,
+			
+			lang_list=lang_list,
+			tone_list=tone_list,
+			len_list=None,
+			text_list=text_list,
+			
+			quant_levels=quant_levels,
+		)
 
-		# inference len
-		sequence_list = [ torch.tensor([0], device=device,dtype=torch.int16) for _ in range(batch_size) ]
-		stopped = torch.zeros(batch_size, device=device).bool()
-		
-		stop_token = 10
-		task_list = [ "len" for _ in range(batch_size) ]
-		quant_levels = [ 0 for _ in range( max( batch_size, beam_width ) ) ]
+		output = super().forward(
+			inputs=inputs,
+			quant_levels=quant_levels,
+		)
+		logits = output.logits
 
-		iterator = trange(10, desc="AR", disable=disable_tqdm)
-		for n in iterator:
-			len_list = sequence_list
-
-			inputs = self.inputs(
-				task_list=task_list,
-				
-				phns_list=phns_list,
-				proms_list=proms_list,
-				resps_list=resps_list,
-				
-				lang_list=lang_list,
-				tone_list=tone_list,
-				len_list=len_list,
-				text_list=text_list,
-				
-				quant_levels=quant_levels,
-			)
-
-			output = super().forward(
-				inputs=inputs,
-				quant_levels=quant_levels,
-			)
-			logits = output.logits
-
-			r = [ logit[-1:].argmax(dim=1) for logit in logits ]
-			# sanitize
-			for i, token in enumerate(r):
-				if token > stop_token:
-					r[i][0] = stop_token
-
-			# append tokens
-			for i, ri in enumerate(r):
-				if stop_token in ri:
-					stopped[i] = True
-				sequence_list[i] = torch.cat([sequence_list[i], ri.to(device)])
-
-			# stop token found
-			stopped |= r == stop_token
-			if stopped.all().item():
-				iterator.close()
-				break
-
-		# convert tokens into int
-		return [ int("".join([ str(token.item()) for token in r if token != stop_token ])) for r in sequence_list ]
+		return [ int(logit * cfg.dataset.frames_per_second) for logit in logits ]
 
 	def forward_ar(
 		self,
@@ -692,7 +644,6 @@ class AR_NAR_V2(Base_V2):
 		**sampling_kwargs,
 	):
 		# deduce batch_size
-		# deduce batch_size
 		if phns_list:
 			device = phns_list[0].device
 			batch_size = len(phns_list)
@@ -782,7 +733,7 @@ class AR_NAR_V2(Base_V2):
 			"""
 
 		if task_list is not None and task_list[0] == "len":
-			return self.forward_ar_len(
+			return self.forward_len(
 				task_list=task_list,
 				
 				phns_list=phns_list,

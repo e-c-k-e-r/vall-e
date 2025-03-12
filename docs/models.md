@@ -360,20 +360,16 @@ As the core of VALL-E makes use of a language model, various LLM architectures c
 
 The wide support for various backends is solely while I try and figure out which is the "best" for a core foundation model.
 
-### `models/arch/bitnet.py`
-
-This script modifies modules of BitNet to play nicely with my existing code.
-
 ### `models/arch/llama.py`
 
-This script modifies modules of LLaMA provided through `transformers`.
+This script contains its own copy of the LLaMA provided through `transformers` with its own modifications and independence from any updates that may break it.
 
 A bulk of it pertains to modifying `LlamaAttention` and detecting available attention mechanisms, allowing for using different attention mechanisms:
 * `torch.nn.functional.scaled_dot_product_attention`-based attention:
   * `math`: torch's SDPA's `math` kernel
   * `mem_efficient`: torch's SDPA's memory efficient (`xformers` adjacent) kernel
   * `cudnn`: torch's SDPA's `cudnn` kernel
-  * `flash`: torch's SDPA's flash attention kernel
+  * `flash_(sdpa)`: torch's SDPA's flash attention kernel
 * internal implementations of external attention backends:
   * `xformers`: [facebookresearch/xformers](https://github.com/facebookresearch/xformers/)'s memory efficient attention
   * `flash_attn`: uses the available `flash_attn` package (including `flash_attn==1.0.9` through a funny wrapper)
@@ -403,6 +399,8 @@ Modifications to `LlamaModel` is also provided to implement LayerSkip-aware trai
   #endif
 ```
 * install with `pip install -U git+https://github.com/ROCm/flash-attention@howiejay/navi_support --no-build-isolation`
+
+Later versions of PyTorch with ROCm natively supports full (both inferencing and training) Flash Attention through SDPA's interface. To use it, just set the model's attention to `flash_(sdpa)`
 
 ### `models/arch/mamba.py`
 

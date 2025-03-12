@@ -424,7 +424,7 @@ class Base_V2(nn.Module):
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 		self.noncausal_masks = noncausal_masks
 		self.audio_level_loss_factors = audio_level_loss_factors
-		self.logit_normalization = logit_normalization
+		self.logit_normalization = False # this actually kills the model's demasking capabilities
 		self.use_segmented_attention_mask = use_segmented_attention_mask
 		
 		self.sep = nn.Parameter(torch.randn(d_model))
@@ -685,14 +685,6 @@ class Base_V2(nn.Module):
 				# insert tone token if we're trained for it
 				if "tone" in self.capabilities and tone_list is not None and tone_list[i] is not None:
 					inputs[i].append( ( "tone", tone_list[i] ) )
-
-				# insert output length tokens (if it exists)
-				if len_list is not None and len_list[i] is not None:
-					inputs[i].append( ( "len", len_list[i] ) )
-				# "encode" length to tokens for 0-9 + stop
-				elif resps_list is not None and resps_list[i] is not None:
-					# yes this could be encoded better
-					inputs[i].append( ( "len", torch.tensor([ 0 ] + [ int(i) for i in str( resps_list[i].shape[0]) ] + [ 10 ], device=device, dtype=torch.int16) ) )
 				
 				inputs[i].append( ("classifier_level", "len") )
 			# Speech-to-Text prediction task
@@ -817,6 +809,10 @@ class Base_V2(nn.Module):
 					continue
 
 				batch.append(embedding)
+
+			# needed, cringe
+			if task_type == "len":
+				batch[-1] = torch.cat( [ batch[-1], self.sep[None] ] )
 
 			x_list.append( _join( batch, self.sep ) )
 
@@ -1006,8 +1002,10 @@ class Base_V2(nn.Module):
 						logit = logit[..., :-l, :] # shift the target so that token n...
 						token = sequence[..., l:] # ...predicts token n + 1
 
+					"""
 					if self.logit_normalization:
 						logit = logit_normalization( logit, self.logit_normalization )
+					"""
 
 					loss_targets.append( token.long() )
 					loss_logits.append( logit )
@@ -1026,8 +1024,10 @@ class Base_V2(nn.Module):
 							logit = logit[..., :-l, :] # shift the target so that token n...
 							token = sequence[..., l:] # ...predicts token n + 1
 
+						"""
 						if self.logit_normalization:
 							logit = logit_normalization( logit, self.logit_normalization )
+						"""
 
 						loss_targets.append( token[:, level].long() )
 						loss_logits.append( logit )
@@ -1108,7 +1108,7 @@ class Base_V2(nn.Module):
 
 		# check if len logits are provided
 		if logits_aux is not None:
-			len_factor = 0.01
+			len_factor = 0.001 # to-do: user adjustable (it's really small because mse_loss causes wildly bigly losses)
 			aux_loss_logit = torch.cat( logits_aux )
 			#aux_loss_target = torch.tensor( resp_durations, device=aux_loss_logit.device, dtype=torch.int64 )
 			#loss['len'] = F.cross_entropy( aux_loss_logit, aux_loss_target ) * len_factor
@@ -1164,7 +1164,7 @@ class Base_V2(nn.Module):
 		# needs to be done here as we still have our raw inputs
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		classifier_levels = self.get_input( inputs, name="classifier_level" )
-		causal_levels = [ "len", "phn", "text" ] + [ f"AR:{_}:{_}" for _ in range( self.n_resp_levels) ]
+		causal_levels = [ "phn", "text" ] + [ f"AR:{_}:{_}" for _ in range( self.n_resp_levels) ]
 
 		# right now limit to new versions because I need to retrain the model for noncausal masks...
 		is_causal = [ l in causal_levels for l in classifier_levels ] if self.noncausal_masks else [ True for l in classifier_levels ]
@@ -1246,11 +1246,14 @@ class Base_V2(nn.Module):
 			self.loss = None
 			self.stats = None
 
-			# grab duration if no resp is provided
-			if aux_lens[0][2] == 0:
+			# this can all technically be grabbed outside of this forward and manually invoke len_decoder on the last hidden states
+			tasks = self.get_input( inputs, name="task" )
+
+			# grab duration if no resp is provided or len task is requested
+			if tasks[0] == "len" or aux_lens[0][2] == 0:
 				# do duration prediction
 				logits_aux = self.len_decoder( output.logits )
-				# only keep the input
+				# only keep the designated token (although this should technically be logit[-1, :1])
 				logits_aux = [ logit[..., aux_len[0] + aux_len[1], :1] for logit, aux_len in zip(logits_aux, aux_lens) ]
 
 				logits = logits_aux
