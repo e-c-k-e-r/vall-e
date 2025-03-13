@@ -260,6 +260,11 @@ class FiniteAudioDecoder(nn.Module):
 
 		return x
 
+# the Residual variant doesn't seem to work well
+# the Finite variant unironically works well for residual codecs
+AudioEncoder = FiniteAudioEncoder
+AudioDecoder = FiniteAudioDecoder
+
 # handles simple output projections into logits for other tasks
 class AuxDecoder(nn.Module):
 	def __init__(
@@ -440,13 +445,14 @@ class Base_V2(nn.Module):
 		self.proms_emb = None
 		self.resps_emb = None
 
-		# to-do: deduce nemo-ness better-er
-		if n_audio_tokens == 1000:
+		"""
+		if n_audio_tokens == 1000 or:
 			AudioEncoder = FiniteAudioEncoder
 			AudioDecoder = FiniteAudioDecoder
 		else:
 			AudioEncoder = ResidualAudioEncoder
 			AudioDecoder = ResidualAudioDecoder
+		"""
 
 		if monolithic_audio_encoder:
 			self.audio_emb = AudioEncoder(

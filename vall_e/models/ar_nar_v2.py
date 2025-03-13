@@ -75,9 +75,6 @@ class AR_NAR_V2(Base_V2):
 		token_dropout_rvq_levels = self.config.experimental.token_dropout_rvq_levels
 		# RVQ levels to apply masking training on
 		masking_train_rvq_levels = [0,self.n_resp_levels] # self.config.experimental.masking_train_rvq_levels
-			
-		if cfg.audio_backend == "nemo":
-			rvq_levels_p = [ i for i in range( quant_level_range[0], quant_level_range[1] + 1 ) ]
 
 		# cringe
 		self.audio_frames_per_second = cfg.dataset.frames_per_second
