@@ -117,7 +117,7 @@ def _load_dac_model(device="cuda", dtype=None):
 	else:
 		raise Exception(f'unsupported sample rate: {cfg.sample_rate}')
 
-	model = __load_dac_model(**kwargs)
+	model = load_dac_model(**kwargs)
 	model = model.to(device)
 	model = model.eval()
 

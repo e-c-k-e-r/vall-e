@@ -2,7 +2,7 @@ import torch
 
 from dac import DACFile
 from audiotools import AudioSignal
-from dac.utils import load_model as __load_dac_model
+from dac.utils import load_model as load_dac_model
 
 from typing import Union
 from pathlib import Path

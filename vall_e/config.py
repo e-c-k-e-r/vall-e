@@ -318,7 +318,6 @@ class Model:
 	name: str = "ar+nar" # vanity name for the model
 	version: int = 5 # 1 = old with MultiEmbedding, 2 = new with AudioEmbedding, 3+ = additional embeddings
 	size: str | dict = "full" # preset string or explicitly defined dimensionality
-	resp_levels: int = 8 # RVQ-bin levels this model supports
 	tasks: int = 8 # ["tts", "ns", "sr", "tse", "cse", "nse"] and leaves two more for anything else I want (like "svc") (unused)
 	langs: int = 1 # defined languages (semi-unused)
 	tones: int = 1 # defined tones (unsued)
@@ -381,6 +380,16 @@ class Model:
 	@property
 	def tokens(self):
 		return self.audio_tokens
+
+	@property
+	def resp_levels(self):
+		if isinstance(self.size, dict) and "resp_levels" in self.size:
+			return self.size['resp_levels']
+		
+		if cfg.audio_backend == "dac":
+			return 9
+
+		return 8
 
 	@property
 	def audio_tokens(self):
@@ -1042,6 +1051,10 @@ class Config(BaseConfig):
 		for model in self.models:
 			if not isinstance( model, dict ):
 				continue
+
+			# was made an inherent property tied to audio_backend
+			if "resp_levels" in model:
+				del model["resp_levels"]
 
 			# to-do: prune unused keys in here too automatically
 			if "experimental" not in model or not model["experimental"]:
