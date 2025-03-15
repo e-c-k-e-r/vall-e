@@ -881,25 +881,26 @@ class Config(BaseConfig):
 	supported_weights_formats: list[str] = field(default_factory=lambda: ["sft", "safetensors", "pt", "pth"])
 
 	def set_audio_backend(self, audio_backend):
-		cfg.audio_backend = audio_backend
+		self.audio_backend = audio_backend
+
 		audio_extension = None
 		if audio_backend in ["encodec", "vocos"]:
 			audio_extension = ".enc"
-			cfg.sample_rate = 24_000
-			#cfg.model.resp_levels = 8
+			self.sample_rate = 24_000
+			#self.model.resp_levels = 8
 		elif audio_backend == "dac":
 			audio_extension = ".dac"
-			cfg.sample_rate = 44_100
-			#cfg.model.resp_levels = 9
-		elif cfg.audio_backend == "audiodec":
+			self.sample_rate = 44_100
+			#self.model.resp_levels = 9
+		elif self.audio_backend == "audiodec":
 			audio_extension = ".dec"
-			cfg.sample_rate = 48_000
-			#cfg.model.resp_levels = 8 # ?
-		elif cfg.audio_backend == "nemo":
+			self.sample_rate = 48_000
+			#self.model.resp_levels = 8 # ?
+		elif self.audio_backend == "nemo":
 			audio_extension = ".nem"
-			cfg.sample_rate = 44_100
-			#cfg.model.resp_levels = 8
-			#cfg.model.audio_tokens = 1000
+			self.sample_rate = 44_100
+			#self.model.resp_levels = 8
+			#self.model.audio_tokens = 1000
 		else:
 			raise Exception(f"Unknown audio backend: {audio_backend}")
 
