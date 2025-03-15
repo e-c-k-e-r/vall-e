@@ -81,75 +81,8 @@ def _dropout_codes( x, dropout_mask, dropout_token, swapped=False ):
 		x[..., level] = torch.where( dropout_mask, lhs, rhs )
 	return x
 
-# aims to properly encode RVQ-encoded token sequence into an embedding
-# this and the decoder might not work, as i haven't gotten speech to emerge (although I might need to give it more time)
-# while the FSQ version works, it might be possible to just use it instead and hope the learnable level weights make up for the FSQ-ness
-class ResidualAudioEncoder(nn.Module):
-	def __init__(
-		self,
-		n_tokens: int,
-		n_levels: int,
-		token_dim: int,
-		training: bool = True,
-	):
-		super().__init__()
-		self.embs = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(n_levels)])
-		self.pos_embedding = nn.Parameter(torch.randn(1, n_levels, token_dim)) # i still don't understand why this needs to be explicitly added instead of it being deduced in the embedding itself
-		self.cross_attn = nn.MultiheadAttention( embed_dim=token_dim, num_heads=8, dropout=0.1 if training else 0.0, batch_first=True )
-		self.proj = nn.Linear(token_dim, token_dim) # i don't understand why this is necessary
-
-	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None ) -> Tensor:
-		# empty
-		if xi.shape[0] == 0:
-			dim = self.embs[0].weight.shape[-1] # self.proj.weight.shape[0]
-			return torch.zeros((0, dim), device=xi.device, dtype=xi.dtype)
-		if dropout_mask is not None:
-			xi = _dropout_codes( xi, dropout_mask, dropout_token )
-
-		# ( seq_len, dim ) => ( seq_len, levels, dim )
-		x = torch.stack([ emb(xi[:, i]) for i, emb in enumerate(self.embs) ], dim=1)
-		x = x + self.pos_embedding
-		attn, _ = self.cross_attn( x, x, x )
-		x = x + attn
-		x = self.proj( x.mean(dim=1) )
-
-		return x
-# aims to properly decode the last hidden states from a model into logits for an RVQ-encoded token sequence
-class ResidualAudioDecoder(nn.Module):
-	def __init__(
-		self,
-		d_model,
-		vocab_size,
-		resp_levels,
-		training: bool = True,
-		use_ln: bool = False,
-	):
-		super().__init__()
-
-		self.projs = nn.ModuleList([nn.Sequential(
-			(nn.LayerNorm(d_model) if use_ln else nn.Identity()),
-			nn.Linear(d_model, d_model),
-		) for _ in range(resp_levels)]) # per-level projs
-
-		self.cross_attn = nn.MultiheadAttention( embed_dim=d_model, num_heads=8, dropout=0.1 if training else 0.0, batch_first=True ) # xattn so each level can attend to others per residual-ness
-		self.head = nn.Linear(d_model, vocab_size) # final output head, i feel it would be better to have it per-level but i assume the proj handles it
-
-	# forward for one sequence
-	def _forward( self, x: Tensor ) -> Tensor:
-		seq_len, resp_levels = x.shape[0], len(self.projs)
-		x = torch.stack([proj(x) for proj in self.projs], dim=1)
-		attn, _ = self.cross_attn( x, x, x )
-		x = x + attn
-		x = self.head( x )
-		x = x.view( resp_levels, seq_len, -1 )
-		return x
-
-	# required to act on per sequence and not a batch due to headed-ness
-	def forward( self, x_i: Tensor ) -> Tensor:
-		return torch.stack([ self._forward(x) for x in x_i ], dim=0)
-
-# the above, but for FSQ codecs, as each level is independent from one another
-# this for sure "works" as speech emerges to some extent
+# aims to properly encode token sequences into an embedding
+# despite being named for FSQ codecs, this works for RVQ codecs
 class FiniteAudioEncoder(nn.Module):
 	def __init__(
 		self,
@@ -1331,6 +1264,18 @@ class Base_V2(nn.Module):
 		elif self.causal:
 			seq_lens = [ logit.shape[0] - self.causal_size for logit in logits ]
 			logits = [ logit[-self.causal_size:] for logit in logits ]
+
+		# perform min_p filtering of our logits
+		if min_p > 0.0:
+			logits = [ min_p_filtering(logit, min_p=min_p) for logit in logits ]
+
+		# perform top_k/top_p filtering of our logits
+		if top_k > 0 or top_p < 1.0:
+			logits = [ top_k_top_p_filtering(logit, top_k=top_k, top_p=top_p) for logit in logits ]	
+
+		# do top-no logit processing
+		if top_no > 0.0:
+			logits = [ top_no_logits_processing(logit) for logit in logits ]
 
 		# argmax instead
 		if temperature <= 0.0:

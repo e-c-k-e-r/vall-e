@@ -148,36 +148,6 @@ class AR_NAR_V2(Base_V2):
 
 		# final validations and stuff
 		for i, quant_level, resps, proms, task in zip(range(batch_size), quant_levels, resps_list, proms_list, task_list):
-			# cap quant_level if it exceeds its corresponding resp/prom
-			# this was needed for when my DAC-encoded audio was erroneously trimmed to 8 RVQ levels instead of 9
-			if quant_level >= resps.shape[-1]:
-				quant_levels[i] = resps.shape[-1] - 1
-
-			# proms could be a Tensor, list[Tensor], or None
-			if isinstance( proms, torch.Tensor ):
-				if quant_level >= proms.shape[-1]:
-					quant_levels[i] = proms.shape[-1] - 1
-
-			elif isinstance( proms, list ):
-				for j, prom in enumerate( proms ):
-					if not isinstance( prom, torch.Tensor ):
-						continue
-					if quant_level >= prom.shape[-1]:
-						quant_levels[i] = prom.shape[-1] - 1
-
-			# apply token dropout error compensation
-			"""
-			if token_dropout_error > 0 and (token_dropout_rvq_levels[0] <= quant_level and quant_level <= token_dropout_rvq_levels[1]):
-				steps = resps.shape[0]
-				for l in range( quant_level ):
-					for t in range( steps ):
-						token = resps[t, l].item()
-
-						if random.random() < token_dropout_error:								
-							offset = 1 * ( 1 if random.random() < 0.5  else -1 )
-							resps_list[i][t, l] = clamp(token + offset, 1, 1022) # +- 1
-			"""
-
 			# only apply stop token for RVQ level 0
 			if timesteps[i] is None or (self.predict_causally):
 				# append stop tokens for AR

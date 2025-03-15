@@ -116,10 +116,28 @@ class BaseConfig:
 
 		# load state dict and copy its stored model config
 		model_kwargs = { "attention": "auto", "training": False, "teacher": False }
-		model_state_dict = [ torch_load( model_path )["config"] | { "path": model_path } | model_kwargs ] if model_path and model_path.exists() else []
-		lora_state_dict = [ torch_load( lora_path )["config"] | { "path": lora_path } ] if lora_path and lora_path.exists() else []
 
-		state = { "models": model_state_dict, "loras": lora_state_dict, "trainer": { "load_state_dict": True } }
+		model_state_dict = torch_load( model_path ) if model_path and model_path.exists() else None
+		lora_state_dict = torch_load( lora_path ) if lora_path and lora_path.exists() else None
+
+		models_config = [ model_state_dict["config"] | { "path": model_path } | model_kwargs ] if model_state_dict is not None else []
+		loras_config = [ lora_state_dict["config"] | { "path": lora_path } ] if lora_state_dict is not None else []
+
+		state = { "models": models_config, "loras": loras_config, "trainer": { "load_state_dict": True } }
+
+		deduced_backend = None
+		if model_state_dict is not None:
+			# 9 audio levels, will always be DAC
+			if "proms_emb.embs.8.weight" in model_state_dict["module"]:
+				deduced_backend = "dac"
+			# 8 audio levels, may be encodec/vocos (1024 tokens) or nemo (1000 tokens)
+			elif "proms_emb.embs.7.weight" in model_state_dict["module"]:
+				deduced_backend = "nemo" if model_state_dict["module"]["proms_emb.embs.7.weight"].shape[0] == 1000 else "vocos"
+		
+		if deduced_backend:
+			_logger.info(f'Deduced audio backend: {deduced_backend}')
+			state["audio_backend"] = deduced_backend
+
 		return cls(**state)
 
 	@classmethod
@@ -867,19 +885,19 @@ class Config(BaseConfig):
 		if audio_backend in ["encodec", "vocos"]:
 			audio_extension = ".enc"
 			cfg.sample_rate = 24_000
-			cfg.model.resp_levels = 8
+			#cfg.model.resp_levels = 8
 		elif audio_backend == "dac":
 			audio_extension = ".dac"
 			cfg.sample_rate = 44_100
-			cfg.model.resp_levels = 9
+			#cfg.model.resp_levels = 9
 		elif cfg.audio_backend == "audiodec":
 			audio_extension = ".dec"
 			cfg.sample_rate = 48_000
-			cfg.model.resp_levels = 8 # ?
+			#cfg.model.resp_levels = 8 # ?
 		elif cfg.audio_backend == "nemo":
 			audio_extension = ".nem"
 			cfg.sample_rate = 44_100
-			cfg.model.resp_levels = 8
+			#cfg.model.resp_levels = 8
 			#cfg.model.audio_tokens = 1000
 		else:
 			raise Exception(f"Unknown audio backend: {audio_backend}")
@@ -1143,6 +1161,8 @@ class Config(BaseConfig):
 				raise Exception(f'Tokenizer path not found: {text_tokenizer_path}')
 
 			self.text_tokenizer = PreTrainedTokenizerFast(tokenizer_file=str(text_tokenizer_path))
+
+		self.set_audio_backend(self.audio_backend)
 
 
 # Preserves the old behavior
