@@ -122,7 +122,7 @@ def run_eval(engines, eval_name, dl, args=None):
 		return
 
 	def process( name, batch, resps_list ):
-		for speaker, path, ref, hyp, prom, task in zip(batch["spkr_name"], batch["path"], batch["resps"], resps_list, batch["proms"], batch["task"]):
+		for speaker, path, ref, hyp, prom, task in zip(batch["speaker_name"], batch["path"], batch["resps"], resps_list, batch["proms"], batch["task"]):
 			if len(hyp) == 0:
 				continue
 

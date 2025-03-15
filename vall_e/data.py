@@ -853,10 +853,9 @@ class Dataset(_Dataset):
 		self.metadata = _load_dataset_metadata(self.dataset, self.dataset_type, dataset_hash_key=self.dataset_hash_key)
 		
 		# cull speakers with too little utterances
-		for speaker in self.metadata.keys():
-			utterances = len(self.metadata[speaker])
-			if utterances < cfg.dataset.min_utterances:
-				del self.metadata[speaker]
+		prune_keys = [ speaker for speaker in self.metadata.keys() if len(self.metadata[speaker]) < cfg.dataset.min_utterances ]
+		for speaker in prune_keys:
+			del self.metadata[speaker]
 
 		self.paths = []
 		self.speakers = list(self.metadata.keys())
