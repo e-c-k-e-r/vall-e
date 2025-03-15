@@ -296,6 +296,7 @@ class ModelExperimentalSettings:
 	# * NAR-demask would semi-doubly train for AR
 	# * the model wouldn't also need to learn when to predict the token in place
 	len_parallel_training: bool = True # used for version >= 7, computes len loss alongside normal training through using the input sequence (surely nothing can go wrong)
+	len_loss_factor: float = 0.00001 # loss factor for len calculation, very small because it mucks up loss scaling under float16
 
 	# 
 	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298

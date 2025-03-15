@@ -271,6 +271,7 @@ class Base_V2(nn.Module):
 		predict_causally = config.experimental.predict_causally if config is not None else False
 		monolithic_audio_encoder = config.experimental.monolithic_audio_encoder if config is not None else False
 		audio_level_loss_factors = config.experimental.audio_level_loss_factors if config is not None else "auto"
+		len_loss_factor = config.experimental.len_loss_factor if config is not None else 0.00001
 		logit_normalization = config.experimental.logit_normalization if config is not None else 0
 		per_level_normalization = config.experimental.per_level_normalization if config is not None else True
 		use_segmented_attention_mask = config.experimental.use_segmented_attention_mask if config is not None else True
@@ -362,6 +363,7 @@ class Base_V2(nn.Module):
 		self.ignore_inputs_for_loss = ignore_inputs_for_loss
 		self.noncausal_masks = noncausal_masks
 		self.audio_level_loss_factors = audio_level_loss_factors
+		self.len_loss_factor = len_loss_factor
 		self.logit_normalization = False # this actually kills the model's demasking capabilities
 		self.use_segmented_attention_mask = use_segmented_attention_mask
 		
@@ -1047,7 +1049,7 @@ class Base_V2(nn.Module):
 
 		# check if len logits are provided
 		if logits_aux is not None:
-			len_factor = 0.001 # to-do: user adjustable (it's really small because mse_loss causes wildly bigly losses)
+			len_factor = self.len_loss_factor # 0.001 # to-do: user adjustable (it's really small because mse_loss causes wildly bigly losses)
 			aux_loss_logit = torch.cat( logits_aux )
 			#aux_loss_target = torch.tensor( resp_durations, device=aux_loss_logit.device, dtype=torch.int64 )
 			#loss['len'] = F.cross_entropy( aux_loss_logit, aux_loss_target ) * len_factor
