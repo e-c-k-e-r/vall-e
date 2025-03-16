@@ -15,6 +15,7 @@ In theory, RVQ codecs should work better, as "importance" is consolidated in lev
 * The underlying model could technically derive this importance itself, as it does receive the entire signal.
 * The glamor of `nvidia/audio-codec-44khz` might not be so glamorous as the codebooks might be too dense for a model to easily operate on efficiently, as well as the codec's encoder/decoder being ***slow*** on ROCm.
 	* in other words, DAC might be preferable as a 44KHz medium.
+	* this might simply be a problem that can be "worked out" with more training time, hopefully, just as the "low confidence of higher codebook level" problem eventually works itself out.
 
 ## `AudioEncoder` / `AudioDecoder`
 
