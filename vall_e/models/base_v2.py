@@ -1113,7 +1113,7 @@ class Base_V2(nn.Module):
 		is_causal = [ l in causal_levels for l in classifier_levels ] if self.noncausal_masks else [ True for l in classifier_levels ]
 
 		if self.parallel_attention_mask_dropout > 0:
-			is_causal = [ True if random.random() < parallel_attention_mask_dropout else m for m in is_causal ]
+			is_causal = [ True if random.random() < self.parallel_attention_mask_dropout else m for m in is_causal ]
 
 		# create special masks
 		# to-do, create it if mixed (although I expect this model to be purely non-causal)
