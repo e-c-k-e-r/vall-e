@@ -275,6 +275,7 @@ class Base_V2(nn.Module):
 		logit_normalization = config.experimental.logit_normalization if config is not None else 0
 		per_level_normalization = config.experimental.per_level_normalization if config is not None else True
 		use_segmented_attention_mask = config.experimental.use_segmented_attention_mask if config is not None else True
+		parallel_attention_mask_dropout = config.experimental.parallel_attention_mask_dropout if config is not None else 0.0
 
 		n_vocab = 256
 		n_tasks = config.tasks if config is not None else 8
@@ -366,6 +367,7 @@ class Base_V2(nn.Module):
 		self.len_loss_factor = len_loss_factor
 		self.logit_normalization = False # this actually kills the model's demasking capabilities
 		self.use_segmented_attention_mask = use_segmented_attention_mask
+		self.parallel_attention_mask_dropout = parallel_attention_mask_dropout
 		
 		self.sep = nn.Parameter(torch.randn(d_model))
 
@@ -1109,6 +1111,9 @@ class Base_V2(nn.Module):
 
 		# right now limit to new versions because I need to retrain the model for noncausal masks...
 		is_causal = [ l in causal_levels for l in classifier_levels ] if self.noncausal_masks else [ True for l in classifier_levels ]
+
+		if self.parallel_attention_mask_dropout > 0:
+			is_causal = [ True if random.random() < parallel_attention_mask_dropout else m for m in is_causal ]
 
 		# create special masks
 		# to-do, create it if mixed (although I expect this model to be purely non-causal)

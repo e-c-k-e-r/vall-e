@@ -255,10 +255,11 @@ class Dataset:
 		return self.duration_range[1]
 
 # collection of experimental variables that should not be tampered with unless you know what you're doing
+# to-do: clean this up
 @dataclass()
 class ModelExperimentalSettings:
-	hf: bool = False # strictly utilizes a HF model and handles converting input IDs / outputs accordingly
-	interleave: bool = False # use an interleaved AR rather than a split AR + NAR (worse performance and results due to everything being causal)
+	hf: bool = False # unused, strictly utilizes a HF model and handles converting input IDs / outputs accordingly
+	interleave: bool = False #  unused, use an interleaved AR rather than a split AR + NAR (worse performance and results due to everything being causal)
 	split_classifiers: bool = False # each RVQ level gets its own classifier / output proj / LM head rather than sharing one for all RVQ levels (to-do: also split for text/prom)
 	audio_embedding_sums: bool = False # whether each pass uses the previous RVQ codes or only the current level
 	# a model trained not summing audio embeddings *can* have this enabled without any apparent issues
@@ -297,6 +298,7 @@ class ModelExperimentalSettings:
 	# * the model wouldn't also need to learn when to predict the token in place
 	len_parallel_training: bool = True # used for version >= 7, computes len loss alongside normal training through using the input sequence (surely nothing can go wrong)
 	len_loss_factor: float = 0.00001 # loss factor for len calculation, very small because it mucks up loss scaling under float16
+	parallel_attention_mask_dropout: float = 0.0 # randomly sets to a causal attention mask when training NAR-len demasking
 
 	# 
 	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298

@@ -69,6 +69,10 @@ To be evaluated, as additional training time is required, despite progression se
 
 At a glance, compared to the prior model setup, this implementation allows for the model to better represent speech as it's able to see the entire signal and account for it in its latent space, rather than only specific levels of it.
 
-Additionally, this implementation paves the way for live decoding of the audio under the autoregressive mode (if trained for it).
+Additionally, this implementation paves the way a ton of neat features, such as:
+* live playback through autoregressive inferencing, as all codebooks are predicted for each step
+	* could also be "mocked" by doing NAR-len demasking in chunks
+* inherent audio upscaling, as the model is trained on a 44KHz codec
 
 However, I'm not sure if the additional complexity justifies it.
+* the current hurdle is that speaker similarity is ***dismal***
