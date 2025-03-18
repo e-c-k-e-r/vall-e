@@ -167,7 +167,7 @@ class AudioEmbedding(nn.Module):
 		
 		# sum all prior codebook levels if requested (as quant_level = 0 does not have any other codebooks to sum through)
 		if sums and quant_level > 0:
-			x = sum( [ self.embeddings[input_quant_level + offset]( xi[:, input_quant_level] ) for input_quant_level in range( quant_level ) ] )
+			x = sum( [ self.embeddings[input_quant_level + offset]( xi[:, input_quant_level] ) for input_quant_level in range( quant_level + 1 ) ] )
 		else:
 			input_quant_level = quant_level
 			x = self.embeddings[input_quant_level + offset]( xi if xi.dim() == 1 else xi[:, input_quant_level] )
