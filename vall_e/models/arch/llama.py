@@ -25,6 +25,7 @@ class Config(BaseConfig):
 		attn_mode = "sdpa",
 		output_norm = True,
 		causal = True,
+		layer_dropout = 0.0,
 		*args, **kwargs
 	):
 		super().__init__(*args, **kwargs)
@@ -32,6 +33,7 @@ class Config(BaseConfig):
 		self.attn_mode = attn_mode
 		self.output_norm = output_norm
 		self.causal = causal
+		self.layer_dropout = layer_dropout
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
 	batch, num_key_value_heads, slen, head_dim = hidden_states.shape
@@ -156,18 +158,10 @@ class Attention(nn.Module):
 		elif self.attn_mode == "sdpa":
 			self.attn_mode = torch.nn.attention.SDPBackend.MATH
 
-		self.q_proj = nn.Linear(
-			config.hidden_size, config.num_attention_heads * self.head_dim, bias=config.attention_bias
-		)
-		self.k_proj = nn.Linear(
-			config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
-		)
-		self.v_proj = nn.Linear(
-			config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias
-		)
-		self.o_proj = nn.Linear(
-			config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias
-		)
+		self.q_proj = nn.Linear( config.hidden_size, config.num_attention_heads * self.head_dim, bias=config.attention_bias )
+		self.k_proj = nn.Linear( config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias )
+		self.v_proj = nn.Linear( config.hidden_size, config.num_key_value_heads * self.head_dim, bias=config.attention_bias )
+		self.o_proj = nn.Linear( config.num_attention_heads * self.head_dim, config.hidden_size, bias=config.attention_bias )
 
 	# extracts inputs from a batch based on requested causality
 	def split_forward(
@@ -576,6 +570,10 @@ class Model(LlamaPreTrainedModel):
 		self.rotary_emb = RotaryEmbedding(config=config)
 		self.gradient_checkpointing = False
 
+		# setup layer dropout LUT
+		LN_2 = 0.69314718056
+		self.layer_dropouts = [ (math.exp((l * LN_2) / (self.layers_n - 1)) - 1) * self.config.layer_dropout for l in range(self.layers_n) ]
+
 		# Initialize weights and apply final processing
 		self.post_init()
 
@@ -725,6 +723,9 @@ class Model(LlamaPreTrainedModel):
 
 		return causal_mask
 
+	def dropout_layer( self, l ):
+		return random.random() < self.layer_dropouts[l] if self.training else False
+
 	def forward(
 		self,
 		input_ids: torch.LongTensor = None,
@@ -829,10 +830,11 @@ class Model(LlamaPreTrainedModel):
 					position_embeddings=position_embeddings,
 				)
 
-			hidden_states = layer_outputs[0]
+			if not self.dropout_layer( l ):
+				hidden_states = layer_outputs[0]
 
-			if use_cache:
-				next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+				if use_cache:
+					next_decoder_cache = layer_outputs[2 if output_attentions else 1]
 
 			if output_attentions:
 				all_self_attns += (layer_outputs[1],)

@@ -89,20 +89,25 @@ class FiniteAudioEncoder(nn.Module):
 		n_tokens: int,
 		n_levels: int,
 		token_dim: int,
-		use_ln: bool = True,
-		use_ffn: bool = True,
-		training: bool = True,
+		use_ln: bool = True, # whether to perform a post-embedding pre-norm or not (I'm not sure if this is redundant)
+		use_ffn: bool = True, # whether to employ a residual feed forward network or not
+
+		d_model: int = None,
+		d_ffn: int = 2, # feed forward expansion value
 	):
 		super().__init__()
+
+		if not d_model:
+			d_model = token_dim
+
 		self.embs = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(n_levels)])
 		self.pos_embedding = nn.Parameter(torch.randn(1, n_levels, token_dim) * 0.02)
 		self.norm = nn.LayerNorm(token_dim) if use_ln else nn.Identity()
 		self.proj = nn.Sequential(
-			nn.Linear(token_dim, token_dim * 2),
+			nn.Linear(token_dim, token_dim * d_ffn),
 			nn.GELU(),
-			nn.Linear(token_dim * 2, token_dim),
-			#nn.Dropout(0.1 if training else 0.0)
-		) if use_ffn else nn.Linear(token_dim, token_dim)
+			nn.Linear(token_dim * d_ffn, d_model),
+		) if use_ffn else nn.Linear(token_dim, d_model)
 
 		self.level_weights = nn.Parameter(torch.ones(n_levels) / math.sqrt(n_levels))
 
@@ -151,35 +156,50 @@ class FiniteAudioDecoder(nn.Module):
 		d_model: int,
 		vocab_size: int,
 		n_levels: int,
-		d_ffn: int = 4,
-		use_ln: bool = True,
-		shared_levels: bool = False,
-		training: bool = False,
+
+		d_ffn: int = 2, # feed forward expansion value
+		use_ln: bool = True, # perform layer normalization here
+		use_ffn: bool = True, # use a feed forward network post-norm pre-classifier
+		shared_levels: bool = False, # whether to have one set of weights for all codebook levels, or separate weights for each layer
 	):
 		super().__init__()
 		self.n_levels = n_levels
 		self.shared_levels = shared_levels
 
-		if not shared_levels:
-			self.head = nn.ModuleList([nn.Sequential(
-				# ln
-				(nn.LayerNorm(d_model) if use_ln else nn.Identity()),
-				# ffn
-				nn.Linear(d_model, d_ffn * d_model),
-				nn.GELU(),
-				nn.Linear(d_ffn * d_model, d_model),
-				# head
-				nn.Linear(d_model, vocab_size)
-			) for _ in range(n_levels)])
+		if use_ffn:
+			if not shared_levels:
+				self.head = nn.ModuleList([nn.Sequential(
+					# ln
+					(nn.LayerNorm(d_model) if use_ln else nn.Identity()),
+					# ffn
+					nn.Linear(d_model, d_ffn * d_model),
+					nn.GELU(),
+					nn.Linear(d_ffn * d_model, d_model),
+					# head
+					nn.Linear(d_model, vocab_size)
+				) for _ in range(n_levels)])
+			else:
+				self.head = nn.Sequential(
+					# ffn
+					nn.Linear(d_model, d_ffn * d_model),
+					nn.GELU(),
+					nn.Linear(d_ffn * d_model, d_model),
+					# head
+					nn.Linear(d_model, vocab_size * n_levels)
+				)
 		else:
-			self.head = nn.Sequential(
-				# ffn
-				nn.Linear(d_model, d_ffn * d_model),
-				nn.GELU(),
-				nn.Linear(d_ffn * d_model, d_model),
-				# head
-				nn.Linear(d_model, vocab_size * n_levels)
-			)
+			if not shared_levels:
+				self.head = nn.ModuleList([nn.Sequential(
+					# ln
+					(nn.LayerNorm(d_model) if use_ln else nn.Identity()),
+					# head
+					nn.Linear(d_model, vocab_size)
+				) for _ in range(n_levels)])
+			else:
+				self.head = nn.Sequential(
+					# head
+					nn.Linear(d_model, vocab_size * n_levels)
+				)
 
 	def forward(self, x: Tensor) -> Tensor:
 		batch_size, seq_len, _ = x.shape
@@ -376,50 +396,37 @@ class Base_V2(nn.Module):
 		self.langs_emb = ml.Embedding(n_langs, d_model) if n_langs > 0 else None
 		self.tasks_emb = ml.Embedding(n_tasks, d_model) if n_tasks > 0 else None
 		self.tones_emb = ml.Embedding(n_tones, d_model) if n_tones > 0 else None
-		self.len_emb = ml.Embedding(11, d_model) # unused
+		self.len_emb = None # ml.Embedding(11, d_model)
 
 		self.audio_emb = None
 		self.proms_emb = None
 		self.resps_emb = None
-
-		"""
-		if n_audio_tokens == 1000 or:
-			AudioEncoder = FiniteAudioEncoder
-			AudioDecoder = FiniteAudioDecoder
-		else:
-			AudioEncoder = ResidualAudioEncoder
-			AudioDecoder = ResidualAudioDecoder
-		"""
 
 		if monolithic_audio_encoder:
 			self.audio_emb = AudioEncoder(
 				n_tokens=n_audio_tokens + 2, # stop + masked token
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
-				training=training,
 			)
 		else:
 			self.proms_emb = AudioEncoder(
 				n_tokens=n_audio_tokens,
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
-				training=training,
 			)
 			self.resps_emb = AudioEncoder(
 				n_tokens=n_audio_tokens + 2, # stop + masked token
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
-				training=training,
 			)
 
 		self.audio_decoder = AudioDecoder(
 			d_model,
 			(n_audio_tokens + 1),
 			self.n_resp_levels,
-			training=training,
 			use_ln=per_level_normalization,
 		)
-		self.len_decoder = AuxDecoder( d_model, 11 ) # to-do: adjust this
+		self.len_decoder = AuxDecoder( d_model, 1 )
 		self.phn_decoder = AuxDecoder( d_model, n_phn_tokens )
 		self.text_decoder = AuxDecoder( d_model, n_text_tokens )
 

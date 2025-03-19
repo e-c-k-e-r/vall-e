@@ -299,9 +299,11 @@ class ModelExperimentalSettings:
 	len_parallel_training: bool = True # used for version >= 7, computes len loss alongside normal training through using the input sequence (surely nothing can go wrong)
 	len_loss_factor: float = 0.00001 # loss factor for len calculation, very small because it mucks up loss scaling under float16
 	parallel_attention_mask_dropout: float = 0.0 # randomly sets to a causal attention mask when training NAR-len demasking
+	layer_dropout_p: float = 0.0 # performs layer dropout, which I readded because it might actually help since the reference model had this at 0.1
+	codebook_dropout_p: float = 0.0 # perform codebook dropout, which I added as an explicit feature since it seems the reference model had this in a way
+	# although I don't know how I could easily implement this for the new implementation
 
-	# 
-	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298
+	logit_normalization: float = 0 # performs logit normalization against the norms per the paper (https://arxiv.org/abs/2205.09310) per https://arxiv.org/abs/2406.05298 (this actually is very bad)
 	per_level_normalization: bool = True # moves the final norm out from the underlying model into the decoder
 	audio_level_loss_factors: list[float] | str = "auto" # the loss factors per-level when training
 	# "auto" will pick best for codec
@@ -313,16 +315,17 @@ class ModelExperimentalSettings:
 	# this is a flag since I am cautious
 	use_streamlined_calc_loss: bool = False # explicitly request the faster pathway for loss calc, in case doing loss one by one instead of one batch is a bottleneck
 
-	# these technically should be as hyperparameters
 	# performs token dropout to compensate for errors
+	# currently unused, since this might be the wrong way to go about it
 	token_dropout_error: float = 0.0 # probability to nudge a token by ±1
 	token_dropout_rate: float = 0.0 # probability to randomly set a token to a special dropout value
 	token_dropout_rvq_levels: list = field(default_factory=lambda: [1,8]) # determines which levels to do dropout, by default do not do dropout on RVQ level 0
-	# these technically should be as hyperparameters
+
 	# classifier-free guidance training settings
+	# too large might actually be a problem
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
-	cfg_text_dropout_p: float = 0.0 # 0.0  # probability to drop out input audio prompt during training
-	cfg_prom_dropout_p: float = 0.0 # 0.3  # probability to drop out input audio prompt during training
+	cfg_text_dropout_p: float = 0.0 # 0.0 # probability to drop out input audio prompt during training
+	cfg_prom_dropout_p: float = 0.0 # 0.3 # probability to drop out input audio prompt during training
 
 	use_raw_text_p: float = 0.0 # probability to use raw text as the input prompt instead
 

@@ -85,7 +85,7 @@ def gradio_wrapper(inputs):
 	return decorated
 
 # returns a list of models, assuming the models are placed under ./training/ or ./models/ or ./data/models/
-def get_model_paths( paths=[Path("./training/"), Path("./models/"), Path("./data/models/")] ):
+def get_model_paths(paths=[Path("./training/"), Path("./models/"), Path("./data/models/")] ):
 	configs = []
 
 	for path in paths:
