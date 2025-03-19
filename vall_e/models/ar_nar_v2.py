@@ -239,13 +239,13 @@ class AR_NAR_V2(Base_V2):
 
 		# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
 		temperature = sampling_kwargs.pop("temperature", 0.0)
-		minimum_cfg_strength = sampling_kwargs.get("minimum_cfg_strength", 0) # 2.5)
+		minimum_cfg_strength = sampling_kwargs.get("minimum_cfg_strength", 2.5)
 		# this really helps keep audio coherent so far
 		cfg_strength = sampling_kwargs.get("cfg_strength", minimum_cfg_strength)
 		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.75)
 		start_noise = sampling_kwargs.get("denoise_start", 0.0)
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
-		remasking = sampling_kwargs.get("remasking", False)
+		remasking = sampling_kwargs.get("remasking", True)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
 		# to specify the initial mask used

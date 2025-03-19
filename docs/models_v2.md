@@ -9,24 +9,31 @@ This model *might* not scale up well, as the `nemo-smaller-44khz-llama-8` brand 
 
 ## Audio Codecs
 
-Technically, this implementation should work for *any* codec, as it seems to "work" adequately for `nvidia/audio-codec-44khz` (an FSQ codec with 86 frames per second, 8 codebooks, and 1000 codes per codebook). The previously allusive DAC (an RVQ codec with 87 frames per second, 9 codebooks, and 1024 codes per codebook) should produce decent results, as will the tried and true EnCodec codec (an RVQ codec with 75 frames per second, 8 codebooks, and 1024 codes per codebook).
+This implementation should work for *any* codec, as it seems to "work" adequately for:
+* `nvidia/audio-codec-44khz`: an FSQ codec with 86 frames per second, 8 codebooks, and 1000 codes per codebook
+* EnCodec: an RVQ codec with 75 frames per second, 8 codebooks, and 1024 codes per codebook
+	* additional experimentation is required to ensure there's no emergent problems, but it seems fine so far
+* DAC: an RVQ codec with 87 frames per second, 9 codebooks, and 1024 codes per codebook
+	* additional experimentation is required to ensure the prior codebook problem doesn't emerge here too
 
-In theory, RVQ codecs should work better, as "importance" is consolidated in levels that can be prioritized more, rather than FSQ codecs having no inherent priority.
+In theory, RVQ codecs should work better, as "importance" is consolidated in levels that can be prioritized more, rather than FSQ codecs having no inherent priority (which requires all levels to be treated importantly, or some attention mechanism to derive importance).
 * The underlying model could technically derive this importance itself, as it does receive the entire signal.
 * The glamor of `nvidia/audio-codec-44khz` might not be so glamorous as the codebooks might be too dense for a model to easily operate on efficiently, as well as the codec's encoder/decoder being ***slow*** on ROCm.
 	* in other words, DAC might be preferable as a 44KHz medium.
 	* this might simply be a problem that can be "worked out" with more training time, hopefully, just as the "low confidence of higher codebook level" problem eventually works itself out.
+	* this might also simply just be tied to the model's ability to follow closely to the prompt, as it seems more training does somewhat help
 
 ## `AudioEncoder` / `AudioDecoder`
 
 Because this model operates on the full audio sequence at once, extra care is required to ensure the model accurately operates on it, rather than leave it to chance that the model will inherently encode/decode from its latent space.
 
 The `AudioEncoder` embeds each codebook level (and injects level-position embedding information), stacks it, then passes it through an MLP ( / residual feedforward network ), then weighs each level through learned weights before summing it down to one sequence.
-* I feel most of this is kind of overkill, since I believe layer 0 could do this better, but it might also allow better tuning of the model's "encoder" with an explicit one over an inherent one.
+* I feel most of this is kind of overkill, since I believe layer 0 of the underlying model could do this better, but it might also allow better tuning of the model's "encoder" with an explicit one over an inherent one.
 * Attention could also be used in place of the learned weights, as some speakers *could* prioritize different codebooks levels for FSQ sequences.
 
 The `AudioDecoder` projects the last hidden state through another feed-forward network (non-residual, with its own pre-layer norm). The decoder can be configured to either share the head for all levels, or dedicate a head for each level.
 * I feel non-shared heads might also be overkill, but allows for the decoder to better-er extract the dedicated codebook level from the last hidden state.
+* It might not even be necessary to use an MLP, as the model was quick to fix itself after deleting-then-shrinking the feed-forward expansion factor to try and squeeze out throughput.
 
 ### `ResidualAudioEncoder/Decoder`
 
