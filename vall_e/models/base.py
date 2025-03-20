@@ -1423,7 +1423,7 @@ class Base(nn.Module):
 
 			# calculate token probabilities
 			scores = [
-				[ F.softmax(logit[i, :], dim=-1)[token].item() for i, token in enumerate(tokens) ]
+				F.softmax(logit, dim=-1).gather(1, tokens.unsqueeze(-1)).squeeze(-1)
 				for logit, tokens in zip(logits, res)
 			]
 
