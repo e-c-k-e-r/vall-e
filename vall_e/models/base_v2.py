@@ -1236,8 +1236,9 @@ class Base_V2(nn.Module):
 
 	def sample(
 		self,
-		logits: list[Tensor], # logit scores
-		prev_list: list[Tensor] | None = None, # logit scores
+		logits: Tensor, # logit scores
+		prev_list: Tensor | None = None,
+		len_list: Tensor | None = None,
 		**sampling_kwargs,
 	):
 		# yikes
@@ -1265,6 +1266,7 @@ class Base_V2(nn.Module):
 		attentions = sampling_kwargs.get("attentions", None)
 
 		batch_size = len( logits )
+		device = logits[0].device
 
 		if min_temperature < 0:
 			min_temperature = temperature
@@ -1273,14 +1275,16 @@ class Base_V2(nn.Module):
 		entropy = None
 
 		if prev_list is not None:
-			seq_lens = map(len, prev_list)
-			logits = [ logit[-l:] for logit, l in zip(logits, seq_lens) ]
-		# (AR chunkwise) return the last chunkwise piece
+			seq_lens = [ prev.shape[0] for prev in prev_list ]
+		elif len_list is not None:
+			seq_lens = len_list
 		elif self.causal:
-			seq_lens = [ logit.shape[0] - self.causal_size for logit in logits ]
-			logits = [ logit[-self.causal_size:] for logit in logits ]
+			seq_lens = [ self.causal_size for _ in range( batch_size) ]
+
+		logits = [ logit[..., -l:, :] for l, logit in zip(seq_lens, logits) ]
 
 		# perform min_p filtering of our logits
+		"""
 		if min_p > 0.0:
 			logits = [ min_p_filtering(logit, min_p=min_p) for logit in logits ]
 
@@ -1291,17 +1295,19 @@ class Base_V2(nn.Module):
 		# do top-no logit processing
 		if top_no > 0.0:
 			logits = [ top_no_logits_processing(logit) for logit in logits ]
+		"""
 
-		# argmax instead
+		probabilities = [ F.softmax(logit, dim=-1) for logit in logits ]
+		scores = [ torch.max(prob, -1)[0] for prob in probabilities ]
+
 		if temperature <= 0.0:
-			res = [ logit.argmax(dim=-1) for logit in logits ]
+			res = [ prob.argmax(dim=-1) for prob in probabilities]
 		else:
 			res = [ Categorical(logits=logit / temperature).sample() for logit in logits ]
 
-		# calculate token probabilities
 		scores = [
-			[ F.softmax(logit[i, :], dim=-1)[token].item() for i, token in enumerate(tokens) ]
-			for logit, tokens in zip(logits, res)
+			torch.tensor([ [ prob[b, i, token].item() for i, token in enumerate(tokens[b]) ] for b in range(prob.size(0)) ], device=device)
+			for prob, tokens in zip(probabilities, res)
 		]
 
 		return Sampled(res, logits, scores, entropy)
