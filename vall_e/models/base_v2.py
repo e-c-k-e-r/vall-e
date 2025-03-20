@@ -617,10 +617,6 @@ class Base_V2(nn.Module):
 			# Audio length prediction task
 			# Sequence: <phn><sep><rvq lvl><prom><sep><len>
 			elif task_type == "len":
-				# throw an error so we don't silently train without this
-				if self.len_emb is None:
-					raise Exception(f"Requesting task `{task_type}` but corresponding embedding is not defined.")
-
 				# insert the phn prompt
 				if phns_list is not None and phns_list[i] is not None:
 					inputs[i].append( ( "phn", phns_list[i] ) )
