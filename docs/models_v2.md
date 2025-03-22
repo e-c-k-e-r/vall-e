@@ -117,6 +117,10 @@ These settings should be avoided:
 * `parallel_attention_mask_dropout`: this governs the rate of flipping to a causal (triangle) mask for training
 	* there's *some* reason to do this ablation, but it ruins the model (but the model can easily recover if erroneously trained with this)
 	* the model might eventually train itself to work around this, or it might need to be aware of this from the beginning, but it's not something to toy with.
+* `use_sliding_attention_mask`: this applies a sliding attention mask within each segment of the input (for example, slide within the text, slide within the prom, slide within the resp), as something said in the beginning of the utterance shouldn't affect what's aid at the end
+	* however, it seems this is a detriment to the model, I imagine because the model could rely on how something sounds earlier on, even if there shouldn't be a direct causal relationship
+	* this could be something that might need to be trained from the very beginning rather than early on, but training existing models does not seem to fare well
+		* `nemo-smaller-llama-8` seemed to have degraded far more than `nemo-larger-llama-8` did. I suppose the head count / size might matter.
 
 ## Benefits and Caveats
 
@@ -132,4 +136,3 @@ Additionally, this implementation paves the way a ton of neat features, such as:
 
 However, I'm not sure if the additional complexity justifies it.
 * the current hurdle is that speaker similarity is ***dismal***
-* parallel inferencing on all codebooks might have enough of a performance hit that sequentially inferencing the codebooks might be preferable
