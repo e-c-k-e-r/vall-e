@@ -300,6 +300,7 @@ class Base_V2(nn.Module):
 		logit_normalization = config.experimental.logit_normalization if config is not None else 0
 		per_level_normalization = config.experimental.per_level_normalization if config is not None else True
 		use_segmented_attention_mask = config.experimental.use_segmented_attention_mask if config is not None else True
+		use_sliding_attention_mask = config.experimental.use_sliding_attention_mask if config is not None else True
 		parallel_attention_mask_dropout = config.experimental.parallel_attention_mask_dropout if config is not None else 0.0
 
 		n_vocab = 256
@@ -392,6 +393,7 @@ class Base_V2(nn.Module):
 		self.len_loss_factor = len_loss_factor
 		self.logit_normalization = False # this actually kills the model's demasking capabilities
 		self.use_segmented_attention_mask = use_segmented_attention_mask
+		self.use_sliding_attention_mask = use_sliding_attention_mask
 		self.parallel_attention_mask_dropout = parallel_attention_mask_dropout
 		
 		self.sep = nn.Parameter(torch.randn(d_model))
@@ -1130,23 +1132,28 @@ class Base_V2(nn.Module):
 
 		# create special masks
 		# to-do, create it if mixed (although I expect this model to be purely non-causal)
-		aux_lens = torch.tensor([[2, 2, 0]] * batch_size, device=x.device, dtype=torch.int32)
+
+		text_window = 32 if self.use_sliding_attention_mask else 0
+		audio_window = self.audio_frames_per_second // 2 if self.use_sliding_attention_mask else 0
+
+		aux_lens = [[2, 0, 0]] * batch_size
+		aux_windows = [[text_window, audio_window, audio_window]] * batch_size
 		# fill aux lens
 		for batch_index, batch_input in enumerate( inputs ):
 			for name, input in batch_input:
 				if name in ["phn", "text"]:
-					aux_lens[batch_index][0] = input.shape[0]
+					aux_lens[batch_index][0] = input.shape[0] + 1
 				elif name == "lang":
 					aux_lens[batch_index][0] += 2
 				elif name == "prom":
-					aux_lens[batch_index][1] = input.shape[0]
+					aux_lens[batch_index][1] = input.shape[0] + 1
 				elif name == "tone":
 					aux_lens[batch_index][1] += 2
 				elif name == "resp":
 					aux_lens[batch_index][2] = input.shape[0]
 
 		if self.use_segmented_attention_mask and not any(is_causal):
-			mask = self.model._update_segmented_mask( mask, x, aux_lens )
+			mask = self.model._update_segmented_mask( mask, x, aux_lens, window_sizes=aux_windows )
 
 		output = self._forward(
 			inputs=x,

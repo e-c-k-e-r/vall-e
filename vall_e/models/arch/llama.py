@@ -600,12 +600,28 @@ class Model(LlamaPreTrainedModel):
 		inverted_mask = 1.0 - expanded_mask
 		return inverted_mask.masked_fill( inverted_mask.to(dtype=torch.bool), torch.finfo(inputs_embeds.dtype).min )
 
+	def _apply_sliding_window(self, mask, start_idx, end_idx, window_size):
+		window_size = int(window_size // 2) # ick
+
+		for i in range(start_idx, end_idx):
+			if not window_size:
+				break
+
+			window_left = max(start_idx, i - window_size)
+			window_right = min(end_idx, i + window_size + 1)
+
+			mask[..., i, start_idx:window_left] = 0.0
+			mask[..., i, window_right:end_idx] = 0.0
+
+		return mask
+
 	# some funky segmented-attention mask because my gut says to do this
 	def _update_segmented_mask(
 		self,
 		attention_mask,
 		inputs_embeds,
 		aux_lens, # (bsz, lens), where [batch_index, 0] = text_len, and [batch_index, 1] = prom_len
+		window_sizes = None, # (bsz, lens), same as above
 		past_key_values_length=0,
 	):
 		# [bsz, seq_len] -> [bsz, 1, seq_len, seq_len]
@@ -621,17 +637,28 @@ class Model(LlamaPreTrainedModel):
 		)
 
 		for batch_index, aux_len in enumerate( aux_lens ):
-			text_start, text_end = 0, aux_len[0]
+			window_size = window_sizes[batch_index] if window_sizes is not None else None
+			text_len = aux_len[0]
+			prom_len = aux_len[1]
+			output_len = aux_len[2]
 			
-			prom_start, prom_end = text_end, text_end + aux_len[1]
-			output_start, output_end = prom_end, prom_end + aux_len[2]
+			text_window = window_size[0] if window_size is not None else 0
+			prom_window = window_size[1] if window_size is not None else 0
+			output_window = window_size[2] if window_size is not None else 0
+			
+			text_start, text_end = 0, text_len
+			prom_start, prom_end = text_end, text_end + prom_len
+			output_start, output_end = prom_end, prom_end + output_len
 
-			if aux_len[0]:
+			if text_len:
 				expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = 1.0
-			if aux_len[1]:
+				expanded_mask[batch_index, 0] = self._apply_sliding_window( expanded_mask[batch_index, 0], text_start, text_end, text_window )
+			if prom_len:
 				expanded_mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = 1.0
-			if aux_len[2]:
+				expanded_mask[batch_index, 0] = self._apply_sliding_window( expanded_mask[batch_index, 0], prom_start, prom_end, prom_window )
+			if output_len:
 				expanded_mask[batch_index, 0, output_start:output_end, text_start:output_end] = 1.0
+				expanded_mask[batch_index, 0] = self._apply_sliding_window( expanded_mask[batch_index, 0], output_start, output_end, output_window )
 
 		# apply the original attention mask
 		expanded_mask = expanded_mask * attention_mask[:, None, None, :].expand(bsz, 1, seq_len, seq_len)
