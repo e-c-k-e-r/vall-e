@@ -311,12 +311,12 @@ def load_engines(training=True, **model_kwargs):
 			if cfg.lora is not None:			
 				key_name = cfg.lora.full_name
 
-			salt = "run"
-			kwargs['id'] = f'{key_name}-{salt}'
+			salt = "-run-2"
+			kwargs['id'] = f'{key_name}{salt}'
 			kwargs['resume'] = 'allow'
 			if world_size() > 1:
-				kwargs["group"] = "DDP"
-				kwargs['id'] = f'{key_name}-{salt}-{global_rank()}'
+				kwargs["group"] = f"DDP{salt}"
+				kwargs['id'] = f'{key_name}{salt}-{global_rank()}'
 
 			kwargs['config'] = dict(
 				config = engine.hyper_config.__dict__,

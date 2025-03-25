@@ -4,8 +4,7 @@ This section aims to document the `_v2` class of models. Documentation here migh
 
 Unlike the original, this implementation strives to operate on *all* codebooks at once with a full 44KHz bandwidth, rather than requiring the model to operate on one codebook level at a time at 24KHz audio.
 
-This model *might* not scale up well, as the `nemo-smaller-44khz-llama-8` brand seems to perform at a similar quality to `nemo-larger-44khz-llama-8`. While the latter had speech emerge much quicker than the former, both seem to have a problem with consistently working on various speakers unlike the previous series of models.
-* The current issue seems to be it poorly following the prompted speaker, which if I remember right, required quite a few epochs to resolve in the base `ar+nar-len-llama-8` model.
+Sample weights can be found [here](https://huggingface.co/ecker/vall-e/).
 
 ## Audio Codecs
 
@@ -18,10 +17,6 @@ This implementation should work for *any* codec, as it seems to "work" adequatel
 
 In theory, RVQ codecs should work better, as "importance" is consolidated in levels that can be prioritized more, rather than FSQ codecs having no inherent priority (which requires all levels to be treated importantly, or some attention mechanism to derive importance).
 * The underlying model could technically derive this importance itself, as it does receive the entire signal.
-* The glamor of `nvidia/audio-codec-44khz` might not be so glamorous as the codebooks might be too dense for a model to easily operate on efficiently, as well as the codec's encoder/decoder being ***slow*** on ROCm.
-	* in other words, DAC might be preferable as a 44KHz medium.
-	* this might simply be a problem that can be "worked out" with more training time, hopefully, just as the "low confidence of higher codebook level" problem eventually works itself out.
-	* this might also simply just be tied to the model's ability to follow closely to the prompt, as it seems more training does somewhat help out, and there doesn't seem to be a specific codebook that has confidence issues on severely unseen speakers.
 
 ## `AudioEncoder` / `AudioDecoder`
 
@@ -30,6 +25,7 @@ Because this model operates on the full audio sequence at once, extra care is re
 The `AudioEncoder` embeds each codebook level (and injects level-position embedding information), stacks it, then passes it through an MLP ( / residual feedforward network ), then weighs each level through learned weights before summing it down to one sequence.
 * I feel most of this is kind of overkill, since I believe layer 0 of the underlying model could do this better, but it might also allow better tuning of the model's "encoder" with an explicit one over an inherent one.
 * Attention could also be used in place of the learned weights, as different speakers *will* have different priorities in the audio spectrum, but I imagine this might end up as a learned feature that emerges within the attention heads of the underlying model itself.
+* As an MLP is employed, the initial embedding dimension can be entirely decoupled from the underlying model's width. This allows for easy drop-in from the embeddings of the audio codec utilized.
 
 The `AudioDecoder` projects the last hidden state through another feed-forward network (non-residual, with its own pre-layer norm). The decoder can be configured to either share the head for all levels, or dedicate a head for each level.
 * I feel non-shared heads might also be overkill, but allows for the decoder to better-er extract the dedicated codebook level from the last hidden state.
@@ -62,6 +58,25 @@ Like the previous implementation, this model can operate entirely non-autoregres
 
 Unlike the previous implementation, duration prediction is trained in parallel with the base `tts` task, where the output feature is always at the separator after the input prompt. This moves away from the kludge of treating the duration as an extra "language" task with a vocab size of `11`, and decoded autoregressively, while allowing some wiggle room in the duration as it's no longer sampled using logits.
 
+#### Attention
+
+Unlike the previous implementation, attention needs to be paid towards the attention mask used.
+
+Previously, a full non-causal attention mask was employed, allowing for every token to attend to every other token. This is *sort of* fine, but is unneccessary, as some segments do not need to attend to other segments.
+
+This new implementation aims to restrict each segment from attending to future segments. In other words, the input text does not need to attend to the audio tokens, while the reference audio does not need to attend to the output.
+* *Technically*, the reference audio doesn't need to attend to the input text, but it could allow for the model to explicitly map phonemes to the reference prompt.
+* Unfortunately, Flash Attention through SDPA does not have granularity in the attention mask.
+
+Additionally, sliding window attention is supported in this implementation, but has shown big regressions when performing additional training on existing weights.
+* The fundamental principle behind this is that audio shouldn't be *that* directly dependent on an utterance X seconds in the past/future, so a sliding window is beneficial. However, I imagine the theory on why this doesn't work so well is that the model has established a non-trivial dependency on the entire utterance.
+	* I imagine in a broader sense, it can ensure coherency by ensuring an utterance is delivered in a similar way, or the model derives a "speaker" from utilizing the existing utterance tokens.
+* A fresh model *could* have no issues, as it wouldn't be enough of a detriment.
+* An existing model *could* be coerced with enough time, but I am not patient enough of a man to wait.
+
+Additionally, the implementation could utilize a causal attention mask, but both prior "testing" (in loose quotes, as it was due to an oversight) in the previous implementation and careless testing with this implementation shows that it's also a detriment to the model.
+* Like the above, I imagine a fresh model *could* resolve this issue.
+
 ### Pure AR
 
 Unlike the previous implementation, this model can also operate entirely autoregressively as a causal transformer, where each step samples *all* codebooks at one code-frame.
@@ -69,6 +84,7 @@ Unlike the previous implementation, this model can also operate entirely autoreg
 More experimentation is needed for this modality, but seeing as the pure NAR approach works, I imagine a model can either be trained purely-autoregressively, or mixed (such as with the confusingly named `ar+nar-len`) model.
 
 However, this modality was not trained for either models, as there seems to be some weird quirk when inferencing that's caught under CUDA, but not ROCm. This doesn't seem to "go away" with more training, unfortunately.
+* Additionally, I'm under the impression that separate `resps_embs` are required for causal/non-causal sequences, as the previous implementation inherently has this split.
 
 ## Training Regimen
 
@@ -78,10 +94,12 @@ The `nemo-smaller-44khz-llama-8` model is a 512-dim, 12 layered, 8 headed attent
 The `nemo-larger-44khz-llama-8` model is similar to its immediate predecessor, with 1024-dim, 24 layers, and 16 heads. Training is similar where the only difference is with a learning rate of `3.0e-4`.  Speech emerged quicker than its predecessor at `?`% of the epoch, but quality remains about the same.
 
 Training of both models experienced degredation in quality periodically, where the loss will rise, spike, then climb back down. It's reasonable to assume this came from duration sorting being the cause, as the model might somehow "overfit" based on duration, as this problem disappeared when re-initializing the dataloader to instead batch samples by durations, then shuffle the batches. However, training throughput significantly dropped for the larger model.
+* Training should *probably* only have the dataloader duration-ordered until speech does emerge, then train an epoch with shuffled durations. Both models do seem to start overfitting on given durations and is a pain to try and train on larger durations (I do not remember the prior implementation having this behavior emerge).
 
-The differences between the two models suggests there is no outright immediate benefits from scaling up as it "costs" more to train the larger model. Benefitis may be discovered through manual evaluation, which kind of predicates on the duration predictor (which wasn't added until much later into training out of neglect).
+The differences between the two models ~~suggests there is no outright immediate benefits from scaling up as it "costs" more to train the larger model. Benefitis may be discovered through manual evaluation, which kind of predicates on the duration predictor (which wasn't added until much later into training out of neglect).~~ start to emerge on how the model can generalize. The smaller model seems to have trouble handling both a variety of durations *and* speakers, while the larger model is starting to behave as expected in comparison to the prior model (where speaker similarity starts to improve with more and more training time *and* increasing the effective batch size through gradient accumulation).
 
 Both flavors were trained on the previously used dataset, but English only (as I did not want to risk throwing in multiple languages during the initial training session, and my patience was dwindling during the audio processing phase).
+* Additional languages and the remaining 8 seconds to 12 seconds were re-introduced into the dataset. Non-English language performance needs to be evaluated, but it seems *fine*.
 
 Additional tasks beyond text-to-speech (`tts`) were not trained for either models, as they're very low priority, and the implementation might have had logic to train for it gutted.
 
@@ -99,6 +117,7 @@ masking_ratio: 0.8 # fixed mask ratio proves to be better
 ignore_inputs_for_loss: True # False is not implemented 
 use_segmented_attention_mask: True # restricts each section within its own section + prior section (in other words, does not let the text/prom see further into the future outside of its segment)
 use_streamlined_calc_loss: True # False has no effect now
+len_loss_factor: 0.0001 # start with the default for a while to not let duration training overpower the model, then gradually increase this (but this may only be required when introducing duration training on existing weights)
 
 noncausal_masks: True # creates non-causal masks
 resp_parallel_training: True # trains all codebook levels in parallel
@@ -124,7 +143,8 @@ These settings should be avoided:
 
 ## Benefits and Caveats
 
-To be evaluated, as additional training time is required, despite progression seemingly plateu-ing.
+To be evaluated thoroughly.
+* The smaller model seems to have hit its capacity limit, while the larger model is slowly improving (although objective metrics are not noted).
 
 At a glance, compared to the prior model setup, this implementation allows for the model to better represent speech as it's able to see the entire signal and account for it in its latent space, rather than only specific levels of it.
 
@@ -133,6 +153,3 @@ Additionally, this implementation paves the way a ton of neat features, such as:
 	* could also be "mocked" by doing NAR-len demasking in chunks
 * inherent audio upscaling, as the model is trained on a 44KHz codec
 * some other features I can't recall
-
-However, I'm not sure if the additional complexity justifies it.
-* the current hurdle is that speaker similarity is ***dismal***
