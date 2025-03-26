@@ -220,8 +220,16 @@ class AR_NAR_V2(Base_V2):
 		use_lora=None,
 		**sampling_kwargs,
 	):
-		device = phns_list[0].device
-		batch_size = len(phns_list)
+		# deduce batch_size
+		if phns_list:
+			device = phns_list[0].device
+			batch_size = len(phns_list)
+		elif text_list:
+			device = text_list[0].device
+			batch_size = len(text_list)
+		elif proms_list:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
 
 		level = 0
 		if cfg.lora is not None:
@@ -298,6 +306,7 @@ class AR_NAR_V2(Base_V2):
 			# setup inputs
 			inputs = super().inputs(
 				phns_list=phns_list,
+				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=input_resps_list,
 				lang_list=lang_list,
@@ -313,7 +322,8 @@ class AR_NAR_V2(Base_V2):
 			logits = output.logits
 			if cfg_strength > 0:
 				null_inputs = super().inputs(
-					phns_list=null_text,
+					phns_list=null_text if phns_list is not None else None,
+					text_list=null_text if text_list is not None else None,
 					proms_list=null_prom,
 					resps_list=input_resps_list,
 					lang_list=lang_list,
@@ -507,7 +517,8 @@ class AR_NAR_V2(Base_V2):
 
 			if cfg_strength > 0:
 				null_inputs = super().inputs(
-					phns_list=null_text,
+					phns_list=null_text if phns_list is not None else None,
+					text_list=null_text if text_list is not None else None,
 					proms_list=null_prom,
 					resps_list=resps_list,
 					lang_list=lang_list,
@@ -615,7 +626,7 @@ class AR_NAR_V2(Base_V2):
 			)
 
 		# is NAR
-		if (len_list is not None or resps_list is not None) and phns_list is not None:
+		if (len_list is not None or resps_list is not None) and (phns_list is not None or text_list is not None):
 			# to-do: verify this actually does return the input resps if theyre already filled
 			"""
 			if resps_list is not None:

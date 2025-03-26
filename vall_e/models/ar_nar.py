@@ -249,8 +249,16 @@ class AR_NAR(Base):
 		use_lora=None,
 		**sampling_kwargs,
 	):
-		device = phns_list[0].device
-		batch_size = len(phns_list)
+		# deduce batch_size
+		if phns_list:
+			device = phns_list[0].device
+			batch_size = len(phns_list)
+		elif text_list:
+			device = text_list[0].device
+			batch_size = len(text_list)
+		elif proms_list:
+			device = proms_list[0].device
+			batch_size = len(proms_list)
 
 		if quant_levels is None:
 			level = 0
@@ -384,6 +392,7 @@ class AR_NAR(Base):
 			# setup inputs
 			inputs = super().inputs(
 				phns_list=phns_list,
+				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=input_resps_list,
 				lang_list=lang_list,
@@ -400,7 +409,8 @@ class AR_NAR(Base):
 
 			if cfg_strength > 0:
 				null_inputs = super().inputs(
-					phns_list=null_text,
+					phns_list=null_text if phns_list is not None else None,
+					text_list=null_text if text_list is not None else None,
 					proms_list=null_prom,
 					resps_list=input_resps_list,
 					lang_list=lang_list,
@@ -472,6 +482,7 @@ class AR_NAR(Base):
 		if len_list is not None:
 			resps_list = self.forward_nar_masked(
 				phns_list=phns_list,
+				text_list=text_list,
 				proms_list=proms_list,
 				resps_list=resps_list,
 				task_list=task_list,
@@ -544,7 +555,8 @@ class AR_NAR(Base):
 
 			if cfg_strength > 0:
 				null_inputs = super().inputs(
-					phns_list=null_text,
+					phns_list=null_text if phns_list is not None else None,
+					text_list=null_text if text_list is not None else None,
 					proms_list=null_prom,
 					resps_list=prev_list,
 					lang_list=lang_list,
@@ -769,7 +781,8 @@ class AR_NAR(Base):
 
 			if cfg_strength > 0:
 				null_inputs = super().inputs(
-					phns_list=null_text,
+					phns_list=null_text if phns_list is not None else None,
+					text_list=null_text if text_list is not None else None,
 					proms_list=null_prom,
 					resps_list=resps_list,
 					lang_list=lang_list,
@@ -908,7 +921,7 @@ class AR_NAR(Base):
 			batch_size = len(resps_list)
 
 		# implicitly set for training
-		if training is None and phns_list is not None and resps_list is not None:
+		if training is None and (phns_list is not None or text_list is not None) and resps_list is not None:
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
 
@@ -930,7 +943,7 @@ class AR_NAR(Base):
 			)
 
 		# is NAR
-		if (len_list is not None or resps_list is not None) and phns_list is not None:
+		if (len_list is not None or resps_list is not None) and (phns_list is not None or text_list is not None):
 			return self.forward_nar(
 				task_list=task_list,
 

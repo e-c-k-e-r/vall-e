@@ -145,6 +145,9 @@ These settings should be avoided:
 
 To be evaluated thoroughly.
 * The smaller model seems to have hit its capacity limit, while the larger model is slowly improving (although objective metrics are not noted).
+* The model seems pretty quick, even for the large model.
+* The smaller model seems small enough for CPU-only inferencing
+	* Despite its poor zero-shot performance, it could be perfectly fine for finetuning.
 
 At a glance, compared to the prior model setup, this implementation allows for the model to better represent speech as it's able to see the entire signal and account for it in its latent space, rather than only specific levels of it.
 
