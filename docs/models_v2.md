@@ -67,6 +67,7 @@ Previously, a full non-causal attention mask was employed, allowing for every to
 This new implementation aims to restrict each segment from attending to future segments. In other words, the input text does not need to attend to the audio tokens, while the reference audio does not need to attend to the output.
 * *Technically*, the reference audio doesn't need to attend to the input text, but it could allow for the model to explicitly map phonemes to the reference prompt.
 * Unfortunately, Flash Attention through SDPA does not have granularity in the attention mask.
+* Currently there's a problem with how this is implemented......
 
 Additionally, sliding window attention is supported in this implementation, but has shown big regressions when performing additional training on existing weights.
 * The fundamental principle behind this is that audio shouldn't be *that* directly dependent on an utterance X seconds in the past/future, so a sliding window is beneficial. However, I imagine the theory on why this doesn't work so well is that the model has established a non-trivial dependency on the entire utterance.
@@ -74,7 +75,7 @@ Additionally, sliding window attention is supported in this implementation, but 
 * A fresh model *could* have no issues, as it wouldn't be enough of a detriment.
 * An existing model *could* be coerced with enough time, but I am not patient enough of a man to wait.
 
-Additionally, the implementation could utilize a causal attention mask, but both prior "testing" (in loose quotes, as it was due to an oversight) in the previous implementation and careless testing with this implementation shows that it's also a detriment to the model.
+This implementation could utilize a causal attention mask, but both prior "testing" (in loose quotes, as it was due to an oversight) in the previous implementation and careless testing with this implementation shows that it's also a detriment to the model.
 * Like the above, I imagine a fresh model *could* resolve this issue.
 
 ### Pure AR
