@@ -62,7 +62,7 @@ def md5_hash( x ):
 	return hashlib.md5(str(x).encode("utf-8")).hexdigest()
 
 # removes entries from a dict if that key is missing from the source
-def prune_missing( source, dest, recurse=True, path=[], parent_is_obj=None, return_missing=True, ignore=["optimizer_params"] ):
+def prune_missing( source, dest, recurse=True, path=[], parent_is_obj=None, return_missing=True, ignore=["optimizer_params", "wandb_params"] ):
 	is_obj = hasattr( source, "__dict__" )
 	if parent_is_obj is None:
 		parent_is_obj = is_obj

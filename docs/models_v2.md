@@ -58,26 +58,6 @@ Like the previous implementation, this model can operate entirely non-autoregres
 
 Unlike the previous implementation, duration prediction is trained in parallel with the base `tts` task, where the output feature is always at the separator after the input prompt. This moves away from the kludge of treating the duration as an extra "language" task with a vocab size of `11`, and decoded autoregressively, while allowing some wiggle room in the duration as it's no longer sampled using logits.
 
-#### Attention
-
-Unlike the previous implementation, attention needs to be paid towards the attention mask used.
-
-Previously, a full non-causal attention mask was employed, allowing for every token to attend to every other token. This is *sort of* fine, but is unneccessary, as some segments do not need to attend to other segments.
-
-This new implementation aims to restrict each segment from attending to future segments. In other words, the input text does not need to attend to the audio tokens, while the reference audio does not need to attend to the output.
-* *Technically*, the reference audio doesn't need to attend to the input text, but it could allow for the model to explicitly map phonemes to the reference prompt.
-* Unfortunately, Flash Attention through SDPA does not have granularity in the attention mask.
-* Currently there's a problem with how this is implemented......
-
-Additionally, sliding window attention is supported in this implementation, but has shown big regressions when performing additional training on existing weights.
-* The fundamental principle behind this is that audio shouldn't be *that* directly dependent on an utterance X seconds in the past/future, so a sliding window is beneficial. However, I imagine the theory on why this doesn't work so well is that the model has established a non-trivial dependency on the entire utterance.
-	* I imagine in a broader sense, it can ensure coherency by ensuring an utterance is delivered in a similar way, or the model derives a "speaker" from utilizing the existing utterance tokens.
-* A fresh model *could* have no issues, as it wouldn't be enough of a detriment.
-* An existing model *could* be coerced with enough time, but I am not patient enough of a man to wait.
-
-This implementation could utilize a causal attention mask, but both prior "testing" (in loose quotes, as it was due to an oversight) in the previous implementation and careless testing with this implementation shows that it's also a detriment to the model.
-* Like the above, I imagine a fresh model *could* resolve this issue.
-
 ### Pure AR
 
 Unlike the previous implementation, this model can also operate entirely autoregressively as a causal transformer, where each step samples *all* codebooks at one code-frame.
@@ -116,7 +96,6 @@ audio_level_loss_factors: "normal" # distribution of loss weights per codebook (
 masking_train_p: 1.0 # pure AR
 masking_ratio: 0.8 # fixed mask ratio proves to be better
 ignore_inputs_for_loss: True # False is not implemented 
-use_segmented_attention_mask: True # restricts each section within its own section + prior section (in other words, does not let the text/prom see further into the future outside of its segment)
 use_streamlined_calc_loss: True # False has no effect now
 len_loss_factor: 0.0001 # start with the default for a while to not let duration training overpower the model, then gradually increase this (but this may only be required when introducing duration training on existing weights)
 
@@ -137,6 +116,8 @@ These settings should be avoided:
 * `parallel_attention_mask_dropout`: this governs the rate of flipping to a causal (triangle) mask for training
 	* there's *some* reason to do this ablation, but it ruins the model (but the model can easily recover if erroneously trained with this)
 	* the model might eventually train itself to work around this, or it might need to be aware of this from the beginning, but it's not something to toy with.
+* `use_segmented_attention_mask`: this *should* apply a special attention mask
+	* but in reality the model seems to fall apart after a while
 * `use_sliding_attention_mask`: this applies a sliding attention mask within each segment of the input (for example, slide within the text, slide within the prom, slide within the resp), as something said in the beginning of the utterance shouldn't affect what's aid at the end
 	* however, it seems this is a detriment to the model, I imagine because the model could rely on how something sounds earlier on, even if there shouldn't be a direct causal relationship
 	* this could be something that might need to be trained from the very beginning rather than early on, but training existing models does not seem to fare well

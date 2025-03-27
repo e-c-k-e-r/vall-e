@@ -307,21 +307,26 @@ def load_engines(training=True, **model_kwargs):
 		# setup wandb
 		if engine._training and cfg.trainer.wandb and wandb is not None:
 			key_name = name
-			kwargs = {}
-			if cfg.lora is not None:			
+			if cfg.lora is not None:		
 				key_name = cfg.lora.full_name
 
-			salt = "-run-2"
-			kwargs['id'] = f'{key_name}{salt}'
-			kwargs['resume'] = 'allow'
+			salt = cfg.trainer.wandb_params.pop("salt", "-run")
+			kwargs = {
+				'id': f'{key_name}{salt}',
+				'resume': 'allow',
+				"config": dict(
+					config = engine.hyper_config.__dict__,
+					hyperparameters = cfg.hyperparameters.__dict__,
+				),
+			}
+			
 			if world_size() > 1:
-				kwargs["group"] = f"DDP{salt}"
-				kwargs['id'] = f'{key_name}{salt}-{global_rank()}'
+				kwargs |= {
+					"id": f'{key_name}{salt}-{global_rank()}',
+					"group": f"DDP{salt}",
+				}
 
-			kwargs['config'] = dict(
-				config = engine.hyper_config.__dict__,
-				hyperparameters = cfg.hyperparameters.__dict__,
-			)
+			kwargs.update( cfg.trainer.wandb_params )
 
 			try:
 				engine.wandb = wandb.init(project=key_name, **kwargs)

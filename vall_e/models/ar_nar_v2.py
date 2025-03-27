@@ -76,9 +76,6 @@ class AR_NAR_V2(Base_V2):
 		# RVQ levels to apply masking training on
 		masking_train_rvq_levels = [0,self.n_resp_levels] # self.config.experimental.masking_train_rvq_levels
 
-		# cringe
-		self.audio_frames_per_second = cfg.dataset.frames_per_second
-
 		# CFG
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
@@ -604,11 +601,14 @@ class AR_NAR_V2(Base_V2):
 			batch_size = len(resps_list)
 
 		# implicitly set for training
-		if training is None and phns_list is not None and resps_list is not None:
+		if training is None and (phns_list is not None or text_list is not None) and resps_list is not None:
 			n_levels_set = {r.shape[-1] for r in resps_list}
 			n_levels = next(iter(n_levels_set))
 
 			training = n_levels == self.n_resp_levels
+
+		# cringe
+		self.audio_frames_per_second = cfg.dataset.frames_per_second
 
 		# is training
 		if training:

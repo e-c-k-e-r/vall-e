@@ -799,6 +799,7 @@ class Trainer:
 	gc_mode: str | None = None # deprecated, but marks when to do GC
 
 	wandb: bool = False # use wandb, if available
+	wandb_params: dict = field(default_factory=lambda: dict)
 
 	weight_dtype: str = "float16" # dtype to have the model under
 
