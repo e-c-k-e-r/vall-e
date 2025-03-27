@@ -1117,8 +1117,6 @@ class Base_V2(nn.Module):
 			padding = torch.zeros(shape[:2], dtype=x.dtype, device=x.device)
 			mask = torch.cat([mask, padding], dim=1)
 		
-		m = mask.unsqueeze(dim=-1)
-
 		# needs to be done here as we still have our raw inputs
 		position_ids = self.inputs_to_position_ids( inputs, mask=mask ) if not self.unified_position_ids else None
 		classifier_levels = self.get_input( inputs, name="classifier_level" )
@@ -1136,21 +1134,27 @@ class Base_V2(nn.Module):
 		text_window = 32 if self.use_sliding_attention_mask else 0
 		audio_window = self.audio_frames_per_second // 2 if self.use_sliding_attention_mask else 0
 
-		aux_lens = [[2, 0, 0]] * batch_size
-		aux_windows = [[text_window, audio_window, audio_window]] * batch_size
+		aux_lens = []
+		aux_windows = []
 		# fill aux lens
 		for batch_index, batch_input in enumerate( inputs ):
+			lens = [2, 0, 0]
+			windows = [text_window, audio_window, audio_window]
+
 			for name, input in batch_input:
 				if name in ["phn", "text"]:
-					aux_lens[batch_index][0] = input.shape[0] + 1
+					lens[0] = input.shape[0] + 1
 				elif name == "lang":
-					aux_lens[batch_index][0] += 2
+					lens[0] += 2
 				elif name == "prom":
-					aux_lens[batch_index][1] = input.shape[0] + 1
+					lens[1] = input.shape[0] + 1
 				elif name == "tone":
-					aux_lens[batch_index][1] += 2
+					lens[1] += 2
 				elif name == "resp":
-					aux_lens[batch_index][2] = input.shape[0]
+					lens[2] = input.shape[0]
+
+			aux_lens.append( lens )
+			aux_windows.append( windows )
 
 		if self.use_segmented_attention_mask and not any(is_causal):
 			mask = self.model._update_segmented_mask( mask, x, aux_lens, window_sizes=aux_windows )

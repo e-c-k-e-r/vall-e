@@ -363,7 +363,15 @@ class Attention(nn.Module):
 		if attention_mask is not None:
 			x_mask = x_mask[:, :, :, : key_states.shape[-2]]
 
-		# is_causal = True if x_mask is None and q_len > 1 else False
+		if isinstance( is_causal, list ):
+			count = sum( is_causal )
+			if count == 0:
+				is_causal = False
+			elif count == len( is_causal ):
+				is_causal = True
+
+		if self.attn_mode in [torch.nn.attention.SDPBackend.FLASH_ATTENTION] or is_causal:
+			x_mask = None
 
 		# SDPA with memory-efficient backend is currently (torch==2.1.2) bugged with non-contiguous inputs with custom attn_mask,
 		# Reference: https://github.com/pytorch/pytorch/issues/112577.
@@ -406,14 +414,13 @@ class Attention(nn.Module):
 			)
 		elif mode in ["default"]:
 			attn_scores = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
-			# cringe logic
-			if x_mask is not None:
-				if x_mask.dtype == torch.bool:
-					attn_weights = attn_scores.masked_fill_(x_mask.logical_not(), float("-inf"))
-				else:
-					attn_weights = attn_scores + x_mask
-			else:
+
+			if x_mask is None:
 				attn_weights = attn_scores
+			elif x_mask.dtype == torch.bool:
+				attn_weights = attn_scores.masked_fill(x_mask.logical_not(), float("-inf"))
+			else:
+				attn_weights = attn_scores + x_mask
 
 			# upcast attention to fp32
 			attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
@@ -425,26 +432,12 @@ class Attention(nn.Module):
 					f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
 					f" {attn_output.size()}"
 				)
-		elif mode in [torch.nn.attention.SDPBackend.FLASH_ATTENTION]:
-			with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
-				if isinstance( is_causal, list ):
-					is_causal = is_causal[0]
-				attn_output = torch.nn.functional.scaled_dot_product_attention(
-					query_states,
-					key_states,
-					value_states,
-					attn_mask=None, # ROCm FA2 through SDPA doesn't allow masks, bummer
-					dropout_p=dropout_rate,
-					is_causal=is_causal,
-				)
 		elif mode == "sdpa": 
-			# We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
-			# in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
 			attn_output = torch.nn.functional.scaled_dot_product_attention(
 				query_states,
 				key_states,
 				value_states,
-				attn_mask=None if is_causal else x_mask,
+				attn_mask=x_mask,
 				dropout_p=dropout_rate,
 				is_causal=is_causal,
 			)
@@ -454,7 +447,7 @@ class Attention(nn.Module):
 					query_states,
 					key_states,
 					value_states,
-					attn_mask=None if is_causal else x_mask,
+					attn_mask=x_mask,
 					dropout_p=dropout_rate,
 					is_causal=is_causal,
 				)
@@ -586,7 +579,7 @@ class Model(LlamaPreTrainedModel):
 		self,
 		attention_mask,
 		inputs_embeds,
-		past_key_values_length,
+		past_key_values_length = 0,
 	):
 		# create noncausal mask
 		# [bsz, seq_len] -> [bsz, 1, seq_len, seq_len]
@@ -602,7 +595,6 @@ class Model(LlamaPreTrainedModel):
 
 		# make square
 		mask = attention_mask[:, None, None, :].expand( bsz, 1, seq_len, seq_len ).to(dtype)
-		# mask = AttentionMaskConverter._unmask_unattended(mask, min_dtype)
 		return mask
 
 	# generate a sliding window pattern
@@ -627,7 +619,7 @@ class Model(LlamaPreTrainedModel):
 		inputs_embeds,
 		aux_lens, # (bsz, lens), where [batch_index, 0] = text_len, and [batch_index, 1] = prom_len
 		window_sizes = None, # (bsz, lens), same as above
-		past_key_values_length=0,
+		past_key_values_length = 0,
 	):
 		# [bsz, seq_len] -> [bsz, 1, seq_len, seq_len]
 		bsz, seq_len, _ = inputs_embeds.size()
@@ -639,7 +631,7 @@ class Model(LlamaPreTrainedModel):
 		if attention_mask is None:
 			attention_mask = torch.ones((bsz, seq_len), dtype=dtype, device=device)
 
-		expanded_mask = torch.zeros( (bsz, 1, seq_len, seq_len), dtype=dtype, device=device )
+		mask = torch.full( (bsz, 1, seq_len, seq_len), min_dtype, dtype=dtype, device=device )
 
 		for batch_index, aux_len in enumerate( aux_lens ):
 			window_size = window_sizes[batch_index] if window_sizes is not None else None
@@ -655,29 +647,27 @@ class Model(LlamaPreTrainedModel):
 			prom_start, prom_end = text_end, text_end + prom_len
 			output_start, output_end = prom_end, prom_end + output_len
 
-			"""
-			output_start, output_end = prom_end, seq_len # prom_end + output_len
 			if text_len:
-				expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = True 
+				mask[batch_index, 0, text_start:text_end, text_start:text_end] = True 
 			if prom_len:
-				expanded_mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = True
+				mask[batch_index, 0, prom_start:prom_end, text_start:prom_end] = True
 			if output_len:
-				expanded_mask[batch_index, 0, output_start:output_end, text_start:output_end] = True 
-			"""
+				mask[batch_index, 0, output_start:output_end, text_start:output_end] = True 
 
+			"""
 			if text_len:
-				expanded_mask[batch_index, 0, text_start:text_end, text_start:text_end] = True if not text_window else self._sliding_window( text_len, text_window )
+				mask[batch_index, 0, text_start:text_end, text_start:text_end] = True if not text_window else self._sliding_window( text_len, text_window )
 			if prom_len:
-				expanded_mask[batch_index, 0, prom_start:prom_end, text_start:text_end] = True 
-				expanded_mask[batch_index, 0, prom_start:prom_end, prom_start:prom_end] = True if not prom_window else self._sliding_window( prom_len, prom_window )
+				mask[batch_index, 0, prom_start:prom_end, text_start:text_end] = True 
+				mask[batch_index, 0, prom_start:prom_end, prom_start:prom_end] = True if not prom_window else self._sliding_window( prom_len, prom_window )
 			if output_len:
-				expanded_mask[batch_index, 0, output_start:output_end, text_start:text_end] = True 
-				expanded_mask[batch_index, 0, output_start:output_end, prom_start:prom_end] = True 
-				expanded_mask[batch_index, 0, output_start:output_end, output_start:output_end] = True if not output_window else self._sliding_window( output_len, output_window )
+				mask[batch_index, 0, output_start:output_end, text_start:text_end] = True 
+				mask[batch_index, 0, output_start:output_end, prom_start:prom_end] = True 
+				mask[batch_index, 0, output_start:output_end, output_start:output_end] = True if not output_window else self._sliding_window( output_len, output_window )
+			"""
 
 		# apply the original attention mask
-		mask = expanded_mask * attention_mask[:, None, None, :].expand(bsz, 1, seq_len, seq_len).to(dtype)
-		#mask = AttentionMaskConverter._unmask_unattended(mask, min_dtype)
+		mask = mask * attention_mask[:, None, None, :].expand(bsz, 1, seq_len, seq_len).to(dtype)
 		return mask
 
 	@staticmethod
