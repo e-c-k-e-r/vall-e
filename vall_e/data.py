@@ -899,10 +899,9 @@ class Dataset(_Dataset):
 			# just interleave
 			self.paths = [*_interleaved_reorder(self.paths, lambda x: x[0])]
 
-		"""
-		self.noise_paths = _load_paths(cfg.dataset.noise, "noise")
-		self.noise_paths = list(itertools.chain.from_iterable(self.noise_paths.values()))
-		"""
+		self.noise_metadata = _load_dataset_metadata(cfg.dataset.noise, "noise", dataset_hash_key=self.dataset_hash_key)
+		self.noise_speakers = list(self.noise_metadata.keys())
+		self.noise_paths = [ (speaker_id, utterance_id) for speaker_id, speaker in enumerate(self.noise_speakers) for utterance_id, utterance in enumerate(self.noise_metadata[speaker].keys()) ]
 
 		self.phone_symmap = phone_symmap or self._get_phone_symmap()
 		self.speaker_symmap = self._get_speaker_symmap()
@@ -1042,7 +1041,12 @@ class Dataset(_Dataset):
 		return get_task_symmap()
 
 	def sample_noise(self):
-		path = random.choice(self.noise_paths)
+		speaker_id, utterance_id = random.choice(self.noise_paths)
+		
+		speaker_name = self.noise_speakers[speaker_id]
+		utterance_name = list(self.noise_metadata[speaker_name].keys())[utterance_id]
+
+		path = cfg.data_dir / speaker_name / utterance_name
 
 		if cfg.dataset.use_hdf5:
 			key = _get_hdf5_path(path)

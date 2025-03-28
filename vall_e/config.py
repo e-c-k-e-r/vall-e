@@ -454,6 +454,13 @@ class Model:
 		return 1024
 
 	@property
+	def embed_dim(self):
+		if isinstance(self.size, dict) and "embed_dim" in self.size:
+			return self.size['embed_dim']
+
+		return self.dim
+
+	@property
 	def heads(self):
 		if isinstance(self.size, dict) and "heads" in self.size:
 			return self.size['heads']

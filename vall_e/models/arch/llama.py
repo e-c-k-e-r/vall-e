@@ -363,14 +363,20 @@ class Attention(nn.Module):
 		if attention_mask is not None:
 			x_mask = x_mask[:, :, :, : key_states.shape[-2]]
 
+		# pain
+		# SDPA backends only sometimes allowing/disallowing some arguments...
 		if isinstance( is_causal, list ):
-			count = sum( is_causal )
+			count = sum( [ 1 if x else 0 for x in is_causal ] )
 			if count == 0:
 				is_causal = False
 			elif count == len( is_causal ):
 				is_causal = True
+			elif x_mask is not None:
+				is_causal = False
 
-		if self.attn_mode in [torch.nn.attention.SDPBackend.FLASH_ATTENTION] or is_causal:
+		if self.attn_mode in [torch.nn.attention.SDPBackend.FLASH_ATTENTION]:
+			x_mask = None
+		elif is_causal == True:
 			x_mask = None
 
 		# SDPA with memory-efficient backend is currently (torch==2.1.2) bugged with non-contiguous inputs with custom attn_mask,
@@ -513,8 +519,10 @@ class DecoderLayer(nn.Module):
 		hidden_states = self.input_layernorm(hidden_states)
 		
 		# ugh
+		"""
 		if isinstance( is_causal, list ) and len(is_causal) == 1:
 			is_causal = is_causal[0]
+		"""
 
 		# Self Attention
 		if self.config.attn_mode == "sparse":

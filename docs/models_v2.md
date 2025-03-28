@@ -1,6 +1,6 @@
 # Model V2 Notes
 
-This section aims to document the `_v2` class of models. Documentation here might be all over the place from having to extract findings from four weeks worth of agonizing experiments.
+This section aims to document the `_v2` class of models. Documentation here might be all over the place from having to extract findings from several weeks worth of agonizing experiments and quirks.
 
 Unlike the original, this implementation strives to operate on *all* codebooks at once with a full 44KHz bandwidth, rather than requiring the model to operate on one codebook level at a time at 24KHz audio.
 
@@ -90,16 +90,18 @@ However, this modality was not trained for either models, as there seems to be s
 ## Training Regimen
 
 The `nemo-smaller-44khz-llama-8` model is a 512-dim, 12 layered, 8 headed attention-based transformer with rotary position embedding. Training was performed on four V100s with AMP+`float16` with a batch size of 8 samples per GPU, and an AdamW optimizer with adequate parameters (`1.0e-4` learning rate,  betas of `[0.8, 0.95]`, weight_decay of `0.01`, linear warmup to 5K steps before holding) for 400K steps before introducing training for duration prediction in parallel. The dataloader sorts the dataset by duration, starting from 2 seconds and ending with 8 seconds-ed utterances. Training consists of computing the loss for each codebook level non-parallely (where a level is randomly assigned to a sample per a "normal" distribution) with each loss being weighed "normal"ly, for 70% of the epoch when speech starts to emerge. Then, the model was trained to compute the loss paralelly (where all levels have the loss computed) without weighing the loss per-level. Audio quality was lacking for most speakers, as the model failed to handle all codebook levels adequately. Additional training slowly helps, but by-the-numbers metrics don't show much improvement.
-* this model also had some training on my 7900XTX rig under `bfloat16`, with similar hyperparameters (a batch size of 32 for one GPU, rather than 8 samples * 4 GPUs ), as it ironically is at parity when utilizing `flash_(sdpa)` attention.
+* this model also had ~~some~~ plenty of training on my 7900XTX rig under `bfloat16`, with similar hyperparameters (a batch size of 32 for one GPU, rather than 8 samples * 4 GPUs ), as it ironically is at parity for throughput when utilizing `flash_(sdpa)` attention.
+* it's reasonable to assume that a lot of the nitty gritty like LR warmup and slowly introducing features are entirely unnecessary
 
 The `nemo-larger-44khz-llama-8` model is similar to its immediate predecessor, with 1024-dim, 24 layers, and 16 heads. Training is similar where the only difference is with a learning rate of `3.0e-4`.  Speech emerged quicker than its predecessor at `?`% of the epoch, but quality remains about the same.
+* increasing the de-facto batch size and lowering the learning rate seems to be necessary to edge out improvements in speaker similarity
 
 Training of both models experienced degredation in quality periodically, where the loss will rise, spike, then climb back down. It's reasonable to assume this came from duration sorting being the cause, as the model might somehow "overfit" based on duration, as this problem disappeared when re-initializing the dataloader to instead batch samples by durations, then shuffle the batches. However, training throughput significantly dropped for the larger model.
 * Training should *probably* only have the dataloader duration-ordered until speech does emerge, then train an epoch with shuffled durations. Both models do seem to start overfitting on given durations and is a pain to try and train on larger durations (I do not remember the prior implementation having this behavior emerge).
 
-The differences between the two models ~~suggests there is no outright immediate benefits from scaling up as it "costs" more to train the larger model. Benefitis may be discovered through manual evaluation, which kind of predicates on the duration predictor (which wasn't added until much later into training out of neglect).~~ start to emerge on how the model can generalize. The smaller model seems to have trouble handling both a variety of durations *and* speakers, while the larger model is starting to behave as expected in comparison to the prior model (where speaker similarity starts to improve with more and more training time *and* increasing the effective batch size through gradient accumulation).
+The differences between the two models ~~suggests there is no outright immediate benefits from scaling up as it "costs" more to train the larger model. Benefitis may be discovered through manual evaluation, which kind of predicates on the duration predictor (which wasn't added until much later into training out of neglect).~~ start to emerge on how the model can generalize. The smaller model seems to have trouble handling a variety of speakers and no inherent way of inferencing duration, while the larger model is starting to behave as expected in comparison to the prior model (where speaker similarity starts to improve with more and more training time *and* increasing the effective batch size through gradient accumulation).
 
-Both flavors were trained on the previously used dataset, but English only (as I did not want to risk throwing in multiple languages during the initial training session, and my patience was dwindling during the audio processing phase).
+Both flavors were trained on the previously used dataset, but English-only utterances until speech was quasi-consistent.
 * Additional languages and the remaining 8 seconds to 12 seconds were re-introduced into the dataset. Non-English language performance needs to be evaluated, but it seems *fine*.
 
 Additional tasks beyond text-to-speech (`tts`) were not trained for either models, as they're very low priority, and the implementation might have had logic to train for it gutted.
@@ -116,7 +118,7 @@ audio_level_loss_factors: "normal" # distribution of loss weights per codebook (
 masking_train_p: 1.0 # pure AR
 masking_ratio: 0.8 # fixed mask ratio proves to be better
 ignore_inputs_for_loss: True # False is not implemented 
-use_segmented_attention_mask: True # restricts each section within its own section + prior section (in other words, does not let the text/prom see further into the future outside of its segment)
+use_segmented_attention_mask: True # restricts each section within its own section + prior section (in other words, does not let the text/prom see further into the future outside of its segment), also enables parallel duration training
 use_streamlined_calc_loss: True # False has no effect now
 len_loss_factor: 0.0001 # start with the default for a while to not let duration training overpower the model, then gradually increase this (but this may only be required when introducing duration training on existing weights)
 
@@ -141,6 +143,7 @@ These settings should be avoided:
 	* however, it seems this is a detriment to the model, I imagine because the model could rely on how something sounds earlier on, even if there shouldn't be a direct causal relationship
 	* this could be something that might need to be trained from the very beginning rather than early on, but training existing models does not seem to fare well
 		* `nemo-smaller-llama-8` seemed to have degraded far more than `nemo-larger-llama-8` did. I suppose the head count / size might matter.
+	* this could also have been caused by a regression in the code due to dumb Python aliasing behaviors
 
 ## Benefits and Caveats
 
@@ -157,3 +160,12 @@ Additionally, this implementation paves the way a ton of neat features, such as:
 	* could also be "mocked" by doing NAR-len demasking in chunks
 * inherent audio upscaling, as the model is trained on a 44KHz codec
 * some other features I can't recall
+
+However, I'm not sure if there's a problem inherent with the model or one that lies within the codec
+* the output leaves a lot to be desired when compared to the prior reference model, but that model is too radically different to not be a fair comparison
+	* training a new model is required for the proper comparison, but that requires compute that could be put into better-ing the current model
+* some speakers sound fine, while others have output that suggests there's some quantization/precision problem, where there's some form of bandwidth limiting in the output
+* speaker similarity is improving, but still rather poor
+	* but again, this is simply from the prior model having a ton of training applied to it despite the various features glued on top of it and post-trained
+* the prior model is still much faster to inference, although this could just be a difference in model size
+* an RVQ codec is heavily favored by the prior implementation, as the most important level gets the best training, and prior levels are easily inferenced

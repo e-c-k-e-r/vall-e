@@ -1289,6 +1289,7 @@ class Base_V2(nn.Module):
 
 		scores = None
 		entropy = None
+		causal = False
 
 		if prev_list is not None:
 			seq_lens = [ prev.shape[0] for prev in prev_list ]
@@ -1296,6 +1297,7 @@ class Base_V2(nn.Module):
 			seq_lens = len_list
 		elif self.causal:
 			seq_lens = [ self.causal_size for _ in range( batch_size) ]
+			causal = True
 
 		logits = [ logit[..., -l:, :] for l, logit in zip(seq_lens, logits) ]
 
@@ -1321,9 +1323,10 @@ class Base_V2(nn.Module):
 		else:
 			res = [ Categorical(logits=logit / temperature).sample() for logit in logits ]
 
+		# we only need the scores for NAR demasking, but AR breaks and I cannot be assed to handle it right now
 		scores = [
 			torch.gather(prob, 2, tokens.unsqueeze(-1)).squeeze(-1)
 			for prob, tokens in zip(probabilities, res)
-		]
+		] if not causal else []
 
 		return Sampled(res, logits, scores, entropy)
