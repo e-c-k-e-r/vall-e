@@ -765,7 +765,8 @@ class Base_V2(nn.Module):
 
 			# needed, cringe
 			if task_type == "len":
-				batch[-1] = torch.cat( [ batch[-1], self.sep[None], self.sep[None] ] )
+				#batch[-1] = torch.cat( [ batch[-1], self.sep[None], self.sep[None] ] )
+				batch[-1] = torch.cat( [ batch[-1], self.sep[None] ] )
 
 			x_list.append( _join( batch, self.sep ) )
 

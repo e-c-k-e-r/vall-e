@@ -520,6 +520,9 @@ class TTS():
 					else:					
 						len_list = model_len( **input_kwargs, task_list=["len"], **{"max_duration": 5} ) # "max_duration" is max tokens
 
+						# clamp
+						len_list = [ max( l, 1 * cfg.dataset.frames_per_second ) for l in len_list ]
+
 						# add an additional X seconds
 						len_list = [ int(l * duration_padding) for l in len_list ]
 
