@@ -385,7 +385,9 @@ class TTS():
 			text = transcribe( voice_convert, model_name="openai/whisper-base", align=False )["text"]
 		
 		lines = sentence_split(text, split_by=sampling_kwargs.get("split_text_by", "sentences"))
-
+		if not lines:
+			lines = [""]
+			
 		wavs = []
 		sr = None
 

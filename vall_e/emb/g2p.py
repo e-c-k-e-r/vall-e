@@ -24,6 +24,9 @@ except Exception as e:
 	print(f'Error while importing langdetect: {str(e)}')
 
 def detect_language( text ):
+	if not text:
+		return "en" # to-do: map to a null language
+
 	if langdetect is None:
 		raise Exception('langdetect is not installed.')
 	return langdetect.detect( text )
