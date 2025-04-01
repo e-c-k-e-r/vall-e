@@ -959,8 +959,10 @@ def example_usage():
 		phns_list, proms_list, resp_list, task_list = sample_data( task )
 
 		if task == "tts-nar":
-			# len_list = engine( phns_list=phns_list, proms_list=proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
+			len_list = engine( phns_list=phns_list, proms_list=proms_list, task_list=["len"], max_steps=5, temperature=0.0 )
+			print( len_list )
 			len_list = [ r.shape[0] for r in resp_list ]
+			print( len_list )
 			resps_list = engine( phns_list=phns_list, proms_list=proms_list, len_list=len_list )
 		else:
 			resps_list = engine( phns_list=phns_list, proms_list=proms_list, task_list=["tts"], max_duration=steps, temperature=1.0 )

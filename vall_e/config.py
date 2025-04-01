@@ -297,6 +297,7 @@ class ModelExperimentalSettings:
 	# * NAR-demask would semi-doubly train for AR
 	# * the model wouldn't also need to learn when to predict the token in place
 	len_parallel_training: bool = True # used for version >= 7, computes len loss alongside normal training through using the input sequence (surely nothing can go wrong)
+	len_use_logits: bool = False # whether to treat duration prediction as a nll/logits task or use a raw, continuous float
 	len_loss_factor: float = 0.00001 # loss factor for len calculation, very small because it mucks up loss scaling under float16
 	parallel_attention_mask_dropout: float = 0.0 # randomly sets to a causal attention mask when training NAR-len demasking
 	layer_dropout_p: float = 0.0 # performs layer dropout, which I readded because it might actually help since the reference model had this at 0.1
