@@ -24,14 +24,14 @@ try:
 	from .codecs.encodec import *
 except Exception as e:
 	cfg.inference.use_encodec = False
-	raise e
+	#raise e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.vocos import *
 except Exception as e:
 	cfg.inference.use_vocos = False
-	raise e
+	#raise e
 	_logger.warning(str(e))
 
 try:
@@ -45,7 +45,7 @@ try:
 	from .codecs.nemo import *
 except Exception as e:
 	cfg.inference.use_nemo = False
-	raise e
+	#raise e
 	_logger.warning(str(e))
 
 @cache
