@@ -24,24 +24,28 @@ try:
 	from .codecs.encodec import *
 except Exception as e:
 	cfg.inference.use_encodec = False
+	raise e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.vocos import *
 except Exception as e:
 	cfg.inference.use_vocos = False
+	raise e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.dac import *
 except Exception as e:
 	cfg.inference.use_dac = False
+	#raise e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.nemo import *
 except Exception as e:
 	cfg.inference.use_nemo = False
+	raise e
 	_logger.warning(str(e))
 
 @cache

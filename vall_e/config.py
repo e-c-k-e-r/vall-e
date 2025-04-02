@@ -368,7 +368,7 @@ class Model:
 		return [ self ] if not name or self.name == name else []
 	
 	def loss_factor(self, k):
-		return self.loss_factors.get(k, 0.0)
+		return self.loss_factors.get(k, 1.0)
 
 	@property
 	def max_levels(self):

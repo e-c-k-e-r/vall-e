@@ -943,7 +943,7 @@ def example_usage():
 			if task == "stt":
 				prom = [ task ]
 			else:
-				task = "tts" # if random.random() > 0.1 or "len" not in cfg.model.capabilities else "len"
+				task = "tts" if random.random() > 0.1 or "len" not in cfg.model.capabilities else "len"
 
 			texts.append( text )
 			proms.append( prom )

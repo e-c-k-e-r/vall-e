@@ -100,7 +100,7 @@ class FiniteAudioEncoder(nn.Module):
 		if not d_model:
 			d_model = token_dim
 
-		self.embs = nn.ModuleList([nn.Embedding(n_tokens, token_dim) for _ in range(n_levels)])
+		self.embs = nn.ModuleList([ml.Embedding(n_tokens, token_dim) for _ in range(n_levels)])
 		self.pos_embedding = nn.Parameter(torch.randn(1, n_levels, token_dim) * 0.02)
 		self.norm = nn.LayerNorm(token_dim) if use_ln else nn.Identity()
 		if use_ffn:
@@ -405,7 +405,8 @@ class Base_V2(nn.Module):
 		self.langs_emb = ml.Embedding(n_langs, d_model) if n_langs > 0 else None
 		self.tasks_emb = ml.Embedding(n_tasks, d_model) if n_tasks > 0 else None
 		self.tones_emb = ml.Embedding(n_tones, d_model) if n_tones > 0 else None
-		self.len_emb = None # ml.Embedding(11, d_model)
+		
+		self.len_emb = nn.Parameter(torch.randn(d_model)) # ugh
 
 		self.audio_emb = None
 		self.proms_emb = None
@@ -640,6 +641,11 @@ class Base_V2(nn.Module):
 				# insert tone token if we're trained for it
 				if "tone" in self.capabilities and tone_list is not None and tone_list[i] is not None:
 					inputs[i].append( ( "tone", tone_list[i] ) )
+				# insert len marker
+				if resps_list is not None:
+					inputs[i].append( ( "len", torch.tensor([resps_list[i].shape[0]]) ) )
+				else:
+					inputs[i].append( ( "len", torch.tensor([0]) ) )
 				
 				inputs[i].append( ("classifier_level", "len") )
 			# Speech-to-Text prediction task
@@ -758,17 +764,13 @@ class Base_V2(nn.Module):
 				elif name == "timestep" and self.time_emb is not None:
 					embedding = self.time_emb( input )
 				elif name == "len" and self.len_emb is not None:
-					embedding = self.len_emb( input )
+					# singleton marker
+					embedding = self.len_emb[None]
 				else:
 					# should probably raise an exception so things aren't processed silently
 					continue
 
 				batch.append(embedding)
-
-			# needed, cringe
-			if task_type == "len":
-				#batch[-1] = torch.cat( [ batch[-1], self.sep[None], self.sep[None] ] )
-				batch[-1] = torch.cat( [ batch[-1], self.sep[None] ] )
 
 			x_list.append( _join( batch, self.sep ) )
 
@@ -889,7 +891,7 @@ class Base_V2(nn.Module):
 
 		for batch_index, batch in enumerate(inputs):
 			quant_level = quant_levels[batch_index]
-			causal = True
+			causal = False
 			task_type = "tts"
 			dropout_mask = None
 			classifier_level = None
@@ -917,6 +919,7 @@ class Base_V2(nn.Module):
 				# non-tokened tasks
 				if name in non_tokened_names:
 					continue
+
 				# prom can either be a tensor itself or a list of tensors and strings
 				if name == "prom":
 					# expand to list if not a list
@@ -932,6 +935,9 @@ class Base_V2(nn.Module):
 					# mask found, apply it
 					if dropout_mask is not None:
 						token = _dropout_codes( token, dropout_mask, self.ignore_index, swapped = True )
+				elif name == "len":
+					size = input[0].item()
+					token = torch.tensor([ int(i) for i in str( size ).zfill(5) ], device=device, dtype=torch.int64)
 				# not a special input, inject as-is
 				else:
 					token = input
@@ -956,9 +962,9 @@ class Base_V2(nn.Module):
 					loss_factor = self.loss_factor(name)
 					if loss_factor == 0.0:
 						continue
-
-					logit = logits[batch_index][start:end]
 					
+					logit = logits[batch_index][start:end]
+
 					"""
 					if self.logit_normalization:
 						logit = logit_normalization( logit, self.logit_normalization )
@@ -968,9 +974,13 @@ class Base_V2(nn.Module):
 						l = self.causal_size
 						loss_targets.append( token[l:].long() ) # shift the target so that token n...
 						loss_logits.append( logit[..., :-l, :] ) # ...predicts token n + 1
+					elif name == "len":
+						loss_targets.append( token.long() )
+						loss_logits.append( logit.squeeze(0) )
 					else:
 						loss_targets.append( token.long() )
 						loss_logits.append( logit )
+					
 					loss_factors.append( loss_factor )
 					loss_names.append( name )
 				else:
@@ -1159,6 +1169,8 @@ class Base_V2(nn.Module):
 					lens[1] = input.shape[0] + 1
 				elif name == "tone":
 					lens[1] += 2
+				elif name == "len":
+					lens[2] = 2
 				elif name == "resp":
 					lens[2] = input.shape[0]
 
@@ -1179,8 +1191,8 @@ class Base_V2(nn.Module):
 
 		hidden_states = output.hidden_states
 		
-		logits = self.audio_decoder( output.logits )
-		"""
+		# logits = self.audio_decoder( output.logits )
+
 		logits = [ logit for logit in output.logits ]
 		logits_aux = None
 
@@ -1213,11 +1225,16 @@ class Base_V2(nn.Module):
 			decoders_logits = head( decoders_logits )
 			for batch_index, logit in zip( decoders_indices, decoders_logits ):
 				logits[batch_index] = logit
-		"""
 
 		# Remove padding
 		logits = [ logit[..., :l, :] for logit, l in zip(logits, map(len, x_list)) ]
-		
+
+		for batch_index, classifier_level in enumerate( classifier_levels ):
+			if classifier_level != "len":
+				continue
+
+			logits[batch_index] = logits[batch_index].view(-1, 5, 10)
+
 		if not training:
 			loss = None
 			stats = None
