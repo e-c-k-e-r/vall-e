@@ -20,32 +20,29 @@ from tqdm import tqdm
 
 from torch.nn.utils.rnn import pad_sequence
 
+AVAILABLE_AUDIO_BACKENDS = []
 try:
 	from .codecs.encodec import *
-	cfg.inference.audio_backends["encodec"] = True
+	AVAILABLE_AUDIO_BACKENDS.append("encodec")
 except Exception as e:
-	cfg.inference.audio_backends["encodec"] = False # e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.vocos import *
-	cfg.inference.audio_backends["vocos"] = True
+	AVAILABLE_AUDIO_BACKENDS.append("vocos")
 except Exception as e:
-	cfg.inference.audio_backends["vocos"] = False # e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.dac import *
-	cfg.inference.audio_backends["dac"] = True
+	AVAILABLE_AUDIO_BACKENDS.append("dac")
 except Exception as e:
-	cfg.inference.audio_backends["dac"] = False # e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.nemo import *
-	cfg.inference.audio_backends["nemo"] = True
+	AVAILABLE_AUDIO_BACKENDS.append("nemo")
 except Exception as e:
-	cfg.inference.audio_backends["nemo"] = False # e
 	_logger.warning(str(e))
 
 @cache

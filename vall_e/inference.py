@@ -14,7 +14,7 @@ from pathlib import Path
 from tqdm import tqdm, trange
 
 from .emb import g2p, qnt
-from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio
+from .emb.qnt import trim, trim_random, unload_model, repeat_extend_audio, AVAILABLE_AUDIO_BACKENDS
 from .emb.transcribe import transcribe
 
 from .utils import to_device, set_seed, clamp, ml
@@ -62,7 +62,7 @@ class TTS():
 		cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 
 		# fallback to encodec if no vocos
-		if cfg.audio_backend == "vocos" and not cfg.inference.audio_backends.get("vocos", False):
+		if cfg.audio_backend == "vocos" and "vocos" not in AVAILABLE_AUDIO_BACKENDS:
 			_logger.warning("Vocos requested but not available, falling back to Encodec...")
 			cfg.set_audio_backend(cfg.audio_backend)
 
