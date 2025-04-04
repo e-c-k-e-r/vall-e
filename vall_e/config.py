@@ -839,6 +839,8 @@ class Inference:
 
 	batch_size: int = 16 # I don't know what would be a good batch size
 
+	audio_backends: dict = field(default_factory=lambda: {})
+
 	@property
 	def dtype(self):
 		return coerce_dtype(self.weight_dtype)

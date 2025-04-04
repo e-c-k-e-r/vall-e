@@ -62,7 +62,7 @@ class TTS():
 		cfg.dataset.use_hdf5 = False # could use cfg.load_hdf5(), but why would it ever need to be loaded for inferencing
 
 		# fallback to encodec if no vocos
-		if cfg.audio_backend == "vocos" and not cfg.inference.use_vocos:
+		if cfg.audio_backend == "vocos" and not cfg.inference.audio_backends.get("vocos", False):
 			_logger.warning("Vocos requested but not available, falling back to Encodec...")
 			cfg.set_audio_backend(cfg.audio_backend)
 

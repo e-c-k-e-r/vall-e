@@ -22,30 +22,30 @@ from torch.nn.utils.rnn import pad_sequence
 
 try:
 	from .codecs.encodec import *
+	cfg.inference.audio_backends["encodec"] = True
 except Exception as e:
-	cfg.inference.use_encodec = False
-	#raise e
+	cfg.inference.audio_backends["encodec"] = False # e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.vocos import *
+	cfg.inference.audio_backends["vocos"] = True
 except Exception as e:
-	cfg.inference.use_vocos = False
-	#raise e
+	cfg.inference.audio_backends["vocos"] = False # e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.dac import *
+	cfg.inference.audio_backends["dac"] = True
 except Exception as e:
-	cfg.inference.use_dac = False
-	#raise e
+	cfg.inference.audio_backends["dac"] = False # e
 	_logger.warning(str(e))
 
 try:
 	from .codecs.nemo import *
+	cfg.inference.audio_backends["nemo"] = True
 except Exception as e:
-	cfg.inference.use_nemo = False
-	#raise e
+	cfg.inference.audio_backends["nemo"] = False # e
 	_logger.warning(str(e))
 
 @cache
