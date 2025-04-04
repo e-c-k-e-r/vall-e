@@ -1207,9 +1207,15 @@ class Dataset(_Dataset):
 		
 		bos_id, space_id, eos_id = self.empty_text
 
-		speaker_id, utterance_id = self.paths[index]
-		speaker_name = self.speakers[speaker_id]
-		utterance_name = list(self.metadata[speaker_name].keys())[utterance_id]
+		if self.sampler_type == "speaker":
+			speaker_id = index
+			speaker_name = self.speakers[speaker_id]
+			utterance_name = random.choice( list(self.metadata[speaker_name].keys()) ) # random.choice(self.metadata[speaker_name])
+		else:
+			speaker_id, utterance_id = self.paths[index]
+			speaker_name = self.speakers[speaker_id]
+			utterance_name = list(self.metadata[speaker_name].keys())[utterance_id]
+		
 		path = cfg.data_dir / speaker_name / utterance_name
 
 		if cfg.dataset.use_hdf5:
@@ -1916,10 +1922,16 @@ if __name__ == "__main__":
 		symmap = get_phone_symmap()
 
 		for index in tqdm(range(len( dataset )), desc="Processing dataset..."):
-			speaker_id, utterance_id = dataset.paths[index]
-			speaker_name = dataset.speakers[speaker_id]
-			speaker_keys = list(dataset.metadata[speaker_name].keys())
-			utterance_name = speaker_keys[utterance_id]
+			if dataset.sampler_type == "speaker":
+				speaker_id = index
+				speaker_name = dataset.speakers[speaker_id]
+				utterance_name = random.choice( list(dataset.metadata[speaker_name].keys()) ) # random.choice(dataset.metadata[speaker_name])
+			else:
+				speaker_id, utterance_id = dataset.paths[index]
+				speaker_name = dataset.speakers[speaker_id]
+				speaker_keys = list(dataset.metadata[speaker_name].keys())
+				utterance_name = speaker_keys[utterance_id]
+
 			path = cfg.data_dir / speaker_name / utterance_name
 
 			if cfg.dataset.use_hdf5:
