@@ -275,7 +275,7 @@ class AR_NAR_V2(Base_V2):
 		null_prom = [ None for _ in range(batch_size) ]
 
 		iterator = tqdm(torch.linspace(start_noise, end_noise, max_steps), desc="NAR Masked", disable=disable_tqdm)
-		for timestep in iterator:
+		for step, timestep in enumerate(iterator):
 			# update previous list of tokens
 			prev_list = resps_list
 			# ramp down over time
@@ -284,8 +284,9 @@ class AR_NAR_V2(Base_V2):
 			noise_p = math.cos( timestep * math.pi * 0.5 )
 			# proportion of tokens to remask
 			remask_p = 1.0 / (max_steps * 2) if remasking else 0
+			mask_p = noise_p + remask_p
 			# pick the worst scoring tokens to mask off
-			masked_indices = [ score.topk( clamp( int( noise_p * seq_len + remask_p * seq_len ), 1, seq_len), dim=0 ).indices for score, seq_len in zip(scores, len_list) ]
+			masked_indices = [ score.topk( clamp( int( mask_p * seq_len ), 1, seq_len - step), dim=0 ).indices for score, seq_len in zip(scores, len_list) ]
 
 			# normal masking
 			# mask off inputs
