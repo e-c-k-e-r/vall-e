@@ -89,28 +89,7 @@ std::vector<float> read_2d_tensor( struct ggml_tensor* tensor ) {
 
 	return res;
 }
-/*
-ggml_tensor* view_2d_tensor( struct ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim ) {
-	// to-do: implement other dim
-	if ( start < 0 ) start = tensor->ne[1] + start;
-	if ( end < 0 ) end = tensor->ne[1] + end;
-	
-	ggml_tensor* res = new ggml_tensor();
-	memcpy( res, tensor, sizeof(ggml_tensor) );
 
-	res->op	 = GGML_OP_VIEW;
-	res->src[0] = tensor;
-
-	res->data   += res->nb[1] * start;
-	res->ne[1]  = end - start;
-
-	for (int i = 2; i < GGML_MAX_DIMS; i++) {
-		res->nb[i] = res->nb[i - 1] * res->ne[i - 1];
-	}
-
-	return res;
-}
-*/
 ggml_tensor* view_2d_tensor( struct ggml_context* ctx, struct ggml_tensor* tensor, int32_t start, int32_t end, int32_t dim ) {
 	// to-do: implement other dim
 	if ( start < 0 ) start = tensor->ne[1] + start;
@@ -601,13 +580,14 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 		int32_t seq_len = n_outputs;
 		int32_t top_k = 0;
 		float top_p = 1.0;
-		float temperature = 1.0f;
-		float cfg_strength = 2.5f;
+		float temperature = 1.5f;
+		float cfg_strength = 3.0f;
 		float start_noise = 0.0f;
 		float end_noise = 1.0f;
 		bool annealed_sampling = true;
 		bool remasking = true;
 		float cfg_rescale = 0.75f;
+		bool entropy_scoring = true;
 
 		// fill with masked tokens
 		output_tokens.clear();
@@ -621,7 +601,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 		llama_batch null_batch = llama_batch_init( ctx->params.ctx_size, ctx->io_map->n_embd, ctx->params.ctx_size );
 		
 		// token scores to reference for masking
-		std::vector<float> scores(n_outputs, 1.0);
+		std::vector<float> scores(n_outputs, entropy_scoring ? 0.0 : 1.0);
 
 		// do one step on many tokens
 		for ( auto step = 0; step < steps; ++step ) {
@@ -635,7 +615,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			float sampling_cfg_strength = annealed_sampling ? timestep * cfg_strength : cfg_strength;
 
 			float noise_p = cos( timestep * PI * 0.5f );
-			float remask_p = remasking ? 0.5f / steps : 0.0f;
+			float remask_p = remasking ? 1.0f / (steps * 2.0f) : 0.0f;
 			
 			int32_t n_masked_tokens = (noise_p + remask_p) * seq_len;
 			if ( n_masked_tokens < 1 ) {
@@ -651,7 +631,9 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			std::vector<score_t> sorted_scores( n_outputs );
 			for ( auto i = 0; i < n_outputs; ++i ) sorted_scores[i] = { i, scores[i] };
 			std::sort(sorted_scores.begin(), sorted_scores.end());
-			// std::reverse(sorted_scores.begin(), sorted_scores.end());
+			if ( entropy_scoring) {
+				std::reverse(sorted_scores.begin(), sorted_scores.end());
+			}
 			
 			// and top-k pick the worst scores
 			for ( auto i = 0; i < n_masked_tokens; ++i ) {
@@ -669,8 +651,8 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			inputs.resp[0] = output_tokens;
 			fill_batch( batch, inputs, *ctx->io_map, mode );
 			// update null batch
-			null_input.resp[0] = output_tokens;
 			null_batch.n_tokens = 0;
+			null_input.resp[0] = output_tokens;
 			fill_batch( null_batch, inputs, *ctx->io_map, mode );
 
 			// cfg decode
@@ -707,7 +689,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			for ( auto idx = 0; idx < n_outputs; ++idx ) {
 				// skip if not masked
 				if ( !is_masked[idx] ) {
-					scores[idx] = 0.0;
+					scores[idx] = entropy_scoring ? 0.0 : 1.0;
 					continue;
 				}
 
@@ -716,6 +698,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 
 				// perform softmax before modifying logits
 				std::vector<float> softmaxed = soft_max( n_vocab, logit );
+				int32_t t_u = std::distance( softmaxed.begin(), std::max_element(softmaxed.begin(), softmaxed.end()) );
 
 				std::vector<float> summed(n_vocab);
 				for (int i = 0; i < n_vocab; i++) {
@@ -739,19 +722,16 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 				// store token if it was masked
 				output_tokens[idx] = t;
 				// update score if it was masked
-
-				// this is actually wrong
-				scores[idx] = 1.0 - softmaxed[t]; // invert so we pick the worst tokens later
-
-				// this seems to work better
-				/*
-				float entropy = 0.f;
-				for (int v = 0; v < n_vocab; ++v ) {
-					float p = softmaxed[v];
-					if (p > 0) entropy -= p * std::log(p + 1e-9);
+				if ( entropy_scoring ) {
+					float entropy = 0.f;
+					for (int v = 0; v < n_vocab; ++v ) {
+						float p = softmaxed[v];
+						if (p > 0) entropy -= p * std::log(p + 1e-9);
+					}
+					scores[idx] = entropy / std::log(n_vocab); // normalize [0–1]
+				} else {
+					scores[idx] = softmaxed[t_u]; // invert so we pick the worst tokens later
 				}
-				scores[idx] = entropy / std::log(n_vocab); // normalize [0–1]
-				*/
 			}
 
 			llama_sampler_free(smpl);
