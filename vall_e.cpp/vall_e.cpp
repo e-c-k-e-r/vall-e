@@ -748,7 +748,17 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 				// store token if it was masked
 				output_tokens[idx] = t;
 				// update score if it was masked
-				scores[idx] = 1.0f - softmaxed[t]; // invert so we pick the worst tokens later
+
+				// this is actually wrong
+				// scores[idx] = 1.0f - softmaxed[t]; // invert so we pick the worst tokens later
+
+				// this seems to work better
+				float entropy = 0.f;
+				for (int v = 0; v < n_vocab; ++v ) {
+					float p = softmaxed[v];
+					if (p > 0) entropy -= p * std::log(p + 1e-9);
+				}
+				scores[idx] = entropy / std::log(n_vocab); // normalize [0–1]
 			}
 
 			llama_sampler_free(smpl);

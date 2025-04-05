@@ -23,8 +23,6 @@ Run `make`.
 
 ## To-Do
 
-* [ ] fix regressions that appeared for whatever reason
-	* it seems to be related to the demasking step, as low steps = fine, more steps = bad......
 * [x] converted model to GGUF
 	* [x] convert it without modifying any of the existing code, as the tokenizer requires some care
 * [x] basic framework
@@ -42,6 +40,7 @@ Run `make`.
 	* [x] `AR` sampling
 * [x] working `NAR-len` output
 	* [x] `NAR-len` sampling
+	* [ ] proper scoring
 * [x] working `NAR` output
 	* [x] `NAR` sampling
 * [x] decode audio to disk
