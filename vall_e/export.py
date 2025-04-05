@@ -330,7 +330,7 @@ def main():
 
 	callback = None
 	if args.hf:
-		callback = convert_to_hf_custom
+		callback = convert_to_hf_llama
 	elif args.export_lora:
 		callback = extract_lora
 	elif args.split_classifiers:

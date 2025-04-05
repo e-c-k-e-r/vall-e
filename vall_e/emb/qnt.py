@@ -21,29 +21,34 @@ from tqdm import tqdm
 from torch.nn.utils.rnn import pad_sequence
 
 AVAILABLE_AUDIO_BACKENDS = []
+ERRORED_BACKENDS = {}
 try:
 	from .codecs.encodec import *
 	AVAILABLE_AUDIO_BACKENDS.append("encodec")
 except Exception as e:
 	_logger.warning(str(e))
+	ERRORED_BACKENDS["encodec"] = e
 
 try:
 	from .codecs.vocos import *
 	AVAILABLE_AUDIO_BACKENDS.append("vocos")
 except Exception as e:
 	_logger.warning(str(e))
+	ERRORED_BACKENDS["vocos"] = e
 
 try:
 	from .codecs.dac import *
 	AVAILABLE_AUDIO_BACKENDS.append("dac")
 except Exception as e:
 	_logger.warning(str(e))
+	ERRORED_BACKENDS["dac"] = e
 
 try:
 	from .codecs.nemo import *
 	AVAILABLE_AUDIO_BACKENDS.append("nemo")
 except Exception as e:
 	_logger.warning(str(e))
+	ERRORED_BACKENDS["nemo"] = e
 
 @cache
 def _load_encodec_model(device="cuda", dtype=None, levels=0):
@@ -151,6 +156,9 @@ def _load_nemo_model(device="cuda", dtype=None, model_name=None):
 def _load_model(device="cuda", backend=None, dtype=None):
 	if not backend:
 		backend = cfg.audio_backend
+
+	if ERRORED_BACKENDS[backend]:
+		raise ERRORED_BACKENDS[backend]
 
 	if cfg.inference.amp:
 		dtype = None

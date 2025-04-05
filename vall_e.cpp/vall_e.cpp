@@ -141,8 +141,9 @@ int32_t vall_e_inputs_map_get_classifier_idx( io_map_t& io_map, const std::strin
 }
 
 void vall_e_inputs_map_init( io_map_t& io_map, llama_model* model ) {
-	auto n_embd = llama_n_embd( model );
-	auto n_vocab = llama_n_vocab( model );
+	auto vocab = llama_model_get_vocab( model );
+	auto n_embd = llama_model_n_embd( model );
+	auto n_vocab = llama_vocab_n_tokens( vocab );
 	
 	io_map.n_embd = n_embd;
 	io_map.n_vocab = n_vocab;
@@ -543,10 +544,14 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 		sparams.no_perf = false;
 		llama_sampler * smpl = llama_sampler_chain_init(sparams);
 
-		llama_sampler_chain_add(smpl, llama_sampler_init_top_k(0));
-		llama_sampler_chain_add(smpl, llama_sampler_init_top_p(1.0, 1));
-		llama_sampler_chain_add(smpl, llama_sampler_init_temp (1.0));
-		llama_sampler_chain_add(smpl, llama_sampler_init_dist (LLAMA_DEFAULT_SEED));
+		if ( mode == INFERENCE_MODE_LEN ) {
+    		llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
+		} else {
+			llama_sampler_chain_add(smpl, llama_sampler_init_top_k(0));
+			llama_sampler_chain_add(smpl, llama_sampler_init_top_p(1.0, 1));
+			llama_sampler_chain_add(smpl, llama_sampler_init_temp (1.0));
+			llama_sampler_chain_add(smpl, llama_sampler_init_dist (LLAMA_DEFAULT_SEED));
+		}
 
 		output_tokens.reserve(max_tokens);
 		while ( output_tokens.size() < max_tokens ) {
@@ -554,7 +559,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 				fprintf(stderr, "%s : failed to eval, return code %d\n", __func__, 1);
 				return output_tokens;
 			}
-			llama_kv_cache_clear(ctx->llama.ctx); // necessary for many reasons
+			llama_kv_self_clear(ctx->llama.ctx); // necessary for many reasons
 
 			// sample token
 			auto t = llama_sampler_sample(smpl, ctx->llama.ctx, -1);
@@ -650,7 +655,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 				fprintf(stderr, "%s : failed to eval, return code %d\n", __func__, 1);
 				return output_tokens;
 			}
-			llama_kv_cache_clear(ctx->llama.ctx); // necessary for many reasons
+			llama_kv_self_clear(ctx->llama.ctx); // necessary for many reasons
 			// copy null probabilities
 			std::vector<float> null_logits(n_outputs * n_vocab, 0.0f);
 			memcpy( null_logits.data(), llama_get_logits( ctx->llama.ctx ), sizeof(float) * n_vocab * n_outputs );
@@ -660,7 +665,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 				fprintf(stderr, "%s : failed to eval, return code %d\n", __func__, 1);
 				return output_tokens;
 			}
-			llama_kv_cache_clear(ctx->llama.ctx); // necessary for many reasons
+			llama_kv_self_clear(ctx->llama.ctx); // necessary for many reasons
 			
 			auto sparams = llama_sampler_chain_default_params();
 			sparams.no_perf = false;
@@ -709,7 +714,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			fprintf(stderr, "%s : failed to eval, return code %d\n", __func__, 1);
 			return output_tokens;
 		}
-		llama_kv_cache_clear(ctx->llama.ctx); // necessary for many reasons
+		llama_kv_self_clear(ctx->llama.ctx); // necessary for many reasons
 
 		auto sparams = llama_sampler_chain_default_params();
 		sparams.no_perf = false;
@@ -837,7 +842,7 @@ void vall_e_print_usage( char** argv, vall_e_context_params_t& params, vall_e_ar
     fprintf(stderr, "  -l TEXT, --language TEXT\n");
     fprintf(stderr, "                                        Language for input text / output response (default: %s)\n", args.language.c_str());
     fprintf(stderr, "  -ts TASK, --task TASK\n");
-    fprintf(stderr, "                                        Inferencing task (default: %s, accepts ['tts', 'stt', 'ns', 'sr'])\n", args.task);
+    fprintf(stderr, "                                        Inferencing task (default: %s, accepts ['tts', 'stt', 'ns', 'sr'])\n", args.task.c_str());
     fprintf(stderr, "  -mode MODE, --modality MODE\n");
     fprintf(stderr, "                                        Modality for inferencing (default: %s, accepts ['ar+nar', 'nar-len'])\n", args.modality == MODALITY_NAR_LEN ? "nar-len" : "ar+nar");
     fprintf(stderr, "  -ms N, --max-steps N\n");
@@ -873,7 +878,7 @@ bool vall_e_args_parse( int argc, char** argv, vall_e_context_params_t& params, 
 		} else if (arg == "-ts" || arg == "--task") {
 			args.task = argv[++i];
 		} else if (arg == "-mode" || arg == "--modality") {
-			args.modality = argv[++i] == "ar+nar" ? MODALITY_AR_NAR : MODALITY_NAR_LEN;
+			args.modality = std::string(argv[++i]) == "ar+nar" ? MODALITY_AR_NAR : MODALITY_NAR_LEN;
 		} else if (arg == "-ms" || arg == "--max-steps") {
 			args.max_steps = std::stoi(argv[++i]);
 		} else if (arg == "-md" || arg == "--max-duration") {
@@ -908,7 +913,7 @@ vall_e_context_t* vall_e_load( const vall_e_context_params_t& params ) {
 	llama_model_params model_params = llama_model_default_params();
 	model_params.n_gpu_layers = params.gpu_layers;
 
-	ctx->llama.model = llama_load_model_from_file(params.model_path.c_str(), model_params);
+	ctx->llama.model = llama_model_load_from_file(params.model_path.c_str(), model_params);
 	if ( !ctx->llama.model ) {
 		fprintf(stderr , "%s: error: unable to load model\n" , __func__);
 		return ctx;
@@ -924,7 +929,7 @@ vall_e_context_t* vall_e_load( const vall_e_context_params_t& params ) {
 	ctx_params.no_perf = false;
 	ctx_params.attention_type = LLAMA_ATTENTION_TYPE_CAUSAL; 
 
-	ctx->llama.ctx = llama_new_context_with_model(ctx->llama.model, ctx_params);
+	ctx->llama.ctx = llama_init_from_model(ctx->llama.model, ctx_params);
 	if ( !ctx->llama.ctx ) {
 		fprintf(stderr , "%s: error: failed to create the llama_context\n" , __func__);
 		return ctx;
@@ -1022,7 +1027,7 @@ void vall_e_free( vall_e_context_t* ctx ) {
 	espeak_Terminate();
 	encodec_free(ctx->encodec.ctx);
 	llama_free(ctx->llama.ctx);
-	llama_free_model(ctx->llama.model);
+	llama_model_free(ctx->llama.model);
 	ggml_free(ctx->io_map->ctx);
 	delete ctx->io_map;
 	delete ctx;
