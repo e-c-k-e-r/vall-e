@@ -157,7 +157,7 @@ def _load_model(device="cuda", backend=None, dtype=None):
 	if not backend:
 		backend = cfg.audio_backend
 
-	if ERRORED_BACKENDS[backend]:
+	if ERRORED_BACKENDS.get(backend, None):
 		raise ERRORED_BACKENDS[backend]
 
 	if cfg.inference.amp:

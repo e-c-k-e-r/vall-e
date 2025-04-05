@@ -386,32 +386,22 @@ std::vector<std::vector<float>> sum_embeddings( const std::vector<std::vector<to
 }
 
 std::vector<float> soft_max( int n_logits, const float* logits ) {
-	std::vector<float> res( n_logits, 0.0f );
-	std::vector<float> expd( n_logits, 0.0f );
+	std::vector<float> res(n_logits, 0.0f);
 	float denom = 0.0f;
 
-	for ( auto i = 0; i < n_logits; ++i ) {
-		expd[i] = expf( logits[i] );
-		denom += expd[i];
-	}
-	// to-do: assert denom != 0.0f
-	for ( auto i = 0; i < n_logits; ++i ) {
-		res[i] = expd[i] / denom;
+	float max_logit = logits[0];
+	for (int i = 1; i < n_logits; ++i) {
+		max_logit = std::max(max_logit, logits[i]);
 	}
 
-	return res;
-}
-
-std::vector<float> log_soft_max( int n_logits, const float* logits ) {
-	std::vector<float> res( n_logits, 0.0f );
-	float denom = 0.0f;
-
-	for ( auto i = 0; i < n_logits; ++i ) {
-		denom += logits[i];
+	for (int i = 0; i < n_logits; ++i) {
+		res[i] = std::exp(logits[i] - max_logit);
+		denom += res[i];
 	}
-	// to-do: assert denom != 0.0f
-	for ( auto i = 0; i < n_logits; ++i ) {
-		res[i] = logits[i] / denom;
+
+	float inv_denom = 1.0f / denom;
+	for (int i = 0; i < n_logits; ++i) {
+		res[i] *= inv_denom;
 	}
 
 	return res;
@@ -661,7 +651,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			std::vector<score_t> sorted_scores( n_outputs );
 			for ( auto i = 0; i < n_outputs; ++i ) sorted_scores[i] = { i, scores[i] };
 			std::sort(sorted_scores.begin(), sorted_scores.end());
-			std::reverse(sorted_scores.begin(), sorted_scores.end());
+			// std::reverse(sorted_scores.begin(), sorted_scores.end());
 			
 			// and top-k pick the worst scores
 			for ( auto i = 0; i < n_masked_tokens; ++i ) {
@@ -717,6 +707,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 			for ( auto idx = 0; idx < n_outputs; ++idx ) {
 				// skip if not masked
 				if ( !is_masked[idx] ) {
+					scores[idx] = 0.0;
 					continue;
 				}
 
@@ -750,15 +741,17 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 				// update score if it was masked
 
 				// this is actually wrong
-				// scores[idx] = 1.0f - softmaxed[t]; // invert so we pick the worst tokens later
+				scores[idx] = 1.0 - softmaxed[t]; // invert so we pick the worst tokens later
 
 				// this seems to work better
+				/*
 				float entropy = 0.f;
 				for (int v = 0; v < n_vocab; ++v ) {
 					float p = softmaxed[v];
 					if (p > 0) entropy -= p * std::log(p + 1e-9);
 				}
 				scores[idx] = entropy / std::log(n_vocab); // normalize [0–1]
+				*/
 			}
 
 			llama_sampler_free(smpl);
