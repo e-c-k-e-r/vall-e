@@ -450,7 +450,7 @@ class Base_V2(nn.Module):
 			self.model = None
 		elif self.arch_type in ["llama"]:
 			self.model_config = LlamaConfig(
-				vocab_size=n_vocab,
+				vocab_size=0, # n_vocab,
 				hidden_size=d_model,
 				max_position_embeddings=max_position_embeddings,
 				intermediate_size=d_model*d_ffn,

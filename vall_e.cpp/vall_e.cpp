@@ -580,7 +580,7 @@ std::vector<token_t> generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, i
 		int32_t seq_len = n_outputs;
 		int32_t top_k = 0;
 		float top_p = 1.0;
-		float temperature = 1.5f;
+		float temperature = 1.0f;
 		float cfg_strength = 3.0f;
 		float start_noise = 0.0f;
 		float end_noise = 1.0f;

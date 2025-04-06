@@ -573,6 +573,9 @@ class Model(LlamaPreTrainedModel):
 		self.vocab_size = config.vocab_size
 		self.layers_n = config.num_hidden_layers
 
+		if self.vocab_size:
+			self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
+			
 		self.layers = nn.ModuleList(
 			[DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
 		)
