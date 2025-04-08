@@ -147,8 +147,9 @@ class FiniteAudioEncoder(nn.Module):
 		else:
 			x = self.proj( x )
 
-		weights = F.softmax(self.level_weights, dim=0).view(1, -1, 1)
-		x = (x * weights).sum(dim=1)
+		weights = self.level_weights.float()
+		weights = F.softmax(weights, dim=0).view(1, -1, 1)
+		x = (x * weights).sum(dim=1).to(xi.dtype)
 
 		return x
 

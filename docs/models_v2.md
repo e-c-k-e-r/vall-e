@@ -85,9 +85,12 @@ The `nemo-smaller-44khz-llama-8` model is a 512-dim, 12 layered, 8 headed attent
 * this model also had ~~some~~ plenty of training on my 7900XTX rig under `bfloat16`, with similar hyperparameters (a batch size of 32 for one GPU, rather than 8 samples * 4 GPUs ), as it ironically is at parity for throughput when utilizing `flash_(sdpa)` attention.
 * it's reasonable to assume that a lot of the nitty gritty like LR warmup and slowly introducing features are entirely unnecessary
 * the model *may* benefit from setting the dataloader to a speaker-based one, so it can balance different speakers.
+* due to some form of regression, training under bfloat16 (even with AMP) will cause the gradient norm to slowly grow along with the loss.
+	* I'm honestly not too sure, since an experimental `dac-smaller-44khz-llama-9` model was trained with similar settings and it was rather stable.
 
 The `nemo-larger-44khz-llama-8` model is similar to its immediate predecessor, with 1024-dim, 24 layers, and 16 heads. Training is similar where the only difference is with a learning rate of `3.0e-4`.  Speech emerged quicker than its predecessor at `?`% of the epoch, but quality remains about the same.
-* increasing the de-facto batch size and lowering the learning rate seems to be necessary to edge out improvements in speaker similarity
+* increasing the de-facto batch size and lowering the learning rate seems to be necessary to edge out improvements in speaker similarity.
+* Ironically, I imagine that training under bfloat16 also causes stability problems.
 
 Training of both models experienced degradation in quality periodically, where the loss will rise, spike, then climb back down. It's reasonable to assume this came from duration sorting being the cause, as the model might somehow "overfit" based on duration, as this problem disappeared when re-initializing the dataloader to instead batch samples by durations, then shuffle the batches. However, training throughput significantly dropped for the larger model.
 * Training should *probably* only have the dataloader duration-ordered until speech does emerge, then train an epoch with shuffled durations.
