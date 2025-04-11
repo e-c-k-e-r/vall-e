@@ -317,6 +317,8 @@ class ModelExperimentalSettings:
 	use_sliding_attention_mask: bool = False # when used with above, applies a sliding mask within the current segment
 	# this is a flag since I am cautious
 	use_streamlined_calc_loss: bool = False # explicitly request the faster pathway for loss calc, in case doing loss one by one instead of one batch is a bottleneck
+	audio_decoder_ffn_expansion_size: int = 2 # need to do something awful with this
+	audio_encoder_ffn_expansion_size: int = 2 # need to do something awful with this
 
 	# performs token dropout to compensate for errors
 	# currently unused, since this might be the wrong way to go about it
@@ -329,6 +331,7 @@ class ModelExperimentalSettings:
 	cfg_cond_dropout_p: float = 0.0 # 0.2 # probability to drop out text and audio during training
 	cfg_text_dropout_p: float = 0.0 # 0.0 # probability to drop out input audio prompt during training
 	cfg_prom_dropout_p: float = 0.0 # 0.3 # probability to drop out input audio prompt during training
+	lang_cond_dropout_p: float = 0.0 # probability to drop out language token during training
 
 	use_raw_text_p: float = 0.0 # probability to use raw text as the input prompt instead
 
@@ -810,6 +813,8 @@ class Trainer:
 	wandb_params: dict = field(default_factory=lambda: dict)
 
 	weight_dtype: str = "float16" # dtype to have the model under
+	audio_device: str = "auto"
+	decode_non_resp_audio: bool = True
 
 	amp: bool = False # automatic mixed precision
 	ddp: bool = False # torch's internal DDP, automatically set if local backend is used and multiple GPUs are requested

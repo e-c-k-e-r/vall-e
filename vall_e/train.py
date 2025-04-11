@@ -144,13 +144,14 @@ def run_eval(engines, eval_name, dl, args=None):
 			ref_path.parent.mkdir(parents=True, exist_ok=True)
 			prom_path.parent.mkdir(parents=True, exist_ok=True)
 			
-			hyp_audio, sr = qnt.decode_to_file(hyp, hyp_path)
+			audio_device = cfg.device if cfg.trainer.audio_device == "auto" else cfg.trainer.audio_device
+			hyp_audio, sr = qnt.decode_to_file(hyp, hyp_path, audio_device)
 			
 			if ref is not None:
-				ref_audio, sr = qnt.decode_to_file(ref, ref_path)
+				ref_audio, sr = qnt.decode_to_file(ref, ref_path, audio_device)
 
 			if prom is not None:
-				prom_audio, sr = qnt.decode_to_file(prom, prom_path)
+				prom_audio, sr = qnt.decode_to_file(prom, prom_path, audio_device)
 
 			# naive loss calculation
 			# to-do: find a better way to calculate this / a better metric

@@ -76,10 +76,12 @@ class AR_NAR_V2(Base_V2):
 		# RVQ levels to apply masking training on
 		masking_train_rvq_levels = [0,self.n_resp_levels] # self.config.experimental.masking_train_rvq_levels
 
+
 		# CFG
 		cfg_text_dropout_p = self.config.experimental.cfg_text_dropout_p if self.config is not None else 0.0
 		cfg_cond_dropout_p = self.config.experimental.cfg_cond_dropout_p if self.config is not None else 0.0
 		cfg_prom_dropout_p = self.config.experimental.cfg_prom_dropout_p if self.config is not None else 0.0
+		lang_cond_dropout_p = self.config.experimental.lang_cond_dropout_p if self.config is not None else 0.0
 		use_raw_text_p = self.config.experimental.use_raw_text_p if self.config is not None else 0.0
 		# rate to train RVQ level AR-ly or NAR-ly
 		masking_train_p = self.config.experimental.masking_train_p if self.config is not None else 0.5
@@ -153,6 +155,9 @@ class AR_NAR_V2(Base_V2):
 
 			if task == "len":
 				quant_levels[i] = 0
+
+			if random.random() < lang_cond_dropout_p:
+				lang_list[i] = None
 
 			# apply CFG (should probably only apply to NAR quant level 0)
 			if task not in text_task + ["len"]:

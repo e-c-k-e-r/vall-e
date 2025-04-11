@@ -115,12 +115,15 @@ class FiniteAudioEncoder(nn.Module):
 			self.proj = nn.Identity()
 
 		self.level_weights = nn.Parameter(torch.ones(n_levels) / math.sqrt(n_levels))
+		self.use_ffn = use_ffn
 
 		# explicit initialization
+		# this is actually BAD BAD BAD
+		"""
 		for emb in self.embs:
 			torch.nn.init.normal_(emb.weight, mean=0.0, std=0.02)
+		"""
 		
-		self.use_ffn = use_ffn
 		if use_ffn:
 			nn.init.xavier_uniform_(self.proj[0].weight)
 			nn.init.xavier_uniform_(self.proj[2].weight)
@@ -131,13 +134,17 @@ class FiniteAudioEncoder(nn.Module):
 			nn.init.xavier_uniform_(self.proj.weight)
 			nn.init.zeros_(self.proj.bias)
 
-	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None ) -> Tensor:
+	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None, stability = None ) -> Tensor:
 		# empty
 		if xi.shape[0] == 0:
 			dim = self.embs[0].weight.shape[-1] # self.proj.weight.shape[0]
 			return torch.zeros((0, dim), device=xi.device, dtype=xi.dtype)
 		if dropout_mask is not None:
 			xi = _dropout_codes( xi, dropout_mask, dropout_token )
+
+		# some cronge
+		if stability is None:
+			stability = xi.dtype == torch.bfloat16
 
 		x = torch.stack([ emb(xi[:, i]) for i, emb in enumerate(self.embs) ], dim=1)
 		x = x + self.pos_embedding
@@ -147,8 +154,12 @@ class FiniteAudioEncoder(nn.Module):
 		else:
 			x = self.proj( x )
 
-		weights = F.softmax(self.level_weights.float(), dim=0).view(1, -1, 1)
-		x = (x.float() * weights).sum(dim=1).to(xi.dtype)
+		if stability:
+			weights = F.softmax(self.level_weights.float(), dim=0).view(1, -1, 1)
+			x = (x.float() * weights).sum(dim=1).to(xi.dtype)
+		else:
+			weights = F.softmax(self.level_weights, dim=0).view(1, -1, 1)
+			x = (x * weights).sum(dim=1)
 
 		return x
 
@@ -300,6 +311,8 @@ class Base_V2(nn.Module):
 		len_loss_factor = config.experimental.len_loss_factor if config is not None else 0.00001
 		logit_normalization = config.experimental.logit_normalization if config is not None else 0
 		per_level_normalization = config.experimental.per_level_normalization if config is not None else True
+		audio_decoder_ffn_expansion_size = config.experimental.audio_decoder_ffn_expansion_size if config is not None else 2
+		audio_encoder_ffn_expansion_size = config.experimental.audio_encoder_ffn_expansion_size if config is not None else 2
 		use_segmented_attention_mask = config.experimental.use_segmented_attention_mask if config is not None else True
 		use_sliding_attention_mask = config.experimental.use_sliding_attention_mask if config is not None else True
 		parallel_attention_mask_dropout = config.experimental.parallel_attention_mask_dropout if config is not None else 0.0
@@ -417,17 +430,20 @@ class Base_V2(nn.Module):
 				n_tokens=n_audio_tokens + 2, # stop + masked token
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
+				d_ffn=audio_encoder_ffn_expansion_size,
 			)
 		else:
 			self.proms_emb = AudioEncoder(
 				n_tokens=n_audio_tokens,
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
+				d_ffn=audio_encoder_ffn_expansion_size,
 			)
 			self.resps_emb = AudioEncoder(
 				n_tokens=n_audio_tokens + 2, # stop + masked token
 				n_levels=self.n_resp_levels,
 				token_dim=d_model,
+				d_ffn=audio_encoder_ffn_expansion_size,
 			)
 
 		self.audio_decoder = AudioDecoder(
@@ -435,6 +451,7 @@ class Base_V2(nn.Module):
 			(n_audio_tokens + 1),
 			self.n_resp_levels,
 			use_ln=per_level_normalization,
+			d_ffn=audio_decoder_ffn_expansion_size,
 		)
 		self.len_decoder = AuxDecoder( d_model, 1 if not len_use_logits else (10 * 5) )
 		self.phn_decoder = AuxDecoder( d_model, n_phn_tokens )
