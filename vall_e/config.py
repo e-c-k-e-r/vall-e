@@ -317,6 +317,9 @@ class ModelExperimentalSettings:
 	use_sliding_attention_mask: bool = False # when used with above, applies a sliding mask within the current segment
 	# this is a flag since I am cautious
 	use_streamlined_calc_loss: bool = False # explicitly request the faster pathway for loss calc, in case doing loss one by one instead of one batch is a bottleneck
+	use_audio_encoder_level_weights: bool = True # flag to maintain backwards compat
+	use_audio_encoder_ffn: bool = True # 
+	use_audio_encoder_norm: bool = True # 
 	audio_decoder_ffn_expansion_size: int = 2 # need to do something awful with this
 	audio_encoder_ffn_expansion_size: int = 2 # need to do something awful with this
 
