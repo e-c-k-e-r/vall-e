@@ -18,7 +18,12 @@ except Exception as e:
 	pass
 """
 
-from transformers import pipeline
+try:
+	from transformers import pipeline
+except Exception as e:
+	def _kludge_cringe():
+		raise e
+	pipeline = _kludge_cringe
 
 from functools import cache
 from tqdm.auto import tqdm

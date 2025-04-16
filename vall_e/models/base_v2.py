@@ -123,16 +123,6 @@ class FiniteAudioEncoder(nn.Module):
 		self.level_weights = nn.Parameter(torch.ones(n_levels) / math.sqrt(n_levels)) if use_level_weights else None
 		self.use_ffn = use_ffn
 
-		if use_ffn:
-			nn.init.xavier_uniform_(self.proj[0].weight)
-			nn.init.xavier_uniform_(self.proj[2].weight)
-
-			nn.init.zeros_(self.proj[0].bias)
-			nn.init.zeros_(self.proj[2].bias)
-		elif token_dim != d_model:
-			nn.init.xavier_uniform_(self.proj.weight)
-			nn.init.zeros_(self.proj.bias)
-
 	def forward(self, xi: Tensor, dropout_mask = None, dropout_token = None, stability = None, mode = None ) -> Tensor:
 		# empty
 		if xi.shape[0] == 0:
@@ -162,9 +152,6 @@ class FiniteAudioEncoder(nn.Module):
 
 		if self.level_weights is None:
 			x = x.sum(dim=1)
-		elif stability:
-			weights = F.softmax(self.level_weights.float(), dim=0).view(1, -1, 1)
-			x = (x.float() * weights).sum(dim=1).to(xi.dtype)
 		else:
 			weights = F.softmax(self.level_weights, dim=0).view(1, -1, 1)
 			x = (x * weights).sum(dim=1)
