@@ -15,7 +15,7 @@ Training is (obviously) *very* dependent on:
   * annotating each utterance with it's top-k similar utterances through `vall_e.emb.similar` help with prompt adherence in any stage of training
 * how patient you are
   * the original (`base.py`) implementation serendipitously has a cirriculum that allows for speech to realize relatively fast with EnCodec (from what I remember)
-    * this is from how selecting which RVQ level to train naturally "scales the loss" for higher, less important levels, and the model doesn't train each level in parallel at all
+    * this is from how selecting which codebook level to train naturally "scales the loss" for higher, less important levels, and the model doesn't train each level in parallel at all
   * the new (`base_v2.py`) implementation requires lots of patience, as it seems to require 8M samples for speech to properly realize 
     * this is from how several "stabilizers" are required to train it as every sequence is inherently trained in parallel, but not the loss calculation.
 * the audio codec, to an extent
@@ -29,7 +29,7 @@ Training is (not-so-obviously) not dependent on:
       * per E2/F5's paper, a size of 1024 dim, 4x FFN, 16 heads, 24 layers might be preferable?
     * it *probably* is necessary to have a larger model to better adhere to the reference clip, but experimentation is not at the point yet to verify this.
 * the audio codec, to an extent
-  * for the old (`base.py`) implementation, EnCodec only seems to work well for it, as DAC might requires some hacks or patience for the higher RVQ levels to train, while `nvidia/audio-codec-44khz` requires an exotic training cirriculum, assumedly.
+  * for the old (`base.py`) implementation, EnCodec only seems to work well for it, as DAC might requires some hacks or patience for the higher codebook levels to train, while `nvidia/audio-codec-44khz` requires an exotic training cirriculum, assumedly.
   * for the new (`base_v2.py`), given how EnCodec and `nvidia/audio-codec-44khz` both seem to behave the same, I assume this implementation is almost agnostic to any codec (as long as RVQ/FSQ-ness is signaled proper).
   * each codec will have different cirriculum requirements and the ease for coherent speech to emerge from each levels will vary
 

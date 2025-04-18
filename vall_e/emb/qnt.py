@@ -444,6 +444,15 @@ def encode_from_file(path, device="cuda"):
 Helper Functions
 """
 
+def post_process( codes ):
+	# artifact was saved as a batch
+	if codes.dim() == 3:
+		codes = codes[0]
+	# (codebook, frame) => (frame, codebook)
+	if codes.shape[0] < codes.shape[1]:
+		codes = codes.t()
+	return codes
+
 # DAC "silence": [ 568,  804,   10,  674,  364,  981,  568,  378,  731]
 
 # trims from the start, up to `target`
@@ -471,7 +480,8 @@ def trim( qnt, target, reencode=False, device="cuda" ):
 	end = end / cfg.dataset.frames_per_second * cfg.sample_rate
 	
 	wav = decode(qnt, device=device)[0]
-	return encode(wav[start:end], cfg.sample_rate, device=device)[0].t()
+	res = encode(wav[start:end], cfg.sample_rate, device=device)
+	return post_process( res )
 
 # trims a random piece of audio, up to `target`
 # to-do: try and align to EnCodec window
@@ -512,7 +522,7 @@ def interleave_audio( *args, audio=None ):
 		if i + 1 != len(qnts):
 			res.append( audio )
 
-	return res
+	return post_process( res )
 
 # concats two audios together
 def concat_audio( *args, reencode=False, device="cuda" ):
@@ -524,11 +534,16 @@ def concat_audio( *args, reencode=False, device="cuda" ):
 
 	decoded = [ decode(qnt, device=device)[0] for qnt in qnts ]
 	combined = torch.concat( decoded )
-	return encode(combined, cfg.sample_rate, device=device)[0].t()
+	res = encode(combined, cfg.sample_rate, device=device)
+	return post_process( res )
 
 # merges two quantized audios together
 # requires re-encoding because there's no good way to combine the waveforms of two audios without relying on some embedding magic
 def merge_audio( *args, device="cuda", scale=[] ):
+	# since this is more than likely being used in a dataloader worker, force disable CUDA since nvidia/audio-codec-44khz has problems where it'll try and use it despite the model not requesting it
+	if device == "cpu":
+		torch.cuda.is_available = lambda : False
+
 	qnts = [ *args ]
 	qnts = [ qnt for qnt in qnts if qnt is not None ]
 	decoded = [ decode(qnt, device=device)[0] for qnt in qnts ]
@@ -548,7 +563,8 @@ def merge_audio( *args, device="cuda", scale=[] ):
 			decoded[i] = decoded[i] * scale[i]
 
 	combined = sum(decoded) / len(decoded)
-	return encode(combined, cfg.sample_rate, device=device)[0].t()
+	res = encode(combined, cfg.sample_rate, device=device)
+	return post_process( res )
 
 # Get framerate for a given audio backend
 def get_framerate( backend=None, sample_rate=None ):

@@ -12,7 +12,7 @@ import torch
 import itertools
 
 from .config import cfg
-from .emb.qnt import trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt, pad_codes_with_silence
+from .emb.qnt import post_process, trim, trim_random, repeat_extend_audio, concat_audio, merge_audio, decode_to_file, decode as decode_qnt, encode as encode_qnt, pad_codes_with_silence
 from .emb.g2p import encode as encode_phns
 from .utils.sampler import PoolSampler, OrderedSampler, BatchedOrderedSampler, RandomSampler
 from .utils.distributed import global_rank, local_rank, world_size, is_global_leader
@@ -786,13 +786,7 @@ def _load_artifact(path, return_metadata=False, return_artifact=False, validate=
 		raise Exception(f"Artifact contains zero'd tensor: {path}")
 
 	codes = torch.from_numpy(codes.astype(int)).to(torch.int16)
-
-	# artifact was saved as a batch
-	if codes.dim() == 3:
-		codes = codes[0]
-	# (codebook, frame) => (frame, codebook)
-	if codes.shape[0] < codes.shape[1]:
-		codes = codes.t()
+	codes = post_process( codes )
 
 	if return_artifact:
 		return codes, artifact

@@ -17,7 +17,7 @@ While the original paper called for a separate AR model and a NAR model, by trea
 
 ## The AR (Autoregressive) Model
 
-The AR is responsible for generating the first RVQ level of the audio codes for a given output. References to "outputs from the AR" refers to this level, as it contibutes to the final waveform the most.
+The AR is responsible for generating the first codebook level of the audio codes for a given output. References to "outputs from the AR" refers to this level, as it contibutes to the final waveform the most.
 * Some models may refer to this level as the "coarse" level.
 * The benefit of autoregressively decoding for this code is that it offers better output while also "encoding" the duration within the sequence itself, as the stop token will depend on the length of the sequence.
 * The downside is that it does take most of the compute time to iterate through the sequence one step at a time.
@@ -40,20 +40,20 @@ Compared to non-autoregressive decoding, I personally feel that autoregressive e
 
 ## The NAR (Non-autoregressive) Model
 
-The NAR is responsible for generating the remaining RVQ levels of the audio codes for a given output. References to the "outputs from the NAR" refers to the underlying "levels" for a given waveform, as each further levels contributes to the final waveform less significantly than the previous.
+The NAR is responsible for generating the remaining codebook levels of the audio codes for a given output. References to the "outputs from the NAR" refers to the underlying "levels" for a given waveform, as each further levels contributes to the final waveform less significantly than the previous.
 * Some models may refer to this level as the "fine" level.
 
 As decoding is done non-autoregressively, the model can process tokens "in place" and have them attended to one another in the past and future, thus speeding up output and allowing for "more accurate" outputs.
 
-Non-autoregressive training is performed by having the input tokens from the previous RVQ level predict the next level's token in place. The output logits are in the same position, and do not require further modifications as required for the AR.
+Non-autoregressive training is performed by having the input tokens from the previous codebook level predict the next level's token in place. The output logits are in the same position, and do not require further modifications as required for the AR.
 
 One problem exhibited from a NAR is producing arfifacts ("crust") in the final waveform. I believe this is a confidence problem where the wrong token is inferred.
 * Unfortunately, one solution is to simply train a separate NAR, as this should help bolster the model's NAR capabilities without the AR influencing things, as I imagine being able to both causally and parallel-ly decode tokens harms things.
   * This is backed by the used `cfg.model.experimental.rvq_levels_p` distribution affecting the model's AR capabilities, as increasing the NAR's share in training causes the AR to perform *less*.
     * However, this may be simply wrong, but checkpoints that used such distributions felt lobotomized.
 * Another solution that may help is to provide two token dropout methods:
-  * `token_dropout_error`: This will randomly nudge a small percentage of tokens from the prior RVQ level to simulate wrong tokens being predicted.
-  * `token_dropout_rate`: This will randomly mask off tokens from the prior RVQ level with a mask token, to try and have the model not-strongly-rely on the given input.
+  * `token_dropout_error`: This will randomly nudge a small percentage of tokens from the prior codebook level to simulate wrong tokens being predicted.
+  * `token_dropout_rate`: This will randomly mask off tokens from the prior codebook level with a mask token, to try and have the model not-strongly-rely on the given input.
 
 Sampling from the NAR absolutely necessitates a low temperature or to be greedily sampled, as higher temperatures lead to the aforementioned artifacts in the final waveform.
 * This is mostly mitigated with a proper non-causal mask, but crust still emerges at higher temperatures.
@@ -83,7 +83,7 @@ The NAR-len model keeps things simple by:
     * in theory, attention *could* deduce this from the amount of masked tokens vs unmasked tokens in the sequence. 
     * in reality, the model shouldn't really need to reference this anyways, as there's no reason for the model to make use of this information when it's trying to predict what *all* masked tokens should be.
 * predicting the "duration" (the output audio token window) is kept within the model itself, by autoregressievly inferencing the duration for a given input prompt (text + audio).
-  * the model can already "know" the duration for a given prompt already from an AR RVQ level 0, by predicting when to output the stop token, so it makes sense to re-use the model for this.
+  * the model can already "know" the duration for a given prompt already from an AR codebook level 0, by predicting when to output the stop token, so it makes sense to re-use the model for this.
   * the output length is a simple tokenized sequence where each token is a base-10 digit.
     * it could be in any base, but it's simple to just treat each token ID as a digit, then cast the string to an int.
     * this could literally also not be relying on an AR sequence to predict.
@@ -93,7 +93,7 @@ The NAR-len model keeps things simple by:
 
 Because the model already leverages the magic of attention to derive phoneme-alignment, such annotations are still not required (but they probably help with a naive sampler).
 
-In theory, demasking for the NAR's RVQ level 0 can also be applied to the remaining RVQ levels to further improve the output from the remaining levels.
+In theory, demasking for the NAR's codebook level 0 can also be applied to the remaining codebook levels to further improve the output from the remaining levels.
 * this isn't necessary as the model already has a strong enough relationship between the prompt, the prior levels, and the targeted level.
 * this is technically already offered with `cfg.model.experimental.token_dropout_rate` which mirrors masking, but experimentation has not been done to a large degree.
 * there is a bit of a problem with properly implementing this, as the tokens aren't predicting themselves.
@@ -123,7 +123,7 @@ Other solutions such as TorToiSe makes use of additional embeddings/classifiers 
 
 Classifiers are the final output head / projection layer that processes the last hidden states of a model into a probability distribution for each token. 
 
-Out of paranoia, each head is split for each macro-task (RVQ level, `stt`, and `len`), even though the core half of the model's training was with a single output head.
+Out of paranoia, each head is split for each macro-task (codebook level, `stt`, and `len`), even though the core half of the model's training was with a single output head.
 * It also helps with not needing to do some tricks by setting unwanted tokens to `-inf`.
 
 ### Text Embeddings
@@ -171,23 +171,23 @@ However, due to the nature of the encoded audio, embedding the audio tokens requ
 As EnCodec encodes audio across eight codebooks (and DAC's 44Khz audio under nine codebooks), our audio is encoded under a 2D space, rather than a simple 1D space like text does. Because of this, we require embeddings for *every* codebook level, effectively giving eight embedding heads for audio.
 * Technically, this can be stored within a unified embedding head, but each layer is offset by 1024 (the number of tokens).
 
-For the `prom` embedding, we can simply use each embedding for each layer. Each embedding level maps to its respective RVQ level.
+For the `prom` embedding, we can simply use each embedding for each layer. Each embedding level maps to its respective codebook level.
 
 However, the `resp` requires some extra care, as the model needs to both causally (AR) and parallel-ly (NAR) decode tokens.
-* The first embedding level pertains to RVQ level 0 for the AR (`AR:0:0`) or NAR (`NAR:0:0`).
+* The first embedding level pertains to codebook level 0 for the AR (`AR:0:0`) or NAR (`NAR:0:0`).
   * This embedding predicts tokens within its own embedding.
-* The remaining embedding levels maps to RVQ level 0 + n for the NAR (`NAR:L-1:L`).
-  * In other words, embedding level 1 => RVQ level 0, embedding level 2 => RVQ level 1, etc...
+* The remaining embedding levels maps to codebook level 0 + n for the NAR (`NAR:L-1:L`).
+  * In other words, embedding level 1 => codebook level 0, embedding level 2 => codebook level 1, etc...
 * I believe this is required because the model encodes which task to perform (rather than the attention heads), and which tokens to predict (rather than the classifiers)
   * In other words, each embedding needs to be separated based on what tokens they do predict.
 
 The `prom` and `resp` are split since, in theory, it helps the model know better what audio to source from, and what audio is part of the output sequence. In theory.
-* The `text` embedding's robustness not only for reuse between each RVQ level, but for the `stt` task as well is a mystery.
+* The `text` embedding's robustness not only for reuse between each codebook level, but for the `stt` task as well is a mystery.
 
 Finally, the model *may* then sum each embedding level back down to one sequence, as defined under `cfg.model.experimental.audio_embedding_sums`.
 * The resulant sum is not normalized by the length.
-* It's not a requirement, as the model can still function only "seeing" the required RVQ level.
-* However, it *may* help to have the model being able to "see" prior levels, as one RVQ level might depend on the prior level.
+* It's not a requirement, as the model can still function only "seeing" the required codebook level.
+* However, it *may* help to have the model being able to "see" prior levels, as one codebook level might depend on the prior level.
   * This is mostly dependent on the underlying audio model being used, which would depend on how each residual is defined.
 * A model not trained with summing embeddings can enable it without much impact, but a model trained on summing embeddings cannot go in the other way without further training.
   * It *could* be beneficial to train a model under mixed modes, but requires experimentation.
@@ -199,17 +199,17 @@ Either embeddings can be used to compute utterance similarity scores, as per `va
 * I need to compare if this can be used as well for speaker similarities.
 * The current implementation makes use of the `resp` embeddings for this, but the `proms` might be used instead (experimentation is needed for this).
 
-#### RVQ Level Embedding
+#### Codebook Level Embedding
 
-This embedding hints what the target RVQ level of the audio codes is being targetted. This embedding is not required, but seems some architectures (Mamba) requires this.
+This embedding hints what the target codebook level of the audio codes is being targetted. This embedding is not required, but seems some architectures (Mamba) requires this.
 
-This *may* replace needing separate embeddings for each RVQ level, but experimentation is required to test this claim.
+This *may* replace needing separate embeddings for each codebook level, but experimentation is required to test this claim.
 
 ### Tasks
 
 The base model handles processing inputs into token sequences, per the requested task assigned to each input in a batch.
 
-Most sequences follow a `<text><RVQ level><language><prompt><output>` sequence, but some tasks will receive the prompt as a list of tensors, instead.
+Most sequences follow a `<text><codebook level><language><prompt><output>` sequence, but some tasks will receive the prompt as a list of tensors, instead.
 
 The nitty gritty of how each task is implemented is documented under [./docs/data.md](/docs/data.md).
 
@@ -275,7 +275,7 @@ However, due to the model being trained on phonemes, the resultant output is the
 The primary benefit of this task is to provide a fast way to directly transcribe audio into the phonemes used annotate the dataset itself, but at the moment the reference model isn't accurate enough to rely on this.
 * The other problem is it's very hard to validate this, as the output isn't in English, and requires processing through the model again to verify the transciption.
 
-This task will follow a reverse sequence of `<audio><language><RVQ level><output>`.
+This task will follow a reverse sequence of `<audio><language><codebook level><output>`.
 
 #### Phonemize / Un-Phonemize
 
@@ -331,10 +331,10 @@ Due to major enough differences, this code is segregated from the original `mode
 
 ## `models/ar_nar.py`
 
-This script implements VALL-E as a unified autoregressive and non-autoregressive model, where RVQ-level 0 is inferenced autoregressively, the remaining levels are infereneced non-autoregressively, if requested.
-* Since one model can be trained AR-ly and NAR-ly, RVQ-level 0 can also be trained non-autoregressively with diffusion-like masking.
+This script implements VALL-E as a unified autoregressive and non-autoregressive model, where codebook level 0 is inferenced autoregressively, the remaining levels are infereneced non-autoregressively, if requested.
+* Since one model can be trained AR-ly and NAR-ly, codebook level 0 can also be trained non-autoregressively with diffusion-like masking.
 
-For training, this model handles preparing the batch provided through the dataloader according to a randomly sampled targetted RVQ-level.
+For training, this model handles preparing the batch provided through the dataloader according to a randomly sampled targetted codebook level.
 
 For inferencing, this will dynamically inference depending on the arguments provided.
 

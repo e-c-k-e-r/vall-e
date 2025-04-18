@@ -32,6 +32,15 @@ The `AudioDecoder` projects the last hidden state through another feed-forward n
 * It might not even be necessary to use an MLP, as the model was quick to fix itself after deleting-then-shrinking the feed-forward expansion factor to try and squeeze out throughput.
 	* because of this ablation, it's *probably* okay to just do per-codebook layer norm + an output head, but that experimentation is for another day.
 
+### Ablations
+
+For RVQ codecs, such as EnCodec and DAC, the `AudioEncoder.level_weights` can be ignored entirely without any problem.
+
+For any codec, the `AudioEncoder.norm` can be omitted, as it doesn't make much sense to perform layer normalization pre-FFN when the input is just the embedding + codebook positioning embeddings.
+* it *might* instead work when applying it to the input into the FFN rather than the input entirely, or applying it post-FFN on the residual connection.
+
+Both `AudioEncoder.ffn` and `AudioDecoder.ffn` can have its expansion size adjusted and re-trained without much of an impact (for example, to downsize).
+
 ### `ResidualAudioEncoder/Decoder`
 
 The implementation also includes an encoder/decoder targeted for residual codecs, but real-world testing shows that it does not perform anywhere near as well as the FSQ-targeted encoder/decoder setup.
@@ -101,6 +110,7 @@ Both flavors were trained on the previously used dataset, but English-only utter
 * Additional languages and the remaining 8 seconds to 12 seconds were re-introduced into the dataset. Non-English language performance needs to be evaluated, but it seems *fine*.
 
 Additional tasks beyond text-to-speech (such as `ns`, `sr`, `stt`) were not trained for either models, as they're very low priority, and the implementation might have had logic to train for it gutted.
+* `ns` and `sr` are being experimented with, but training is a ***huge*** pain as CPU-inferencing through the NAC is required per the dataloader
 
 ### Experimental Settings
 
@@ -160,10 +170,8 @@ Additionally, this implementation paves the way a ton of neat features, such as:
 However, output leaves a lot to be desired:
 * despite what literature suggests, an FSQ codec is heavily favored against with the current approach
 	* each codebook's importance is effectively dependent on the speaker itself, so even having priority be a "learned" parameter is tough
-	* if DAC succeeds where `nvidia/audio-codec-44khz` failed, then this would prove it's a codec problem
-	* if DAC does not, then it's simply a 44KHz problem, where the codebooks are too saturated with information for the model to properly utilize
-		*  although I doubt this is true, as the model still performs fine for a subset of speakers trained against
-	* if Encodec fails too, then this implementation has an inherent flaw
+	* RVQ codec don't have this problem as each level will always have the same type of importance (so much so that `AudioEncoder.level_weights` can be ignored for RVQ-codec-based models)
+* this architecture does not remove the inherent problem DAC-based models have, where the higher codebooks contribute too much noise
 * both the small and the large model seemed to have hit a "capacity" limit
 	* the "confidence" problem of the prior implementation seems to have emerged even for typical speakers
 * some other quirks and emergent behaviors inherent to the model I'm not aware of / can't recall

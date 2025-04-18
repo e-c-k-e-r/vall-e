@@ -947,7 +947,11 @@ class Base_V2(nn.Module):
 					# expand to list if not a list
 					proms = [ input ] if isinstance(input, torch.Tensor) else input
 					# iterate over the list to inject their tokens
-					token = torch.cat( [ prompt_input_to_token( input, quant_level ) for input in proms if input is not None ] )
+					parts = [ prompt_input_to_token( i, quant_level ) for i in proms if i is not None ]
+					for i, p in enumerate( parts ):
+						if p.dim() == 1:
+							parts[i] = p.repeat(p.shape[0], self.n_resp_levels)
+					token = torch.cat( parts )
 
 					if logits[batch_index].dim() < 3 and token.dim() >= 2:
 						token = token[..., 0]
@@ -1197,18 +1201,25 @@ class Base_V2(nn.Module):
 			windows = [text_window, audio_window, audio_window]
 
 			for name, input in batch_input:
+				if isinstance(input, list):
+					shape = sum( [ i.shape[0] for i in input if isinstance(i, torch.Tensor) ] )
+				elif not isinstance(input, torch.Tensor):
+					continue
+				else:
+					shape = input.shape[0]
+
 				if name in ["phn", "text"]:
-					lens[0] = input.shape[0] + 1
+					lens[0] = shape + 1
 				elif name == "lang":
 					lens[0] += 2
 				elif name == "prom":
-					lens[1] = input.shape[0] + 1
+					lens[1] = shape + 1
 				elif name == "tone":
 					lens[1] += 2
 				elif name == "len":
 					lens[2] = 2
 				elif name == "resp":
-					lens[2] = input.shape[0]
+					lens[2] = shape
 
 			aux_lens.append( lens )
 			aux_windows.append( windows )

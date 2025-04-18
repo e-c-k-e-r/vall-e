@@ -57,16 +57,18 @@ For audio backends:
   - encoding audio will use the `encodec` backend automagically, as there's no EnCodec encoder under `vocos`
 * [`descript-audio-codec`](https://github.com/descriptinc/descript-audio-codec): boasts better compression and quality, but has issues with model convergence.
   - models at 24KHz + 8kbps will NOT converge in any manner.
-  - models at 44KHz + 8kbps seems harder to model its "language", and the NAR side of the model suffers greatly.
+  - models at 44KHz + 8kbps will work for lower codebook levels, but higher codebook levels will ***always*** have issues
+    * this seems to be inherent to the codec itself and not the model, as separate implementations have this problem
 * [`nvidia/audio-codec-44khz`](https://huggingface.co/nvidia/audio-codec-44khz): boasts even better compression and quality
   - this codec employs FSQ instead of RVQ.
+    * this doesn't seem to have any problems inherent to the codec itself, but instead inherent to FSQ codecs in general
 
 #### Descript-Audio-Codec
 
 Descript-Audio-Codec was thoroughly tested for promising much, much cleaner output audio, as this model encodes/decodes at 44.1KHz, rather than EnCodec's 24KHz.
 
-However, due to the nature of the codec, simply throwing it at an attention-based transformer proves to be painful, as the model *heavily* suffers from noisy output in the higher half of the RVQ levels.
-* the solution may be to simply encode / decode with *all* RVQ levels in one pass.
+However, due to the nature of the codec, simply throwing it at an attention-based transformer proves to be painful, as the model *heavily* suffers from noisy output in the higher half of the codebook levels.
+* the solution may be to simply encode / decode with *all* codebook levels in one pass.
 
 Ironically, testing through erroneously encoded audio (feeding 24KHz audio without upsampling to 44.1KHz) proved to have "cleaner" but bad utterances.
 
@@ -107,8 +109,8 @@ This script handles taking either raw input audio, or processed encoded audio, a
 * For raw input audio, the MFCC (Mel-frequency cepstrum coefficients) are extracted as features from the waveform, and the cosine similarities are compared against every other utterance for a given speaker.
   * This works *fine*, as this is adequately accurate and does not require a model to already exist.
 * For the encoded audio, the audio codes are passed through the model's embedding, summed to one "token", and the cosine similarities are compared to score the top-K similar speakers.
-  * By default, the output response embedding is used, and each RVQ level is summed together to leave one sequence.
-  * In theory this should be better as the model may have its own features per RVQ code+level, but still requires a model to already be trained.
+  * By default, the output response embedding is used, and each codebook level is summed together to leave one sequence.
+  * In theory this should be better as the model may have its own features per codebook + level, but still requires a model to already be trained.
   * The original encoding model's embeddings can also be used, or the last hidden states passed through the model, instead, but seems overkill.
 
 When processing a dataset, this requires already having accompanying metadata generated through `vall_e.data --action=metadata --yaml=./your/training/config.yaml`.
