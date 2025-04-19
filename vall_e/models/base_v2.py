@@ -1384,7 +1384,6 @@ class Base_V2(nn.Module):
 		logits = [ logit[..., -l:, :] for l, logit in zip(seq_lens, logits) ]
 
 		# perform min_p filtering of our logits
-		"""
 		if min_p > 0.0:
 			logits = [ min_p_filtering(logit, min_p=min_p) for logit in logits ]
 
@@ -1395,7 +1394,6 @@ class Base_V2(nn.Module):
 		# do top-no logit processing
 		if top_no > 0.0:
 			logits = [ top_no_logits_processing(logit) for logit in logits ]
-		"""
 
 		probabilities = [ F.softmax(logit, dim=-1) for logit in logits ]
 		scores = [ torch.max(prob, -1)[0] for prob in probabilities ]
