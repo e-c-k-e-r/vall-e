@@ -296,8 +296,13 @@ class AR_NAR(Base):
 		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.75)
 		start_noise = sampling_kwargs.get("denoise_start", 0.0)
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
-		remasking = sampling_kwargs.get("remasking", True)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
+
+		largest_score = 1.0
+		smallest_score = 0.0 # -float("inf")
+
+		score_masked_only = sampling_kwargs.pop("sampling_scores_masked_only", False)
+		remasking = sampling_kwargs.get("sampling_scores_remask", False)
 
 		# to specify the initial mask used
 		vc_list = sampling_kwargs.pop("vc_list", None)
@@ -326,7 +331,7 @@ class AR_NAR(Base):
 			# gen masking ratio
 			noise_p = math.cos( start_noise * math.pi * 0.5 )
 			# generate scoring mask (because the above mask will get masked off per the scores, so we do not need to mask beforehand)
-			scores = [ torch.tensor( [ 1.0 if random.random() < noise_p else 0.0 for _ in range( seq_len ) ], dtype=torch.float32, device=device ) for seq_len in len_list ]
+			scores = [ torch.tensor( [ smallest_score if random.random() < noise_p else largest_score for _ in range( seq_len ) ], dtype=torch.float32, device=device ) for seq_len in len_list ]
 		else:
 			# fill with masked tokens (even though they get masked anyways)
 			resps_list = [ torch.ones((seq_len,), dtype=torch.int16, device=device) * self.mask_token for seq_len in len_list ]
@@ -350,7 +355,7 @@ class AR_NAR(Base):
 			remask_p = 1.0 / (max_steps * 2) if remasking else 0
 			mask_p = noise_p + remask_p
 			# pick the worst scoring tokens to mask off
-			masked_indices = [ score.topk( clamp( int( mask_p * seq_len ), 1, seq_len - step), dim=-1 ).indices for score, seq_len in zip(scores, len_list) ]
+			masked_indices = [ score.topk( clamp( int( mask_p * seq_len ), 1, seq_len - step), dim=-1, largest=False ).indices for score, seq_len in zip(scores, len_list) ]
 			
 			# normal masking
 			if vc_list is None or timestep >= vc_threshold:
@@ -450,15 +455,11 @@ class AR_NAR(Base):
 			sampled_ids = filtered_sampled.ids
 			# keep unmasked tokens
 			resps_list = [ torch.where( masked, input_ids, resps ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
-			# get probability scores
-			scores = [ 
-				# conjugate to have worse scoring tokens picked for topk
-				1.0 - 
-					# only keep scores of tokens we are predicting (and ignore the tokens previously finalized)
-					torch.where( masked, torch.tensor([score for index, score in enumerate(scores)], device=device), torch.ones(masked.shape, device=device) )
-				# use unmodified logit scores for this, as it offers better stability
-				for scores, masked in zip( unfiltered_sampled.scores, is_masked )
-			]
+			# update scores, only updating tokens that were masked off, and force keeping unmasked tokens
+			if score_masked_only:
+				scores = [ torch.where( masked, scores.t(), smallest_score ) for masked, scores in zip( is_masked, sampled.scores ) ]
+			else:
+				scores = [ scores for scores in sampled.scores ]
 
 		return resps_list
 

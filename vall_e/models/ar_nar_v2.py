@@ -255,8 +255,14 @@ class AR_NAR_V2(Base_V2):
 		cfg_rescale = sampling_kwargs.pop("cfg_rescale", 0.75)
 		start_noise = sampling_kwargs.get("denoise_start", 0.0)
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
-		remasking = sampling_kwargs.get("remasking", True)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
+
+		largest_score = 1.0
+		smallest_score = 0.0 # -float("inf")
+
+		score_masked_only = sampling_kwargs.pop("sampling_scores_masked_only", False)
+		score_flatten = sampling_kwargs.pop("sampling_scores_flatten", False)
+		remasking = sampling_kwargs.get("sampling_scores_remask", False)
 
 		# to specify the initial mask used
 		vc_list = sampling_kwargs.pop("vc_list", None)
@@ -291,7 +297,7 @@ class AR_NAR_V2(Base_V2):
 			remask_p = 1.0 / (max_steps * 2) if remasking else 0
 			mask_p = noise_p + remask_p
 			# pick the worst scoring tokens to mask off
-			masked_indices = [ score.topk( clamp( int( mask_p * seq_len ), 1, seq_len - step), dim=0 ).indices for score, seq_len in zip(scores, len_list) ]
+			masked_indices = [ score.topk( clamp( int( mask_p * seq_len ), 1, seq_len - step), dim=0, largest=False ).indices for score, seq_len in zip(scores, len_list) ]
 
 			# normal masking
 			# mask off inputs
@@ -353,8 +359,15 @@ class AR_NAR_V2(Base_V2):
 
 			# update resps, filling in the masked tokens with the new tokens
 			resps_list = [ torch.where( masked, ids.t(), resps ).to(torch.int16) for masked, ids, resps in zip( is_masked, sampled.ids, resps_list ) ]
-			# update scores, filling in the 
-			scores = [ 1.0 - torch.where( masked, scores.t(), 1 ) for masked, scores in zip( is_masked, sampled.scores ) ]
+			# update scores, only updating tokens that were masked off, and force keeping unmasked tokens
+			if score_masked_only:
+				scores = [ torch.where( masked, scores.t(), smallest_score ) for masked, scores in zip( is_masked, sampled.scores ) ]
+			else:
+				scores = [ scores.t() for scores in sampled.scores ]
+
+			# drop all levels at the timestep instead
+			if score_flatten:
+				scores = [ score.mean(dim=0).repeat( score.shape[0], 1 ) for score in scores ]
 
 		return resps_list
 

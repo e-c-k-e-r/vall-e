@@ -152,6 +152,14 @@ These settings should be avoided:
 	* however, it seems there's a regression that caused this to stop working consistently
 	* disabling this falls back to explicitly training a `len` task (like the old implementation)
 
+## Samplers
+
+To-do: Remember what I was going to jot down here
+
+Sampling code is effectively the same, with the twist of instead outputting the logits for all codebooks at `dim=0`.
+
+The NAR-demasking step will account for this automatically, and has dials and knobs to adjust whether to mask off independent of other codebook levels, or for all codebook levels at a given timestep.
+
 ## Benefits and Caveats
 
 To be evaluated thoroughly.
