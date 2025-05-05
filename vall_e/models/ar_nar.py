@@ -298,7 +298,7 @@ class AR_NAR(Base):
 		end_noise = sampling_kwargs.get("denoise_end", 1.0)
 		max_steps = math.floor(max_steps * (end_noise - start_noise))
 
-		largest_score = 1.0
+		largest_score = 1.0 # to-do: validate that the scores I do return are normalized via softmax
 		smallest_score = 0.0 # -float("inf")
 
 		score_masked_only = sampling_kwargs.pop("sampling_scores_masked_only", False)
@@ -457,7 +457,7 @@ class AR_NAR(Base):
 			resps_list = [ torch.where( masked, input_ids, resps ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
 			# update scores, only updating tokens that were masked off, and force keeping unmasked tokens
 			if score_masked_only:
-				scores = [ torch.where( masked, scores.t(), smallest_score ) for masked, scores in zip( is_masked, unfiltered_sampled.scores ) ]
+				scores = [ torch.where( masked, scores.t(), largest_score ) for masked, scores in zip( is_masked, unfiltered_sampled.scores ) ]
 			else:
 				scores = [ scores for scores in unfiltered_sampled.scores ]
 
