@@ -1206,7 +1206,7 @@ class Dataset(_Dataset):
 			speaker_name = self.speakers[speaker_id]
 			utterance_name = random.choice( list(self.metadata[speaker_name].keys()) ) # random.choice(self.metadata[speaker_name])
 		else:
-			speaker_id, utterance_id = self.paths[index]
+			(speaker_id, utterance_id), duration = self.paths[index]
 			speaker_name = self.speakers[speaker_id]
 			utterance_name = list(self.metadata[speaker_name].keys())[utterance_id]
 		
