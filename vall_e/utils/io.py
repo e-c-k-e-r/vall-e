@@ -99,7 +99,7 @@ def torch_save( data, path, module_key=None ):
 		if metadata is None:
 			metadata = {}
 
-		return sft_save( data, path, metadata )
+		return sft_save( data, path, { k: v for k, v in metadata.items() if v is not None } )
 
 	return torch.save( data, path )
 
