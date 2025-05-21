@@ -250,7 +250,10 @@ def train(
 				last_save_step = engines.global_step
 
 				if is_global_leader():
-					engines.export(userdata={"symmap": get_phone_symmap()})
+					if cfg.lora is not None:
+						_logger.warning(f"Exporting LoRA during training not properly implemented, please use the export module explicitly.")
+					else:
+						engines.export(userdata={"symmap": get_phone_symmap()})
 
 			save_ckpt_every = cfg.trainer.save_frequency or cfg.evaluation.frequency
 
@@ -273,7 +276,11 @@ def train(
 					last_save_step = engines.global_step
 					
 					if command in export_commands and is_global_leader():
-						engines.export(userdata={"symmap": get_phone_symmap()})
+						# to-do: actually export the state properly
+						if cfg.lora is not None:
+							_logger.warning(f"Exporting LoRA during training not properly implemented, please use the export module explicitly.")
+						else:
+							engines.export(userdata={"symmap": get_phone_symmap()})
 
 			if engines.global_step != last_eval_step:
 				if engines.global_step % cfg.evaluation.frequency == 0 or command in ["eval"]:
