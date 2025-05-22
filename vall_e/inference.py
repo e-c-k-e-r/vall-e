@@ -114,10 +114,12 @@ class TTS():
 			return text
 
 		# check if tokenizes without any unks (for example, if already phonemized text is passes)
+		"""
 		if precheck and "<unk>" in self.symmap:
 			tokens = tokenize( text )
 			if self.symmap["<unk>"] not in tokens:
 				return torch.tensor( tokens )
+		"""
 
 		if not phonemize:
 			return torch.tensor( text_tokenize( text ) )
