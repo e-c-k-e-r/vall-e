@@ -195,3 +195,9 @@ However, output leaves a lot to be desired:
 	* the "confidence" problem of the prior implementation seems to have emerged even for typical speakers
 * some other quirks and emergent behaviors inherent to the model I'm not aware of / can't recall
 	* such as the demasking sampler loop being quite particular
+* naturally, LoRAs are trainable:
+	* at a glance it seems to address the problems of poor/inconsistent zero-shot performance
+	* training a LoRA is agonizing because the loss doesn't progress anywhere near as nicely as it does against EnCodec-based models
+	* however, there seems to be a problem when predicting the duration that causes it to be too short (when the input prompt is of the speaker) or too long (when the input prompt is not of the speaker)
+		* simply disabling the LoRA specifically for duration prediction seems to fix this
+	* additional testing against LoRAs is necessary to draw further conclusions

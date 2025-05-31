@@ -400,7 +400,9 @@ class AR_NAR_V2(Base_V2):
 			batch_size = len(proms_list)
 
 		if cfg.lora is not None:
-			enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
+			# enable_lora( self, cfg.lora.active_level( 0 ) if use_lora is None else use_lora )
+			# force disable LoRAs for this
+			enable_lora( self, False )
 
 		task_list = [ "len" for _ in range( batch_size ) ]
 		quant_levels = [ 0 for _ in range( batch_size ) ]

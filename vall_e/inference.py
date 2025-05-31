@@ -114,6 +114,8 @@ class TTS():
 			return text
 
 		# check if tokenizes without any unks (for example, if already phonemized text is passes)
+		# to-do: properly fix this
+		#  - i don't remember what specific situation arised where phonemized text is already passed in to warrant the need to detect it
 		"""
 		if precheck and "<unk>" in self.symmap:
 			tokens = tokenize( text )
