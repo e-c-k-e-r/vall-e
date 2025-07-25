@@ -882,7 +882,7 @@ class Dataset(_Dataset):
 				# split to retain tuples
 				flattened[bucket] = self.duration_buckets[bucket]
 				# replace with path
-				flattened[bucket] = [ x[0] for x in flattened[bucket] ]
+				# flattened[bucket] = [ x[0] for x in flattened[bucket] ]
 				# flatten by paths
 				flattened[bucket] = [*_interleaved_reorder(flattened[bucket], lambda x: x[0])]
 			# flatten paths

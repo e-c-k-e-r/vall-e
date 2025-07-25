@@ -51,7 +51,7 @@ class TTS():
 
 		if config.suffix == ".yaml":
 			_logger.info(f"Loading YAML: {config}")
-			cfg.load_yaml( config )
+			cfg.load_yaml( config, lora )
 		elif config.suffix == ".sft":
 			_logger.info(f"Loading model: {config}")
 			cfg.load_model( config, lora )
