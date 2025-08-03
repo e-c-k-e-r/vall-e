@@ -8,11 +8,13 @@ Model weights can:
 
 ## Build
 
-Populate `./include/` with the `ggml`, `llama.cpp`, and `encodec.cpp` headers.
+Populate `./include/` with the `ggml`, `llama.cpp`, and `encodec.cpp` headers (although these headers should already be provided).
+* `encodec.cpp` and `llama.cpp` need to have their CMake files generated with `-DBUILD_SHARED_LIBS=On` passed.
 
 Populate `./lib/` with the compiled libraries of `llama.cpp`, `encodec.cpp`, and `espeak-ng` (if not already in your `LD_LIBRARY_PATH`).
 
 Run `make`.
+* `make lib` will generate the shared library (rename the `.so` to `.dll` under Windows).
 
 ### Required Modifications
 

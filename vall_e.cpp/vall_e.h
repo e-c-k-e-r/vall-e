@@ -174,5 +174,5 @@ VALL_E_API void vall_e_print_usage( char** argv, const vall_e_context_params_t& 
 VALL_E_API bool vall_e_args_parse( int argc, char** argv, vall_e_context_params_t& params, vall_e_args_t& args );
 VALL_E_API vall_e_context_t* vall_e_load( const vall_e_context_params_t& params );
 VALL_E_API vall_e_inputs_t vall_e_prepare_inputs( vall_e_context_t* ctx, const std::string& text, const std::string& prompt_path, const std::string& lang = "auto", const std::string& task = "tts" );
-VALL_E_API vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, int modality = MODALITY_NAR_LEN );
+VALL_E_API vall_e_audio_codes_t vall_e_generate( vall_e_context_t* ctx, vall_e_inputs_t& inputs, int max_steps, int max_duration, int modality = MODALITY_NAR_LEN );
 VALL_E_API void vall_e_free( vall_e_context_t* ctx );

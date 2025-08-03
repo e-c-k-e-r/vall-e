@@ -4,7 +4,7 @@
 
 # VALL'E
 
-An unofficial PyTorch implementation of [VALL-E](https://vall-e-demo.ecker.tech/) (last updated: `2024.12.11`), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
+An unofficial PyTorch implementation of [VALL-E](https://vall-e-demo.ecker.tech/) (last updated: `2025.05.30`), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
 
 A demo is available on HuggingFace [here](https://huggingface.co/spaces/ecker/vall-e).
 
