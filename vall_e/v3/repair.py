@@ -40,8 +40,9 @@ def main():
 	st = torch.load(args.ckpt, map_location=dev, weights_only=False)
 	model = V3(**st["config"]).to(dev).eval()
 	model.load_state_dict(st["model"])
-	index = json.loads((args.ckpt.parent / "index.json").read_text())
-	val = Utterances(index, "val", seed=1)
+	from .data import StoreUtterances
+	index = json.loads((args.ckpt.parent / "index.json").read_text()) if not st.get("store") else None
+	val = StoreUtterances(st["store"], "val", seed=1, groups=st.get("groups"), languages=st.get("languages")) if st.get("store") else Utterances(index, "val", seed=1)
 	items = [val[i] for i in random.Random(0).sample(range(len(val)), args.n)]
 
 	from ..emb.codecs.nemo import AudioCodecModel

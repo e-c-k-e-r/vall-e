@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 
 from . import fsq
-from .data import BucketSampler, Collator, Utterances, add_frames, build_index, pack, to_patches
+from .data import BucketSampler, Collator, StoreUtterances, Utterances, add_frames, build_index, pack, to_patches
 from .model import V3, flow_loss, flow_sample, metrics, ordinal_loss, snap
 
 NEMO = Path("training/llama-nemo")
@@ -143,36 +143,46 @@ def main():
 	ap.add_argument("--mask-ratio", type=float, default=None, help="fixed training mask ratio (default: cos(u * pi / 2) per sample)")
 	ap.add_argument("--ar-frac", type=float, default=0.0, help="share of samples trained in AR mode; > 0 builds the AR parts")
 	ap.add_argument("--stop-weight", type=float, default=0.5)
+	ap.add_argument("--store", type=Path, default=None, help="train from a v3 Store (vall_e/v3/store.py) instead of the JSON index")
+	ap.add_argument("--groups", nargs="*", default=None, help="with --store: dataset groups to use, e.g. LibriTTS-R Emilia/EN")
+	ap.add_argument("--languages", nargs="*", default=None, help="with --store: languages to use, e.g. en")
 	ap.add_argument("--init-from", type=Path, default=None, help="start from these weights (new parts keep their init), with a fresh optimizer and schedule")
 	args = ap.parse_args()
 	args.out.mkdir(parents=True, exist_ok=True)
 	device = "cuda"
 
-	index_path = args.out / "index.json"
-	if not index_path.exists():
-		t0 = time.time()
-		index = build_index(NEMO / "metadata", NEMO / "data", GROUPS)
-		index_path.write_text(json.dumps(index))
-		print(f"indexed {sum(map(len, index['speakers'].values()))} utterances from {len(index['speakers'])} speakers in {time.time() - t0:.0f}s")
-	index = json.loads(index_path.read_text())
-	if "frames" not in index:
-		t0 = time.time()
-		index = add_frames(index)
-		index_path.write_text(json.dumps(index))
-		print(f"added frame counts in {time.time() - t0:.0f}s")
-
-	train_ds = Utterances(index, "train", crop_prompt=False)
-	val_ds = Utterances(index, "val", seed=1)
+	if args.store:
+		train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages)
+		val_ds = StoreUtterances(train_ds.store, "val", seed=1, groups=args.groups, languages=args.languages)
+		n_text, vocab, source = train_ds.vocab_size, train_ds.store.m["vocab"], dict(store=str(args.store), groups=args.groups, languages=args.languages)
+		prompt_f = train_ds.prompt_f
+	else:
+		index_path = args.out / "index.json"
+		if not index_path.exists():
+			t0 = time.time()
+			index = build_index(NEMO / "metadata", NEMO / "data", GROUPS)
+			index_path.write_text(json.dumps(index))
+			print(f"indexed {sum(map(len, index['speakers'].values()))} utterances from {len(index['speakers'])} speakers in {time.time() - t0:.0f}s")
+		index = json.loads(index_path.read_text())
+		if "frames" not in index:
+			t0 = time.time()
+			index = add_frames(index)
+			index_path.write_text(json.dumps(index))
+			print(f"added frame counts in {time.time() - t0:.0f}s")
+		train_ds = Utterances(index, "train", crop_prompt=False)
+		val_ds = Utterances(index, "val", seed=1)
+		n_text, vocab, source = len(index["vocab"]) + 1, index["vocab"], {}
+		prompt_f = Utterances(index, "train").prompt_f
 	val_items = [val_ds[i] for i in random.Random(0).sample(range(len(val_ds)), args.val_size)]
 	if args.subset:
 		# overfit check: train on N fixed utterances (same prompt each time) and evaluate on those same utterances
-		full = Utterances(index, "train")
+		full = StoreUtterances(train_ds.store, "train", groups=args.groups, languages=args.languages) if args.store else Utterances(index, "train")
 		fixed = [full[i] for i in random.Random(0).sample(range(len(full)), args.subset)]
 		train_ds = fixed
 		val_items = fixed
 	print(f"train {len(train_ds)} utterances, val {len(val_ds)} ({len(val_items)} evaluated)")
 
-	model = V3(len(index["vocab"]) + 1, args.d_model, args.layers, args.heads, args.patch, args.rot_frac,
+	model = V3(n_text, args.d_model, args.layers, args.heads, args.patch, args.rot_frac,
 		gated=not args.no_gate, qk_norm=not args.no_qk_norm, head=args.head, ar=args.ar_frac > 0).to(device)
 	if args.init_from and not (args.out / "last.pt").exists():
 		missing, unexpected = model.load_state_dict(torch.load(args.init_from, map_location=device, weights_only=False)["model"], strict=False)
@@ -191,7 +201,7 @@ def main():
 		model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); step = st["step"]
 		print(f"resumed at step {step}")
 
-	collator = Collator(args.patch, Utterances(index, "train").prompt_f, mask_ratio=args.mask_ratio, ar_frac=args.ar_frac)
+	collator = Collator(args.patch, prompt_f, mask_ratio=args.mask_ratio, ar_frac=args.ar_frac)
 	loader_kw = dict(collate_fn=collator, num_workers=args.workers, persistent_workers=True, prefetch_factor=4, pin_memory=True)
 	if args.subset:
 		sampler = torch.utils.data.RandomSampler(train_ds, replacement=True, num_samples=(args.steps - step) * args.batch)
@@ -228,7 +238,7 @@ def main():
 			res = evaluate(model, val_items, args.patch, device, args.smoothing) | dict(step=step)
 			log.write(json.dumps(res) + "\n"); log.flush()
 			print("[eval] " + " ".join(f"{k} {v:.4g}" for k, v in res.items()), flush=True)
-			torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), step=step, config=model.config, vocab=index["vocab"]), args.out / "last.pt.tmp")
+			torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), step=step, config=model.config, vocab=vocab, **source), args.out / "last.pt.tmp")
 			(args.out / "last.pt.tmp").replace(args.out / "last.pt")
 
 

@@ -230,3 +230,54 @@ class BucketSampler(torch.utils.data.Sampler):
 			for b in batches[: self.n_batches - done]:
 				yield b
 			done += len(batches)
+
+
+class StoreUtterances(torch.utils.data.Dataset):
+	"""Utterances from a v3 Store (vall_e/v3/store.py), with the same interface as Utterances: items, frames, text_len,
+	prompt_f, and items of dict(text, prompt, target, speaker, path, text_raw). Speakers split train/val by is_val(),
+	so a speaker never appears in both. groups / languages filter by name (None: all)."""
+	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None):
+		from .store import Store
+		self.store = store if isinstance(store, Store) else Store(store)
+		st = self.store
+		keys = [f"{st.m['groups'][g]}/{s}" for s, g in zip(st.m["speakers"], st.m["speaker_group"])]
+		spk_ok = np.array([is_val(k) == (split == "val") for k in keys])
+		ok = spk_ok[st.speaker]
+		if groups:
+			gids = [i for i, g in enumerate(st.m["groups"]) if any(g == x or g.startswith(x + "/") for x in groups)]
+			ok &= np.isin(st.group, gids)
+		if languages:
+			ok &= np.isin(st.language, [st.m["languages"].index(l) for l in languages if l in st.m["languages"]])
+		self.items = np.nonzero(ok)[0]
+		self.frames = st.frames[self.items].tolist()
+		phon_len = np.concatenate([np.diff(np.asarray(sh["phoneme_offsets"])) for sh in st.shards])
+		self.text_len = phon_len[self.items].tolist()
+		self.vocab_size = len(st.m["vocab"]) + 1  # ids + 1; 0 is padding
+		self.min_f, self.max_f = int(min_s * FPS), int(max_s * FPS)
+		self.prompt_f = (int(prompt_s[0] * FPS), int(prompt_s[1] * FPS))
+		self.seed, self.crop_prompt = seed, crop_prompt
+
+	def __len__(self):
+		return len(self.items)
+
+	def __getitem__(self, i):
+		st = self.store
+		rng = random.Random(self.seed * 1_000_003 + i)
+		u = int(self.items[i])
+		for _ in range(20):  # out-of-range durations (the bucketed sampler already avoids them)
+			if self.min_f <= st.frames[u] <= self.max_f:
+				break
+			u = int(self.items[rng.randrange(len(self.items))])
+		target = fsq.codes_to_digits(torch.from_numpy(st.codes(u).astype(np.int64)).t())
+		others = st.utterances_of(int(st.speaker[u]))
+		others = others[others != u]
+		prompt = target[:0]
+		if len(others):
+			k = int(others[rng.randrange(len(others))])
+			prompt = fsq.codes_to_digits(torch.from_numpy(st.codes(k).astype(np.int64)).t())
+		n = rng.randint(*self.prompt_f) if self.crop_prompt else self.prompt_f[1]
+		if len(prompt) > n:
+			s = rng.randrange(len(prompt) - n)
+			prompt = prompt[s : s + n]
+		text = torch.from_numpy(st.phonemes(u).astype(np.int64) + 1)
+		return dict(text=text, prompt=prompt, target=target, speaker=st.speaker_key(u), path=f"{st.root}#{u}", text_raw=st.text(u))

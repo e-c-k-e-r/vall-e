@@ -41,6 +41,7 @@ def main():
 	ap.add_argument("--mode", choices=["nar", "ar"], default="nar", help="ar: streaming-order generation (models trained with --ar-frac)")
 	ap.add_argument("--cfg-mode", choices=["backbone", "head"], default="backbone", help="NAR CFG: drop text and prompt (two backbone passes) or the flow head's condition (one)")
 	ap.add_argument("--seed", type=int, default=0)
+	ap.add_argument("--prompt-seconds", type=float, default=None, help="fixed prompt length (default: 3-6 s, as in training)")
 	ap.add_argument("--device", default="cuda", help="cpu works while a training run holds the GPU")
 	ap.add_argument("--subset", type=int, default=0, help="sample the utterances of a `train.py --subset N` run")
 	args = ap.parse_args()
@@ -51,13 +52,18 @@ def main():
 	st = torch.load(args.ckpt, map_location=device, weights_only=False)
 	model = V3(**st["config"]).to(device).eval()
 	model.load_state_dict(st["model"])
-	index = json.loads((args.ckpt.parent / "index.json").read_text())
-	if args.subset:
+	from .data import StoreUtterances
+	index = json.loads((args.ckpt.parent / "index.json").read_text()) if not st.get("store") else None
+	prompt_kw = {"prompt_s": (args.prompt_seconds,) * 2} if args.prompt_seconds else {}
+	if st.get("store"):
+		val = StoreUtterances(st["store"], "val", seed=1, groups=st.get("groups"), languages=st.get("languages"), **prompt_kw)
+		items = [val[i] for i in random.Random(0).sample(range(len(val)), args.n)]
+	elif args.subset:
 		# the utterances `train.py --subset N` trained on, with the same prompts
 		train = Utterances(index, "train")
 		items = [train[i] for i in random.Random(0).sample(range(len(train)), args.subset)][: args.n]
 	else:
-		val = Utterances(index, "val", seed=1)
+		val = Utterances(index, "val", seed=1, **prompt_kw)
 		items = [val[i] for i in random.Random(0).sample(range(len(val)), args.n)]
 
 	from .. emb.codecs.nemo import AudioCodecModel
@@ -86,7 +92,7 @@ def main():
 		decode(gen, args.out / f"{i:02d}_gen.wav")
 		decode(it["target"], args.out / f"{i:02d}_ref.wav")
 		decode(it["prompt"], args.out / f"{i:02d}_prompt.wav")
-		rows.append(dict(i=i, path=it["path"], speaker=it["speaker"]))
+		rows.append(dict(i=i, path=it["path"], speaker=it["speaker"], text=it.get("text_raw")))
 	print(f"wrote {len(rows)} samples to {args.out}")
 
 	if args.score:
@@ -100,13 +106,16 @@ def score(args, rows, index):
 	from ..emb.similar import speaker_similarity_embedding
 	texts = {}
 	for r in rows:
+		if r.get("text"):
+			texts[r["i"]] = r["text"]
+			continue
 		group, spk = r["speaker"].rsplit("/", 1)
 		meta = Path("training/llama-nemo/metadata") / group / f"{spk}.json"
 		texts[r["i"]] = json.loads(meta.read_text())[Path(r["path"]).stem]["text"]
 	res = {}
 	for kind in ("gen", "ref"):
 		w = words = 0
-		sims = []
+		sims, sims_ref = [], []
 		for r in rows:
 			p = args.out / f"{r['i']:02d}_{kind}.wav"
 			hyp = normalize_text(transcribe(p, language="en", align=False, model_name="openai/whisper-large-v3-turbo", device=args.device, dtype="float16" if args.device == "cuda" else "float32")["text"], language="en")
@@ -114,7 +123,9 @@ def score(args, rows, index):
 			w += _edits(hyp.split(), ref.split()); words += len(ref.split())
 			e = lambda x: speaker_similarity_embedding(x, device=args.device, dtype="float32")
 			sims.append(F.cosine_similarity(e(p), e(args.out / f"{r['i']:02d}_prompt.wav"), dim=-1).item())
-		res[kind] = dict(wer=w / words, sim=sum(sims) / len(sims))
+			# against the speaker's real recording of this sentence: unaffected by the prompt's length
+			sims_ref.append(F.cosine_similarity(e(p), e(args.out / f"{r['i']:02d}_ref.wav"), dim=-1).item())
+		res[kind] = dict(wer=w / words, sim=sum(sims) / len(sims), sim_ref=sum(sims_ref) / len(sims_ref))
 		print(kind, json.dumps({k: round(v, 4) for k, v in res[kind].items()}))
 	(args.out / "scores.json").write_text(json.dumps(res, indent=1))
 
