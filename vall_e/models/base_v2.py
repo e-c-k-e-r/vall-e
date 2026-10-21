@@ -1359,7 +1359,7 @@ class Base_V2(nn.Module):
 		dry_base = sampling_kwargs.get("dry_base", 1.75)
 		dry_allowed_length = sampling_kwargs.get("dry_allowed_length", 2)
 		#
-		top_no = sampling_kwargs.get("top_no", 1.0)
+		top_no = sampling_kwargs.get("top_no", 0.0)
 		#
 		attentions = sampling_kwargs.get("attentions", None)
 
@@ -1393,7 +1393,7 @@ class Base_V2(nn.Module):
 
 		# do top-no logit processing
 		if top_no > 0.0:
-			logits = [ top_no_logits_processing(logit) for logit in logits ]
+			logits = [ top_no_logits_processing(logit, n=top_no) for logit in logits ]
 
 		probabilities = [ F.softmax(logit, dim=-1) for logit in logits ]
 		scores = [ torch.max(prob, -1)[0] for prob in probabilities ]

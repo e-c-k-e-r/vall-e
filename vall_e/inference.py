@@ -233,6 +233,8 @@ class TTS():
 		use_lora = sampling_kwargs.pop("use_lora", None)
 		dtype = sampling_kwargs.pop("dtype", self.dtype)
 		amp = sampling_kwargs.pop("amp", self.amp)
+		# popped once here; popping inside the batch loop dropped it after the first batch
+		duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 
 		if batch_size < 1:
 			batch_size = 1
@@ -324,9 +326,10 @@ class TTS():
 
 			with torch.autocast(self.device, dtype=dtype, enabled=amp):
 				if model_len is not None:
-					# extra kwargs
-					duration_padding = sampling_kwargs.pop("duration_padding", 1.05)
 					len_list = model_len( **input_kwargs, task_list=["len"]*batch_size, **{"max_duration": 5} ) # "max_duration" is max tokens
+
+					# clamp, as the serial path does
+					len_list = [ max( l, 1 * cfg.dataset.frames_per_second ) for l in len_list ]
 
 					# add an additional X seconds
 					len_list = [ int(l * duration_padding) for l in len_list ]
@@ -481,7 +484,11 @@ class TTS():
 
 		auto_lang = not language or language == "auto"
 		auto_text_lang = not text_language or text_language == "auto"
-		
+		# the text's language follows the requested language unless set separately; detecting it per
+		# sentence misreads short lines (e.g. "Honeymoon in Hawaii?" as Somali, which espeak can't phonemize)
+		if auto_text_lang and not auto_lang:
+			text_language, auto_text_lang = language, False
+
 		vc_utterance = self.encode_audio( voice_convert, trim_length=0 ) if voice_convert else None
 		prom = self.encode_audio( references, trim_length=input_prompt_length ) if references else None
 		lang = self.encode_lang( language )
@@ -502,7 +509,13 @@ class TTS():
 					output_dir.mkdir(parents=True, exist_ok=True)
 				out_path = output_dir / f"{time.time()}.wav"
 
-			deduced_language = g2p.detect_language( line ) if auto_lang or auto_text_lang else language
+			deduced_language = language
+			if auto_lang or auto_text_lang:
+				try:
+					deduced_language = g2p.detect_language( line )
+				except Exception:
+					# no letters to detect from (e.g. "4,635."); keep the previous line's language
+					deduced_language = text_language if text_language and text_language != "auto" else "en"
 
 			if auto_lang:
 				language = deduced_language

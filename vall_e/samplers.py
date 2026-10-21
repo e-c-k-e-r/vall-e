@@ -41,7 +41,10 @@ def reptition_penalize( logits, previous=None, factor=1.0, decay=0.0, one_time=F
 		if limit:
 			end = i + limit
 
-		logits[start:end, token] /= factor * (distance ** decay)
+		# shrink positive logits and grow negative ones, so the penalty always lowers the token's probability
+		penalty = factor * (distance ** decay)
+		penalized = logits[start:end, token]
+		logits[start:end, token] = torch.where( penalized > 0, penalized / penalty, penalized * penalty )
 		
 		# add to set if we care about it
 		if one_time:
@@ -64,7 +67,7 @@ def length_penalize( logits, length, factor=0.0, token=-1 ):
 def ban_tokens( logits, tokens ):
 	for token in tokens:
 		# token not in logits
-		if logits.shape[-1] >= token:
+		if token >= logits.shape[-1]:
 			continue
 		logits[:, token] = -float("inf")
 	return logits
@@ -126,19 +129,11 @@ def top_k_top_p_filtering( logits, top_k=0, top_p=1.0, filter_value=-float("Inf"
 
 # credit to https://github.com/LostRuins/koboldcpp/pull/464 // https://github.com/kalomaze/koboldcpp/tree/dynamic-temp
 def dynamic_temperature( logits, temperature=1.0, min_temperature = 0.0, k = 10, sigmoidCenterPoint = 0.5 ):
-	# loop over logits[:], as the NAR will have logits.shape[0] > 1
-	for i in range(logits.shape[0]):
-		sum_exp = 0.0
-		maximum = torch.max( logits[i] )
-		for logit in logits[i]:
-			sum_exp += math.exp( logit - maximum )
+	# per row, as the NAR will have logits.shape[0] > 1
+	prob_max_token_before_temp = torch.softmax( logits.float(), dim=-1 ).max(dim=-1, keepdim=True).values
+	dynamic_temperature = temperature - (temperature - min_temperature) / (1 + torch.exp(-k * (prob_max_token_before_temp - sigmoidCenterPoint)))
 
-		prob_max_token_before_temp = 1.0 / sum_exp
-		dynamic_temperature = temperature - (temperature - min_temperature) / (1 + math.exp(-k * (prob_max_token_before_temp - sigmoidCenterPoint)))
-
-		logits[i] /= dynamic_temperature
-
-	return logits
+	return logits / dynamic_temperature.to(logits.dtype)
 
 
 

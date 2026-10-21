@@ -1304,7 +1304,7 @@ class Base(nn.Module):
 		dry_base = sampling_kwargs.get("dry_base", 1.75)
 		dry_allowed_length = sampling_kwargs.get("dry_allowed_length", 2)
 		#
-		top_no = sampling_kwargs.get("top_no", 1.0)
+		top_no = sampling_kwargs.get("top_no", 0.0)
 		#
 		attentions = sampling_kwargs.get("attentions", None)
 
@@ -1393,7 +1393,7 @@ class Base(nn.Module):
 
 		# do top-no logit processing
 		if top_no > 0.0:
-			logits = [ top_no_logits_processing(logit) for logit in logits ]
+			logits = [ top_no_logits_processing(logit, n=top_no) for logit in logits ]
 
 		# do DRY sampling
 		if dry_multiplier > 0.0 and prev_list is not None:

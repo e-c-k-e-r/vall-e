@@ -10,6 +10,7 @@ from .base import Base, list_to_tensor, Categorical
 from ..config import cfg
 
 import torch
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 
 import random
@@ -35,6 +36,15 @@ class AR_NAR(Base):
 	# yikes
 	def forward_super(self, *args, **kwargs):
 		return super().forward(*args, **kwargs)
+
+	# runs the conditioned and null (CFG) inputs as one batch, then mixes their logits
+	def forward_cfg(self, inputs, null_inputs, quant_levels, strength, rescale, lens):
+		if strength <= 0:
+			return super().forward( inputs=inputs, quant_levels=quant_levels ).logits
+
+		n = len(inputs)
+		logits = super().forward( inputs=inputs + null_inputs, quant_levels=quant_levels + quant_levels ).logits
+		return cfg_logits( logits=logits[:n], null=logits[n:], strength=strength, rescale=rescale, lens=lens )
 
 	# parse inputs for training
 	# a lot of this could be delegated back to the dataloader, but it's just easier to keep the task of the dataloader to provide sufficient data, and the model to process the data for training
@@ -287,6 +297,8 @@ class AR_NAR(Base):
 		refine_on_stop = sampling_kwargs.get("refine_on_stop", False)
 		entropix_sampling = sampling_kwargs.get("entropix_sampling", False)
 		annealed_sampling = sampling_kwargs.get("annealed_sampling", True)
+		# ramps CFG up with the timestep; off by default, as CFG at full strength from the first step is what the shipped models were tuned with
+		annealed_cfg = sampling_kwargs.get("annealed_cfg", False)
 
 		# greedy sampling is very, very much preferred, but using greedy logit scores later helps enough
 		temperature = sampling_kwargs.pop("temperature", 0.0)
@@ -380,7 +392,7 @@ class AR_NAR(Base):
 			time_list = [ timestep for _ in range(batch_size) ]
 
 			sampling_temperature = temperature * annealing if annealed_sampling else temperature
-			sampling_cfg = cfg_strength * timestep if annealed_sampling else cfg_strength
+			sampling_cfg = cfg_strength * timestep if annealed_cfg else cfg_strength
 
 			# avoid useless CFG sampling
 			"""
@@ -392,7 +404,7 @@ class AR_NAR(Base):
 				input_resps_list = [ torch.concat( [ prefix, resps ] ) for prefix, resps in zip( prefix_resps_list, resps_list ) ]
 				# originally requested no CFG, safe to ignore if we have a prefix
 				if original_cfg_strength < minimum_cfg_strength:
-					sampling_cfg = original_cfg_strength * timestep if annealed_sampling else original_cfg_strength
+					sampling_cfg = original_cfg_strength * timestep if annealed_cfg else original_cfg_strength
 			else:
 				input_resps_list = resps_list
 
@@ -407,59 +419,40 @@ class AR_NAR(Base):
 				time_list=time_list,
 				quant_levels=quant_levels,
 			)
-			output = super().forward(
-				inputs=inputs,
+			null_inputs = super().inputs(
+				phns_list=null_text if phns_list is not None else None,
+				text_list=null_text if text_list is not None else None,
+				proms_list=null_prom,
+				resps_list=input_resps_list,
+				lang_list=lang_list,
+				tone_list=tone_list,
+				time_list=time_list,
 				quant_levels=quant_levels,
-			)
+			) if sampling_cfg > 0 else None
 
-			logits = output.logits
+			logits = self.forward_cfg( inputs, null_inputs, quant_levels, strength=sampling_cfg, rescale=cfg_rescale, lens=[ l for l in len_list ] )
 
-			if cfg_strength > 0:
-				null_inputs = super().inputs(
-					phns_list=null_text if phns_list is not None else None,
-					text_list=null_text if text_list is not None else None,
-					proms_list=null_prom,
-					resps_list=input_resps_list,
-					lang_list=lang_list,
-					tone_list=tone_list,
-					time_list=time_list,
-					quant_levels=quant_levels,
-				)
-				null_output = super().forward(
-					inputs=null_inputs,
-					quant_levels=quant_levels,
-				)
-
-				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ l for l in len_list ] )
+			# confidence comes from the unfiltered distribution; taken before sampling, as the sampler filters the logits in place
+			probs = [ F.softmax( logit[-l:].float(), dim=-1 ) for logit, l in zip( logits, len_list ) ]
 
 			# sample with sampler settings
-			filtered_sampled = super().sample(
+			sampled_ids = super().sample(
 				logits=logits,
 				prev_list=prev_list,
 				quant_levels=quant_levels,
 
 				temperature=sampling_temperature,
 				**sampling_kwargs,
-			)
-
-			# retrieves unfiltered logits
-			unfiltered_sampled = super().sample(
-				logits=logits,
-				prev_list=prev_list,
-				quant_levels=quant_levels,
-
-				temperature=0.0,
-				**sampling_kwargs,
-			)
-			# get sampled tokens
-			sampled_ids = filtered_sampled.ids
+			).ids
 			# keep unmasked tokens
 			resps_list = [ torch.where( masked, input_ids, resps ).to(torch.int16) for masked, input_ids, resps in zip( is_masked, sampled_ids, resps_list ) ]
+			# score each token by the probability of the token actually kept, not of the greedy pick
+			token_scores = [ prob.gather( -1, resps.long().unsqueeze(-1) ).squeeze(-1) for prob, resps in zip( probs, resps_list ) ]
 			# update scores, only updating tokens that were masked off, and force keeping unmasked tokens
 			if score_masked_only:
-				scores = [ torch.where( masked, scores.t(), largest_score ) for masked, scores in zip( is_masked, unfiltered_sampled.scores ) ]
+				scores = [ torch.where( masked, score, largest_score ) for masked, score in zip( is_masked, token_scores ) ]
 			else:
-				scores = [ scores for scores in unfiltered_sampled.scores ]
+				scores = token_scores
 
 		return resps_list
 
@@ -550,28 +543,17 @@ class AR_NAR(Base):
 				quant_levels=quant_levels,
 			)
 
-			output = super().forward(
-				inputs=inputs,
+			null_inputs = super().inputs(
+				phns_list=null_text if phns_list is not None else None,
+				text_list=null_text if text_list is not None else None,
+				proms_list=null_prom,
+				resps_list=prev_list,
+				lang_list=lang_list,
+				tone_list=tone_list,
 				quant_levels=quant_levels,
-			)
-			logits, state = output.logits, output.state
+			) if cfg_strength > 0 else None
 
-			if cfg_strength > 0:
-				null_inputs = super().inputs(
-					phns_list=null_text if phns_list is not None else None,
-					text_list=null_text if text_list is not None else None,
-					proms_list=null_prom,
-					resps_list=prev_list,
-					lang_list=lang_list,
-					tone_list=tone_list,
-					quant_levels=quant_levels,
-				)
-				null_output = super().forward(
-					inputs=null_inputs,
-					quant_levels=quant_levels,
-				)
-
-				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ resp.shape[0] for resp in resps_list ] )
+			logits = self.forward_cfg( inputs, null_inputs, quant_levels, strength=cfg_strength, rescale=cfg_rescale, lens=[ resp.shape[0] for resp in resps_list ] )
 
 			sampled = super().sample(
 				logits=logits,
@@ -688,8 +670,8 @@ class AR_NAR(Base):
 					iterator.close()
 					break
 
-			# convert tokens into int
-			return [ int("".join([ str(token.item()) for token in r if token != stop_token ])) for r in sequence_list ]
+			# convert tokens into int (0 if the stop token came first; callers clamp to a minimum length)
+			return [ int("".join([ str(token.item()) for token in r if token != stop_token ]) or 0) for r in sequence_list ]
 
 		start_slice = [ 0 for _ in range(batch_size) ]
 		sequence_list = [ torch.zeros(0, device=device).to(torch.int16) for _ in range(batch_size) ]
@@ -699,9 +681,11 @@ class AR_NAR(Base):
 		text_stop_token = 2
 
 		state = None
+		# one state per batch item (a list multiplied by batch_size would share a single dict)
 		mirostat = [
 			{"n": 1024, "tau": mirostat_tau, "eta": mirostat_eta, "max_surprise": mirostat_eta * 2, "error_surprise": 0, "running_total_surprise": 0}
-		] * batch_size if mirostat_tau > 0.0 else None
+			for _ in range(batch_size)
+		] if mirostat_tau > 0.0 else None
 
 		scores = [ 1.0 ] * beam_width
 		metrics = []
@@ -797,14 +781,15 @@ class AR_NAR(Base):
 					quant_levels=quant_levels,
 					#layer_skip_variables=sampling_layer_skip_variables,
 				)
-				logits = cfg_logits( logits=output.logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ resp.shape[0] + 1 for resp in resps_list ] )
-			
 			logits, state = output.logits, output.state
+
+			if cfg_strength > 0:
+				logits = cfg_logits( logits=logits, null=null_output.logits, strength=cfg_strength, rescale=cfg_rescale, lens=[ resp.shape[0] + 1 for resp in resps_list ] )
 
 			sampled = super().sample(
 				logits=logits,
 				prev_list=[ resps_list[i] if task not in text_task else phns_list[i] for i, task in enumerate( task_list ) ],
-				**(sampling_kwargs | {"attentions": output.attentions if entropix_sampling else None}),
+				**(sampling_kwargs | {"attentions": output.attentions if entropix_sampling else None, "mirostat": mirostat}),
 			)
 
 			ids = sampled.ids
