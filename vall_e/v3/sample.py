@@ -1,0 +1,123 @@
+# Generates validation utterances with a v3 prototype checkpoint, decodes them with the NeMo codec, and optionally
+# scores WER (Whisper) and SIM-O against the prompt. The ground truth is decoded too, as the codec's ceiling.
+import argparse
+import json
+import random
+from pathlib import Path
+
+import torch
+import torchaudio
+
+from . import fsq
+from .data import Utterances, to_patches
+from .model import V3, demask, demask_flow, generate_ar
+
+
+def _edits(a, b):
+	prev = list(range(len(b) + 1))
+	for i, x in enumerate(a, 1):
+		cur = [i]
+		for j, y in enumerate(b, 1):
+			cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (x != y)))
+		prev = cur
+	return prev[-1]
+
+
+def main():
+	ap = argparse.ArgumentParser()
+	ap.add_argument("--ckpt", type=Path, required=True)
+	ap.add_argument("--out", type=Path, required=True)
+	ap.add_argument("--n", type=int, default=16)
+	ap.add_argument("--steps", type=int, default=25)
+	ap.add_argument("--cfg", type=float, default=2.5)
+	ap.add_argument("--temperature", type=float, default=1.0)
+	ap.add_argument("--score", action="store_true")
+	# 8 sway-warped steps matched 16 uniform ones on v3-flow (WER 12.0% vs 12.4%, SIM-O 0.56 vs 0.53, 16 samples); 4 held up too
+	ap.add_argument("--flow-steps", type=int, default=8)
+	ap.add_argument("--sway", type=float, default=-1.0, help="flow time grid warp; -1 is F5-TTS's sway sampling, 0 uniform")
+	ap.add_argument("--cfg-end", type=float, default=None, help="anneal CFG linearly to this over the demask steps")
+	ap.add_argument("--temperature-end", type=float, default=None)
+	ap.add_argument("--order", choices=["random", "vdc"], default="random")
+	ap.add_argument("--mode", choices=["nar", "ar"], default="nar", help="ar: streaming-order generation (models trained with --ar-frac)")
+	ap.add_argument("--cfg-mode", choices=["backbone", "head"], default="backbone", help="NAR CFG: drop text and prompt (two backbone passes) or the flow head's condition (one)")
+	ap.add_argument("--seed", type=int, default=0)
+	ap.add_argument("--device", default="cuda", help="cpu works while a training run holds the GPU")
+	ap.add_argument("--subset", type=int, default=0, help="sample the utterances of a `train.py --subset N` run")
+	args = ap.parse_args()
+	torch.manual_seed(args.seed)
+	device = args.device
+	args.out.mkdir(parents=True, exist_ok=True)
+
+	st = torch.load(args.ckpt, map_location=device, weights_only=False)
+	model = V3(**st["config"]).to(device).eval()
+	model.load_state_dict(st["model"])
+	index = json.loads((args.ckpt.parent / "index.json").read_text())
+	if args.subset:
+		# the utterances `train.py --subset N` trained on, with the same prompts
+		train = Utterances(index, "train")
+		items = [train[i] for i in random.Random(0).sample(range(len(train)), args.subset)][: args.n]
+	else:
+		val = Utterances(index, "val", seed=1)
+		items = [val[i] for i in random.Random(0).sample(range(len(val)), args.n)]
+
+	from .. emb.codecs.nemo import AudioCodecModel
+	codec = AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz").to(device).eval()
+
+	def decode(digits, path):
+		codes = fsq.digits_to_codes(digits).unsqueeze(0).to(device)
+		with torch.no_grad():
+			wav, _ = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))
+		torchaudio.save(str(path), wav.float().cpu(), 44100)
+
+	rows = []
+	for i, it in enumerate(items):
+		prompt = to_patches(it["prompt"], model.patch).to(device)
+		with torch.autocast(device, dtype=torch.bfloat16, enabled=device == "cuda"):
+			if args.mode == "ar":
+				# length from the stop logit; allow up to 1.5x the reference length
+				gen = generate_ar(model, it["text"].to(device), prompt, int(len(it["target"]) * 1.5), cfg=args.cfg,
+					temperature=args.temperature, flow_steps=args.flow_steps, sway=args.sway, min_frames=int(len(it["target"]) * 0.3))
+			elif model.head_type == "flow":
+				gen = demask_flow(model, it["text"].to(device), prompt, len(it["target"]), steps=args.steps, cfg=args.cfg,
+					temperature=args.temperature, flow_steps=args.flow_steps, sway=args.sway, cfg_end=args.cfg_end,
+					temperature_end=args.temperature_end, order=args.order, cfg_mode=args.cfg_mode)
+			else:
+				gen = demask(model, it["text"].to(device), prompt, len(it["target"]), steps=args.steps, cfg=args.cfg, temperature=args.temperature)
+		decode(gen, args.out / f"{i:02d}_gen.wav")
+		decode(it["target"], args.out / f"{i:02d}_ref.wav")
+		decode(it["prompt"], args.out / f"{i:02d}_prompt.wav")
+		rows.append(dict(i=i, path=it["path"], speaker=it["speaker"]))
+	print(f"wrote {len(rows)} samples to {args.out}")
+
+	if args.score:
+		score(args, rows, index)
+
+
+def score(args, rows, index):
+	import torch.nn.functional as F
+	from ..data import normalize_text
+	from ..emb.transcribe import transcribe
+	from ..emb.similar import speaker_similarity_embedding
+	texts = {}
+	for r in rows:
+		group, spk = r["speaker"].rsplit("/", 1)
+		meta = Path("training/llama-nemo/metadata") / group / f"{spk}.json"
+		texts[r["i"]] = json.loads(meta.read_text())[Path(r["path"]).stem]["text"]
+	res = {}
+	for kind in ("gen", "ref"):
+		w = words = 0
+		sims = []
+		for r in rows:
+			p = args.out / f"{r['i']:02d}_{kind}.wav"
+			hyp = normalize_text(transcribe(p, language="en", align=False, model_name="openai/whisper-large-v3-turbo", device=args.device, dtype="float16" if args.device == "cuda" else "float32")["text"], language="en")
+			ref = normalize_text(texts[r["i"]], language="en")
+			w += _edits(hyp.split(), ref.split()); words += len(ref.split())
+			e = lambda x: speaker_similarity_embedding(x, device=args.device, dtype="float32")
+			sims.append(F.cosine_similarity(e(p), e(args.out / f"{r['i']:02d}_prompt.wav"), dim=-1).item())
+		res[kind] = dict(wer=w / words, sim=sum(sims) / len(sims))
+		print(kind, json.dumps({k: round(v, 4) for k, v in res[kind].items()}))
+	(args.out / "scores.json").write_text(json.dumps(res, indent=1))
+
+
+if __name__ == "__main__":
+	main()
