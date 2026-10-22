@@ -31,16 +31,35 @@ class Attention(nn.Module):
 		self.q_norm = nn.RMSNorm(self.head_dim) if qk_norm else nn.Identity()
 		self.k_norm = nn.RMSNorm(self.head_dim) if qk_norm else nn.Identity()
 
-	def forward(self, x, cos, sin, mask):
+	def forward(self, x, cos, sin, mask, cache=None, pos=0):
+		"""cache: this layer's KVCache slot; x's keys/values (post-norm, post-RoPE) are written at [pos, pos + L) and the
+		queries attend to everything cached up to pos + L."""
 		B, L, _ = x.shape
 		q, k, v = self.qkv(x).view(B, L, 3, self.heads, self.head_dim).permute(2, 0, 3, 1, 4)
 		q, k = self.q_norm(q), self.k_norm(k)
 		if self.rot:
 			q, k = rotate(q, cos, sin, self.rot), rotate(k, cos, sin, self.rot)
+		if cache is not None:
+			k, v = cache.write(k, v, pos)
 		y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask).transpose(1, 2).reshape(B, L, -1)
 		if self.gate is not None:
 			y = y * torch.sigmoid(self.gate(x))
 		return self.out(y)
+
+
+class KVCache:
+	"""One layer's keys and values, preallocated to [B, heads, max_len, head_dim] on first write and filled in place
+	(fixed shapes, as a graph-captured decode loop will need)."""
+	def __init__(self, max_len):
+		self.max_len, self.k, self.v = max_len, None, None
+
+	def write(self, k, v, pos):
+		if self.k is None:
+			shape = (*k.shape[:2], self.max_len, k.shape[-1])
+			self.k, self.v = k.new_zeros(shape), v.new_zeros(shape)
+		end = pos + k.shape[2]
+		self.k[:, :, pos:end], self.v[:, :, pos:end] = k, v
+		return self.k[:, :, :end], self.v[:, :, :end]
 
 
 class Block(nn.Module):
@@ -51,8 +70,8 @@ class Block(nn.Module):
 		self.up = nn.Linear(d, 2 * ffn, bias=False)
 		self.down = nn.Linear(ffn, d, bias=False)
 
-	def forward(self, x, cos, sin, mask):
-		x = x + self.attn(self.n1(x), cos, sin, mask)
+	def forward(self, x, cos, sin, mask, cache=None, pos=0):
+		x = x + self.attn(self.n1(x), cos, sin, mask, cache, pos)
 		a, b = self.up(self.n2(x)).chunk(2, dim=-1)
 		return x + self.down(F.silu(a) * b)
 
@@ -166,9 +185,11 @@ class V3(nn.Module):
 		"""b: the tensors from data.pack(), on this model's device. Returns the target positions' final hidden states."""
 		return self.hidden(b, mode)[b["tgt_index"]]
 
-	def hidden(self, b, mode=NAR_DEMASK):
+	def hidden(self, b, mode=NAR_DEMASK, cache=None):
 		"""Final hidden states of every position, flattened to [B * L, d_model]. Rows with b["mode"] == AR attend as a
-		prefix LM: text and prompt see each other, target positions see the prefix and earlier targets."""
+		prefix LM: text and prompt see each other, target positions see the prefix and earlier targets.
+		cache: a list of KVCache per block, filled from position 0 (the AR prefill; pack with pad_to=1 so no padding
+		lands in it)."""
 		kind = b["kind"]
 		dtype = self.audio_in.weight.dtype
 		x = torch.where((kind == 1)[..., None], self.text(b["text_ids"]).to(dtype), self.audio_in(fsq.digits_to_values(b["digits"]).to(dtype)))
@@ -189,9 +210,21 @@ class V3(nn.Module):
 			mask = (keys & (causal | (modes != AR)[:, None, None]))[:, None]
 		else:
 			mask = keys[:, None]
-		for block in self.blocks:
-			x = block(x, cos, sin, mask)
+		for i, block in enumerate(self.blocks):
+			x = block(x, cos, sin, mask, cache[i] if cache else None)
 		return self.norm(x.flatten(0, 1))
+
+	def step(self, digits, pos, cache):
+		"""AR decode of one target position at sequence index pos, after hidden() prefilled the cache with positions
+		[0, pos). digits: [B, values], the patch this position holds. Returns its final hidden state, [B, d_model]."""
+		dtype = self.audio_in.weight.dtype
+		x = self.audio_in(fsq.digits_to_values(digits).to(dtype)) + self.segment.weight[2] + self.mode.weight[AR]
+		freqs = torch.tensor([float(pos)], device=x.device)[:, None] * self.inv_freq[None, :]
+		cos, sin = freqs.cos().to(x.dtype), freqs.sin().to(x.dtype)
+		x = x[:, None]
+		for i, block in enumerate(self.blocks):
+			x = block(x, cos, sin, None, cache[i], pos)
+		return self.norm(x[:, 0])
 
 	def logits(self, h):
 		logits = self.head(h).view(-1, self.values, fsq.MAX_LEVEL).float()
@@ -353,16 +386,27 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 
 
 @torch.no_grad()
-def generate_ar(model, text, prompt, max_frames, cfg=1.5, temperature=1.0, flow_steps=8, sway=-1.0, min_frames=0, stop_threshold=0.5):
+def generate_ar(model, text, prompt, max_frames, cfg=1.5, temperature=1.0, flow_steps=8, sway=-1.0, min_frames=0, stop_threshold=0.5,
+		use_cache=True):
 	"""Streaming-order generation, one patch per step: the backbone gives the new position's hidden state and stop
 	probability, and the flow head samples the patch from it and the previous patch, guided on the head alone.
-	Recomputes the whole sequence each step (no KV cache yet). Returns [frames, 32] digits."""
+	With use_cache, text + prompt + start are prefilled once and each new patch is one cached step; without, the whole
+	sequence is recomputed every step (the reference path). Returns [frames, 32] digits."""
 	from .data import pack
 	dev = text.device
 	gen = torch.zeros(0, model.values, dtype=torch.long, device=dev)
-	for j in range(math.ceil(max_frames / model.patch)):
-		b = pack([text], [prompt], [gen], [torch.zeros(len(gen), dtype=torch.bool, device=dev)], modes=[AR])
-		h = model.hidden(b)[b["stop_index"][-1:]]  # the newest position
+	n_steps = math.ceil(max_frames / model.patch)
+	if use_cache:
+		start = len(text) + len(prompt)  # the start position; patch j sits at start + 1 + j
+		cache = [KVCache(start + 1 + n_steps) for _ in model.blocks]
+		b = pack([text], [prompt], [gen], [torch.zeros(0, dtype=torch.bool, device=dev)], modes=[AR], pad_to=1)
+		h = model.hidden(b, cache=cache)[start : start + 1]
+	for j in range(n_steps):
+		if not use_cache:
+			b = pack([text], [prompt], [gen], [torch.zeros(len(gen), dtype=torch.bool, device=dev)], modes=[AR])
+			h = model.hidden(b)[b["stop_index"][-1:]]  # the newest position
+		elif j > 0:
+			h = model.step(gen[-1:], start + j, cache)
 		if j * model.patch >= min_frames and torch.sigmoid(model.stop(h).float()).item() > stop_threshold:
 			break
 		hist = fsq.digits_to_values(gen[-1:]) if len(gen) else torch.zeros(1, model.values, device=dev)

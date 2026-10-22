@@ -44,6 +44,8 @@ def main():
 	ap.add_argument("--prompt-seconds", type=float, default=None, help="fixed prompt length (default: 3-6 s, as in training)")
 	ap.add_argument("--device", default="cuda", help="cpu works while a training run holds the GPU")
 	ap.add_argument("--subset", type=int, default=0, help="sample the utterances of a `train.py --subset N` run")
+	ap.add_argument("--swap-mode-embedding", action="store_true",
+		help="exchange the AR and NAR-demask mode embeddings (attention masks unchanged), to test whether the model relies on them")
 	args = ap.parse_args()
 	torch.manual_seed(args.seed)
 	device = args.device
@@ -52,6 +54,11 @@ def main():
 	st = torch.load(args.ckpt, map_location=device, weights_only=False)
 	model = V3(**st["config"]).to(device).eval()
 	model.load_state_dict(st["model"])
+	if args.swap_mode_embedding:
+		from .model import AR, NAR_DEMASK
+		with torch.no_grad():
+			w = model.mode.weight
+			w[[NAR_DEMASK, AR]] = w[[AR, NAR_DEMASK]].clone()
 	from .data import StoreUtterances
 	index = json.loads((args.ckpt.parent / "index.json").read_text()) if not st.get("store") else None
 	prompt_kw = {"prompt_s": (args.prompt_seconds,) * 2} if args.prompt_seconds else {}

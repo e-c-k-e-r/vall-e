@@ -12,8 +12,10 @@ echo "$(date) VRAM free, starting" >> "$out/run.log"
 
 for attempt in $(seq 1 20); do
 	MIOPEN_FIND_MODE=FAST PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH="$PWD" \
-		"$PY" -m vall_e.v3.train --out "$out" "$@" >> "$out/run.log" 2>&1 && break
-	echo "$(date) exited with $?, resuming (attempt $attempt)" >> "$out/run.log"
+		"$PY" -m vall_e.v3.train --out "$out" "$@" >> "$out/run.log" 2>&1
+	rc=$?  # before anything else runs: "$(date)" below would reset $?
+	[ $rc -eq 0 ] && break
+	echo "$(date) exited with $rc (139 = segfault), resuming (attempt $attempt)" >> "$out/run.log"
 	sleep 30
 done
 echo "$(date) done" >> "$out/run.log"
