@@ -64,6 +64,8 @@ def _main_loss(model, b, smoothing, predict, stop_weight, null_p, stats, stop_po
 	m = b["tgt_masked"]
 	tgt = b["tgt"].long()[m]
 	h_all = b["_h"] = model.hidden(b)
+	if not m.any():  # a batch of LEN rows only: nothing to generate (a mean over no positions would be NaN)
+		return h_all.sum() * 0.0, None, tgt
 	h = h_all[b["tgt_index"]][m]
 	if model.head_type != "flow":
 		logits = model.logits(h)

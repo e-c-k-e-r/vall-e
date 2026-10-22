@@ -256,7 +256,9 @@ class BucketSampler(torch.utils.data.Sampler):
 				split = []
 				for b in batches:
 					rows = max(1, self.max_tokens // (int(self.lengths[b[-1]]) + self.extra))  # sorted: b[-1] is the longest
-					split += [b[i : i + rows] for i in range(0, len(b), rows)]
+					# into equal parts (16 rows at 15 per batch is 8 + 8, not 15 + 1)
+					size = -(-len(b) // -(-len(b) // rows))
+					split += [b[i : i + size] for i in range(0, len(b), size)]
 				batches = split
 			rng.shuffle(batches)
 			for b in batches[: self.n_batches - done]:
