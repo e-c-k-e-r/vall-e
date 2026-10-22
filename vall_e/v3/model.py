@@ -10,7 +10,7 @@ from torch.nn.utils.rnn import pad_sequence
 from . import fsq
 
 TEXT, PROMPT, TARGET = 0, 1, 2  # segment ids
-NAR_DEMASK, AR, LEN = 0, 1, 2  # mode ids (only NAR_DEMASK is trained in the prototype)
+NAR_DEMASK, AR, LEN = 0, 1, 2  # mode ids
 
 
 def rotate(x, cos, sin, rot):
@@ -138,10 +138,11 @@ class FlowHead(nn.Module):
 
 class V3(nn.Module):
 	def __init__(self, n_text, d_model=512, layers=12, heads=8, patch=2, rot_frac=1.0, gated=True, qk_norm=True, rope_theta=10000.0,
-			head="classifier", flow_width=512, flow_depth=4, ar=False):
+			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False):
 		super().__init__()
 		self.config = dict(n_text=n_text, d_model=d_model, layers=layers, heads=heads, patch=patch, rot_frac=rot_frac,
-			gated=gated, qk_norm=qk_norm, rope_theta=rope_theta, head=head, flow_width=flow_width, flow_depth=flow_depth, ar=ar)
+			gated=gated, qk_norm=qk_norm, rope_theta=rope_theta, head=head, flow_width=flow_width, flow_depth=flow_depth, ar=ar,
+			n_lang=n_lang, length=length)
 		self.ar = ar
 		self.head_type = head
 		self.patch = patch
@@ -166,6 +167,12 @@ class V3(nn.Module):
 			self.bos = nn.Parameter(torch.randn(d_model) * 0.02)
 			self.stop = nn.Linear(d_model, 1)
 			self.null_h = nn.Parameter(torch.zeros(d_model))
+		# language (accent) embedding on every position; id 0 is unknown, which training also drops to
+		self.lang = nn.Embedding(n_lang, d_model) if n_lang else None
+		if length:
+			# LEN mode: a query position after text + prompt regresses the log target length in patches
+			self.len_q = nn.Parameter(torch.randn(d_model) * 0.02)
+			self.length = nn.Linear(d_model, 1)
 		self.register_buffer("level_mask", fsq.level_mask().repeat(patch, 1), persistent=False)  # [values, MAX_LEVEL]
 		head_dim = d_model // heads
 		rot = int(head_dim * rot_frac) // 2 * 2
@@ -175,11 +182,11 @@ class V3(nn.Module):
 		"""Per-scalar logits for every target position, [sum La, values, MAX_LEVEL] (classifier head)."""
 		return self.logits(self.encode(*args, **kwargs))
 
-	def encode(self, text, prompt, target, target_masked, mode=NAR_DEMASK):
+	def encode(self, text, prompt, target, target_masked, mode=NAR_DEMASK, langs=None):
 		"""Lists per sample: text [Lt] ids, prompt [Lp, values] digits, target [La, values] digits, target_masked [La] bool.
 		An empty text or prompt drops that condition (CFG). Returns the final hidden state of every target position, [sum La, d_model]."""
 		from .data import pack
-		return self.encode_packed(pack(text, prompt, target, target_masked), mode)
+		return self.encode_packed(pack(text, prompt, target, target_masked, langs=langs), mode)
 
 	def encode_packed(self, b, mode=NAR_DEMASK):
 		"""b: the tensors from data.pack(), on this model's device. Returns the target positions' final hidden states."""
@@ -196,9 +203,13 @@ class V3(nn.Module):
 		x = torch.where(b["masked"][..., None], self.mask_emb.to(x.dtype), x)
 		if self.ar:
 			x = torch.where((kind == 4)[..., None], self.bos.to(x.dtype), x)
+		if hasattr(self, "len_q"):
+			x = torch.where((kind == 5)[..., None], self.len_q.to(x.dtype), x)
 		modes = b.get("mode")
 		mode_emb = self.mode(modes)[:, None, :] if modes is not None else self.mode.weight[mode]
 		x = x + self.segment((kind.long() - 1).clamp(0, 2)) + mode_emb
+		if self.lang is not None:
+			x = x + self.lang(b["lang"])[:, None, :]
 		L = x.shape[1]
 		pos = torch.arange(L, device=x.device)
 		freqs = pos.float()[:, None] * self.inv_freq[None, :]
@@ -214,11 +225,13 @@ class V3(nn.Module):
 			x = block(x, cos, sin, mask, cache[i] if cache else None)
 		return self.norm(x.flatten(0, 1))
 
-	def step(self, digits, pos, cache):
+	def step(self, digits, pos, cache, lang=0):
 		"""AR decode of one target position at sequence index pos, after hidden() prefilled the cache with positions
 		[0, pos). digits: [B, values], the patch this position holds. Returns its final hidden state, [B, d_model]."""
 		dtype = self.audio_in.weight.dtype
 		x = self.audio_in(fsq.digits_to_values(digits).to(dtype)) + self.segment.weight[2] + self.mode.weight[AR]
+		if self.lang is not None:
+			x = x + self.lang.weight[lang]
 		freqs = torch.tensor([float(pos)], device=x.device)[:, None] * self.inv_freq[None, :]
 		cos, sin = freqs.cos().to(x.dtype), freqs.sin().to(x.dtype)
 		x = x[:, None]
@@ -350,12 +363,15 @@ def reveal_order(n, kind="random", device=None):
 
 @torch.no_grad()
 def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.0, flow_steps=8, sway=-1.0,
-		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone"):
+		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone", lang=0, null="both"):
 	"""MAR-style generation: positions are revealed on the cosine schedule, each sampled from the flow head and snapped
 	to the grid. cfg_end / temperature_end anneal linearly over the demask steps (as MAGNeT and MaskGCT do); steps whose
 	CFG scale is at most 1 skip the unconditional pass. cfg_mode "head" (models trained with ar=True) guides with the
-	flow head's learned null condition, so the backbone runs once per step. Returns [n_frames, 32] digits."""
+	flow head's learned null condition, so the backbone runs once per step. null (backbone CFG): which conditions the
+	unconditional pass drops, "both", "text" or "prompt" (models trained with separate text and prompt dropout).
+	lang: language id (0 unknown). Returns [n_frames, 32] digits."""
 	dev = text.device
+	null_text, null_prompt = (text[:0] if null != "prompt" else text), (prompt[:0] if null != "text" else prompt)
 	La = math.ceil(n_frames / model.patch)
 	digits = torch.zeros(La, model.values, dtype=torch.long, device=dev)
 	masked = torch.ones(La, dtype=torch.bool, device=dev)
@@ -371,13 +387,13 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 		w = cfg if cfg_end is None else cfg + (cfg_end - cfg) * frac
 		temp = temperature if temperature_end is None else temperature + (temperature_end - temperature) * frac
 		if w > 1 and cfg_mode == "head":
-			hc = model.encode([text], [prompt], [digits], [masked])[reveal]
+			hc = model.encode([text], [prompt], [digits], [masked], langs=[lang])[reveal]
 			hn = model.null_h.to(hc.dtype).expand_as(hc)
 		elif w > 1:
-			h = model.encode([text, text[:0]], [prompt, prompt[:0]], [digits, digits], [masked, masked])
+			h = model.encode([text, null_text], [prompt, null_prompt], [digits, digits], [masked, masked], langs=[lang, lang])
 			hc, hn = h[:La][reveal], h[La:][reveal]
 		else:
-			hc, hn = model.encode([text], [prompt], [digits], [masked])[reveal], None
+			hc, hn = model.encode([text], [prompt], [digits], [masked], langs=[lang])[reveal], None
 		vals = flow_sample(model.flow, hc, hn, cfg=w if w > 1 else 0.0, steps=flow_steps, temperature=temp, sway=sway)
 		digits[reveal] = snap(vals, model.patch)
 		masked[reveal] = False
@@ -387,7 +403,7 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 
 @torch.no_grad()
 def generate_ar(model, text, prompt, max_frames, cfg=1.5, temperature=1.0, flow_steps=8, sway=-1.0, min_frames=0, stop_threshold=0.5,
-		use_cache=True):
+		use_cache=True, lang=0):
 	"""Streaming-order generation, one patch per step: the backbone gives the new position's hidden state and stop
 	probability, and the flow head samples the patch from it and the previous patch, guided on the head alone.
 	With use_cache, text + prompt + start are prefilled once and each new patch is one cached step; without, the whole
@@ -399,14 +415,14 @@ def generate_ar(model, text, prompt, max_frames, cfg=1.5, temperature=1.0, flow_
 	if use_cache:
 		start = len(text) + len(prompt)  # the start position; patch j sits at start + 1 + j
 		cache = [KVCache(start + 1 + n_steps) for _ in model.blocks]
-		b = pack([text], [prompt], [gen], [torch.zeros(0, dtype=torch.bool, device=dev)], modes=[AR], pad_to=1)
+		b = pack([text], [prompt], [gen], [torch.zeros(0, dtype=torch.bool, device=dev)], modes=[AR], pad_to=1, langs=[lang])
 		h = model.hidden(b, cache=cache)[start : start + 1]
 	for j in range(n_steps):
 		if not use_cache:
-			b = pack([text], [prompt], [gen], [torch.zeros(len(gen), dtype=torch.bool, device=dev)], modes=[AR])
+			b = pack([text], [prompt], [gen], [torch.zeros(len(gen), dtype=torch.bool, device=dev)], modes=[AR], langs=[lang])
 			h = model.hidden(b)[b["stop_index"][-1:]]  # the newest position
 		elif j > 0:
-			h = model.step(gen[-1:], start + j, cache)
+			h = model.step(gen[-1:], start + j, cache, lang)
 		if j * model.patch >= min_frames and torch.sigmoid(model.stop(h).float()).item() > stop_threshold:
 			break
 		hist = fsq.digits_to_values(gen[-1:]) if len(gen) else torch.zeros(1, model.values, device=dev)
@@ -415,3 +431,12 @@ def generate_ar(model, text, prompt, max_frames, cfg=1.5, temperature=1.0, flow_
 		vals = flow_sample(model.flow, h, hn, cfg=cfg if cfg > 1 else 0.0, steps=flow_steps, temperature=temperature, sway=sway, hist=hist, has_hist=has)
 		gen = torch.cat([gen, snap(vals, model.patch)])
 	return gen.view(-1, fsq.SCALARS)
+
+
+@torch.no_grad()
+def predict_length(model, text, prompt, lang=0):
+	"""LEN mode (models trained with length=True): the target length in frames for this text and prompt."""
+	from .data import pack
+	b = pack([text], [prompt], [prompt[:1]], [torch.zeros(1, dtype=torch.bool, device=text.device)], modes=[LEN], langs=[lang])
+	log_patches = model.length(model.hidden(b, LEN)[b["len_index"]]).float().item()
+	return max(1, round(math.exp(log_patches) * model.patch))

@@ -148,6 +148,24 @@ class Store:
 		order = np.argsort(self.speaker, kind="stable")
 		counts = np.bincount(self.speaker, minlength=len(self.m["speakers"]))
 		self.speaker_utts, self.speaker_offsets = order.astype(np.int64), np.concatenate([[0], np.cumsum(counts)])
+		# optional sidecars (see build_similar, build_exclude and noisy.py)
+		side = lambda k: np.load(self.root / k, mmap_mode="r") if (self.root / k).exists() else None
+		self.similar, self.exclude = side("similar.npy"), side("exclude.npy")
+		self.noisy = None
+		if (self.root / "noisy" / "source.npy").exists():
+			d = self.root / "noisy"
+			src = np.load(d / "source.npy")
+			self.noisy = dict(codes=np.memmap(d / "codes.u16", dtype=np.uint16, mode="r").reshape(-1, CODEC["groups"]),
+				offsets=np.load(d / "frame_offsets.npy"))
+			# speaker -> its noised prompt (one per speaker), -1 if none
+			self.noisy_of = np.full(len(self.m["speakers"]), -1, dtype=np.int64)
+			self.noisy_of[self.speaker[src]] = np.arange(len(src))
+			self.noisy_source = src
+
+	def noisy_codes(self, k):
+		"""Noised prompt k, [T, 8] uint16."""
+		o = self.noisy["offsets"]
+		return self.noisy["codes"][o[k] : o[k + 1]]
 
 	def __len__(self):
 		return int(self.starts[-1])
@@ -258,6 +276,104 @@ def convert(meta_root, data_root, out, groups=None, workers=6, limit_speakers=No
 	print(f"done: {n} utterances from {len(jobs)} speakers ({missing} missing artifacts) in {time.time() - t0:.0f}s", flush=True)
 
 
+# --- sidecars: per-utterance arrays built after conversion, beside the shards (the shards are never rewritten) ---
+#
+#   <root>/similar.npy    int32 [utterances, SIMILAR_K]: global ids of each utterance's most similar same-speaker
+#                         utterances (the metadata's `similar` lists, best first), -1 padded
+#   <root>/exclude.npy    bool [utterances]: dropped from training (bad transcripts or labels); exclude.json says why
+#   <root>/noisy/         codes.u16 + frame_offsets.npy + source.npy: noised copies of some utterances (prompts)
+
+SIMILAR_K = 8
+
+
+def _read_similar(args):
+	meta_file, group = args
+	try:
+		meta = json.loads(Path(meta_file).read_bytes().decode("utf-8", errors="replace"))
+	except (OSError, ValueError):
+		return group, Path(meta_file).stem, None, None
+	keys = list(meta.keys())
+	return group, Path(meta_file).stem, keys, [meta[k].get("similar") or [] for k in keys]
+
+
+def build_similar(root, meta_root, workers=6):
+	"""The metadata's `similar` lists are indices into that speaker file's key order; this maps them to global
+	utterance ids through each speaker's stored names (utterances the store dropped are skipped)."""
+	st, meta_root = Store(root), Path(meta_root)
+	out = np.full((len(st), SIMILAR_K), -1, dtype=np.int32)
+	spk_id = {(st.m["groups"][g], s): i for i, (s, g) in enumerate(zip(st.m["speakers"], st.m["speaker_group"]))}
+	jobs = [(str(f), str(f.parent.relative_to(meta_root))) for f in sorted(meta_root.rglob("*.json"))]
+	jobs = [j for j in jobs if (j[1], Path(j[0]).stem) in spk_id]
+	t0, n_lists = time.time(), 0
+	with ProcessPoolExecutor(workers) as ex:
+		for k, (group, spk, keys, sims) in enumerate(ex.map(_read_similar, jobs, chunksize=64)):
+			if keys is None:
+				continue
+			utts = st.utterances_of(spk_id[(group, spk)])
+			by_name = {st.name(int(u)): int(u) for u in utts}
+			glob = [by_name.get(key, -1) for key in keys]
+			for key, sim in zip(keys, sims):
+				u = by_name.get(key)
+				if u is None:
+					continue
+				ids = [glob[i] for i in sim if 0 <= i < len(glob) and glob[i] >= 0 and glob[i] != u][:SIMILAR_K]
+				out[u, : len(ids)] = ids
+				n_lists += bool(ids)
+			if (k + 1) % 20000 == 0:
+				print(f"{k + 1}/{len(jobs)} speakers, {time.time() - t0:.0f}s", flush=True)
+	np.save(Path(root) / "similar.npy.tmp.npy", out)
+	(Path(root) / "similar.npy.tmp.npy").replace(Path(root) / "similar.npy")
+	print(f"similar: {n_lists}/{len(st)} utterances have a list, {time.time() - t0:.0f}s", flush=True)
+
+
+# groups whose voice work is English: anything else in them is a transcription error (Whisper hearing a scream as
+# Japanese) or an unreliable label (`auto`)
+ENGLISH_GROUPS = ("GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP",
+	"GROUP", "GROUP", "GROUP", "GROUP", "GROUP")
+# espeak's English voice reads CJK characters it can't pronounce as "Japanese letter" / "Chinese letter"
+LETTER_READINGS = ("dʒˈæpəniːzlˌɛɾɚ", "tʃˈaɪniːzlˌɛɾɚ")
+
+
+def build_exclude(root):
+	import re
+	st = Store(root)
+	G, L, V = st.m["groups"], st.m["languages"], st.m["vocab"]
+	lut = {c: i for i, c in enumerate(V)}
+	reasons = {}
+	# phoneme strings with letter readings: a byte search over each shard's phoneme array
+	letter = np.zeros(len(st), dtype=bool)
+	for s, sh in enumerate(st.shards):
+		buf, off = np.asarray(sh["phonemes"]).tobytes(), np.asarray(sh["phoneme_offsets"])
+		for reading in LETTER_READINGS:
+			if any(c not in lut for c in reading):
+				continue
+			pat = re.escape(np.array([lut[c] for c in reading], dtype=np.uint16).tobytes())
+			pos = [m.start() // 2 for m in re.finditer(pat, buf) if m.start() % 2 == 0]
+			if pos:
+				letter[int(st.starts[s]) + np.unique(np.searchsorted(off, pos, side="right") - 1)] = True
+	reasons["letter readings in phonemes"] = letter
+	# English-voiced groups: non-en labels, or text in a CJK / Hangul script
+	eng = np.isin(st.group, [G.index(g) for g in ENGLISH_GROUPS if g in G])
+	non_en = eng & (st.language != L.index("en"))
+	cjk = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
+	script = np.zeros(len(st), dtype=bool)
+	for u in np.nonzero(eng & ~non_en)[0]:
+		script[u] = bool(cjk.search(st.text(int(u))))
+	reasons["non-English label in an English-voiced group"] = non_en
+	reasons["CJK text in an English-voiced group"] = script
+	# GROUP is Japanese: items labelled anything else were phonemized in the wrong language
+	if "GROUP" in G:
+		reasons["GROUP item not labelled ja"] = (st.group == G.index("GROUP")) & (st.language != L.index("ja"))
+	exclude = np.zeros(len(st), dtype=bool)
+	for v in reasons.values():
+		exclude |= v
+	np.save(Path(root) / "exclude.npy", exclude)
+	summary = {k: int(v.sum()) for k, v in reasons.items()} | dict(total=int(exclude.sum()),
+		hours=round(float(st.frames[exclude].sum()) / (CODEC["sample_rate"] / CODEC["samples_per_frame"]) / 3600, 2))
+	(Path(root) / "exclude.json").write_text(json.dumps(summary, indent=1))
+	print(summary, flush=True)
+
+
 def _load_codes(path):
 	codes = np.load(path, allow_pickle=True)[()]["codes"]
 	while codes.ndim > 2 and codes.shape[0] == 1:
@@ -311,8 +427,18 @@ if __name__ == "__main__":
 	r.add_argument("--store", type=Path, required=True)
 	r.add_argument("--data", type=Path, required=True)
 	r.add_argument("--workers", type=int, default=3)
+	s = sub.add_parser("similar", help="build similar.npy from the metadata's similar lists")
+	s.add_argument("--store", type=Path, required=True)
+	s.add_argument("--meta", type=Path, required=True)
+	s.add_argument("--workers", type=int, default=6)
+	e = sub.add_parser("exclude", help="build exclude.npy (bad transcripts and labels)")
+	e.add_argument("--store", type=Path, required=True)
 	args = ap.parse_args()
 	if args.cmd == "convert":
 		convert(args.meta, args.data, args.out, args.groups, args.workers, args.limit_speakers, resume=args.resume)
-	else:
+	elif args.cmd == "repair-codes":
 		repair_codes(args.store, args.data, workers=args.workers)
+	elif args.cmd == "similar":
+		build_similar(args.store, args.meta, args.workers)
+	else:
+		build_exclude(args.store)
