@@ -225,8 +225,10 @@ class BucketSampler(torch.utils.data.Sampler):
 	"""Yields n_batches batches of similar total length: draws chunk * batch_size utterances at random, sorts them by
 	length, cuts them into batches and shuffles the batches, so consecutive batches still differ in length.
 	Utterances outside [min_f, max_f] frames (or unreadable, -1) are never drawn. weights (per item, optional): draw
-	probabilities, e.g. Dataset.speaker_weights() to even out speakers."""
-	def __init__(self, ds, batch_size, n_batches, patch, chunk=64, seed=0, weights=None):
+	probabilities, e.g. Dataset.speaker_weights() to even out speakers. max_tokens (optional): batches whose rows x
+	(longest row + extra) exceed it are split, extra being positions the collator adds (the longest prompt), so the
+	longest batches fit in memory without shrinking the typical one."""
+	def __init__(self, ds, batch_size, n_batches, patch, chunk=64, seed=0, weights=None, max_tokens=None, extra=0):
 		frames = np.asarray(ds.frames)
 		self.lengths = np.asarray(ds.text_len) + -(-frames // patch)
 		self.valid = np.nonzero((frames >= ds.min_f) & (frames <= ds.max_f))[0]
@@ -235,6 +237,7 @@ class BucketSampler(torch.utils.data.Sampler):
 			w = np.asarray(weights, dtype=np.float64)[self.valid]
 			self.cum = np.cumsum(w / w.sum())
 		self.batch_size, self.n_batches, self.chunk, self.seed = batch_size, n_batches, chunk, seed
+		self.max_tokens, self.extra = max_tokens, extra
 
 	def __len__(self):
 		return self.n_batches
@@ -249,6 +252,12 @@ class BucketSampler(torch.utils.data.Sampler):
 			idx = self.valid[pick]
 			idx = idx[np.argsort(self.lengths[idx], kind="stable")].tolist()
 			batches = [idx[i : i + self.batch_size] for i in range(0, len(idx), self.batch_size)]
+			if self.max_tokens:
+				split = []
+				for b in batches:
+					rows = max(1, self.max_tokens // (int(self.lengths[b[-1]]) + self.extra))  # sorted: b[-1] is the longest
+					split += [b[i : i + rows] for i in range(0, len(b), rows)]
+				batches = split
 			rng.shuffle(batches)
 			for b in batches[: self.n_batches - done]:
 				yield b
@@ -272,6 +281,9 @@ class StoreUtterances(torch.utils.data.Dataset):
 		spk_ok = np.array([is_val(k) == (split == "val") for k in keys])
 		ok = spk_ok[st.speaker]
 		if groups:
+			unknown = [x for x in groups if not any(g == x or g.startswith(x + "/") for g in st.m["groups"])]
+			if unknown:
+				raise ValueError(f"no store group matches {unknown}; groups are {st.m['groups']}")
 			gids = [i for i, g in enumerate(st.m["groups"]) if any(g == x or g.startswith(x + "/") for x in groups)]
 			ok &= np.isin(st.group, gids)
 		if languages:

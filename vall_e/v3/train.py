@@ -190,6 +190,7 @@ def main():
 	ap.add_argument("--store", type=Path, default=None, help="train from a v3 Store (vall_e/v3/store.py) instead of the JSON index")
 	ap.add_argument("--groups", nargs="*", default=None, help="with --store: dataset groups to use, e.g. LibriTTS-R Emilia/EN")
 	ap.add_argument("--languages", nargs="*", default=None, help="with --store: languages to use, e.g. en")
+	ap.add_argument("--max-tokens", type=int, default=0, help="split batches above this many positions (rows x longest row, counting the longest prompt)")
 	ap.add_argument("--keep-every", type=int, default=0, help="also keep a copy of the checkpoint every this many steps (step-<n>.pt)")
 	ap.add_argument("--init-from", type=Path, default=None, help="start from these weights (new parts keep their init), with a fresh optimizer and schedule")
 	args = ap.parse_args()
@@ -258,7 +259,7 @@ def main():
 		# similar-length batches (about 90% real positions instead of about 55% with random batches)
 		weights = train_ds.speaker_weights(args.speaker_alpha) if args.speaker_alpha and args.store else None
 		dl = torch.utils.data.DataLoader(train_ds, batch_sampler=BucketSampler(train_ds, args.batch, args.steps - step, args.patch,
-			seed=step, weights=weights), **loader_kw)
+			seed=step, weights=weights, max_tokens=args.max_tokens or None, extra=math.ceil(prompt_f[1] / args.patch) + 1), **loader_kw)
 	log = open(args.out / "log.jsonl", "a")
 	model.train()
 	t0, run = time.time(), {}
