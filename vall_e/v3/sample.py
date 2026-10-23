@@ -120,7 +120,7 @@ def main():
 		n_frames = len(it["target"])
 		if args.length == "predict":
 			with torch.autocast(device, dtype=torch.bfloat16, enabled=device == "cuda"):
-				n_frames = predict_length(model, it["text"].to(device), prompt, lang=lang)
+				n_frames = max(predict_length(model, it["text"].to(device), prompt, lang=lang), 44)  # at least 0.5 s (the codec's minimum is a few frames)
 		with torch.autocast(device, dtype=torch.bfloat16, enabled=device == "cuda"):
 			if args.mode == "ar":
 				# length from the stop logit; allow up to 1.5x the reference length
