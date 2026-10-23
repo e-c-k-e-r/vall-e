@@ -194,10 +194,12 @@ class Collator:
 	CFG's null, prompt alone for promptless generation), the language id dropped for lang_drop, then pack().
 	mask_ratio: None draws cos(u * pi / 2) per sample (covers every ratio the demasking loop visits); a float fixes it
 	(AutoNAT, arXiv 2406.05478, found a fixed 0.8 on par with or slightly better than the cosine draw for images)."""
-	def __init__(self, patch, prompt_f, text_drop=0.1, prompt_drop=0.1, mask_ratio=0.8, ar_frac=0.0, len_frac=0.0, lang_drop=0.2):
-		"""ar_frac / len_frac: shares of samples trained in AR and LEN mode (the rest NAR-demask)."""
+	def __init__(self, patch, prompt_f, text_drop=0.1, prompt_drop=0.1, mask_ratio=0.8, ar_frac=0.0, len_frac=0.0, lang_drop=0.2,
+			cond_drop=0.0):
+		"""ar_frac / len_frac: shares of samples trained in AR and LEN mode (the rest NAR-demask). cond_drop: share with
+		both text and prompt dropped (CFG's null); the rest drop each independently with text_drop / prompt_drop."""
 		self.patch, self.prompt_f, self.mask_ratio, self.ar_frac, self.len_frac = patch, prompt_f, mask_ratio, ar_frac, len_frac
-		self.text_drop, self.prompt_drop, self.lang_drop = text_drop, prompt_drop, lang_drop
+		self.text_drop, self.prompt_drop, self.lang_drop, self.cond_drop = text_drop, prompt_drop, lang_drop, cond_drop
 
 	def __call__(self, items):
 		rng = random.Random()  # DataLoader seeds `random` per worker
@@ -212,8 +214,9 @@ class Collator:
 			r = math.cos(rng.random() * math.pi / 2) if self.mask_ratio is None else self.mask_ratio
 			m = torch.zeros(len(a), dtype=torch.bool)
 			m[torch.tensor(rng.sample(range(len(a)), max(1, round(r * len(a)))))] = True
-			text.append(it["text"][:0] if rng.random() < self.text_drop else it["text"])
-			prompt.append(to_patches(p, self.patch)[:0] if rng.random() < self.prompt_drop else to_patches(p, self.patch))
+			both = rng.random() < self.cond_drop
+			text.append(it["text"][:0] if both or rng.random() < self.text_drop else it["text"])
+			prompt.append(to_patches(p, self.patch)[:0] if both or rng.random() < self.prompt_drop else to_patches(p, self.patch))
 			target.append(a); masked.append(m)
 			u = rng.random()
 			modes.append(1 if u < self.ar_frac else 2 if u < self.ar_frac + self.len_frac else 0)

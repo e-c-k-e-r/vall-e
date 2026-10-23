@@ -6,6 +6,8 @@ cd "$(dirname "$0")/.."
 PY=python
 out=$1; shift
 mkdir -p "$out"
+# a private temp dir: something cleaning /tmp deleted the DataLoader's multiprocessing sockets twice (2026-10-22)
+export TMPDIR="$PWD/$out/tmp"; mkdir -p "$TMPDIR"
 
 until [ "$(rocm-smi --showmemuse 2>/dev/null | grep -oP 'VRAM%\): \K[0-9]+')" -lt 20 ] 2>/dev/null; do sleep 30; done
 echo "$(date) VRAM free, starting" >> "$out/run.log"

@@ -173,14 +173,17 @@ def main():
 	ap.add_argument("--val-size", type=int, default=256)
 	ap.add_argument("--subset", type=int, default=0, help="train and evaluate on this many fixed utterances (overfit check)")
 	ap.add_argument("--compile", action="store_true", help="torch.compile each transformer block")
-	ap.add_argument("--mask-ratio", type=lambda v: None if v == "cos" else float(v), default=0.8,
-		help="fixed training mask ratio (AutoNAT), or `cos` to draw cos(u * pi / 2) per sample")
+	# fixed 0.8 from scratch (v3-main to step 124k) never trains generation without audio anchors: teacher-forced
+	# metrics matched v3-flow-large, but sampled WER was 59% against its 4%
+	ap.add_argument("--mask-ratio", type=lambda v: None if v == "cos" else float(v), default=None,
+		help="training mask ratio: `cos` (default) draws cos(u * pi / 2) per sample; a float fixes it (AutoNAT)")
 	ap.add_argument("--ar-frac", type=float, default=0.0, help="share of samples trained in AR mode; > 0 builds the AR parts")
 	ap.add_argument("--stop-weight", type=float, default=0.5)
 	ap.add_argument("--stop-pos-cap", type=float, default=20.0, help="cap on the stop loss's positive weight")
 	ap.add_argument("--len-frac", type=float, default=0.0, help="share of samples trained in LEN mode; > 0 builds the length head")
 	ap.add_argument("--len-weight", type=float, default=0.1)
 	ap.add_argument("--len-ramp", type=int, default=10000, help="steps over which the length loss weight ramps up from 0")
+	ap.add_argument("--cond-drop", type=float, default=0.0, help="share of samples with both text and prompt dropped (CFG's null)")
 	ap.add_argument("--text-drop", type=float, default=0.1, help="share of samples trained without text (independent of the prompt's)")
 	ap.add_argument("--prompt-drop", type=float, default=0.1, help="share of samples trained without a prompt")
 	ap.add_argument("--accent", action="store_true", help="language (accent) embedding; with --store only")
@@ -251,7 +254,7 @@ def main():
 		model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); step = st["step"]
 		print(f"resumed at step {step}")
 
-	collator = Collator(args.patch, prompt_f, text_drop=args.text_drop, prompt_drop=args.prompt_drop, mask_ratio=args.mask_ratio,
+	collator = Collator(args.patch, prompt_f, text_drop=args.text_drop, prompt_drop=args.prompt_drop, cond_drop=args.cond_drop, mask_ratio=args.mask_ratio,
 		ar_frac=args.ar_frac, len_frac=args.len_frac, lang_drop=args.lang_drop)
 	loader_kw = dict(collate_fn=collator, num_workers=args.workers, persistent_workers=True, prefetch_factor=4, pin_memory=True)
 	if args.subset:
