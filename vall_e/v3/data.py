@@ -269,6 +269,12 @@ class BucketSampler(torch.utils.data.Sampler):
 			done += len(batches)
 
 
+def _dup_key(text, n=8):
+	"""Near-duplicate key: the first and last n characters of the text, lowercased, without spaces or punctuation."""
+	t = "".join(c for c in text.lower() if c.isalnum())
+	return (t[:n], t[-n:]) if len(t) > n else t
+
+
 class StoreUtterances(torch.utils.data.Dataset):
 	"""Utterances from a v3 Store (vall_e/v3/store.py), with the same interface as Utterances: items, frames, text_len,
 	prompt_f, and items of dict(text, prompt, target, speaker, path, text_raw, lang). Speakers split train/val by
@@ -307,9 +313,13 @@ class StoreUtterances(torch.utils.data.Dataset):
 		self.n_lang = len(st.m["languages"]) + 1
 
 	def speaker_weights(self, alpha=0.5):
-		"""Per-item draw weights n_speaker ** -alpha: 0 keeps the utterance distribution, 1 draws every speaker equally."""
-		spk = self.store.speaker[self.items]
-		return np.bincount(spk)[spk].astype(np.float64) ** -alpha
+		"""Per-item draw weights n_speaker ** -alpha within each group, rescaled so every group keeps its share of
+		utterances: speakers are evened out inside a group without changing the group / language mix. (Balancing across
+		the whole store instead handed Emilia, with its many few-utterance speakers, 83% of the draws.)"""
+		spk, grp = self.store.speaker[self.items], self.store.group[self.items]
+		w = np.bincount(spk)[spk].astype(np.float64) ** -alpha
+		n_g, w_g = np.bincount(grp), np.bincount(grp, weights=w)
+		return w * (n_g[grp] / w_g[grp])
 
 	def _prompt_source(self, u, rng):
 		"""The utterance (or noised prompt, as ("noisy", k)) to crop the prompt from, or None."""
@@ -321,6 +331,9 @@ class StoreUtterances(torch.utils.data.Dataset):
 				return ("noisy", k)
 		if st.similar is not None and rng.random() < self.similar_p:
 			sim = [int(v) for v in st.similar[u][: self.similar_k] if v >= 0 and not (st.exclude is not None and st.exclude[v])]
+			# the most similar utterance is sometimes the same line again (19% of Emilia/JA's): never prompt with it
+			key = _dup_key(st.text(u))
+			sim = [v for v in sim if _dup_key(st.text(v)) != key]
 			if sim:
 				return sim[rng.randrange(len(sim))]
 		others = st.utterances_of(spk)
