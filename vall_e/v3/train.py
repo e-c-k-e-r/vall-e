@@ -111,8 +111,30 @@ def evaluate(model, val_items, patch, device, smoothing, ratios=(0.5, 0.8)):
 				agg[k] = agg.get(k, 0) + v * len(tgt)
 			n += len(tgt)
 		res |= {f"val@{r}/{k}": v / n for k, v in agg.items()}
+	res |= evaluate_text_use(model, val_items, patch, device, smoothing)
 	model.train()
 	return res
+
+
+@torch.no_grad()
+def evaluate_text_use(model, val_items, patch, device, smoothing, ratio=0.8):
+	"""How much the model reads the text: the relative loss increase when each item gets another item's text, at the
+	same masks and flow noise. Teacher-forced losses barely show a model that ignores the text (v3-main sampled at 59%
+	WER with losses on par with v3-flow-large); this does (v3-flow-large +5.1%, v3-main4 +0.7%)."""
+	rng = random.Random(1234)
+	right = wrong = 0.0
+	for i in range(0, len(val_items), 16):
+		t, p, a, m, langs = make_batch(val_items[i : i + 16], patch, device, rng, cond_drop=0, mask_ratio=ratio)
+		for texts, acc in ((t, "right"), (t[1:] + t[:1], "wrong")):
+			with torch.random.fork_rng(devices=[torch.cuda.current_device()] if device == "cuda" else []):
+				torch.manual_seed(i)
+				with torch.autocast("cuda", dtype=torch.bfloat16):
+					loss = step_loss(model, pack(texts, p, a, m, langs=langs), smoothing, predict=False)[0].item()
+			if acc == "right":
+				right += loss
+			else:
+				wrong += loss
+	return {"val/text_use": (wrong - right) / right}
 
 
 @torch.no_grad()
