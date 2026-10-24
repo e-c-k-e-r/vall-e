@@ -284,7 +284,10 @@ class StoreUtterances(torch.utils.data.Dataset):
 	random one of the speaker's; with noisy_p, the speaker's noised prompt instead (if the store has one, from another
 	utterance). lang is the store's language id + 1 (0 is unknown)."""
 	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None,
-			similar_p=0.0, similar_k=3, noisy_p=0.0):
+			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None):
+		"""min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
+		segments often run past their transcript into the next sentence (ground-truth WER 10-13%, 2.5% for LibriVox
+		at >= 13 / s), which taught the model to babble past the text."""
 		from .store import Store
 		self.store = store if isinstance(store, Store) else Store(store)
 		st = self.store
@@ -301,6 +304,12 @@ class StoreUtterances(torch.utils.data.Dataset):
 			ok &= np.isin(st.language, [st.m["languages"].index(l) for l in languages if l in st.m["languages"]])
 		if st.exclude is not None:
 			ok &= ~np.asarray(st.exclude)
+		if min_rate:
+			phon = np.concatenate([np.diff(np.asarray(sh["phoneme_offsets"])) for sh in st.shards])
+			slow = phon / np.maximum(st.frames / FPS, 0.1) < min_rate
+			if min_rate_groups:
+				slow &= np.isin(st.group, [i for i, g in enumerate(st.m["groups"]) if any(g == x or g.startswith(x + "/") for x in min_rate_groups)])
+			ok &= ~slow
 		self.items = np.nonzero(ok)[0]
 		self.frames = st.frames[self.items].tolist()
 		phon_len = np.concatenate([np.diff(np.asarray(sh["phoneme_offsets"])) for sh in st.shards])
