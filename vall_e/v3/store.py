@@ -11,6 +11,7 @@
 #
 #   python -m vall_e.v3.store convert --meta training/llama-nemo/metadata --data training/llama-nemo/data --out <root>
 import argparse
+import functools
 import json
 import shutil
 import time
@@ -204,6 +205,18 @@ class Store:
 
 # --- conversion from the per-speaker metadata JSONs and .nem artifacts ---
 
+@functools.lru_cache(None)
+def _nested_roots(group_dir):
+	"""Folders in a group that hold speaker folders rather than artifacts (scanned once per worker)."""
+	roots = []
+	for d in Path(group_dir).iterdir():
+		if d.is_dir():
+			first = next(d.iterdir(), None)
+			if first is not None and first.is_dir():
+				roots.append(d)
+	return roots
+
+
 def _read_speaker(args):
 	meta_file, data_root, group = args
 	out, missing = [], 0
@@ -213,11 +226,18 @@ def _read_speaker(args):
 	except (OSError, ValueError) as e:
 		print(f"skipping unreadable metadata {meta_file}: {e}", flush=True)
 		return group, Path(meta_file).stem, out, missing
+	base = Path(data_root) / group / Path(meta_file).stem
+	if not base.exists():
+		# some batches sit a level deeper (Emilia/DE/Emilia-DE/<speaker>/: 477k utterances the first conversion missed)
+		for root in _nested_roots(str(Path(data_root) / group)):
+			if (root / Path(meta_file).stem).exists():
+				base = root / Path(meta_file).stem
+				break
 	for uid, m in meta.items():
 		ph = m.get("phonemes")
 		if not ph:
 			continue
-		path = Path(data_root) / group / Path(meta_file).stem / f"{uid}.nem"
+		path = base / f"{uid}.nem"
 		try:
 			codes = np.load(path, allow_pickle=True)[()]["codes"]
 		except FileNotFoundError:
