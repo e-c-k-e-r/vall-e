@@ -226,18 +226,16 @@ def _read_speaker(args):
 	except (OSError, ValueError) as e:
 		print(f"skipping unreadable metadata {meta_file}: {e}", flush=True)
 		return group, Path(meta_file).stem, out, missing
-	base = Path(data_root) / group / Path(meta_file).stem
-	if not base.exists():
-		# some batches sit a level deeper (Emilia/DE/Emilia-DE/<speaker>/: 477k utterances the first conversion missed)
-		for root in _nested_roots(str(Path(data_root) / group)):
-			if (root / Path(meta_file).stem).exists():
-				base = root / Path(meta_file).stem
-				break
+	# a speaker's artifacts can be split between <group>/<speaker>/ and a batch folder a level deeper
+	# (Emilia/DE/Emilia-DE/<speaker>/: 477k utterances the first conversion missed): look in every one
+	spk = Path(meta_file).stem
+	bases = [Path(data_root) / group / spk] + [root / spk for root in _nested_roots(str(Path(data_root) / group))]
+	bases = [b for b in bases if b.exists()]
 	for uid, m in meta.items():
 		ph = m.get("phonemes")
 		if not ph:
 			continue
-		path = base / f"{uid}.nem"
+		path = next((b / f"{uid}.nem" for b in bases if (b / f"{uid}.nem").exists()), Path(data_root) / group / spk / f"{uid}.nem")
 		try:
 			codes = np.load(path, allow_pickle=True)[()]["codes"]
 		except FileNotFoundError:
@@ -251,9 +249,11 @@ def _read_speaker(args):
 	return group, Path(meta_file).stem, out, missing
 
 
-def convert(meta_root, data_root, out, groups=None, workers=6, limit_speakers=None, max_inflight=32, resume=False):
+def convert(meta_root, data_root, out, groups=None, workers=6, limit_speakers=None, max_inflight=32, resume=False, supplement=False):
 	"""resume: reopen <out>, delete shard folders the manifest doesn't list (a shard that was never closed), and skip
-	speakers the manifest already has. A speaker whose utterances straddled an unclosed shard keeps only its first part."""
+	speakers the manifest already has. A speaker whose utterances straddled an unclosed shard keeps only its first part.
+	supplement: reopen <out> and add every utterance of the selected groups it doesn't have yet, including those of
+	speakers it already has (whose other artifacts the first conversion couldn't find)."""
 	meta_root, out = Path(meta_root), Path(out)
 	files = sorted(f for f in meta_root.rglob("*.json"))
 	jobs = [(str(f), str(data_root), str(f.parent.relative_to(meta_root))) for f in files]
@@ -267,8 +267,16 @@ def convert(meta_root, data_root, out, groups=None, workers=6, limit_speakers=No
 			if d.name not in listed:
 				print(f"removing unclosed shard {d.name}")
 				shutil.rmtree(d)
+	have = set()
+	if supplement:
+		st = Store(out)
+		sel = np.isin(st.group, [i for i, g in enumerate(st.m["groups"]) if any(j[2] == g for j in jobs)])
+		for u in np.nonzero(sel)[0]:
+			have.add((st.speaker_key(int(u)), st.name(int(u))))
+		print(f"supplement: the store has {len(have)} utterances of the selected groups", flush=True)
+		del st
 	w = StoreWriter(out)
-	if resume:
+	if resume and not supplement:
 		before = len(jobs)
 		jobs = [j for j in jobs if (w._ids["groups"].get(j[2]), Path(j[0]).stem) not in w._spk]
 		print(f"resuming: {before - len(jobs)} speakers already converted, {len(jobs)} to go", flush=True)
@@ -287,8 +295,11 @@ def convert(meta_root, data_root, out, groups=None, workers=6, limit_speakers=No
 			for f in done:
 				group, spk, items, miss = f.result()
 				for uid, codes, ph, text, lang in items:
+					if (f"{group}/{spk}", uid) in have:
+						continue
 					w.add(codes, group, spk, lang, ph, text, uid)
-				n += len(items); missing += miss; k += 1
+					n += 1
+				missing += miss; k += 1
 				if k % 20000 == 0:
 					print(f"{k}/{len(jobs)} speakers, {n} utterances, {missing} missing artifacts, {time.time() - t0:.0f}s", flush=True)
 			fill()
@@ -443,6 +454,7 @@ if __name__ == "__main__":
 	c.add_argument("--workers", type=int, default=6)
 	c.add_argument("--limit-speakers", type=int, default=None)
 	c.add_argument("--resume", action="store_true", help="continue an interrupted conversion into the same --out")
+	c.add_argument("--supplement", action="store_true", help="add the selected groups' utterances the store doesn't have yet")
 	r = sub.add_parser("repair-codes", help="rebuild the codes of shards whose codes file and index disagree")
 	r.add_argument("--store", type=Path, required=True)
 	r.add_argument("--data", type=Path, required=True)
@@ -455,7 +467,7 @@ if __name__ == "__main__":
 	e.add_argument("--store", type=Path, required=True)
 	args = ap.parse_args()
 	if args.cmd == "convert":
-		convert(args.meta, args.data, args.out, args.groups, args.workers, args.limit_speakers, resume=args.resume)
+		convert(args.meta, args.data, args.out, args.groups, args.workers, args.limit_speakers, resume=args.resume, supplement=args.supplement)
 	elif args.cmd == "repair-codes":
 		repair_codes(args.store, args.data, workers=args.workers)
 	elif args.cmd == "similar":
