@@ -44,7 +44,7 @@ def make_batch(items, patch, device, rng, cond_drop=0.1, mask_ratio=None):
 	return text, prompt, target, masked, langs
 
 
-def step_loss(model, b, smoothing, predict=True, stop_weight=0.5, null_p=0.1, stats=None, len_weight=0.1, stop_pos_cap=20.0):
+def step_loss(model, b, smoothing, predict=True, stop_weight=0.5, null_p=0.1, stats=None, len_weight=0.1, stop_pos_cap=20.0, ctc_weight=0.0):
 	"""b: data.pack() tensors on the model's device. Returns the loss, predicted level indices of the masked positions
 	(None for the flow head unless predict, as it has to be sampled) and their targets. For AR-capable models, the flow
 	head sees each predicted patch's previous patch, its condition is replaced by the null embedding for null_p of
@@ -57,7 +57,29 @@ def step_loss(model, b, smoothing, predict=True, stop_weight=0.5, null_p=0.1, st
 		loss = loss + len_weight * err
 		if stats is not None:
 			stats["len_loss"] = err.item()
+	if getattr(model, "ctc", None) is not None and ctc_weight > 0:
+		c = ctc_loss(model, b, h)
+		if c is not None:
+			loss = loss + ctc_weight * c
+			if stats is not None:
+				stats["ctc_loss"] = c.item()
 	return loss, pred, tgt
+
+
+def ctc_loss(model, b, h):
+	"""CTC of each NAR row's phonemes over its target positions (all of them, masked or not), or None if no row has
+	both text and a target."""
+	kind, B, L = b["kind"], b["kind"].shape[0], b["kind"].shape[1]
+	rows = [i for i in range(B) if int(b["mode"][i]) == 0 and bool((kind[i] == 1).any()) and bool((kind[i] == 3).any())]
+	if not rows:
+		return None
+	pos = [i * L + (kind[i] == 3).nonzero().squeeze(-1) for i in rows]
+	tgts = [b["text_ids"][i][kind[i] == 1] for i in rows]
+	T = max(len(p) for p in pos)
+	idx = torch.stack([F.pad(p, (0, T - len(p)), value=int(p[-1])) for p in pos], 1)  # [T, N]
+	logp = F.log_softmax(model.ctc(h[idx]).float(), -1)
+	return F.ctc_loss(logp, torch.cat(tgts), torch.tensor([len(p) for p in pos]), torch.tensor([len(t) for t in tgts]),
+		blank=0, zero_infinity=True)
 
 
 def _main_loss(model, b, smoothing, predict, stop_weight, null_p, stats, stop_pos_cap):
@@ -213,6 +235,7 @@ def main():
 	ap.add_argument("--prompt-s", type=float, nargs=2, default=(3.0, 6.0), help="training prompt length range, seconds")
 	ap.add_argument("--similar-p", type=float, default=0.0, help="with --store: odds of a prompt from the similar lists")
 	ap.add_argument("--noisy-p", type=float, default=0.0, help="with --store: odds of the speaker's noised prompt")
+	ap.add_argument("--ctc-weight", type=float, default=0.0, help="auxiliary phoneme-recognition (CTC) loss weight; > 0 builds the head")
 	ap.add_argument("--min-rate", type=float, default=None, help="with --store: drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
 	ap.add_argument("--speaker-alpha", type=float, default=0.0, help="with --store: draw items with weight n_speaker ** -alpha (0: uniform over utterances)")
@@ -263,7 +286,7 @@ def main():
 
 	model = V3(n_text, args.d_model, args.layers, args.heads, args.patch, args.rot_frac,
 		gated=not args.no_gate, qk_norm=not args.no_qk_norm, head=args.head, ar=args.ar_frac > 0,
-		n_lang=train_ds.n_lang if args.accent and args.store else 0, length=args.len_frac > 0).to(device)
+		n_lang=train_ds.n_lang if args.accent and args.store else 0, length=args.len_frac > 0, ctc=args.ctc_weight > 0).to(device)
 	if args.init_from and not (args.out / "last.pt").exists():
 		missing, unexpected = model.load_state_dict(torch.load(args.init_from, map_location=device, weights_only=False)["model"], strict=False)
 		print(f"initialised from {args.init_from}; new parameters: {missing}; unused: {unexpected}")
@@ -310,7 +333,7 @@ def main():
 			b = {k: v.to(device, non_blocking=True) for k, v in b.items()}
 			stats = {}
 			loss, pred, tgt = step_loss(model, b, args.smoothing, predict=False, stop_weight=args.stop_weight, stats=stats,
-				len_weight=args.len_weight * min(1.0, step / max(1, args.len_ramp)), stop_pos_cap=args.stop_pos_cap)
+				len_weight=args.len_weight * min(1.0, step / max(1, args.len_ramp)), stop_pos_cap=args.stop_pos_cap, ctc_weight=args.ctc_weight)
 		opt.zero_grad(set_to_none=True)
 		loss.backward()
 		gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

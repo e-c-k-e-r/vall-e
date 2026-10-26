@@ -138,11 +138,11 @@ class FlowHead(nn.Module):
 
 class V3(nn.Module):
 	def __init__(self, n_text, d_model=512, layers=12, heads=8, patch=2, rot_frac=1.0, gated=True, qk_norm=True, rope_theta=10000.0,
-			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False):
+			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False, ctc=False):
 		super().__init__()
 		self.config = dict(n_text=n_text, d_model=d_model, layers=layers, heads=heads, patch=patch, rot_frac=rot_frac,
 			gated=gated, qk_norm=qk_norm, rope_theta=rope_theta, head=head, flow_width=flow_width, flow_depth=flow_depth, ar=ar,
-			n_lang=n_lang, length=length)
+			n_lang=n_lang, length=length, ctc=ctc)
 		self.ar = ar
 		self.head_type = head
 		self.patch = patch
@@ -169,6 +169,9 @@ class V3(nn.Module):
 			self.null_h = nn.Parameter(torch.zeros(d_model))
 		# language (accent) embedding on every position; id 0 is unknown, which training also drops to
 		self.lang = nn.Embedding(n_lang, d_model) if n_lang else None
+		# auxiliary phoneme recognition over the target positions (CTC, blank = the padding id 0): to name the phoneme at a
+		# masked position the model has to place it in the text, the alignment the flow loss teaches only weakly
+		self.ctc = nn.Linear(d_model, n_text) if ctc else None
 		if length:
 			# LEN mode: a query position after text + prompt regresses the log target length in patches
 			self.len_q = nn.Parameter(torch.randn(d_model) * 0.02)
