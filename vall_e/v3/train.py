@@ -221,6 +221,8 @@ def main():
 	ap.add_argument("--languages", nargs="*", default=None, help="with --store: languages to use, e.g. en")
 	ap.add_argument("--max-tokens", type=int, default=0, help="split batches above this many positions (rows x longest row, counting the longest prompt)")
 	ap.add_argument("--keep-every", type=int, default=0, help="also keep a copy of the checkpoint every this many steps (step-<n>.pt)")
+	ap.add_argument("--train-only", nargs="*", default=None,
+		help="train only parameters whose names start with these prefixes (e.g. len_q length), the rest frozen")
 	ap.add_argument("--init-from", type=Path, default=None, help="start from these weights (new parts keep their init), with a fresh optimizer and schedule")
 	args = ap.parse_args()
 	args.out.mkdir(parents=True, exist_ok=True)
@@ -269,8 +271,14 @@ def main():
 	if args.compile:
 		for block in model.blocks:
 			block.compile(dynamic=True)  # in place, so state_dict keys are unchanged
-	decay = [p for n, p in model.named_parameters() if p.ndim >= 2 and "text" not in n]
-	no_decay = [p for n, p in model.named_parameters() if not (p.ndim >= 2 and "text" not in n)]
+	if args.train_only:
+		# e.g. a length head on a frozen model: generation can't change
+		for n, p in model.named_parameters():
+			p.requires_grad_(any(n.startswith(x) for x in args.train_only))
+		print(f"training only {[n for n, p in model.named_parameters() if p.requires_grad]}")
+	params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+	decay = [p for n, p in params if p.ndim >= 2 and "text" not in n]
+	no_decay = [p for n, p in params if not (p.ndim >= 2 and "text" not in n)]
 	opt = torch.optim.AdamW([dict(params=decay, weight_decay=0.1), dict(params=no_decay, weight_decay=0.0)],
 		lr=args.lr, betas=(0.9, 0.95), fused=True)
 	step = 0
