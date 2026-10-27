@@ -52,6 +52,7 @@ def main():
 	ap.add_argument("--null", choices=["both", "text", "prompt"], default="both",
 		help="backbone CFG: what the unconditional pass drops (text / prompt alone need separate dropout in training)")
 	ap.add_argument("--length", choices=["ref", "predict"], default="ref", help="NAR target length: the reference's, or LEN mode's prediction")
+	ap.add_argument("--length-scale", type=float, default=1.0, help="multiply the predicted length (silence-padded models want ~1.2)")
 	ap.add_argument("--lang", default="auto", help="language id fed to accent models: auto (the item's), unknown, or a code (en, ja, ...)")
 	ap.add_argument("--promptless", action="store_true", help="generate without a prompt (models trained with prompt dropout)")
 	ap.add_argument("--per-language", type=int, default=0,
@@ -120,7 +121,7 @@ def main():
 		n_frames = len(it["target"])
 		if args.length == "predict":
 			with torch.autocast(device, dtype=torch.bfloat16, enabled=device == "cuda"):
-				n_frames = max(predict_length(model, it["text"].to(device), prompt, lang=lang), 44)  # at least 0.5 s (the codec's minimum is a few frames)
+				n_frames = max(int(predict_length(model, it["text"].to(device), prompt, lang=lang) * args.length_scale), 44)  # at least 0.5 s (the codec's minimum is a few frames)
 		with torch.autocast(device, dtype=torch.bfloat16, enabled=device == "cuda"):
 			if args.mode == "ar":
 				# length from the stop logit; allow up to 1.5x the reference length

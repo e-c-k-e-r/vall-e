@@ -61,10 +61,11 @@ class TTS:
 
 	@torch.no_grad()
 	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=2.5, flow_steps=8, sway=-1.0,
-			temperature=1.0, seed=None, pause=0.25, length_scale=1.0):
+			temperature=1.0, seed=None, pause=0.25, length_scale=1.2, trim=True):
 		"""prompt: a wav path (or None for an unconditioned voice). duration (s): the whole utterance's length, else
 		predicted per sentence and multiplied by length_scale (a little under 1 if outputs trail off into extra words,
-		as an overestimated length gets filled with speech). Returns [1, samples]."""
+		as an overestimated length gets filled with speech). The default 1.2 suits models trained with silence padding
+		(--pad-p), which fill spare time with silence; trim drops that trailing silence. Returns [1, samples]."""
 		if seed is not None:
 			torch.manual_seed(seed)
 		p = self.encode_prompt(prompt) if prompt else torch.zeros(0, self.model.values, dtype=torch.long, device=self.device)
@@ -80,7 +81,8 @@ class TTS:
 				else:
 					raise ValueError("this checkpoint has no length head: pass a duration")
 				digits = demask_flow(self.model, t, p, n, steps=steps, cfg=cfg, temperature=temperature, flow_steps=flow_steps, sway=sway)
-			out.append(self.decode(digits))
+			w = self.decode(digits)
+			out.append(_trim_silence(w) if trim else w)
 		gap = torch.zeros(1, int(pause * self.sample_rate))
 		return torch.cat([x for w in out for x in (w, gap)][:-1], dim=-1)
 
@@ -100,6 +102,17 @@ class TTS:
 		return [self.phonemes(p, language) for p in parts if p.strip()]
 
 
+def _trim_silence(wav, threshold=0.003, window=882, keep=0.05):
+	"""Drops trailing 20 ms windows quieter than -50 dBFS, keeping `keep` seconds after the last loud one."""
+	n = wav.shape[-1] // window * window
+	rms = wav[..., :n].reshape(-1, window).pow(2).mean(-1).sqrt()
+	loud = (rms >= threshold).nonzero()
+	if len(loud) == 0:
+		return wav
+	end = min(wav.shape[-1], (int(loud[-1]) + 1) * window + int(keep * 44100))
+	return wav[..., :end]
+
+
 def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--ckpt", type=Path, required=True)
@@ -111,7 +124,7 @@ def main():
 	ap.add_argument("--steps", type=int, default=25)
 	ap.add_argument("--cfg", type=float, default=2.5)
 	ap.add_argument("--seed", type=int, default=None)
-	ap.add_argument("--length-scale", type=float, default=1.0, help="scale the predicted length (speaking rate)")
+	ap.add_argument("--length-scale", type=float, default=1.2, help="scale the predicted length (slack for silence-padded models)")
 	ap.add_argument("--device", default="cuda")
 	args = ap.parse_args()
 	tts = TTS(args.ckpt, args.device)
