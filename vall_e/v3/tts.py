@@ -61,10 +61,10 @@ class TTS:
 
 	@torch.no_grad()
 	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=2.5, flow_steps=8, sway=-1.0,
-			temperature=1.0, seed=None, pause=0.25, length_scale=1.2, trim=True):
+			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True):
 		"""prompt: a wav path (or None for an unconditioned voice). duration (s): the whole utterance's length, else
 		predicted per sentence and multiplied by length_scale (a little under 1 if outputs trail off into extra words,
-		as an overestimated length gets filled with speech). The default 1.2 suits models trained with silence padding
+		as an overestimated length gets filled with speech). About 1.2 suits models trained with silence padding
 		(--pad-p), which fill spare time with silence; trim drops that trailing silence. Returns [1, samples]."""
 		if seed is not None:
 			torch.manual_seed(seed)
@@ -124,7 +124,7 @@ def main():
 	ap.add_argument("--steps", type=int, default=25)
 	ap.add_argument("--cfg", type=float, default=2.5)
 	ap.add_argument("--seed", type=int, default=None)
-	ap.add_argument("--length-scale", type=float, default=1.2, help="scale the predicted length (slack for silence-padded models)")
+	ap.add_argument("--length-scale", type=float, default=1.0, help="scale the predicted length (about 1.2 for silence-padded models)")
 	ap.add_argument("--device", default="cuda")
 	args = ap.parse_args()
 	tts = TTS(args.ckpt, args.device)
