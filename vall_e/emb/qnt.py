@@ -587,6 +587,9 @@ def get_silence( length, device=None, codes=None ):
 	length = math.floor(length * get_framerate())
 	if cfg.audio_backend == "dac":
 		codes = [ 568, 804, 10, 674, 364, 981, 568, 378, 731 ]
+	elif cfg.audio_backend == "nemo":
+		# what nvidia/audio-codec-44khz encodes digital silence as (one constant frame)
+		codes = [ 702, 328, 543, 696, 264, 150, 462, 718 ]
 	else:
 		codes = [ 62, 424, 786, 673, 622, 986, 570, 948 ]
 

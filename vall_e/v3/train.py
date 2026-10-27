@@ -236,6 +236,7 @@ def main():
 	ap.add_argument("--similar-p", type=float, default=0.0, help="with --store: odds of a prompt from the similar lists")
 	ap.add_argument("--noisy-p", type=float, default=0.0, help="with --store: odds of the speaker's noised prompt")
 	ap.add_argument("--ctc-weight", type=float, default=0.0, help="auxiliary phoneme-recognition (CTC) loss weight; > 0 builds the head")
+	ap.add_argument("--pad-p", type=float, default=0.0, help="with --store: share of targets padded with trailing silence")
 	ap.add_argument("--min-rate", type=float, default=None, help="with --store: drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
 	ap.add_argument("--speaker-alpha", type=float, default=0.0, help="with --store: draw items with weight n_speaker ** -alpha (0: uniform over utterances)")
@@ -254,7 +255,7 @@ def main():
 	if args.store:
 		train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages,
 			prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
-			min_rate_groups=args.min_rate_groups)
+			min_rate_groups=args.min_rate_groups, pad_p=args.pad_p)
 		val_ds = StoreUtterances(train_ds.store, "val", seed=1, groups=args.groups, languages=args.languages)
 		n_text, vocab, source = train_ds.vocab_size, train_ds.store.m["vocab"], dict(store=str(args.store), groups=args.groups, languages=args.languages)
 		prompt_f = train_ds.prompt_f

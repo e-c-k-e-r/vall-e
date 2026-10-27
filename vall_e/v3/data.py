@@ -284,10 +284,12 @@ class StoreUtterances(torch.utils.data.Dataset):
 	random one of the speaker's; with noisy_p, the speaker's noised prompt instead (if the store has one, from another
 	utterance). lang is the store's language id + 1 (0 is unknown)."""
 	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None,
-			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None):
+			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5)):
 		"""min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
 		segments often run past their transcript into the next sentence (ground-truth WER 10-13%, 2.5% for LibriVox
-		at >= 13 / s), which taught the model to babble past the text."""
+		at >= 13 / s), which taught the model to babble past the text.
+		pad_p: share of targets given pad_s seconds of trailing silence (and a fifth of that leading, half the time), so
+		a requested length longer than the text needs is filled with silence rather than invented speech."""
 		from .store import Store
 		self.store = store if isinstance(store, Store) else Store(store)
 		st = self.store
@@ -320,6 +322,11 @@ class StoreUtterances(torch.utils.data.Dataset):
 		self.seed, self.crop_prompt = seed, crop_prompt
 		self.similar_p, self.similar_k, self.noisy_p = similar_p, similar_k, noisy_p
 		self.n_lang = len(st.m["languages"]) + 1
+		self.pad_p, self.pad_s = pad_p, pad_s
+		if pad_p:
+			# <store>/silence.npy: NeMo's codes for digital silence (one constant frame)
+			frame = torch.from_numpy(np.load(st.root / "silence.npy")[:1].astype(np.int64)).t()
+			self.silence = fsq.codes_to_digits(frame)  # [1, 32]
 
 	def speaker_weights(self, alpha=0.5):
 		"""Per-item draw weights n_speaker ** -alpha within each group, rescaled so every group keeps its share of
@@ -370,6 +377,10 @@ class StoreUtterances(torch.utils.data.Dataset):
 		if len(prompt) > n:
 			s = rng.randrange(len(prompt) - n)
 			prompt = prompt[s : s + n]
+		if self.pad_p and rng.random() < self.pad_p:
+			n = int(rng.uniform(*self.pad_s) * FPS)
+			lead = int(n * 0.2) if rng.random() < 0.5 else 0
+			target = torch.cat([self.silence.expand(lead, -1), target, self.silence.expand(n, -1)])
 		text = torch.from_numpy(st.phonemes(u).astype(np.int64) + 1)
 		return dict(text=text, prompt=prompt, target=target, speaker=st.speaker_key(u), path=f"{st.root}#{u}", text_raw=st.text(u),
 			lang=int(st.language[u]) + 1)
