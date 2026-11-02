@@ -77,7 +77,10 @@ def units(text, lang):
 
 
 @torch.no_grad()
-def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, seed=0, device="cuda", batch=16):
+def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, seed=0, device="cuda", batch=16,
+		prompt_s=None, temperature=1.0, gt="training/v3-evals/gt"):
+	"""prompt_s: crop the prompts to this many seconds from their fixed offset instead of the set's (as much as the
+	prompt utterance has). gt: the ground-truth run whose audio SIM is measured against."""
 	from . import fsq
 	from .model import V3, demask_flow, predict_length
 	from .store import Store
@@ -95,7 +98,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, s
 	codec = AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz").to(device).eval()
 	digits_of = lambda codes: fsq.codes_to_digits(torch.from_numpy(np.asarray(codes).astype(np.int64)).t())
 	(out / "settings.json").write_text(json.dumps(dict(set=str(setfile), ckpt=str(ckpt), length=length, length_scale=length_scale,
-		steps=steps, cfg=cfg, seed=seed), indent=1))
+		steps=steps, cfg=cfg, seed=seed, prompt_s=prompt_s, temperature=temperature), indent=1))
 	rows_path = out / "items.jsonl"
 	done = {json.loads(l)["id"] for l in rows_path.read_text().splitlines()} if rows_path.exists() else set()
 	import torchaudio
@@ -105,7 +108,9 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, s
 				continue
 			torch.manual_seed(seed * 100_003 + it["id"])
 			text = torch.tensor([own[vocab[int(t)]] for t in st.phonemes(it["utt"]) if vocab[int(t)] in own], dtype=torch.long, device=device)
-			pc = st.codes(it["prompt_utt"])[it["prompt_start"] : it["prompt_start"] + it["prompt_frames"]]
+			pn = it["prompt_frames"] if prompt_s is None else int(prompt_s * FPS)
+			pstart = min(it["prompt_start"], max(0, int(st.frames[it["prompt_utt"]]) - pn))
+			pc = st.codes(it["prompt_utt"])[pstart : pstart + pn]
 			prompt = to_patches(digits_of(pc), model.patch).to(device)
 			lang = 0
 			if getattr(model, "lang", None) is not None:
@@ -115,7 +120,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, s
 					n = max(44, int(predict_length(model, text, prompt, lang=lang) * length_scale))
 				else:
 					n = int(it["frames"] * length_scale)
-				gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang)
+				gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang, temperature=temperature)
 			codes = fsq.digits_to_codes(gen).unsqueeze(0).to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
 			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
@@ -124,7 +129,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, s
 				print(f"generated {it['id'] + 1}/{len(es['items'])}", flush=True)
 	del model, codec
 	torch.cuda.empty_cache()
-	score(setfile, out, device, batch)
+	score(setfile, out, device, batch, gt=gt)
 
 
 @torch.no_grad()
@@ -139,10 +144,14 @@ def run_gt(es, st, out, device, batch, setfile):
 			codes = torch.from_numpy(np.asarray(st.codes(it["utt"])).astype(np.int64)).t()[None].to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
 			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
+			# the set's prompt clip, decoded: the fixed reference every run's SIM is measured against
+			pc = torch.from_numpy(np.asarray(st.codes(it["prompt_utt"])[it["prompt_start"] : it["prompt_start"] + it["prompt_frames"]]).astype(np.int64)).t()[None].to(device)
+			pw = codec.decode(tokens=pc, tokens_len=torch.tensor([pc.shape[-1]], device=device))[0].float().cpu()
+			torchaudio.save(str(out / f"{it['id']:04d}_prompt.wav"), pw, 44100)
 			rows.write(json.dumps(dict(id=it["id"], language=it["language"], frames=it["frames"], ref_frames=it["frames"])) + "\n")
 	del codec
 	torch.cuda.empty_cache()
-	score(setfile, out, device, batch)
+	score(setfile, out, device, batch, gt=out)
 
 
 def bad_references(gt, threshold=0.3):
@@ -152,7 +161,7 @@ def bad_references(gt, threshold=0.3):
 	return {s["id"] for s in map(json.loads, (Path(gt) / "scored.jsonl").read_text().splitlines()) if s["errors"] / max(1, s["units"]) > threshold}
 
 
-def score(setfile, out, device="cuda", batch=16):
+def score(setfile, out, device="cuda", batch=16, gt="training/v3-evals/gt"):
 	"""Transcribes every generated item in its language and writes scores.json. One file at a time, through the same
 	helper as sample.py: batching short clips through the pipeline without an attention mask made Whisper loop
 	(ground-truth French at 100% WER)."""
@@ -161,14 +170,30 @@ def score(setfile, out, device="cuda", batch=16):
 	es = json.loads(Path(setfile).read_text())
 	out = Path(out)
 	gen = {json.loads(l)["id"]: json.loads(l) for l in (out / "items.jsonl").read_text().splitlines()}
+	import torch.nn.functional as F
+	from ..emb.similar import speaker_similarity_embedding
+	emb = lambda p: speaker_similarity_embedding(p, device=device, dtype="float32")
+	gt = Path(gt)
+	# the references' embeddings are the same for every run: computed once, kept in the ground-truth run
+	refs = {}
+	if (gt / "ref_emb.pt").exists():
+		refs = torch.load(gt / "ref_emb.pt")
+	elif (gt / "0000_prompt.wav").exists():
+		refs = {it["id"]: (emb(gt / f"{it['id']:04d}_prompt.wav").cpu(), emb(gt / f"{it['id']:04d}.wav").cpu()) for it in es["items"]}
+		torch.save(refs, gt / "ref_emb.pt")
 	scored = []
 	for it in es["items"]:
 		code = it["language"]
+		g = emb(out / f"{it['id']:04d}.wav").cpu()
+		# SIM against the set's prompt clip (SIM-O style; for the ground truth this is the ceiling) and against the
+		# speaker's real recording of this sentence
+		sim = F.cosine_similarity(g, refs[it["id"]][0], dim=-1).item() if it["id"] in refs else None
+		sim_target = F.cosine_similarity(g, refs[it["id"]][1], dim=-1).item() if it["id"] in refs else None
 		hyp = transcribe(out / f"{it['id']:04d}.wav", language=code, align=False, model_name="openai/whisper-large-v3-turbo",
 			device=device, dtype="float16" if device == "cuda" else "float32")["text"]
 		hu, ru = units(hyp, code), units(it["text"], code)
 		scored.append(dict(id=it["id"], language=code, errors=_edits(hu, ru), units=len(ru), inserted=max(0, len(hu) - len(ru)),
-			hyp=hyp.strip(), ref=it["text"], frames=gen[it["id"]]["frames"], ref_frames=it["frames"]))
+			hyp=hyp.strip(), ref=it["text"], frames=gen[it["id"]]["frames"], ref_frames=it["frames"], sim=sim, sim_target=sim_target))
 	with open(out / "scored.jsonl", "w") as f:
 		for s in sorted(scored, key=lambda s: s["id"]):
 			f.write(json.dumps(s, ensure_ascii=False) + "\n")
@@ -199,6 +224,11 @@ def summarize(scored, exclude=()):
 		res[code] = dict(rate=rate, ci=[lo, hi], capped=capped, capped_ci=[clo, chi], items=len(rows), metric="CER" if code in CER_LANGUAGES else ("mixed" if code == "all" else "WER"),
 			inserted=sum(r["inserted"] for r in rows) / max(1, sum(r["units"] for r in rows)),
 			over_50=sum(r["errors"] / max(1, r["units"]) > 0.5 for r in rows))
+		for k in ("sim", "sim_target"):
+			v = np.array([r[k] for r in rows if r.get(k) is not None])
+			if len(v):
+				boot = np.random.default_rng(0).choice(v, size=(2000, len(v))).mean(1)
+				res[code][k] = [float(v.mean()), float(np.percentile(boot, 2.5)), float(np.percentile(boot, 97.5))]
 	return res
 
 
@@ -207,7 +237,9 @@ def print_summary(res, name=""):
 	for code, r in res.items():
 		print(f"  {code:4s} {r['metric']:5s} {r['rate'] * 100:5.1f}%  [{r['ci'][0] * 100:5.1f}, {r['ci'][1] * 100:5.1f}]  "
 			f"capped {r['capped'] * 100:5.1f}% [{r['capped_ci'][0] * 100:5.1f}, {r['capped_ci'][1] * 100:5.1f}]  "
-			f"n={r['items']:3d}  inserted {r['inserted'] * 100:4.1f}%  items >50%: {r['over_50']}")
+			f"n={r['items']:3d}  inserted {r['inserted'] * 100:4.1f}%  items >50%: {r['over_50']}"
+			+ (f"  SIM {r['sim'][0]:.3f} [{r['sim'][1]:.3f}, {r['sim'][2]:.3f}]" if "sim" in r else "")
+			+ (f"  SIM-target {r['sim_target'][0]:.3f}" if "sim_target" in r else ""))
 
 
 def compare(a, b, n=4000, seed=0, gt=None):
@@ -230,8 +262,13 @@ def compare(a, b, n=4000, seed=0, gt=None):
 		idx = rng.integers(len(sel), size=(n, len(sel)))
 		d = (eb[idx].sum(1) - ea[idx].sum(1)) / np.maximum(u[idx].sum(1), 1)
 		obs = (eb.sum() - ea.sum()) / max(u.sum(), 1)
-		print(f"  {code:4s} A {ea.sum() / u.sum() * 100:5.1f}%  B {eb.sum() / u.sum() * 100:5.1f}%  diff {obs * 100:+5.1f}  "
+		line = (f"  {code:4s} A {ea.sum() / u.sum() * 100:5.1f}%  B {eb.sum() / u.sum() * 100:5.1f}%  diff {obs * 100:+5.1f}  "
 			f"[{np.percentile(d, 2.5) * 100:+5.1f}, {np.percentile(d, 97.5) * 100:+5.1f}]  P(B better) {np.mean(d < 0):.2f}")
+		if all(A[i].get("sim") is not None and B[i].get("sim") is not None for i in sel):
+			sa, sb = np.array([A[i]["sim"] for i in sel]), np.array([B[i]["sim"] for i in sel])
+			ds = (sb - sa)[idx].mean(1)
+			line += f"  | SIM A {sa.mean():.3f} B {sb.mean():.3f} diff {sb.mean() - sa.mean():+.3f} [{np.percentile(ds, 2.5):+.3f}, {np.percentile(ds, 97.5):+.3f}]"
+		print(line)
 
 
 if __name__ == "__main__":
@@ -250,6 +287,8 @@ if __name__ == "__main__":
 	r.add_argument("--steps", type=int, default=25)
 	r.add_argument("--cfg", type=float, default=2.5)
 	r.add_argument("--seed", type=int, default=0)
+	r.add_argument("--prompt-seconds", type=float, default=None, help="prompt length (default: the set's, 6 s)")
+	r.add_argument("--temperature", type=float, default=1.0)
 	s = sub.add_parser("score", help="re-score an existing run")
 	s.add_argument("--set", type=Path, required=True)
 	s.add_argument("--out", type=Path, required=True)
@@ -264,7 +303,8 @@ if __name__ == "__main__":
 	if args.cmd == "build":
 		build(args.store, args.out, groups=args.groups)
 	elif args.cmd == "run":
-		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed)
+		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed,
+			prompt_s=args.prompt_seconds, temperature=args.temperature)
 	elif args.cmd == "score":
 		score(args.set, args.out)
 	elif args.cmd == "report":
