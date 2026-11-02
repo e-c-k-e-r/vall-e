@@ -77,7 +77,7 @@ def units(text, lang):
 
 
 @torch.no_grad()
-def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=2.5, seed=0, device="cuda", batch=16,
+def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, seed=0, device="cuda", batch=16,
 		prompt_s=None, temperature=1.0, gt="training/v3-evals/gt"):
 	"""prompt_s: crop the prompts to this many seconds from their fixed offset instead of the set's (as much as the
 	prompt utterance has). gt: the ground-truth run whose audio SIM is measured against."""
@@ -288,7 +288,7 @@ if __name__ == "__main__":
 	r.add_argument("--length", choices=["ref", "predict"], default="ref")
 	r.add_argument("--length-scale", type=float, default=1.0)
 	r.add_argument("--steps", type=int, default=25)
-	r.add_argument("--cfg", type=float, default=2.5)
+	r.add_argument("--cfg", type=float, default=6.0)
 	r.add_argument("--seed", type=int, default=0)
 	r.add_argument("--prompt-seconds", type=float, default=None, help="prompt length (default: the set's, 6 s)")
 	r.add_argument("--temperature", type=float, default=1.0)

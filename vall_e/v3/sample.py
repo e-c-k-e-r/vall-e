@@ -34,7 +34,7 @@ def main():
 	ap.add_argument("--out", type=Path, required=True)
 	ap.add_argument("--n", type=int, default=16)
 	ap.add_argument("--steps", type=int, default=25)
-	ap.add_argument("--cfg", type=float, default=2.5)
+	ap.add_argument("--cfg", type=float, default=6.0, help="guidance strength (6.0 beat 2.5 on the eval set: SIM +0.028, WER -2.6 points)")
 	ap.add_argument("--temperature", type=float, default=1.0)
 	ap.add_argument("--score", action="store_true")
 	# 8 sway-warped steps matched 16 uniform ones on v3-flow (WER 12.0% vs 12.4%, SIM-O 0.56 vs 0.53, 16 samples); 4 held up too

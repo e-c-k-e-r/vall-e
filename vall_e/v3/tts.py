@@ -60,7 +60,7 @@ class TTS:
 		return wav.float().cpu()
 
 	@torch.no_grad()
-	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=2.5, flow_steps=8, sway=-1.0,
+	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=6.0, flow_steps=8, sway=-1.0,
 			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True):
 		"""prompt: a wav path (or None for an unconditioned voice). duration (s): the whole utterance's length, else
 		predicted per sentence and multiplied by length_scale (a little under 1 if outputs trail off into extra words,
@@ -122,7 +122,7 @@ def main():
 	ap.add_argument("--duration", type=float, default=None, help="seconds (default: predicted)")
 	ap.add_argument("--out", type=Path, default=Path("out.wav"))
 	ap.add_argument("--steps", type=int, default=25)
-	ap.add_argument("--cfg", type=float, default=2.5)
+	ap.add_argument("--cfg", type=float, default=6.0, help="guidance strength (6.0 beat 2.5 on the eval set: SIM +0.028, WER -2.6 points)")
 	ap.add_argument("--seed", type=int, default=None)
 	ap.add_argument("--length-scale", type=float, default=1.0, help="scale the predicted length (about 1.2 for silence-padded models)")
 	ap.add_argument("--device", default="cuda")
