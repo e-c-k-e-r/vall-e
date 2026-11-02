@@ -78,7 +78,7 @@ def units(text, lang):
 
 @torch.no_grad()
 def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, seed=0, device="cuda", batch=16,
-		prompt_s=None, temperature=1.0, gt="training/v3-evals/gt"):
+		prompt_s=None, temperature=1.0, gt="training/v3-evals/gt", cfg_prompt=0.0):
 	"""prompt_s: crop the prompts to this many seconds from their fixed offset instead of the set's (as much as the
 	prompt utterance has). gt: the ground-truth run whose audio SIM is measured against."""
 	from . import fsq
@@ -98,7 +98,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 	codec = AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz").to(device).eval()
 	digits_of = lambda codes: fsq.codes_to_digits(torch.from_numpy(np.asarray(codes).astype(np.int64)).t())
 	(out / "settings.json").write_text(json.dumps(dict(set=str(setfile), ckpt=str(ckpt), length=length, length_scale=length_scale,
-		steps=steps, cfg=cfg, seed=seed, prompt_s=prompt_s, temperature=temperature), indent=1))
+		steps=steps, cfg=cfg, seed=seed, prompt_s=prompt_s, temperature=temperature, cfg_prompt=cfg_prompt), indent=1))
 	rows_path = out / "items.jsonl"
 	done = {json.loads(l)["id"] for l in rows_path.read_text().splitlines()} if rows_path.exists() else set()
 	import torchaudio
@@ -120,7 +120,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 					n = max(44, int(predict_length(model, text, prompt, lang=lang) * length_scale))
 				else:
 					n = int(it["frames"] * length_scale)
-				gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang, temperature=temperature)
+				gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang, temperature=temperature, cfg_prompt=cfg_prompt)
 			codes = fsq.digits_to_codes(gen).unsqueeze(0).to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
 			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
@@ -292,6 +292,7 @@ if __name__ == "__main__":
 	r.add_argument("--seed", type=int, default=0)
 	r.add_argument("--prompt-seconds", type=float, default=None, help="prompt length (default: the set's, 6 s)")
 	r.add_argument("--temperature", type=float, default=1.0)
+	r.add_argument("--cfg-prompt", type=float, default=0.0, help="extra speaker guidance (models trained with prompt-only dropout)")
 	s = sub.add_parser("score", help="re-score an existing run")
 	s.add_argument("--set", type=Path, required=True)
 	s.add_argument("--out", type=Path, required=True)
@@ -307,7 +308,7 @@ if __name__ == "__main__":
 		build(args.store, args.out, groups=args.groups)
 	elif args.cmd == "run":
 		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed,
-			prompt_s=args.prompt_seconds, temperature=args.temperature)
+			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt)
 	elif args.cmd == "score":
 		score(args.set, args.out)
 	elif args.cmd == "report":

@@ -330,10 +330,12 @@ def flow_loss(flow, h, target, repeats=4, hist=None, has_hist=None):
 
 
 @torch.no_grad()
-def flow_sample(flow, h, h_null=None, cfg=0.0, steps=16, temperature=1.0, sway=0.0, hist=None, has_hist=None):
+def flow_sample(flow, h, h_null=None, cfg=0.0, steps=16, temperature=1.0, sway=0.0, hist=None, has_hist=None, h_extra=None, cfg_extra=0.0):
 	"""Euler integration from noise (scaled by temperature) to values; CFG mixes the conditional and null velocities.
 	sway < 0 spends more of the steps near the noise end, as F5-TTS's sway sampling (s = -1) does.
-	h, h_null [N, d]; hist [N, values] values and has_hist [N] for a head with history. Returns [N, values] values."""
+	h, h_null [N, d]; hist [N, values] values and has_hist [N] for a head with history. h_extra / cfg_extra: a second
+	guidance term, v += cfg_extra * (v(h) - v(h_extra)) (e.g. h_extra without the prompt: speaker guidance).
+	Returns [N, values] values."""
 	values = flow.out.out_features
 	x = torch.randn(len(h), values, device=h.device) * temperature
 	grid = torch.linspace(0, 1, steps + 1).tolist()
@@ -341,7 +343,11 @@ def flow_sample(flow, h, h_null=None, cfg=0.0, steps=16, temperature=1.0, sway=0
 		grid = [u + sway * (math.cos(math.pi / 2 * u) - 1 + u) for u in grid]
 	for k in range(steps):
 		t = torch.full((len(h),), grid[k], device=h.device)
-		if h_null is not None and cfg > 0:
+		if h_extra is not None and cfg_extra > 0 and h_null is not None and cfg > 0 and hist is None:
+			v = flow(torch.cat([x, x, x]).to(h.dtype), torch.cat([t, t, t]), torch.cat([h, h_null, h_extra])).float()
+			vc, vn, ve = v.chunk(3)
+			v = vn + (vc - vn) * cfg + (vc - ve) * cfg_extra
+		elif h_null is not None and cfg > 0:
 			hh = torch.cat([hist, hist]) if hist is not None else None
 			hf = torch.cat([has_hist, has_hist]) if hist is not None else None
 			v = flow(torch.cat([x, x]).to(h.dtype), torch.cat([t, t]), torch.cat([h, h_null]), hh, hf).float()
@@ -366,12 +372,14 @@ def reveal_order(n, kind="random", device=None):
 
 @torch.no_grad()
 def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.0, flow_steps=8, sway=-1.0,
-		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone", lang=0, null="both"):
+		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone", lang=0, null="both", cfg_prompt=0.0):
 	"""MAR-style generation: positions are revealed on the cosine schedule, each sampled from the flow head and snapped
 	to the grid. cfg_end / temperature_end anneal linearly over the demask steps (as MAGNeT and MaskGCT do); steps whose
 	CFG scale is at most 1 skip the unconditional pass. cfg_mode "head" (models trained with ar=True) guides with the
 	flow head's learned null condition, so the backbone runs once per step. null (backbone CFG): which conditions the
 	unconditional pass drops, "both", "text" or "prompt" (models trained with separate text and prompt dropout).
+	cfg_prompt: with backbone CFG, an extra speaker-guidance term against a pass with the text but no prompt (models
+	trained with prompt-only dropout; one more backbone pass per step).
 	lang: language id (0 unknown). Returns [n_frames, 32] digits."""
 	dev = text.device
 	null_text, null_prompt = (text[:0] if null != "prompt" else text), (prompt[:0] if null != "text" else prompt)
@@ -392,6 +400,15 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 		if w > 1 and cfg_mode == "head":
 			hc = model.encode([text], [prompt], [digits], [masked], langs=[lang])[reveal]
 			hn = model.null_h.to(hc.dtype).expand_as(hc)
+		elif w > 1 and cfg_prompt > 0 and len(prompt):
+			# speaker guidance: a third pass with the text but no prompt (models trained with prompt-only dropout)
+			h = model.encode([text, null_text, text], [prompt, null_prompt, prompt[:0]], [digits] * 3, [masked] * 3, langs=[lang] * 3)
+			hc, hn, hp = h[:La][reveal], h[La : 2 * La][reveal], h[2 * La :][reveal]
+			vals = flow_sample(model.flow, hc, hn, cfg=w, steps=flow_steps, temperature=temp, sway=sway, h_extra=hp, cfg_extra=cfg_prompt)
+			digits[reveal] = snap(vals, model.patch)
+			masked[reveal] = False
+			done = target_done
+			continue
 		elif w > 1:
 			h = model.encode([text, null_text], [prompt, null_prompt], [digits, digits], [masked, masked], langs=[lang, lang])
 			hc, hn = h[:La][reveal], h[La:][reveal]
