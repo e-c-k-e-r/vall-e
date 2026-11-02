@@ -170,6 +170,16 @@ def score(setfile, out, device="cuda", batch=16, gt="training/v3-evals/gt"):
 	es = json.loads(Path(setfile).read_text())
 	out = Path(out)
 	gen = {json.loads(l)["id"]: json.loads(l) for l in (out / "items.jsonl").read_text().splitlines()}
+	# transcription first, similarity after: importing vall_e.emb.similar before the Whisper pipeline is built makes
+	# every transcription take ~30 s instead of ~0.2 s (on this ROCm setup; the pipeline built first stays fast)
+	scored = []
+	for it in es["items"]:
+		code = it["language"]
+		hyp = transcribe(out / f"{it['id']:04d}.wav", language=code, align=False, model_name="openai/whisper-large-v3-turbo",
+			device=device, dtype="float16" if device == "cuda" else "float32")["text"]
+		hu, ru = units(hyp, code), units(it["text"], code)
+		scored.append(dict(id=it["id"], language=code, errors=_edits(hu, ru), units=len(ru), inserted=max(0, len(hu) - len(ru)),
+			hyp=hyp.strip(), ref=it["text"], frames=gen[it["id"]]["frames"], ref_frames=it["frames"]))
 	import torch.nn.functional as F
 	from ..emb.similar import speaker_similarity_embedding
 	emb = lambda p: speaker_similarity_embedding(p, device=device, dtype="float32")
@@ -181,19 +191,12 @@ def score(setfile, out, device="cuda", batch=16, gt="training/v3-evals/gt"):
 	elif (gt / "0000_prompt.wav").exists():
 		refs = {it["id"]: (emb(gt / f"{it['id']:04d}_prompt.wav").cpu(), emb(gt / f"{it['id']:04d}.wav").cpu()) for it in es["items"]}
 		torch.save(refs, gt / "ref_emb.pt")
-	scored = []
-	for it in es["items"]:
-		code = it["language"]
-		g = emb(out / f"{it['id']:04d}.wav").cpu()
+	for row in scored:
+		g = emb(out / f"{row['id']:04d}.wav").cpu()
 		# SIM against the set's prompt clip (SIM-O style; for the ground truth this is the ceiling) and against the
 		# speaker's real recording of this sentence
-		sim = F.cosine_similarity(g, refs[it["id"]][0], dim=-1).item() if it["id"] in refs else None
-		sim_target = F.cosine_similarity(g, refs[it["id"]][1], dim=-1).item() if it["id"] in refs else None
-		hyp = transcribe(out / f"{it['id']:04d}.wav", language=code, align=False, model_name="openai/whisper-large-v3-turbo",
-			device=device, dtype="float16" if device == "cuda" else "float32")["text"]
-		hu, ru = units(hyp, code), units(it["text"], code)
-		scored.append(dict(id=it["id"], language=code, errors=_edits(hu, ru), units=len(ru), inserted=max(0, len(hu) - len(ru)),
-			hyp=hyp.strip(), ref=it["text"], frames=gen[it["id"]]["frames"], ref_frames=it["frames"], sim=sim, sim_target=sim_target))
+		row["sim"] = F.cosine_similarity(g, refs[row["id"]][0], dim=-1).item() if row["id"] in refs else None
+		row["sim_target"] = F.cosine_similarity(g, refs[row["id"]][1], dim=-1).item() if row["id"] in refs else None
 	with open(out / "scored.jsonl", "w") as f:
 		for s in sorted(scored, key=lambda s: s["id"]):
 			f.write(json.dumps(s, ensure_ascii=False) + "\n")

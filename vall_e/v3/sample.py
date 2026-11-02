@@ -161,6 +161,10 @@ def score(args, rows, index):
 	import torch.nn.functional as F
 	from ..data import normalize_text
 	from ..emb.transcribe import transcribe
+	# build the Whisper pipeline before vall_e.emb.similar is imported: the other order makes every transcription take
+	# ~30 s instead of ~0.2 s (the reason these evaluations took an hour)
+	transcribe(args.out / f"{rows[0]['i']:02d}_ref.wav", language=rows[0].get("language", "en"), align=False,
+		model_name="openai/whisper-large-v3-turbo", device=args.device, dtype="float16" if args.device == "cuda" else "float32")
 	from ..emb.similar import speaker_similarity_embedding
 	texts = {}
 	for r in rows:
