@@ -11,8 +11,22 @@
 # WER (CER for zh / ja / ko) as in sample.py, pooled over the units of each language.
 import argparse
 import json
+import os
 import random
 from pathlib import Path
+
+# the codec, Whisper and WavLM are all cached locally: don't let a network hiccup fail a run (one did, at
+# huggingface.co, during v3-main6's step-200k eval)
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+
+def load_codec(device):
+	"""The NeMo codec from its cached .nemo file (NeMo's from_pretrained won't fall back to the cache when offline)."""
+	import glob
+	from ..emb.codecs.nemo import AudioCodecModel
+	cached = sorted(glob.glob(os.path.expanduser("~/.cache/huggingface/hub/models--nvidia--audio-codec-44khz/snapshots/*/audio-codec-44khz.nemo")))
+	model = AudioCodecModel.restore_from(cached[-1]) if cached else AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz")
+	return model.to(device).eval()
 
 import numpy as np
 import torch
@@ -95,7 +109,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 	# the checkpoint's own phoneme ids, through the characters (store-trained checkpoints share the store's vocabulary)
 	own = {c: i + 1 for i, c in enumerate(sd["vocab"])}
 	vocab = st.m["vocab"]
-	codec = AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz").to(device).eval()
+	codec = load_codec(device)
 	digits_of = lambda codes: fsq.codes_to_digits(torch.from_numpy(np.asarray(codes).astype(np.int64)).t())
 	(out / "settings.json").write_text(json.dumps(dict(set=str(setfile), ckpt=str(ckpt), length=length, length_scale=length_scale,
 		steps=steps, cfg=cfg, seed=seed, prompt_s=prompt_s, temperature=temperature, cfg_prompt=cfg_prompt), indent=1))
@@ -138,7 +152,7 @@ def run_gt(es, st, out, device, batch, setfile):
 	overrunning segment, a bad transcript) can be excluded from comparisons with --gt."""
 	import torchaudio
 	from ..emb.codecs.nemo import AudioCodecModel
-	codec = AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz").to(device).eval()
+	codec = load_codec(device)
 	with open(out / "items.jsonl", "w") as rows:
 		for it in es["items"]:
 			codes = torch.from_numpy(np.asarray(st.codes(it["utt"])).astype(np.int64)).t()[None].to(device)
