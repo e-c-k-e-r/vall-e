@@ -1,6 +1,6 @@
 # A web page for inference: text + a voice prompt -> speech, on top of tts.py.
 #
-#   python -m vall_e.webui --ckpt training/v3-main6-len/last.pt [--models training] [--listen 0.0.0.0] [--port 7860] [--share]
+#   python -m vall_e.webui [--ckpt <checkpoint or export>] [--models training] [--listen 0.0.0.0] [--port 7860] [--share]
 import argparse
 import os
 
@@ -30,7 +30,7 @@ def _tts(ckpt, device):
 
 def _checkpoints(root, current):
 	"""Checkpoints under root (<run>/last.pt), most recent first, with the current one included."""
-	found = sorted(Path(root).glob("*/last.pt"), key=lambda p: p.stat().st_mtime, reverse=True) if root else []
+	found = sorted([*Path(root).glob("*/last.pt"), *Path(root).glob("*.sft")], key=lambda p: p.stat().st_mtime, reverse=True) if root else []
 	names = [str(p) for p in found]
 	return ([current] if current and current not in names else []) + names
 
@@ -80,15 +80,17 @@ def build(ckpt, models=None, device="cuda"):
 
 def main():
 	ap = argparse.ArgumentParser()
-	ap.add_argument("--ckpt", required=True, help="the checkpoint to start with")
+	ap.add_argument("--ckpt", default=None, help="the checkpoint or export to start with (default: the default model)")
 	ap.add_argument("--models", default=None, help="a folder of runs (<run>/last.pt) to choose from in the page")
 	ap.add_argument("--device", default="cuda")
 	ap.add_argument("--listen", default="127.0.0.1")
 	ap.add_argument("--port", type=int, default=7860)
 	ap.add_argument("--share", action="store_true")
 	args = ap.parse_args()
-	_tts(args.ckpt, args.device)  # load before serving
-	build(args.ckpt, args.models, args.device).queue().launch(server_name=args.listen, server_port=args.port, share=args.share)
+	from .export import default_model
+	ckpt = args.ckpt or str(default_model())
+	_tts(ckpt, args.device)  # load before serving
+	build(ckpt, args.models, args.device).queue().launch(server_name=args.listen, server_port=args.port, share=args.share)
 
 
 if __name__ == "__main__":

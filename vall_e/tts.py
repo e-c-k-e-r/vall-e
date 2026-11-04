@@ -1,8 +1,8 @@
 # Inference with a v3 checkpoint: text (+ a voice prompt) -> 44.1 kHz audio.
 #
-#   python -m vall_e.tts --ckpt training/v3-main6-len/last.pt --text "Hello there." --prompt voice.wav --out out.wav
+#   python -m vall_e.tts --text "Hello there." --prompt voice.wav --out out.wav     [--ckpt <checkpoint or export>]
 #
-#   tts = TTS("training/v3-main6-len/last.pt")
+#   tts = TTS()   # the default model; or TTS("<checkpoint or export>")
 #   wav = tts.generate("Hello there.", prompt="voice.wav", language="en")   # [1, samples] at tts.sample_rate
 #
 # Text is phonemized as the dataset was (vall_e.emb.g2p), the prompt is encoded with the NeMo codec (cropped to the 10 s
@@ -29,16 +29,18 @@ MAX_PHONEMES = 160  # about 10 s of speech: longer texts are split into sentence
 
 
 class TTS:
-	def __init__(self, ckpt, device="cuda"):
-		st = torch.load(ckpt, map_location="cpu", weights_only=False, mmap=True)
-		self.model = V3(**st["config"]).eval()
-		self.model.load_state_dict(st["model"])
+	def __init__(self, ckpt=None, device="cuda"):
+		"""ckpt: a training checkpoint or an export (export.py); None for the default model (downloaded on first use)."""
+		from .export import load_checkpoint
+		from .evalset import load_codec
+		state, config, vocab = load_checkpoint(ckpt)
+		self.model = V3(**config).eval()
+		self.model.load_state_dict(state)
 		self.model.to(device)
-		self.vocab = {c: i + 1 for i, c in enumerate(st["vocab"])}  # 0 is padding
+		self.vocab = {c: i + 1 for i, c in enumerate(vocab)}  # 0 is padding
 		self.device = device
 		self.sample_rate = 44100
-		from .emb.nemo import AudioCodecModel
-		self.codec = AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz").to(device).eval()
+		self.codec = load_codec(device)
 
 	def phonemes(self, text, language="en"):
 		from .emb.g2p import encode
@@ -178,7 +180,7 @@ def _trim_silence(wav, threshold=0.003, window=882, keep=0.05):
 
 def main():
 	ap = argparse.ArgumentParser()
-	ap.add_argument("--ckpt", type=Path, required=True)
+	ap.add_argument("--ckpt", type=Path, default=None, help="a checkpoint or export (default: the default model, downloaded on first use)")
 	ap.add_argument("--text", required=True)
 	ap.add_argument("--prompt", type=Path, default=None, help="voice prompt wav (up to 10 s is used); omit for no prompt")
 	ap.add_argument("--language", default="en")

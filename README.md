@@ -35,20 +35,23 @@ pip install -e .            # [ja] for Japanese text, [eval] for number expansio
 ## Use
 
 ```
-python -m vall_e.tts --ckpt <checkpoint> --text "Hello there." --prompt voice.wav --out out.wav
+python -m vall_e.tts --text "Hello there." --prompt voice.wav --out out.wav
 ```
 
 ```python
 from vall_e.tts import TTS
-tts = TTS("<checkpoint>")
+tts = TTS()   # the default model, downloaded to data/models/ on first use; or TTS("<checkpoint or export>")
 wav = tts.generate("Hello there.", prompt="voice.wav", language="en")   # [1, samples] at 44.1 kHz
 ```
 
 Or a web page (`pip install -e .[webui]`):
 
 ```
-python -m vall_e.webui --ckpt <checkpoint> [--models training] [--listen 0.0.0.0] [--share]
+python -m vall_e.webui [--ckpt <checkpoint or export>] [--models training] [--listen 0.0.0.0] [--share]
 ```
+
+`TTS` also has `continue_speech(audio, said, new)` (generate what follows a recording) and `edit(audio, text, start, end)`
+(re-speak a stretch of it).
 
 The length is predicted unless `--duration` is given; long texts are generated sentence by sentence; `--prompt` can be
 left out for an unconditioned voice. Defaults: 25 steps, guidance 6.0, speaker guidance 2.0.
@@ -63,4 +66,5 @@ left out for an unconditioned voice. Defaults: 25 steps, guidance 6.0, speaker g
 | `vall_e/store.py`, `vall_e/noisy.py` | the data store, and baked noisy prompts (`docs/data.md`) |
 | `vall_e/evalset.py` | the evaluation set: WER / CER, speaker similarity, paired comparisons |
 | `vall_e/fsq.py`, `vall_e/emb/` | the codec's quantizer, the codec, phonemizer, ASR and speaker models |
+| `vall_e/export.py` | release exports (fp16 safetensors, config in the metadata) and the default model download |
 | `scripts/` | `recipe.sh` (how the model was trained), `train.sh`, `evaluate.sh`, `textuse-gate.sh` |

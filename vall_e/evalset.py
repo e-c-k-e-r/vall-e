@@ -111,10 +111,11 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 		return run_gt(es, st, out, device, batch, setfile)
 	if task == "noisy":
 		return run_noisy(es, st, out, device, batch, setfile, snr, gt)
-	sd = torch.load(ckpt, map_location="cpu", weights_only=False, mmap=True)
-	model = V3(**sd["config"]).eval(); model.load_state_dict(sd["model"]); model.to(device)
+	from .export import load_checkpoint
+	state, config, ck_vocab = load_checkpoint(ckpt)
+	model = V3(**config).eval(); model.load_state_dict(state); model.to(device)
 	# the checkpoint's own phoneme ids, through the characters (store-trained checkpoints share the store's vocabulary)
-	own = {c: i + 1 for i, c in enumerate(sd["vocab"])}
+	own = {c: i + 1 for i, c in enumerate(ck_vocab)}
 	vocab = st.m["vocab"]
 	codec = load_codec(device)
 	digits_of = lambda codes: fsq.codes_to_digits(torch.from_numpy(np.asarray(codes).astype(np.int64)).t())
