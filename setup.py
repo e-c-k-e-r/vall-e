@@ -57,6 +57,7 @@ setup(
 	extras_require={
 		"ja": ["pykakasi"],  # kanji -> hiragana before phonemizing
 		"eval": ["inflect"],  # number expansion when normalising English for WER
+		"webui": ["gradio"],
 	},
 	url="https://git.ecker.tech/mrq/vall-e",
 )

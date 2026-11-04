@@ -44,6 +44,12 @@ tts = TTS("<checkpoint>")
 wav = tts.generate("Hello there.", prompt="voice.wav", language="en")   # [1, samples] at 44.1 kHz
 ```
 
+Or a web page (`pip install -e .[webui]`):
+
+```
+python -m vall_e.webui --ckpt <checkpoint> [--models training] [--listen 0.0.0.0] [--share]
+```
+
 The length is predicted unless `--duration` is given; long texts are generated sentence by sentence; `--prompt` can be
 left out for an unconditioned voice. Defaults: 25 steps, guidance 6.0, speaker guidance 2.0.
 
@@ -52,7 +58,7 @@ left out for an unconditioned voice. Defaults: 25 steps, guidance 6.0, speaker g
 | | |
 |---|---|
 | `vall_e/model.py` | the model, the flow head, masked and AR generation |
-| `vall_e/tts.py` | inference: text + prompt -> audio |
+| `vall_e/tts.py`, `vall_e/webui.py` | inference: text + prompt -> audio, and its web page |
 | `vall_e/train.py`, `vall_e/data.py` | training, batching |
 | `vall_e/store.py`, `vall_e/noisy.py` | the data store, and baked noisy prompts (`docs/data.md`) |
 | `vall_e/evalset.py` | the evaluation set: WER / CER, speaker similarity, paired comparisons |
