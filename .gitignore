@@ -12,3 +12,6 @@ __pycache__
 /vall_e.cpp/lib
 /vall_e.cpp/*.o
 /vall_e.cpp/vall_e
+
+# the evaluation set lists dataset speakers and transcripts: kept local
+/evalsets
