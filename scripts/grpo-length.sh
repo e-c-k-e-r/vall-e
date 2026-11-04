@@ -10,6 +10,7 @@ $PY -m vall_e.posttrain length --init "$init" --out "$out" --store $S "${GROUPS_
 echo "$(date) $name done: $(grep '^{' "$out.log" | grep probe | tail -1)"
 # the baseline at the same code (predict_length's head in fp32)
 scripts/evaluate.sh "$init" $E/$name-base > /dev/null
+shopt -s nullglob
 for ck in "$out"/step-*.pt; do
 	scripts/evaluate.sh "$ck" $E/$name-$(basename "$ck" .pt) $E/$name-base | grep "vs\|  all\|  en "
 done
