@@ -373,7 +373,8 @@ def reveal_order(n, kind="random", device=None):
 
 @torch.no_grad()
 def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.0, flow_steps=8, sway=-1.0,
-		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone", lang=0, null="both", cfg_prompt=0.0):
+		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone", lang=0, null="both", cfg_prompt=0.0,
+		known=None, keep=None):
 	"""MAR-style generation: positions are revealed on the cosine schedule, each sampled from the flow head and snapped
 	to the grid. cfg_end / temperature_end anneal linearly over the demask steps (as MAGNeT and MaskGCT do); steps whose
 	CFG scale is at most 1 skip the unconditional pass. cfg_mode "head" (models trained with ar=True) guides with the
@@ -381,17 +382,28 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 	unconditional pass drops, "both", "text" or "prompt" (models trained with separate text and prompt dropout).
 	cfg_prompt: with backbone CFG, an extra speaker-guidance term against a pass with the text but no prompt (models
 	trained with prompt-only dropout; one more backbone pass per step).
-	lang: language id (0 unknown). Returns [n_frames, 32] digits."""
+	lang: language id (0 unknown). known [n_frames, 32] digits and keep [n_frames] bool: frames to hold fixed (continuation,
+	editing, infilling); positions whose frames are all kept start revealed and only the rest are generated. Returns
+	[n_frames, 32] digits."""
 	dev = text.device
 	null_text, null_prompt = (text[:0] if null != "prompt" else text), (prompt[:0] if null != "text" else prompt)
 	La = math.ceil(n_frames / model.patch)
 	digits = torch.zeros(La, model.values, dtype=torch.long, device=dev)
 	masked = torch.ones(La, dtype=torch.bool, device=dev)
-	order = reveal_order(La, order, dev)
+	if known is not None:
+		pad = La * model.patch - n_frames
+		kd = torch.cat([known.to(dev), known[-1:].to(dev).expand(pad, -1)]) if pad else known.to(dev)
+		kk = torch.cat([keep.to(dev), torch.zeros(pad, dtype=torch.bool, device=dev)]) if pad else keep.to(dev)
+		held = kk.view(La, model.patch).all(-1)
+		digits[held] = kd.view(La, model.values)[held].long()
+		masked = ~held
+	todo = masked.nonzero().squeeze(-1)
+	order = todo[reveal_order(len(todo), order, dev)]
+	N = len(todo)
 	done = 0
 	for s in range(steps):
 		t = (s + 1) / steps
-		target_done = La - int(math.floor(math.cos(t * math.pi / 2) * La))
+		target_done = N - int(math.floor(math.cos(t * math.pi / 2) * N))
 		reveal = order[done:target_done]
 		if len(reveal) == 0:
 			continue
