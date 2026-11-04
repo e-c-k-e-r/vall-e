@@ -235,6 +235,9 @@ def main():
 	ap.add_argument("--similar-p", type=float, default=0.0, help="odds of a prompt from the similar lists")
 	ap.add_argument("--noisy-p", type=float, default=0.0, help="odds of the speaker's noised prompt")
 	ap.add_argument("--ctc-weight", type=float, default=0.0, help="auxiliary phoneme-recognition (CTC) loss weight; > 0 builds the head")
+	ap.add_argument("--span-p", type=float, default=0.0, help="share of targets masked as one contiguous span (editing / continuation)")
+	ap.add_argument("--ns-p", type=float, default=0.0, help="share of items that are noise suppression (needs noisy-targets in the store)")
+	ap.add_argument("--sr-p", type=float, default=0.0, help="share of items that are speech removal")
 	ap.add_argument("--pad-p", type=float, default=0.0, help="share of targets padded with trailing silence")
 	ap.add_argument("--min-rate", type=float, default=None, help="drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
@@ -253,7 +256,9 @@ def main():
 
 	train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages,
 		prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
-		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p)
+		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p)
+	if (args.ns_p or args.sr_p) and train_ds.pairs is None:
+		raise SystemExit("--ns-p / --sr-p need <store>/noisy-targets (python -m vall_e.noisy bake-targets)")
 	val_ds = StoreUtterances(train_ds.store, "val", seed=1, groups=args.groups, languages=args.languages)
 	n_text, vocab, source = train_ds.vocab_size, train_ds.store.m["vocab"], dict(store=str(args.store), groups=args.groups, languages=args.languages)
 	prompt_f = train_ds.prompt_f
@@ -268,9 +273,17 @@ def main():
 
 	model = V3(n_text, args.d_model, args.layers, args.heads, args.patch, args.rot_frac,
 		gated=not args.no_gate, qk_norm=not args.no_qk_norm, head=args.head, ar=args.ar_frac > 0,
-		n_lang=train_ds.n_lang if args.accent else 0, length=args.len_frac > 0, ctc=args.ctc_weight > 0).to(device)
+		n_lang=train_ds.n_lang if args.accent else 0, length=args.len_frac > 0, ctc=args.ctc_weight > 0,
+		n_modes=5 if (args.ns_p or args.sr_p) else 3).to(device)
 	if args.init_from and not (args.out / "last.pt").exists():
-		missing, unexpected = model.load_state_dict(torch.load(args.init_from, map_location=device, weights_only=False)["model"], strict=False)
+		init = torch.load(args.init_from, map_location=device, weights_only=False)["model"]
+		own = model.state_dict()
+		for k, v in list(init.items()):
+			if k in own and own[k].shape != v.shape and k == "mode.weight" and v.shape[0] < own[k].shape[0]:
+				# more modes than the checkpoint: its rows carry over, the new ones keep their initialisation
+				grown = own[k].clone(); grown[: v.shape[0]] = v; init[k] = grown
+				print(f"mode embedding: {v.shape[0]} -> {own[k].shape[0]} modes")
+		missing, unexpected = model.load_state_dict(init, strict=False)
 		print(f"initialised from {args.init_from}; new parameters: {missing}; unused: {unexpected}")
 	print(f"params {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M")
 	if args.compile:
@@ -292,7 +305,7 @@ def main():
 		model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); step = st["step"]
 		print(f"resumed at step {step}")
 
-	collator = Collator(args.patch, prompt_f, text_drop=args.text_drop, prompt_drop=args.prompt_drop, cond_drop=args.cond_drop, mask_ratio=args.mask_ratio,
+	collator = Collator(args.patch, prompt_f, text_drop=args.text_drop, prompt_drop=args.prompt_drop, cond_drop=args.cond_drop, span_p=args.span_p, mask_ratio=args.mask_ratio,
 		ar_frac=args.ar_frac, len_frac=args.len_frac, lang_drop=args.lang_drop)
 	loader_kw = dict(collate_fn=collator, num_workers=args.workers, persistent_workers=True, prefetch_factor=4, pin_memory=True)
 	if args.subset:

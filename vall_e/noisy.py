@@ -7,9 +7,14 @@
 #   python -m vall_e.noisy import-noise --store <root> --meta training/llama-nemo/metadata --data training/llama-nemo/data
 #   python -m vall_e.noisy bake --store <root>
 import argparse
+import os
 import json
 import time
 from pathlib import Path
+
+# without it MIOpen (ROCm) benchmarks kernels for every new convolution shape (every utterance / clip length)
+os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
+os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
 
 import numpy as np
 import torch
@@ -140,6 +145,85 @@ def bake(root, batch=32, snr=(3.0, 20.0), seed=0, limit=None, speakers=None, amp
 	print(f"done: {len(source)} noised prompts, {(frames[-1] / fps) / 3600:.1f} h in {time.time() - t0:.0f}s -> {final}")
 
 
+def noise_split(i):
+	"""Every tenth noise clip is held out of training (for evaluating noise suppression on unheard noise)."""
+	return "eval" if i % 10 == 0 else "train"
+
+
+@torch.no_grad()
+def bake_targets(root, count=40000, batch=16, snr=(0.0, 20.0), seed=1, min_rate=13.0, max_s=12.0, device="cuda", name="noisy-targets"):
+	"""Noise-suppression / speech-removal pairs: `count` random training utterances (2-12 s, the rate filter applied to
+	LibriVox / Audiobooks as in training), each mixed in full with a training noise clip at a random SNR, and both the
+	mixture and the noise alone encoded, frame-aligned with the clean original (the noisy prompts are random crops, so
+	they can't serve as targets). Writes <root>/noisy-targets/: mix.u16, noise.u16 (both [frames, 8]), frame_offsets,
+	source (global utterance ids), snr."""
+	from .data import StoreUtterances
+	root = Path(root)
+	fps = CODEC["sample_rate"] / CODEC["samples_per_frame"]
+	spf = CODEC["samples_per_frame"]
+	ds = StoreUtterances(root, "train", max_s=max_s, min_rate=min_rate, min_rate_groups=["LibriVox", "Audiobooks"])
+	st = ds.store
+	fr = st.frames[ds.items]
+	ok = [int(u) for u in ds.items[(fr >= int(2 * fps)) & (fr <= int(max_s * fps))]]
+	rng = np.random.default_rng(seed)
+	src = np.sort(rng.choice(ok, size=min(count, len(ok)), replace=False))
+	order = src[np.argsort(st.frames[src], kind="stable")]
+	from .evalset import load_codec
+	codec = load_codec(device)
+	clips = load_noise(root)
+	with torch.autocast(device, dtype=torch.bfloat16):
+		noise = [codec.decode(tokens=torch.from_numpy(c[: int(MAX_S * fps)].astype(np.int64)).t()[None].to(device),
+			tokens_len=torch.tensor([min(len(c), int(MAX_S * fps))], device=device))[0][0].float() for i, c in enumerate(clips) if noise_split(i) == "train"]
+	noise = [n / n.pow(2).mean().sqrt().clamp(min=1e-5) for n in noise if len(n) > spf]
+	out = root / f"{name}.tmp"; out.mkdir(exist_ok=True)
+	fm, fn = open(out / "mix.u16", "wb"), open(out / "noise.u16", "wb")
+	frames, source, snrs = [0], [], []
+	t0 = time.time()
+	for k in range(0, len(order), batch):
+		idx = order[k : k + batch]
+		lens = np.array([int(st.frames[u]) for u in idx])
+		T = -(-int(lens.max()) // 64) * 64
+		codes = torch.zeros(len(idx), CODEC["groups"], T, dtype=torch.long)
+		for r, u in enumerate(idx):
+			codes[r, :, : lens[r]] = torch.from_numpy(np.asarray(st.codes(int(u))).astype(np.int64)).t()
+		tl = torch.as_tensor(lens, device=device)
+		with torch.autocast(device, dtype=torch.bfloat16):
+			wav, wl = codec.decode(tokens=codes.to(device), tokens_len=tl)
+		wav = wav.float()
+		nz_all = torch.zeros_like(wav)
+		s = rng.uniform(*snr, size=len(idx))
+		for r in range(len(idx)):
+			L = int(wl[r])
+			clean = wav[r, :L]
+			nz = noise[rng.integers(len(noise))]
+			nz = nz.repeat(L // len(nz) + 2)
+			o = int(rng.integers(len(nz) - L))
+			nz = nz[o : o + L] * (clean.pow(2).mean().clamp(min=1e-8) / 10 ** (s[r] / 10)).sqrt()
+			mix = clean + nz
+			peak = mix.abs().max().clamp(min=1.0)  # no clipping: scale both the same
+			wav[r, :L], nz_all[r, :L] = mix / peak, nz / peak
+			wav[r, L:] = 0
+		with torch.autocast(device, dtype=torch.bfloat16):
+			tm, tml = codec.encode(audio=wav, audio_len=wl)
+			tn, _ = codec.encode(audio=nz_all, audio_len=wl)
+		tm, tn = tm.cpu().numpy().astype(np.uint16), tn.cpu().numpy().astype(np.uint16)
+		for r, u in enumerate(idx):
+			n = min(int(tml[r]), int(lens[r]))
+			fm.write(np.ascontiguousarray(tm[r, :, :n].T).tobytes()); fn.write(np.ascontiguousarray(tn[r, :, :n].T).tobytes())
+			frames.append(frames[-1] + n); source.append(int(u)); snrs.append(float(s[r]))
+		if (k // batch) % 100 == 0:
+			print(f"{k + len(idx)}/{len(order)} pairs, {(frames[-1] / fps) / 3600:.1f} h, {time.time() - t0:.0f}s", flush=True)
+	fm.close(); fn.close()
+	for f in ("mix.u16", "noise.u16"):
+		if (out / f).stat().st_size != frames[-1] * CODEC["groups"] * 2:
+			raise RuntimeError(f"{f} and the offsets disagree")
+	np.save(out / "frame_offsets.npy", np.asarray(frames, dtype=np.int64))
+	np.save(out / "source.npy", np.asarray(source, dtype=np.int64))
+	np.save(out / "snr.npy", np.asarray(snrs, dtype=np.float32))
+	out.rename(root / name)
+	print(f"done: {len(source)} pairs, {(frames[-1] / fps) / 3600:.1f} h in {time.time() - t0:.0f}s")
+
+
 if __name__ == "__main__":
 	ap = argparse.ArgumentParser()
 	sub = ap.add_subparsers(dest="cmd", required=True)
@@ -153,8 +237,13 @@ if __name__ == "__main__":
 	b.add_argument("--limit", type=int, default=None, help="only this many prompts, into <store>/noisy-test (speed and listening check)")
 	b.add_argument("--speakers", type=int, default=None, help="one prompt for each of this many random speakers (default: every speaker)")
 	b.add_argument("--amp", action="store_true", help="bf16 codec")
+	t = sub.add_parser("bake-targets", help="noise-suppression / speech-removal pairs (mixture and noise, aligned with the clean utterance)")
+	t.add_argument("--store", type=Path, required=True)
+	t.add_argument("--count", type=int, default=40000)
 	args = ap.parse_args()
 	if args.cmd == "import-noise":
 		import_noise(args.store, args.meta, args.data)
+	elif args.cmd == "bake-targets":
+		bake_targets(args.store, args.count)
 	else:
 		bake(args.store, args.batch, limit=args.limit, speakers=args.speakers, amp=args.amp)

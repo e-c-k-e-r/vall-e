@@ -29,6 +29,9 @@ def load_codec(device):
 	model = AudioCodecModel.restore_from(cached[-1]) if cached else AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz")
 	return model.to(device).eval()
 
+# without it MIOpen (ROCm) benchmarks kernels for every new convolution shape (every utterance / clip length)
+os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
+
 import numpy as np
 import torch
 

@@ -99,29 +99,50 @@ class Collator:
 	mask_ratio: None draws cos(u * pi / 2) per sample (covers every ratio the demasking loop visits); a float fixes it
 	(AutoNAT, arXiv 2406.05478, found a fixed 0.8 on par with or slightly better than the cosine draw for images)."""
 	def __init__(self, patch, prompt_f, text_drop=0.1, prompt_drop=0.1, mask_ratio=0.8, ar_frac=0.0, len_frac=0.0, lang_drop=0.2,
-			cond_drop=0.0):
+			cond_drop=0.0, span_p=0.0):
 		"""ar_frac / len_frac: shares of samples trained in AR and LEN mode (the rest NAR-demask). cond_drop: share with
-		both text and prompt dropped (CFG's null); the rest drop each independently with text_drop / prompt_drop."""
+		both text and prompt dropped (CFG's null); the rest drop each independently with text_drop / prompt_drop.
+		span_p: share of NAR-demask targets masked as one contiguous span (a middle stretch, as in editing, or a suffix,
+		as in continuation) instead of scattered positions. Items with a "task" (noise suppression / speech removal) keep
+		their whole, frame-aligned prompt and are never prompt-dropped alone."""
 		self.patch, self.prompt_f, self.mask_ratio, self.ar_frac, self.len_frac = patch, prompt_f, mask_ratio, ar_frac, len_frac
 		self.text_drop, self.prompt_drop, self.lang_drop, self.cond_drop = text_drop, prompt_drop, lang_drop, cond_drop
+		self.span_p = span_p
+
+	def _mask(self, La, rng, span):
+		if span:
+			if rng.random() < 0.6:
+				L = max(1, round(rng.uniform(0.1, 0.6) * La)); s = rng.randrange(La - L + 1)
+			else:
+				L = max(1, round(rng.uniform(0.3, 0.8) * La)); s = La - L
+			m = torch.zeros(La, dtype=torch.bool); m[s : s + L] = True
+			return m
+		r = math.cos(rng.random() * math.pi / 2) if self.mask_ratio is None else self.mask_ratio
+		m = torch.zeros(La, dtype=torch.bool)
+		m[torch.tensor(rng.sample(range(La), max(1, round(r * La))))] = True
+		return m
 
 	def __call__(self, items):
 		rng = random.Random()  # DataLoader seeds `random` per worker
 		n = rng.randint(*self.prompt_f)
 		text, prompt, target, masked, modes, langs = [], [], [], [], [], []
 		for it in items:
+			task = it.get("task")
 			p = it["prompt"]
-			if len(p) > n:
+			if task is None and len(p) > n:
 				s = rng.randrange(len(p) - n)
 				p = p[s : s + n]
 			a = to_patches(it["target"], self.patch)
-			r = math.cos(rng.random() * math.pi / 2) if self.mask_ratio is None else self.mask_ratio
-			m = torch.zeros(len(a), dtype=torch.bool)
-			m[torch.tensor(rng.sample(range(len(a)), max(1, round(r * len(a)))))] = True
+			m = self._mask(len(a), rng, span=task is None and rng.random() < self.span_p)
 			both = rng.random() < self.cond_drop
 			text.append(it["text"][:0] if both or rng.random() < self.text_drop else it["text"])
-			prompt.append(to_patches(p, self.patch)[:0] if both or rng.random() < self.prompt_drop else to_patches(p, self.patch))
+			drop_p = both or (task is None and rng.random() < self.prompt_drop)
+			prompt.append(to_patches(p, self.patch)[:0] if drop_p else to_patches(p, self.patch))
 			target.append(a); masked.append(m)
+			if task is not None:
+				modes.append({"ns": 3, "sr": 4}[task])
+				langs.append(0 if rng.random() < self.lang_drop else it.get("lang", 0))
+				continue
 			u = rng.random()
 			modes.append(1 if u < self.ar_frac else 2 if u < self.ar_frac + self.len_frac else 0)
 			langs.append(0 if rng.random() < self.lang_drop else it.get("lang", 0))
@@ -188,7 +209,7 @@ class StoreUtterances(torch.utils.data.Dataset):
 	random one of the speaker's; with noisy_p, the speaker's noised prompt instead (if the store has one, from another
 	utterance). lang is the store's language id + 1 (0 is unknown)."""
 	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None,
-			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5)):
+			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5), ns_p=0.0, sr_p=0.0):
 		"""min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
 		segments often run past their transcript into the next sentence (ground-truth WER 10-13%, 2.5% for LibriVox
 		at >= 13 / s), which taught the model to babble past the text.
@@ -227,6 +248,16 @@ class StoreUtterances(torch.utils.data.Dataset):
 		self.similar_p, self.similar_k, self.noisy_p = similar_p, similar_k, noisy_p
 		self.n_lang = len(st.m["languages"]) + 1
 		self.pad_p, self.pad_s = pad_p, pad_s
+		# noise suppression / speech removal: pairs from <store>/noisy-targets (noisy.py bake-targets), by length so a
+		# substituted item fits its length bucket
+		self.ns_p, self.sr_p, self.pairs = ns_p, sr_p, None
+		if (ns_p or sr_p) and (st.root / "noisy-targets" / "source.npy").exists():
+			d = st.root / "noisy-targets"
+			off = np.load(d / "frame_offsets.npy")
+			self.pairs = dict(off=off, source=np.load(d / "source.npy"),
+				mix=np.memmap(d / "mix.u16", dtype=np.uint16, mode="r").reshape(-1, 8), noise=np.memmap(d / "noise.u16", dtype=np.uint16, mode="r").reshape(-1, 8))
+			lens = np.diff(off)
+			self.pairs["by_len"] = np.argsort(lens, kind="stable"); self.pairs["lens"] = lens[self.pairs["by_len"]]
 		if pad_p:
 			# <store>/silence.npy: NeMo's codes for digital silence (one constant frame)
 			frame = torch.from_numpy(np.load(st.root / "silence.npy")[:1].astype(np.int64)).t()
@@ -263,6 +294,23 @@ class StoreUtterances(torch.utils.data.Dataset):
 	def __len__(self):
 		return len(self.items)
 
+	def _pair(self, u, rng, task):
+		"""A noise suppression ("ns": noisy recording -> its clean speech, text half the time) or speech removal ("sr":
+		noisy recording -> its noise, no text) item, from a pair about as long as utterance u."""
+		P, st = self.pairs, self.store
+		j = int(np.searchsorted(P["lens"], st.frames[u]))
+		k = int(P["by_len"][min(len(P["lens"]) - 1, max(0, j + rng.randrange(-25, 26)))])
+		src, o0, o1 = int(P["source"][k]), int(P["off"][k]), int(P["off"][k + 1])
+		dig = lambda c: fsq.codes_to_digits(torch.from_numpy(np.asarray(c).astype(np.int64)).t())
+		mix = dig(P["mix"][o0:o1])
+		if task == "ns":
+			target = dig(st.codes(src))[: len(mix)]
+			text = torch.from_numpy(st.phonemes(src).astype(np.int64) + 1) if rng.random() < 0.5 else torch.zeros(0, dtype=torch.long)
+		else:
+			target, text = dig(P["noise"][o0:o1]), torch.zeros(0, dtype=torch.long)
+		return dict(text=text, prompt=mix, target=target, speaker=st.speaker_key(src), path=f"{st.root}#{src}", text_raw=st.text(src),
+			lang=int(st.language[src]) + 1, task=task)
+
 	def __getitem__(self, i):
 		st = self.store
 		rng = random.Random(self.seed * 1_000_003 + i)
@@ -271,6 +319,10 @@ class StoreUtterances(torch.utils.data.Dataset):
 			if self.min_f <= st.frames[u] <= self.max_f:
 				break
 			u = int(self.items[rng.randrange(len(self.items))])
+		if self.pairs is not None:
+			x = rng.random()
+			if x < self.ns_p + self.sr_p:
+				return self._pair(u, rng, "ns" if x < self.ns_p else "sr")
 		target = fsq.codes_to_digits(torch.from_numpy(st.codes(u).astype(np.int64)).t())
 		src = self._prompt_source(u, rng)
 		prompt = target[:0]

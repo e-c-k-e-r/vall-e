@@ -11,7 +11,7 @@ from torch.nn.utils.rnn import pad_sequence
 from . import fsq
 
 TEXT, PROMPT, TARGET = 0, 1, 2  # segment ids
-NAR_DEMASK, AR, LEN = 0, 1, 2  # mode ids
+NAR_DEMASK, AR, LEN, NS, SR = 0, 1, 2, 3, 4  # mode ids (NS: noise suppression, SR: speech removal)
 
 
 def rotate(x, cos, sin, rot):
@@ -139,11 +139,11 @@ class FlowHead(nn.Module):
 
 class V3(nn.Module):
 	def __init__(self, n_text, d_model=512, layers=12, heads=8, patch=2, rot_frac=1.0, gated=True, qk_norm=True, rope_theta=10000.0,
-			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False, ctc=False):
+			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False, ctc=False, n_modes=3):
 		super().__init__()
 		self.config = dict(n_text=n_text, d_model=d_model, layers=layers, heads=heads, patch=patch, rot_frac=rot_frac,
 			gated=gated, qk_norm=qk_norm, rope_theta=rope_theta, head=head, flow_width=flow_width, flow_depth=flow_depth, ar=ar,
-			n_lang=n_lang, length=length, ctc=ctc)
+			n_lang=n_lang, length=length, ctc=ctc, n_modes=n_modes)
 		self.ar = ar
 		self.head_type = head
 		self.patch = patch
@@ -152,7 +152,7 @@ class V3(nn.Module):
 		self.audio_in = nn.Linear(self.values, d_model)
 		self.mask_emb = nn.Parameter(torch.randn(d_model) * 0.02)
 		self.segment = nn.Embedding(3, d_model)
-		self.mode = nn.Embedding(3, d_model)
+		self.mode = nn.Embedding(n_modes, d_model)
 		ffn = int(d_model * 8 / 3) // 64 * 64
 		self.blocks = nn.ModuleList(Block(d_model, heads, ffn, rot_frac, gated, qk_norm) for _ in range(layers))
 		self.norm = nn.RMSNorm(d_model)
@@ -190,7 +190,8 @@ class V3(nn.Module):
 		"""Lists per sample: text [Lt] ids, prompt [Lp, values] digits, target [La, values] digits, target_masked [La] bool.
 		An empty text or prompt drops that condition (CFG). Returns the final hidden state of every target position, [sum La, d_model]."""
 		from .data import pack
-		return self.encode_packed(pack(text, prompt, target, target_masked, langs=langs), mode)
+		modes = [mode] * len(text) if mode not in (NAR_DEMASK, AR) else None  # AR rows need pack's AR layout; use hidden()
+		return self.encode_packed(pack(text, prompt, target, target_masked, modes=modes, langs=langs), mode)
 
 	def encode_packed(self, b, mode=NAR_DEMASK):
 		"""b: the tensors from data.pack(), on this model's device. Returns the target positions' final hidden states."""
@@ -374,7 +375,7 @@ def reveal_order(n, kind="random", device=None):
 @torch.no_grad()
 def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.0, flow_steps=8, sway=-1.0,
 		cfg_end=None, temperature_end=None, order="random", cfg_mode="backbone", lang=0, null="both", cfg_prompt=0.0,
-		known=None, keep=None):
+		known=None, keep=None, mode=NAR_DEMASK):
 	"""MAR-style generation: positions are revealed on the cosine schedule, each sampled from the flow head and snapped
 	to the grid. cfg_end / temperature_end anneal linearly over the demask steps (as MAGNeT and MaskGCT do); steps whose
 	CFG scale is at most 1 skip the unconditional pass. cfg_mode "head" (models trained with ar=True) guides with the
@@ -384,7 +385,8 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 	trained with prompt-only dropout; one more backbone pass per step).
 	lang: language id (0 unknown). known [n_frames, 32] digits and keep [n_frames] bool: frames to hold fixed (continuation,
 	editing, infilling); positions whose frames are all kept start revealed and only the rest are generated. Returns
-	[n_frames, 32] digits."""
+	[n_frames, 32] digits. mode: NS (the prompt is the noisy recording, the target its clean speech) or SR (the target its
+	noise), for models trained with those tasks."""
 	dev = text.device
 	null_text, null_prompt = (text[:0] if null != "prompt" else text), (prompt[:0] if null != "text" else prompt)
 	La = math.ceil(n_frames / model.patch)
@@ -411,11 +413,11 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 		w = cfg if cfg_end is None else cfg + (cfg_end - cfg) * frac
 		temp = temperature if temperature_end is None else temperature + (temperature_end - temperature) * frac
 		if w > 1 and cfg_mode == "head":
-			hc = model.encode([text], [prompt], [digits], [masked], langs=[lang])[reveal]
+			hc = model.encode([text], [prompt], [digits], [masked], langs=[lang], mode=mode)[reveal]
 			hn = model.null_h.to(hc.dtype).expand_as(hc)
 		elif w > 1 and cfg_prompt > 0 and len(prompt):
 			# speaker guidance: a third pass with the text but no prompt (models trained with prompt-only dropout)
-			h = model.encode([text, null_text, text], [prompt, null_prompt, prompt[:0]], [digits] * 3, [masked] * 3, langs=[lang] * 3)
+			h = model.encode([text, null_text, text], [prompt, null_prompt, prompt[:0]], [digits] * 3, [masked] * 3, langs=[lang] * 3, mode=mode)
 			hc, hn, hp = h[:La][reveal], h[La : 2 * La][reveal], h[2 * La :][reveal]
 			vals = flow_sample(model.flow, hc, hn, cfg=w, steps=flow_steps, temperature=temp, sway=sway, h_extra=hp, cfg_extra=cfg_prompt)
 			digits[reveal] = snap(vals, model.patch)
@@ -423,10 +425,10 @@ def demask_flow(model, text, prompt, n_frames, steps=25, cfg=2.5, temperature=1.
 			done = target_done
 			continue
 		elif w > 1:
-			h = model.encode([text, null_text], [prompt, null_prompt], [digits, digits], [masked, masked], langs=[lang, lang])
+			h = model.encode([text, null_text], [prompt, null_prompt], [digits, digits], [masked, masked], langs=[lang, lang], mode=mode)
 			hc, hn = h[:La][reveal], h[La:][reveal]
 		else:
-			hc, hn = model.encode([text], [prompt], [digits], [masked], langs=[lang])[reveal], None
+			hc, hn = model.encode([text], [prompt], [digits], [masked], langs=[lang], mode=mode)[reveal], None
 		vals = flow_sample(model.flow, hc, hn, cfg=w if w > 1 else 0.0, steps=flow_steps, temperature=temp, sway=sway)
 		digits[reveal] = snap(vals, model.patch)
 		masked[reveal] = False
