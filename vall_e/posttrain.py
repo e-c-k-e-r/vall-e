@@ -110,8 +110,10 @@ def grpo_length(args):
 
 	def draw(rng):
 		lang = names[rng.choice(len(names), p=weights)]
-		i = int(pools[lang][rng.integers(len(pools[lang]))])
-		it = ds[i]
+		while True:
+			it = ds[int(pools[lang][rng.integers(len(pools[lang]))])]
+			if len(it["prompt"]) >= ds.prompt_f[0]:  # speakers with one utterance get no prompt
+				break
 		text = torch.tensor([own[svocab[int(t) - 1]] for t in it["text"] if svocab[int(t) - 1] in own], dtype=torch.long, device=dev)
 		prompt = to_patches(it["prompt"], model.patch).to(dev)
 		lid = codes.index(lang) + 1 if getattr(model, "lang", None) is not None else 0
