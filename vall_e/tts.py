@@ -9,6 +9,11 @@
 # the model was fine-tuned on), the length comes from the model's length head unless a duration is given, and long
 # texts are generated sentence by sentence (the model was trained on targets up to 12 s) and joined with short pauses.
 import argparse
+import os
+
+# without it MIOpen (ROCm) benchmarks kernels for every new convolution shape, and the codec's shapes change with every
+# utterance length: tts.py ran at 0.15-0.4x realtime instead of 1-4x
+os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
 import re
 from pathlib import Path
 
@@ -88,6 +93,61 @@ class TTS:
 			out.append(_trim_silence(w) if trim else w)
 		gap = torch.zeros(1, int(pause * self.sample_rate))
 		return torch.cat([x for w in out for x in (w, gap)][:-1], dim=-1)
+
+	@torch.no_grad()
+	def encode_audio(self, path):
+		"""A whole recording as frame digits [T, 32] (mono, 44.1 kHz)."""
+		wav, sr = torchaudio.load(str(path))
+		wav = wav.mean(0, keepdim=True)
+		if sr != self.sample_rate:
+			wav = torchaudio.functional.resample(wav, sr, self.sample_rate)
+		wav = wav.to(self.device)
+		codes, n = self.codec.encode(audio=wav, audio_len=torch.tensor([wav.shape[-1]], device=self.device))
+		return fsq.codes_to_digits(codes[0, :, : int(n[0])].long())
+
+	def _fill(self, text, language, known, keep, n, prompt, steps, cfg, cfg_prompt, seed, trim):
+		if seed is not None:
+			torch.manual_seed(seed)
+		ids = self.phonemes(text, language)
+		with torch.autocast(self.device, dtype=torch.bfloat16, enabled=self.device == "cuda"):
+			digits = demask_flow(self.model, ids, prompt, n, steps=steps, cfg=cfg, cfg_prompt=cfg_prompt, known=known, keep=keep)
+		w = self.decode(digits)
+		return _trim_silence(w) if trim else w
+
+	@torch.no_grad()
+	def continue_speech(self, audio, said, new, language="en", prompt=None, duration=None, steps=25, cfg=6.0, cfg_prompt=2.0,
+			seed=None, trim=True):
+		"""Continues a recording that says `said` with `new`: the recording is kept as is and the new part is generated in
+		the same voice. duration (s): the new part's length, else predicted on its own (predicting the whole from the
+		full text undershot and squeezed the new part). prompt: a voice clip, else the recording itself. Returns
+		[1, samples], the recording included."""
+		known = self.encode_audio(audio)
+		p = self.encode_prompt(prompt) if prompt else to_patches(known[-int(PROMPT_S * FPS):], self.model.patch)
+		with torch.autocast(self.device, dtype=torch.bfloat16, enabled=self.device == "cuda"):
+			extra = int(duration * FPS) if duration else predict_length(self.model, self.phonemes(new, language), p)
+		n = len(known) + max(44, extra)
+		full = torch.cat([known, known[-1:].expand(n - len(known), -1)])
+		text = f"{said.strip()} {new.strip()}"
+		return self._fill(text, language, full, torch.arange(n, device=full.device) < len(known), n, p, steps, cfg, cfg_prompt, seed, trim)
+
+	@torch.no_grad()
+	def edit(self, audio, text, start, end, old_text=None, language="en", prompt=None, steps=25, cfg=6.0, cfg_prompt=2.0,
+			seed=None, trim=False):
+		"""Re-speaks the part of a recording between `start` and `end` (seconds) so the whole says `text`. Without
+		old_text (what the recording said) the span keeps its length; with it, the span is scaled by the change in
+		phoneme count. prompt: a voice clip, else the recording itself. Returns [1, samples], the whole recording."""
+		known = self.encode_audio(audio)
+		T = len(known)
+		s0, s1 = max(0, int(start * FPS)), min(T, int(end * FPS))
+		span = s1 - s0
+		if old_text:
+			n_old, n_new = len(self.phonemes(old_text, language)), len(self.phonemes(text, language))
+			span = max(4, span + int((n_new - n_old) * T / max(1, n_old)))
+		p = self.encode_prompt(prompt) if prompt else to_patches(known[-int(PROMPT_S * FPS):], self.model.patch)
+		full = torch.cat([known[:s0], known[:1].expand(span, -1), known[s1:]])
+		keep = torch.ones(len(full), dtype=torch.bool, device=full.device)
+		keep[s0 : s0 + span] = False
+		return self._fill(text, language, full, keep, len(full), p, steps, cfg, cfg_prompt, seed, trim)
 
 	def _split(self, text, language):
 		"""Phoneme ids per sentence, merging sentences up to MAX_PHONEMES."""

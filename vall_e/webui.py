@@ -2,6 +2,11 @@
 #
 #   python -m vall_e.webui --ckpt training/v3-main6-len/last.pt [--models training] [--listen 0.0.0.0] [--port 7860] [--share]
 import argparse
+import os
+
+# without it MIOpen (ROCm) benchmarks kernels for every new convolution shape, and the codec's shapes change with every
+# utterance length: tts.py ran at 0.15-0.4x realtime instead of 1-4x
+os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
 import random
 import time
 from pathlib import Path
