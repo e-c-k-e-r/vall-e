@@ -5,12 +5,10 @@
 # against the noisy baseline, and the edit / continue test again.
 # usage: nohup scripts/tasks-chain.sh >> training/tasks-chain.log 2>&1 &
 cd "$(dirname "$0")/.."
-S=${VALL_E_STORE:-data/store}
+. scripts/local.sh  # the store, its groups, interpreters (data/local.sh)
 E=training/evals
 P="venv/bin/python -m vall_e.evalset"
-GROUPS_=(Audiobooks LibriTTS-R LibriVox Emilia "GROUP" GROUP GROUP GROUP GROUP GROUP GROUP GROUP GROUP "GROUP" "GROUP"
-	"GROUP" GROUP GROUP GROUP "GROUP" GROUP GROUP)
-DATA=(--store $S --groups "${GROUPS_[@]}" --min-rate 13 --min-rate-groups LibriVox Audiobooks)
+DATA=(--store $S "${GROUPS_ARGS[@]}" --min-rate 13 --min-rate-groups LibriVox Audiobooks)
 MODEL=(--head flow --d-model 1024 --layers 16 --heads 16 --compile --workers 6)
 until [ -f $S/noisy-targets/source.npy ]; do sleep 120; done
 while ps -eo args | grep -v grep | grep -q "vall_e.noisy"; do sleep 30; done
@@ -37,5 +35,5 @@ M=$out-len/last.pt
 scripts/evaluate.sh $M $E/tasks training/evals/flagship
 [ -f $E/tasks-ns/scores.json ] || $P run --set evalsets/v3-eval.json --ckpt $M --task ns --out $E/tasks-ns --gt $E/gt > $E/tasks-ns.log 2>&1
 $P compare $E/noisy $E/tasks-ns --gt $E/gt 2>&1 | grep "==\|  [a-z]"
-CKPT=$M PYTHONPATH=$PWD venv/bin/python scratch/v3_edit_test.py $E/edit-test-tasks 40 2>&1 | grep "^#"
+[ -n "$VALL_E_EDIT_TEST" ] && CKPT=$M PYTHONPATH=$PWD venv/bin/python "$VALL_E_EDIT_TEST" $E/edit-test-tasks 40 2>&1 | grep "^#"
 echo "$(date) tasks chain done"

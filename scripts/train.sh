@@ -1,8 +1,9 @@
 #!/bin/bash
 # Runs vall_e/train.py, resuming from last.pt after a crash (up to 20 times). Waits until the GPU's VRAM is mostly free
-# first. $VALL_E_TRAIN_PY picks the interpreter (on the ROCm box: torch 2.13, as torch 2.7 segfaults in MIOpen).
+# first. $VALL_E_TRAIN_PY (or data/local.sh) picks the interpreter (on ROCm: torch 2.13, as 2.7 segfaults in MIOpen).
 # usage: scripts/train.sh <out dir> [train.py args...]
 cd "$(dirname "$0")/.."
+. scripts/local.sh
 PY=${VALL_E_TRAIN_PY:-python}
 out=$1; shift
 mkdir -p "$out"

@@ -12,10 +12,8 @@
 # trained in from scratch cost text use, and together they stopped it); judge a run by sampled WER / val/text_use,
 # never by teacher-forced loss; judge a WSD run at its end or with a decay probe, not on its plateau.
 cd "$(dirname "$0")/.."
-S=${VALL_E_STORE:-data/store}
-GROUPS_=(Audiobooks LibriTTS-R LibriVox Emilia "GROUP" GROUP GROUP GROUP GROUP GROUP GROUP GROUP GROUP "GROUP" "GROUP"
-	"GROUP" GROUP GROUP GROUP "GROUP" GROUP GROUP)  # every group but the old Validation hold-out
-DATA=(--store $S --groups "${GROUPS_[@]}" --min-rate 13 --min-rate-groups LibriVox Audiobooks)
+. scripts/local.sh  # the store, its groups, interpreters (data/local.sh)
+DATA=(--store $S "${GROUPS_ARGS[@]}" --min-rate 13 --min-rate-groups LibriVox Audiobooks)
 MODEL=(--head flow --d-model 1024 --layers 16 --heads 16 --compile --workers 6)
 NAR=(--batch 16 --max-tokens 16000 --mask-ratio cos --cond-drop 0.1 --text-drop 0)
 case "$1" in

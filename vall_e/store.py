@@ -357,16 +357,20 @@ def build_similar(root, meta_root, workers=6):
 	print(f"similar: {n_lists}/{len(st)} utterances have a list, {time.time() - t0:.0f}s", flush=True)
 
 
-# groups whose voice work is English: anything else in them is a transcription error (Whisper hearing a scream as
-# Japanese) or an unreliable label (`auto`)
-ENGLISH_GROUPS = ("GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP", "GROUP",
-	"GROUP", "GROUP", "GROUP", "GROUP", "GROUP")
+# Store-specific exclusion rules, kept out of the repo (they name the store's groups): a JSON file of
+#   {"english_voiced": [groups whose voice work is English: anything else in them is a transcription error (Whisper
+#                       hearing a scream as Japanese) or an unreliable label (`auto`)],
+#    "language": {group: the only language its items can be (items labelled otherwise were phonemized wrongly)}}
+RULES = Path(__file__).resolve().parents[1] / "data" / "exclude-rules.json"
 # espeak's English voice reads CJK characters it can't pronounce as "Japanese letter" / "Chinese letter"
 LETTER_READINGS = ("dʒˈæpəniːzlˌɛɾɚ", "tʃˈaɪniːzlˌɛɾɚ")
 
 
-def build_exclude(root):
+def build_exclude(root, rules=None):
 	import re
+	rules_path = Path(rules) if rules else RULES
+	rules = json.loads(rules_path.read_text()) if rules_path.exists() else {}
+	english_groups, fixed_language = rules.get("english_voiced", []), rules.get("language", {})
 	st = Store(root)
 	G, L, V = st.m["groups"], st.m["languages"], st.m["vocab"]
 	lut = {c: i for i, c in enumerate(V)}
@@ -384,7 +388,7 @@ def build_exclude(root):
 				letter[int(st.starts[s]) + np.unique(np.searchsorted(off, pos, side="right") - 1)] = True
 	reasons["letter readings in phonemes"] = letter
 	# English-voiced groups: non-en labels, or text in a CJK / Hangul script
-	eng = np.isin(st.group, [G.index(g) for g in ENGLISH_GROUPS if g in G])
+	eng = np.isin(st.group, [G.index(g) for g in english_groups if g in G])
 	non_en = eng & (st.language != L.index("en"))
 	cjk = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
 	script = np.zeros(len(st), dtype=bool)
@@ -392,9 +396,10 @@ def build_exclude(root):
 		script[u] = bool(cjk.search(st.text(int(u))))
 	reasons["non-English label in an English-voiced group"] = non_en
 	reasons["CJK text in an English-voiced group"] = script
-	# GROUP is Japanese: items labelled anything else were phonemized in the wrong language
-	if "GROUP" in G:
-		reasons["GROUP item not labelled ja"] = (st.group == G.index("GROUP")) & (st.language != L.index("ja"))
+	# groups of one language: items labelled anything else were phonemized in the wrong language
+	for group, lang in fixed_language.items():
+		if group in G and lang in L:
+			reasons[f"{group} item not labelled {lang}"] = (st.group == G.index(group)) & (st.language != L.index(lang))
 	exclude = np.zeros(len(st), dtype=bool)
 	for v in reasons.values():
 		exclude |= v
@@ -423,10 +428,11 @@ if __name__ == "__main__":
 	s.add_argument("--workers", type=int, default=6)
 	e = sub.add_parser("exclude", help="build exclude.npy (bad transcripts and labels)")
 	e.add_argument("--store", type=Path, required=True)
+	e.add_argument("--rules", type=Path, default=None, help="exclusion rules (default data/exclude-rules.json; see RULES)")
 	args = ap.parse_args()
 	if args.cmd == "convert":
 		convert(args.meta, args.data, args.out, args.groups, args.workers, args.limit_speakers, resume=args.resume, supplement=args.supplement)
 	elif args.cmd == "similar":
 		build_similar(args.store, args.meta, args.workers)
 	else:
-		build_exclude(args.store)
+		build_exclude(args.store, args.rules)
