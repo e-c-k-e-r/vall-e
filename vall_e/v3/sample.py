@@ -52,6 +52,7 @@ def main():
 	ap.add_argument("--null", choices=["both", "text", "prompt"], default="both",
 		help="backbone CFG: what the unconditional pass drops (text / prompt alone need separate dropout in training)")
 	ap.add_argument("--length", choices=["ref", "predict"], default="ref", help="NAR target length: the reference's, or LEN mode's prediction")
+	ap.add_argument("--cfg-prompt", type=float, default=0.0, help="speaker guidance (2.0 for v3-main6)")
 	ap.add_argument("--length-scale", type=float, default=1.0, help="multiply the predicted length (silence-padded models want ~1.2)")
 	ap.add_argument("--lang", default="auto", help="language id fed to accent models: auto (the item's), unknown, or a code (en, ja, ...)")
 	ap.add_argument("--promptless", action="store_true", help="generate without a prompt (models trained with prompt dropout)")
@@ -130,7 +131,8 @@ def main():
 			elif model.head_type == "flow":
 				gen = demask_flow(model, it["text"].to(device), prompt, n_frames, steps=args.steps, cfg=args.cfg,
 					temperature=args.temperature, flow_steps=args.flow_steps, sway=args.sway, cfg_end=args.cfg_end,
-					temperature_end=args.temperature_end, order=args.order, cfg_mode=args.cfg_mode, lang=lang, null=args.null)
+					temperature_end=args.temperature_end, order=args.order, cfg_mode=args.cfg_mode, lang=lang, null=args.null,
+					cfg_prompt=args.cfg_prompt)
 			else:
 				gen = demask(model, it["text"].to(device), prompt, n_frames, steps=args.steps, cfg=args.cfg, temperature=args.temperature)
 		decode(gen, args.out / f"{i:02d}_gen.wav")

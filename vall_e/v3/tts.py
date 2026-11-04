@@ -1,8 +1,8 @@
 # Inference with a v3 checkpoint: text (+ a voice prompt) -> 44.1 kHz audio.
 #
-#   python -m vall_e.v3.tts --ckpt training/v3-main5p-len/last.pt --text "Hello there." --prompt voice.wav --out out.wav
+#   python -m vall_e.v3.tts --ckpt training/v3-main6-len/last.pt --text "Hello there." --prompt voice.wav --out out.wav
 #
-#   tts = TTS("training/v3-main5p-len/last.pt")
+#   tts = TTS("training/v3-main6-len/last.pt")
 #   wav = tts.generate("Hello there.", prompt="voice.wav", language="en")   # [1, samples] at tts.sample_rate
 #
 # Text is phonemized as the dataset was (vall_e.emb.g2p), the prompt is encoded with the NeMo codec (cropped to the 10 s
@@ -61,11 +61,13 @@ class TTS:
 
 	@torch.no_grad()
 	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=6.0, flow_steps=8, sway=-1.0,
-			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True):
+			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True, cfg_prompt=2.0):
 		"""prompt: a wav path (or None for an unconditioned voice). duration (s): the whole utterance's length, else
 		predicted per sentence and multiplied by length_scale (a little under 1 if outputs trail off into extra words,
 		as an overestimated length gets filled with speech). About 1.2 suits models trained with silence padding
-		(--pad-p), which fill spare time with silence; trim drops that trailing silence. Returns [1, samples]."""
+		(--pad-p), which fill spare time with silence; trim drops that trailing silence. cfg_prompt: speaker guidance
+		(models trained with prompt-only dropout, as v3-main6; eval set: SIM 0.700 -> 0.722 at 2.0, WER unchanged; set 0
+		for checkpoints trained without it). Returns [1, samples]."""
 		if seed is not None:
 			torch.manual_seed(seed)
 		p = self.encode_prompt(prompt) if prompt else torch.zeros(0, self.model.values, dtype=torch.long, device=self.device)
@@ -80,7 +82,8 @@ class TTS:
 					n = max(44, int(predict_length(self.model, t, p) * length_scale))
 				else:
 					raise ValueError("this checkpoint has no length head: pass a duration")
-				digits = demask_flow(self.model, t, p, n, steps=steps, cfg=cfg, temperature=temperature, flow_steps=flow_steps, sway=sway)
+				digits = demask_flow(self.model, t, p, n, steps=steps, cfg=cfg, temperature=temperature, flow_steps=flow_steps, sway=sway,
+					cfg_prompt=cfg_prompt)
 			w = self.decode(digits)
 			out.append(_trim_silence(w) if trim else w)
 		gap = torch.zeros(1, int(pause * self.sample_rate))
@@ -124,12 +127,13 @@ def main():
 	ap.add_argument("--steps", type=int, default=25)
 	ap.add_argument("--cfg", type=float, default=6.0, help="guidance strength (6.0 beat 2.5 on the eval set: SIM +0.028, WER -2.6 points)")
 	ap.add_argument("--seed", type=int, default=None)
+	ap.add_argument("--cfg-prompt", type=float, default=2.0, help="speaker guidance (0 for checkpoints trained without prompt-only dropout)")
 	ap.add_argument("--length-scale", type=float, default=1.0, help="scale the predicted length (about 1.2 for silence-padded models)")
 	ap.add_argument("--device", default="cuda")
 	args = ap.parse_args()
 	tts = TTS(args.ckpt, args.device)
 	wav = tts.generate(args.text, args.prompt, args.language, args.duration, steps=args.steps, cfg=args.cfg, seed=args.seed,
-		length_scale=args.length_scale)
+		length_scale=args.length_scale, cfg_prompt=args.cfg_prompt)
 	torchaudio.save(str(args.out), wav, tts.sample_rate)
 	print(f"wrote {args.out} ({wav.shape[-1] / tts.sample_rate:.1f} s)")
 
