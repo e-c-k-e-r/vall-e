@@ -11,7 +11,7 @@ from pathlib import Path
 import torch
 
 DEFAULT_MODEL = "nemo-44khz-nar-flow-225m.sft"
-DEFAULT_URL = os.environ.get("VALL_E_MODEL_URL", f"https://huggingface.co/ecker/vall-e/resolve/main/models/{DEFAULT_MODEL}")
+DEFAULT_URL = os.environ.get("VALL_E_MODEL_URL", "https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/nemo-44khz-nar-flow-225m/fp16.sft")
 MODEL_DIR = Path(os.environ.get("VALL_E_MODELS", Path(__file__).resolve().parents[1] / "data" / "models"))
 FORMAT = "vall-e-v3"
 
