@@ -235,6 +235,7 @@ def main():
 	ap.add_argument("--similar-p", type=float, default=0.0, help="odds of a prompt from the similar lists")
 	ap.add_argument("--noisy-p", type=float, default=0.0, help="odds of the speaker's noised prompt")
 	ap.add_argument("--ctc-weight", type=float, default=0.0, help="auxiliary phoneme-recognition (CTC) loss weight; > 0 builds the head")
+	ap.add_argument("--n-modes", type=int, default=None, help="mode embedding size (default 5 with --ns-p / --sr-p, else 3)")
 	ap.add_argument("--span-p", type=float, default=0.0, help="share of targets masked as one contiguous span (editing / continuation)")
 	ap.add_argument("--ns-p", type=float, default=0.0, help="share of items that are noise suppression (needs noisy-targets in the store)")
 	ap.add_argument("--sr-p", type=float, default=0.0, help="share of items that are speech removal")
@@ -274,7 +275,7 @@ def main():
 	model = V3(n_text, args.d_model, args.layers, args.heads, args.patch, args.rot_frac,
 		gated=not args.no_gate, qk_norm=not args.no_qk_norm, head=args.head, ar=args.ar_frac > 0,
 		n_lang=train_ds.n_lang if args.accent else 0, length=args.len_frac > 0, ctc=args.ctc_weight > 0,
-		n_modes=5 if (args.ns_p or args.sr_p) else 3).to(device)
+		n_modes=args.n_modes or (5 if (args.ns_p or args.sr_p) else 3)).to(device)
 	if args.init_from and not (args.out / "last.pt").exists():
 		init = torch.load(args.init_from, map_location=device, weights_only=False)["model"]
 		own = model.state_dict()

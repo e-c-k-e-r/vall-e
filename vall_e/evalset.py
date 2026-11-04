@@ -95,9 +95,11 @@ def units(text, lang):
 
 @torch.no_grad()
 def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, seed=0, device="cuda", batch=16,
-		prompt_s=None, temperature=1.0, gt="training/evals/gt", cfg_prompt=0.0):
+		prompt_s=None, temperature=1.0, gt="training/evals/gt", cfg_prompt=0.0, task="tts", snr=5.0):
 	"""prompt_s: crop the prompts to this many seconds from their fixed offset instead of the set's (as much as the
-	prompt utterance has). gt: the ground-truth run whose audio SIM is measured against."""
+	prompt utterance has). gt: the ground-truth run whose audio SIM is measured against. task: "tts"; "ns", noise
+	suppression of the item's recording mixed with a held-out noise clip at `snr` dB (the same mixture every run), with
+	its text; or "noisy", that mixture itself (the baseline ns should beat). ckpt is ignored for "noisy"."""
 	from . import fsq
 	from .model import V3, demask_flow, predict_length
 	from .store import Store
@@ -107,6 +109,8 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 	st = Store(es["store"])
 	if str(ckpt) == "gt":
 		return run_gt(es, st, out, device, batch, setfile)
+	if task == "noisy":
+		return run_noisy(es, st, out, device, batch, setfile, snr, gt)
 	sd = torch.load(ckpt, map_location="cpu", weights_only=False, mmap=True)
 	model = V3(**sd["config"]).eval(); model.load_state_dict(sd["model"]); model.to(device)
 	# the checkpoint's own phoneme ids, through the characters (store-trained checkpoints share the store's vocabulary)
@@ -115,7 +119,8 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 	codec = load_codec(device)
 	digits_of = lambda codes: fsq.codes_to_digits(torch.from_numpy(np.asarray(codes).astype(np.int64)).t())
 	(out / "settings.json").write_text(json.dumps(dict(set=str(setfile), ckpt=str(ckpt), length=length, length_scale=length_scale,
-		steps=steps, cfg=cfg, seed=seed, prompt_s=prompt_s, temperature=temperature, cfg_prompt=cfg_prompt), indent=1))
+		steps=steps, cfg=cfg, seed=seed, prompt_s=prompt_s, temperature=temperature, cfg_prompt=cfg_prompt, task=task, snr=snr), indent=1))
+	noise = _eval_noise(es, codec, device) if task == "ns" else None
 	rows_path = out / "items.jsonl"
 	done = {json.loads(l)["id"] for l in rows_path.read_text().splitlines()} if rows_path.exists() else set()
 	import torchaudio
@@ -133,11 +138,18 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 			if getattr(model, "lang", None) is not None:
 				lang = st.m["languages"].index(it["language"]) + 1
 			with torch.autocast(device, dtype=torch.bfloat16, enabled=device == "cuda"):
-				if length == "predict":
-					n = max(44, int(predict_length(model, text, prompt, lang=lang) * length_scale))
+				if task == "ns":
+					from .model import NS
+					mix = _mixture(st, codec, it, noise, snr, device)
+					n = len(mix)
+					gen = demask_flow(model, text, to_patches(mix, model.patch).to(device), n, steps=steps, cfg=cfg, lang=lang,
+						temperature=temperature, mode=NS)
 				else:
-					n = int(it["frames"] * length_scale)
-				gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang, temperature=temperature, cfg_prompt=cfg_prompt)
+					if length == "predict":
+						n = max(44, int(predict_length(model, text, prompt, lang=lang) * length_scale))
+					else:
+						n = int(it["frames"] * length_scale)
+					gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang, temperature=temperature, cfg_prompt=cfg_prompt)
 			codes = fsq.digits_to_codes(gen).unsqueeze(0).to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
 			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
@@ -169,6 +181,55 @@ def run_gt(es, st, out, device, batch, setfile):
 	del codec
 	torch.cuda.empty_cache()
 	score(setfile, out, device, batch, gt=out)
+
+
+def _eval_noise(es, codec, device):
+	"""The held-out noise clips (noisy.noise_split), decoded and normalised to unit power."""
+	from .noisy import load_noise, noise_split, MAX_S
+	clips = [c for i, c in enumerate(load_noise(es["store"])) if noise_split(i) == "eval"]
+	out = []
+	for c in clips:
+		c = torch.from_numpy(np.asarray(c[: int(MAX_S * FPS)]).astype(np.int64)).t()[None].to(device)
+		w = codec.decode(tokens=c, tokens_len=torch.tensor([c.shape[-1]], device=device))[0][0].float()
+		if len(w) > 512:
+			out.append(w / w.pow(2).mean().sqrt().clamp(min=1e-5))
+	return out
+
+
+@torch.no_grad()
+def _mixture(st, codec, it, noise, snr, device):
+	"""The item's recording mixed with a held-out noise clip at snr dB, encoded: [frames, 32] digits. Deterministic per
+	item, so every run denoises the same input."""
+	from . import fsq
+	rng = np.random.default_rng(10_007 + it["id"])
+	c = torch.from_numpy(np.asarray(st.codes(it["utt"])).astype(np.int64)).t()[None].to(device)
+	clean = codec.decode(tokens=c, tokens_len=torch.tensor([c.shape[-1]], device=device))[0][0].float()
+	nz = noise[int(rng.integers(len(noise)))]
+	nz = nz.repeat(len(clean) // len(nz) + 2)
+	o = int(rng.integers(len(nz) - len(clean)))
+	mix = clean + nz[o : o + len(clean)] * (clean.pow(2).mean() / 10 ** (snr / 10)).sqrt()
+	mix = (mix / mix.abs().max().clamp(min=1.0))[None]
+	codes, n = codec.encode(audio=mix, audio_len=torch.tensor([mix.shape[-1]], device=device))
+	return fsq.codes_to_digits(codes[0, :, : int(n[0])].long())
+
+
+@torch.no_grad()
+def run_noisy(es, st, out, device, batch, setfile, snr, gt):
+	"""The noise-suppression baseline: the noisy mixtures themselves."""
+	import torchaudio
+	from . import fsq
+	codec = load_codec(device)
+	noise = _eval_noise(es, codec, device)
+	with open(out / "items.jsonl", "w") as rows:
+		for it in es["items"]:
+			mix = _mixture(st, codec, it, noise, snr, device)
+			codes = fsq.digits_to_codes(mix).unsqueeze(0).to(device)
+			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
+			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
+			rows.write(json.dumps(dict(id=it["id"], language=it["language"], frames=len(mix), ref_frames=it["frames"])) + "\n")
+	del codec
+	torch.cuda.empty_cache()
+	score(setfile, out, device, batch, gt=gt)
 
 
 def bad_references(gt, threshold=0.3):
@@ -310,6 +371,8 @@ if __name__ == "__main__":
 	r.add_argument("--temperature", type=float, default=1.0)
 	r.add_argument("--cfg-prompt", type=float, default=0.0, help="extra speaker guidance (models trained with prompt-only dropout)")
 	r.add_argument("--gt", type=Path, default=Path("training/evals/gt"), help="the ground-truth run SIM is measured against")
+	r.add_argument("--task", choices=["tts", "ns", "noisy"], default="tts", help="ns: noise suppression of noised recordings; noisy: those recordings as they are")
+	r.add_argument("--snr", type=float, default=5.0, help="for ns / noisy: the mixtures' SNR, dB")
 	s = sub.add_parser("score", help="re-score an existing run")
 	s.add_argument("--set", type=Path, required=True)
 	s.add_argument("--out", type=Path, required=True)
@@ -326,7 +389,7 @@ if __name__ == "__main__":
 		build(args.store, args.out, groups=args.groups)
 	elif args.cmd == "run":
 		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed,
-			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt)
+			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt, task=args.task, snr=args.snr)
 	elif args.cmd == "score":
 		score(args.set, args.out, gt=args.gt)
 	elif args.cmd == "report":
