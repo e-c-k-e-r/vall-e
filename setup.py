@@ -25,90 +25,38 @@ def write_version(version_core, pre_release=True):
 with open("README.md", "r") as f:
 	long_description = f.read()
 
-platform_dependencies = []
-
-if sys.platform.startswith("win"):
-	platform_dependencies += ["psutil"]
-else:
-	platform_dependencies += ["deepspeed>=0.7.7"]
-
 setup(
 	name="vall-e",
 	python_requires=">=3.10.0",
-	version=write_version("0.0.1"),
-	description="An unofficial implementation of the audio LM VALL-E",
+	version=write_version("0.3.0"),
+	description="Text-to-speech over NeMo 44.1 kHz FSQ codes with a flow-matching head (VALL-E v3)",
 	author="ecker",
 	author_email="mrq@ecker.tech",
 	long_description=long_description,
 	long_description_content_type="text/markdown",
-	packages=find_packages(),
-	install_requires=
-		platform_dependencies + [
-		# logging niceties
-		"coloredlogs>=15.0.1", # barely required
-		"humanize>=4.4.0", # not really required
-		"matplotlib>=3.6.0", # only required for plotting
-		"pandas>=1.5.0", # not really required
-
-		# boiler plate niceties
-		#"diskcache>=5.4.0",
-		"einops>=0.6.0", # could be replaced
-		"tqdm",
-
-		# HF bloat
-		"tokenizers",
-		"transformers",
-		"safetensors",
-
-		# training bloat
-		"auraloss[all]", # [all] is needed for MelSTFTLoss
-		"h5py",
-		"prodigyopt @ git+https://github.com/konstmish/prodigy",
-
-		# practically the reason to use python
+	packages=find_packages(include=["vall_e", "vall_e.*"]),
+	install_requires=[
+		"torch>=2.4",
+		"torchaudio",
 		"numpy",
-		"torch>=1.13.0",
-		"torchaudio>=0.13.0",
-		"torchmetrics",
-
-		# core foundations
-		"phonemizer>=2.1.0",
-		"encodec>=0.1.1",
-		"vocos",
-
-		# for the web UI
-		"gradio",
-		"nltk", # for parsing text inputs down to pieces
-		"langdetect", # for detecting the language of a text
-		"sounddevice", # for raw playback
+		"tqdm",
+		"requests",
+		# the codec (vall_e/emb/nemo.py, a trimmed copy of NeMo's AudioCodecModel)
+		"nemo-toolkit",
+		"hydra-core",
+		"lightning",
+		"sentencepiece",
+		"einops",
+		"librosa",
+		# text
+		"phonemizer>=2.1.0",  # needs espeak-ng installed
+		"langdetect",
+		# scoring: Whisper (WER / CER) and WavLM speaker similarity (fetched through torch.hub's s3prl)
+		"transformers",
 	],
-	extras_require = {
-		"all": [
-			# retnet backend (even though two internal copies exist)
-			"torchscale @ git+https://git.ecker.tech/mrq/torchscale",
-			# bitnet
-			"bitnet",
-			# mamba
-			"causal-conv1d",
-			"mamba-ssm",
-
-			#
-			"torcheval",
-
-			# attention helpers
-			"xformers",
-			"sageattention==1.0.6",
-			# "flash-attn" --no-build-isolation # commented out right now because I want to query this for Volta freaks like me who can't use it
-			
-			# other audio backend that doesn't prove fruitful
-			"descript-audio-codec",
-
-			# nemo (to-do: cut this down)
-			"nemo-toolkit",
-			"hydra-core",
-			"lightning",
-			"sentencepiece"
-		]
+	extras_require={
+		"ja": ["pykakasi"],  # kanji -> hiragana before phonemizing
+		"eval": ["inflect"],  # number expansion when normalising English for WER
 	},
 	url="https://git.ecker.tech/mrq/vall-e",
 )

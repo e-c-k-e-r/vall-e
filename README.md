@@ -4,39 +4,57 @@
 
 # VALL'E
 
-An unofficial PyTorch implementation of [VALL-E](https://vall-e-demo.ecker.tech/) (last updated: `2025.05.30`), utilizing the [EnCodec](https://github.com/facebookresearch/encodec) encoder/decoder.
+Zero-shot text-to-speech at 44.1 kHz: give it text and a few seconds of someone's voice, and it speaks the text in that
+voice. Multilingual (English, French, German, Japanese, Chinese, Korean).
 
-A demo is available on HuggingFace [here](https://huggingface.co/spaces/ecker/vall-e).
+This is the third design of the project ("v3"). Audio is [NVIDIA's 44.1 kHz FSQ codec](https://huggingface.co/nvidia/audio-codec-44khz),
+read and generated as continuous values rather than tokens: a transformer over `[text][voice prompt][target]` and a
+flow-matching head that generates each position's audio values jointly, filling the target in by masked generation
+(`docs/model.md`). The EnCodec models and the earlier architectures are in the `v2-final` tag.
+
+## Results
+
+On a frozen 237-item evaluation set of unseen speakers (`docs/eval.md`):
+
+| | WER / CER | Speaker similarity |
+|---|---|---|
+| real recordings (the ceiling) | 7.3% | 0.717 |
+| **v3** | **7.4%** | **0.722** |
+
+English: 3.9% WER, similarity 0.686. 225M parameters, trained on ~16k hours (`docs/train.md`).
 
 ## Requirements
 
-Besides a working PyTorch environment, the only hard requirement is [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/) for phonemizing text:
-- Linux users can consult their package managers on installing `espeak`/`espeak-ng`.
-- Windows users are required to install [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/releases/tag/1.51#Assets).
-  + additionally, you may be required to set the `PHONEMIZER_ESPEAK_LIBRARY` environment variable to specify the path to `libespeak-ng.dll`.
-- In the future, an internal homebrew to replace this would be fantastic.
+A PyTorch environment, and [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/) for phonemizing text (Linux: your
+package manager; Windows: the installer, and possibly `PHONEMIZER_ESPEAK_LIBRARY` pointing at `libespeak-ng.dll`).
 
-## Install
+```
+pip install -e .            # [ja] for Japanese text, [eval] for number expansion when scoring
+```
 
-Simply run `pip install git+https://git.ecker.tech/mrq/vall-e` or `pip install git+https://github.com/e-c-k-e-r/vall-e`.
+## Use
 
-This repo is tested under Python versions `3.10.9`, `3.11.3`, and `3.12.3`.
+```
+python -m vall_e.tts --ckpt <checkpoint> --text "Hello there." --prompt voice.wav --out out.wav
+```
 
-### Additional Implementations
+```python
+from vall_e.tts import TTS
+tts = TTS("<checkpoint>")
+wav = tts.generate("Hello there.", prompt="voice.wav", language="en")   # [1, samples] at 44.1 kHz
+```
 
-An "HF"-ified version of the model is available as [`ecker/vall-e@hf`](https://huggingface.co/ecker/vall-e/tree/hf), but it does require some additional efforts (see the `__main__` of [`./vall_e/models/base.py`](./vall_e/models/base.py) for details).
+The length is predicted unless `--duration` is given; long texts are generated sentence by sentence; `--prompt` can be
+left out for an unconditioned voice. Defaults: 25 steps, guidance 6.0, speaker guidance 2.0.
 
-Additionally, [`vall_e.cpp`](./vall_e.cpp/) is available. Consult its README for more details.
+## Layout
 
-## Pre-Trained Model
-
-Pre-trained weights can be acquired from
-* [here](https://huggingface.co/ecker/vall-e) or automatically when either inferencing or running the web UI.
-* `./scripts/setup.sh`, a script to setup a proper environment and download the weights. This will also automatically create a `venv`.
-* when inferencing, either through the web UI or CLI, if no model is passed, the default model will download automatically instead, and should automatically update.
-
-## Documentation
-
-The provided documentation under [./docs/](./docs/) should provide thorough coverage over most, if not all, of this project.
-
-Markdown files should correspond directly to their respective file or folder under `./vall_e/`.
+| | |
+|---|---|
+| `vall_e/model.py` | the model, the flow head, masked and AR generation |
+| `vall_e/tts.py` | inference: text + prompt -> audio |
+| `vall_e/train.py`, `vall_e/data.py` | training, batching |
+| `vall_e/store.py`, `vall_e/noisy.py` | the data store, and baked noisy prompts (`docs/data.md`) |
+| `vall_e/evalset.py` | the evaluation set: WER / CER, speaker similarity, paired comparisons |
+| `vall_e/fsq.py`, `vall_e/emb/` | the codec's quantizer, the codec, phonemizer, ASR and speaker models |
+| `scripts/` | `recipe.sh` (how the model was trained), `train.sh`, `evaluate.sh`, `textuse-gate.sh` |
