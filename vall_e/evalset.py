@@ -233,6 +233,55 @@ def run_noisy(es, st, out, device, batch, setfile, snr, gt):
 	score(setfile, out, device, batch, gt=gt)
 
 
+_UTMOS = {}
+
+
+def utmos(path, device="cuda"):
+	"""Predicted MOS (UTMOS22 strong, the VoiceMOS 2022 winner, via torch.hub tarepan/SpeechMOS): naturalness, 1-5."""
+	import torchaudio
+	if device not in _UTMOS:
+		_UTMOS[device] = torch.hub.load("tarepan/SpeechMOS:v1.2.0", "utmos22_strong", trust_repo=True).to(device).eval()
+	w, sr = torchaudio.load(str(path))
+	w = torchaudio.functional.resample(w.mean(0, keepdim=True), sr, 16000).to(device)
+	with torch.no_grad():
+		return float(_UTMOS[device](w, 16000).item())
+
+
+def bandwidth(path, floor=50.0, split=12000.0):
+	"""(cutoff in Hz: the highest frequency whose long-term level is within `floor` dB of the speech band's (1-4 kHz),
+	power above `split` Hz relative to the total in dB). A 24 kHz source stops at 12 kHz and a lossy MP3 at its
+	low-pass (11-16 kHz); most of the training audio is one or the other, so outputs may leave the codec's top octave
+	empty."""
+	import torchaudio
+	w, sr = torchaudio.load(str(path))
+	w = w.mean(0)
+	if len(w) < 2048:
+		return 0.0, -99.0
+	spec = torch.stft(w, 2048, 512, window=torch.hann_window(2048), return_complex=True).abs().pow(2).mean(-1)
+	freqs = torch.linspace(0, sr / 2, len(spec))
+	level = 10 * torch.log10(torch.nn.functional.avg_pool1d(spec[None, None], 9, 1, 4)[0, 0].clamp(min=1e-14))
+	ref = level[(freqs >= 1000) & (freqs <= 4000)].median()
+	above = (level > ref - floor).nonzero()
+	cutoff = float(freqs[int(above.max())]) if len(above) else 0.0
+	hf = float(10 * torch.log10(spec[freqs > split].sum().clamp(min=1e-12) / spec.sum().clamp(min=1e-12)))
+	return cutoff, hf
+
+
+def add_extras(out, device="cuda"):
+	"""Adds UTMOS and bandwidth to a scored run (scored.jsonl), and refreshes its scores.json."""
+	out = Path(out)
+	rows = [json.loads(l) for l in (out / "scored.jsonl").read_text().splitlines()]
+	for r in rows:
+		f = out / f"{r['id']:04d}.wav"
+		r["utmos"] = utmos(f, device)
+		r["bw"], r["hf_db"] = bandwidth(f)
+	with open(out / "scored.jsonl", "w") as fh:
+		for r in rows:
+			fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+	(out / "scores.json").write_text(json.dumps(summarize(rows), indent=1))
+	return rows
+
+
 def bad_references(gt, threshold=0.3):
 	"""Item ids whose decoded ground truth itself scores worse than threshold."""
 	if not gt:
@@ -275,6 +324,10 @@ def score(setfile, out, device="cuda", batch=16, gt="training/evals/gt"):
 		# speaker's real recording of this sentence
 		row["sim"] = F.cosine_similarity(g, refs[row["id"]][0], dim=-1).item() if row["id"] in refs else None
 		row["sim_target"] = F.cosine_similarity(g, refs[row["id"]][1], dim=-1).item() if row["id"] in refs else None
+	for row in scored:
+		f = out / f"{row['id']:04d}.wav"
+		row["utmos"] = utmos(f, device)
+		row["bw"], row["hf_db"] = bandwidth(f)
 	with open(out / "scored.jsonl", "w") as f:
 		for s in sorted(scored, key=lambda s: s["id"]):
 			f.write(json.dumps(s, ensure_ascii=False) + "\n")
@@ -305,7 +358,11 @@ def summarize(scored, exclude=()):
 		res[code] = dict(rate=rate, ci=[lo, hi], capped=capped, capped_ci=[clo, chi], items=len(rows), metric="CER" if code in CER_LANGUAGES else ("mixed" if code == "all" else "WER"),
 			inserted=sum(r["inserted"] for r in rows) / max(1, sum(r["units"] for r in rows)),
 			over_50=sum(r["errors"] / max(1, r["units"]) > 0.5 for r in rows))
-		for k in ("sim", "sim_target"):
+		bws = [r["bw"] for r in rows if r.get("bw") is not None]
+		if bws:
+			res[code]["bw_median"] = float(np.median(bws))
+			res[code]["hf_db"] = float(np.mean([r["hf_db"] for r in rows if r.get("hf_db") is not None]))
+		for k in ("sim", "sim_target", "utmos"):
 			v = np.array([r[k] for r in rows if r.get(k) is not None])
 			if len(v):
 				boot = np.random.default_rng(0).choice(v, size=(2000, len(v))).mean(1)
@@ -320,7 +377,9 @@ def print_summary(res, name=""):
 			f"capped {r['capped'] * 100:5.1f}% [{r['capped_ci'][0] * 100:5.1f}, {r['capped_ci'][1] * 100:5.1f}]  "
 			f"n={r['items']:3d}  inserted {r['inserted'] * 100:4.1f}%  items >50%: {r['over_50']}"
 			+ (f"  SIM {r['sim'][0]:.3f} [{r['sim'][1]:.3f}, {r['sim'][2]:.3f}]" if "sim" in r else "")
-			+ (f"  SIM-target {r['sim_target'][0]:.3f}" if "sim_target" in r else ""))
+			+ (f"  SIM-target {r['sim_target'][0]:.3f}" if "sim_target" in r else "")
+			+ (f"  UTMOS {r['utmos'][0]:.2f} [{r['utmos'][1]:.2f}, {r['utmos'][2]:.2f}]" if "utmos" in r else "")
+			+ (f"  bandwidth {r['bw_median'] / 1000:.1f} kHz, >12 kHz {r['hf_db']:.0f} dB" if "bw_median" in r else ""))
 
 
 def compare(a, b, n=4000, seed=0, gt=None):
@@ -349,6 +408,10 @@ def compare(a, b, n=4000, seed=0, gt=None):
 			sa, sb = np.array([A[i]["sim"] for i in sel]), np.array([B[i]["sim"] for i in sel])
 			ds = (sb - sa)[idx].mean(1)
 			line += f"  | SIM A {sa.mean():.3f} B {sb.mean():.3f} diff {sb.mean() - sa.mean():+.3f} [{np.percentile(ds, 2.5):+.3f}, {np.percentile(ds, 97.5):+.3f}]"
+		if all(A[i].get("utmos") is not None and B[i].get("utmos") is not None for i in sel):
+			ua, ub = np.array([A[i]["utmos"] for i in sel]), np.array([B[i]["utmos"] for i in sel])
+			du = (ub - ua)[idx].mean(1)
+			line += f"  | UTMOS A {ua.mean():.2f} B {ub.mean():.2f} diff {ub.mean() - ua.mean():+.2f} [{np.percentile(du, 2.5):+.2f}, {np.percentile(du, 97.5):+.2f}]"
 		print(line)
 
 
@@ -378,6 +441,8 @@ if __name__ == "__main__":
 	s.add_argument("--set", type=Path, required=True)
 	s.add_argument("--out", type=Path, required=True)
 	s.add_argument("--gt", type=Path, default=Path("training/evals/gt"))
+	x = sub.add_parser("extras", help="add UTMOS and bandwidth to existing scored runs (no re-transcription)")
+	x.add_argument("runs", type=Path, nargs="+")
 	t = sub.add_parser("report", help="summaries of runs, leaving out bad-reference items")
 	t.add_argument("runs", type=Path, nargs="+")
 	t.add_argument("--gt", type=Path, default=None)
@@ -393,6 +458,10 @@ if __name__ == "__main__":
 			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt, task=args.task, snr=args.snr)
 	elif args.cmd == "score":
 		score(args.set, args.out, gt=args.gt)
+	elif args.cmd == "extras":
+		for d in args.runs:
+			add_extras(d)
+			print(f"{d}: UTMOS and bandwidth added")
 	elif args.cmd == "report":
 		bad = bad_references(args.gt)
 		for d in args.runs:
