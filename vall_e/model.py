@@ -473,5 +473,8 @@ def predict_length(model, text, prompt, lang=0):
 	"""LEN mode (models trained with length=True): the target length in frames for this text and prompt."""
 	from .data import pack
 	b = pack([text], [prompt], [prompt[:1]], [torch.zeros(1, dtype=torch.bool, device=text.device)], modes=[LEN], langs=[lang])
-	log_patches = model.length(model.hidden(b, LEN)[b["len_index"]]).float().item()
+	h = model.hidden(b, LEN)[b["len_index"]]
+	# the head in fp32: under bf16 autocast its output (log patches, about 5) came in steps of 1/32, so lengths in ~3% steps
+	with torch.autocast(h.device.type, enabled=False):
+		log_patches = model.length(h.float()).item()
 	return max(1, round(math.exp(log_patches) * model.patch))
