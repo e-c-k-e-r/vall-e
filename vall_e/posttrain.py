@@ -406,8 +406,8 @@ def dpo(args):
 	def validate():
 		model.eval()
 		ms = []
-		for i in range(0, len(val), args.batch):
-			_, m = loss_of(val[i : i + args.batch], 99_991 + i, grad=False)
+		for i in range(0, len(val), args.micro):
+			_, m = loss_of(val[i : i + args.micro], 99_991 + i, grad=False)
 			ms.append(m)
 		model.train()
 		m = torch.cat(ms)
@@ -419,9 +419,14 @@ def dpo(args):
 	t0 = time.time()
 	while step < args.steps:
 		batch = [train[(step * args.batch + k) % len(train)] for k in range(args.batch)]
-		loss, margin = loss_of(batch, args.seed * 7_919 + step)
 		opt.zero_grad(set_to_none=True)
-		loss.backward()
+		losses, margins = [], []
+		for i in range(0, len(batch), args.micro):  # gradient accumulation: 8 pairs at once ran out of memory (24 GB)
+			part = batch[i : i + args.micro]
+			l, m = loss_of(part, args.seed * 7_919 + step * 101 + i)
+			(l * len(part) / len(batch)).backward()
+			losses.append(l.item() * len(part)); margins.append(m.detach())
+		loss, margin = torch.tensor(sum(losses) / len(batch)), torch.cat(margins)
 		gn = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 		opt.step(); sched.step()
 		step += 1
@@ -485,6 +490,7 @@ def main():
 	g.add_argument("--out", type=Path, required=True)
 	g.add_argument("--steps", type=int, default=600)
 	g.add_argument("--batch", type=int, default=8, help="pairs per step")
+	g.add_argument("--micro", type=int, default=2, help="pairs per forward / backward (gradient accumulation)")
 	g.add_argument("--beta", type=float, default=1000.0, help="scale of the flow-error margin (MSE per value) in the sigmoid")
 	g.add_argument("--lr", type=float, default=2e-6, help="at beta 1000 margins saturate fast: 2 pairs were fit within 20 steps at ~2e-6")
 	g.add_argument("--warmup", type=int, default=50)
