@@ -8,11 +8,12 @@ import shutil
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
 from . import fsq
-from .data import BucketSampler, Collator, StoreUtterances, pack, to_patches
+from .data import FPS, BucketSampler, Collator, StoreUtterances, pack, to_patches
 from .model import V3, flow_loss, flow_sample, metrics, ordinal_loss, snap
 
 
@@ -242,6 +243,10 @@ def main():
 	ap.add_argument("--pad-p", type=float, default=0.0, help="share of targets padded with trailing silence")
 	ap.add_argument("--min-rate", type=float, default=None, help="drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
+	ap.add_argument("--min-s", type=float, default=2.0, help="shortest target, seconds")
+	ap.add_argument("--max-s", type=float, default=12.0, help="longest target, seconds")
+	ap.add_argument("--long-p", type=float, default=0.0, help="share of draws from targets over --long-s (0: as they come)")
+	ap.add_argument("--long-s", type=float, default=12.0)
 	ap.add_argument("--speaker-alpha", type=float, default=0.0, help="draw items with weight n_speaker ** -alpha (0: uniform over utterances)")
 	ap.add_argument("--store", type=Path, required=True, help="the data store (store.py)")
 	ap.add_argument("--groups", nargs="*", default=None, help="dataset groups to use, e.g. LibriTTS-R Emilia/EN")
@@ -256,7 +261,7 @@ def main():
 	device = "cuda"
 
 	train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages,
-		prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
+		min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
 		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p)
 	if (args.ns_p or args.sr_p) and train_ds.pairs is None:
 		raise SystemExit("--ns-p / --sr-p need <store>/noisy-targets (python -m vall_e.noisy bake-targets)")
@@ -315,6 +320,13 @@ def main():
 	else:
 		# similar-length batches (about 90% real positions instead of about 55% with random batches)
 		weights = train_ds.speaker_weights(args.speaker_alpha) if args.speaker_alpha else None
+		if args.long_p:
+			# utterances over --long-s drawn as --long-p of all draws (they're 7% of the store over 12 s)
+			long = np.asarray(train_ds.frames) > args.long_s * FPS
+			w = np.ones(len(long)) if weights is None else np.asarray(weights, dtype=np.float64)
+			ok = (np.asarray(train_ds.frames) >= train_ds.min_f) & (np.asarray(train_ds.frames) <= train_ds.max_f)
+			wl, ws = w[long & ok].sum(), w[~long & ok].sum()
+			weights = np.where(long, w * args.long_p / wl, w * (1 - args.long_p) / ws)
 		dl = torch.utils.data.DataLoader(train_ds, batch_sampler=BucketSampler(train_ds, args.batch, args.steps - step, args.patch,
 			seed=step, weights=weights, max_tokens=args.max_tokens or None, extra=math.ceil(prompt_f[1] / args.patch) + 1), **loader_kw)
 	log = open(args.out / "log.jsonl", "a")

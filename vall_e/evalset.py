@@ -422,6 +422,10 @@ if __name__ == "__main__":
 	b.add_argument("--store", type=Path, required=True)
 	b.add_argument("--out", type=Path, required=True)
 	b.add_argument("--groups", nargs="*", default=None)
+	b.add_argument("--min-s", type=float, default=2.0)
+	b.add_argument("--max-s", type=float, default=12.0)
+	b.add_argument("--scale", type=float, default=1.0, help="scale every stratum's item count (e.g. 0.5 for a smaller long-form set)")
+	b.add_argument("--seed", type=int, default=0)
 	r = sub.add_parser("run")
 	r.add_argument("--set", type=Path, required=True)
 	r.add_argument("--ckpt", type=Path, required=True, help="a checkpoint, or `gt` for the decoded ground truth")
@@ -452,7 +456,8 @@ if __name__ == "__main__":
 	c.add_argument("--gt", type=Path, default=None, help="a `run --ckpt gt` directory: leave out items with bad references")
 	args = ap.parse_args()
 	if args.cmd == "build":
-		build(args.store, args.out, groups=args.groups)
+		strata = {l: {g: max(1, round(n * args.scale)) for g, n in gs.items()} for l, gs in STRATA.items()}
+		build(args.store, args.out, strata=strata, groups=args.groups, seed=args.seed, min_s=args.min_s, max_s=args.max_s)
 	elif args.cmd == "run":
 		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed,
 			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt, task=args.task, snr=args.snr)
