@@ -282,6 +282,45 @@ def add_extras(out, device="cuda"):
 	return rows
 
 
+def prosody_refs(setfile, gt, device="cuda"):
+	"""Per item: the prompt clip's summary and articulation rate (units of its transcript per second of speech), and the
+	ground truth's features and summary. Computed once, kept in the ground-truth run (prosody_ref.pt)."""
+	from .emb import prosody as P
+	gt = Path(gt)
+	if (gt / "prosody_ref.pt").exists():
+		return torch.load(gt / "prosody_ref.pt", weights_only=False)
+	from .emb.asr import transcribe
+	es = json.loads(Path(setfile).read_text())
+	refs = {}
+	for it in es["items"]:
+		pf = gt / f"{it['id']:04d}_prompt.wav"
+		ps = P.summary(P.features(pf, device))
+		ps["rate"] = len(units(transcribe(pf, language=it["language"], device=device), it["language"])) / max(ps["speech"], 0.1)
+		gf = P.features(gt / f"{it['id']:04d}.wav", device)
+		refs[it["id"]] = dict(prompt=ps, gt=dict(feat=gf, summary=P.summary(gf)))
+	torch.save(refs, gt / "prosody_ref.pt")
+	return refs
+
+
+def add_prosody(setfile, out, gt, device="cuda"):
+	"""Adds prosody metrics (emb/prosody.py) to a scored run's rows ("pros") and refreshes its scores.json. The
+	ground-truth run gets the prompt-based ones only (its own reading is the reference for the rest): they are the
+	ceiling, the speaker's own variation between recordings."""
+	from .emb import prosody as P
+	out, gt = Path(out), Path(gt)
+	refs = prosody_refs(setfile, gt, device)
+	is_gt = out.resolve() == gt.resolve()
+	rows = [json.loads(l) for l in (out / "scored.jsonl").read_text().splitlines()]
+	for r in rows:
+		ref = refs[r["id"]]
+		r["pros"] = P.compare_to_refs(P.features(out / f"{r['id']:04d}.wav", device), r["units"], ref["prompt"], None if is_gt else ref["gt"])
+	with open(out / "scored.jsonl", "w") as fh:
+		for r in rows:
+			fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+	(out / "scores.json").write_text(json.dumps(summarize(rows), indent=1))
+	return rows
+
+
 def bad_references(gt, threshold=0.3):
 	"""Item ids whose decoded ground truth itself scores worse than threshold."""
 	if not gt:
@@ -362,6 +401,13 @@ def summarize(scored, exclude=()):
 		if bws:
 			res[code]["bw_median"] = float(np.median(bws))
 			res[code]["hf_db"] = float(np.mean([r["hf_db"] for r in rows if r.get("hf_db") is not None]))
+		pros = {}
+		for k in sorted({k for r in rows for k in r.get("pros", {})}):
+			v = [r["pros"][k] for r in rows if r.get("pros", {}).get(k) is not None]
+			if v:
+				pros[k] = float(np.mean(v))
+		if pros:
+			res[code]["pros"] = pros
 		for k in ("sim", "sim_target", "utmos"):
 			v = np.array([r[k] for r in rows if r.get(k) is not None])
 			if len(v):
@@ -380,6 +426,19 @@ def print_summary(res, name=""):
 			+ (f"  SIM-target {r['sim_target'][0]:.3f}" if "sim_target" in r else "")
 			+ (f"  UTMOS {r['utmos'][0]:.2f} [{r['utmos'][1]:.2f}, {r['utmos'][2]:.2f}]" if "utmos" in r else "")
 			+ (f"  bandwidth {r['bw_median'] / 1000:.1f} kHz, >12 kHz {r['hf_db']:.0f} dB" if "bw_median" in r else ""))
+		if "pros" in r:
+			print("        prosody " + _pros_line(r["pros"]))
+
+
+PROS_LABELS = dict(register_diff="register {:.2f} st", range_diff="range {:.2f} st", rate_vs_prompt="rate {:.3f}",
+	dur_vs_gt="duration {:.3f}", pause_vs_gt="pauses {:.3f}", f0_corr="F0 r {:.3f}", f0_rmse="F0 {:.0f} c", energy_corr="energy r {:.3f}")
+
+
+def _pros_line(p):
+	"""register / range: |difference| from the prompt in semitones; rate: |log2 ratio| of articulation rate to the
+	prompt's; duration: |log2 ratio| to the ground truth's; pauses: |difference| in pause share from the ground truth;
+	F0 r / F0 c / energy r: aligned contour agreement with the ground truth (correlation, RMS difference in cents)."""
+	return "  ".join(PROS_LABELS[k].format(p[k]) for k in PROS_LABELS if k in p)
 
 
 def compare(a, b, n=4000, seed=0, gt=None):
@@ -413,6 +472,18 @@ def compare(a, b, n=4000, seed=0, gt=None):
 			du = (ub - ua)[idx].mean(1)
 			line += f"  | UTMOS A {ua.mean():.2f} B {ub.mean():.2f} diff {ub.mean() - ua.mean():+.2f} [{np.percentile(du, 2.5):+.2f}, {np.percentile(du, 97.5):+.2f}]"
 		print(line)
+		from .emb.prosody import HIGHER
+		parts = []
+		for k in PROS_LABELS:
+			ok = [i for i in sel if A[i].get("pros", {}).get(k) is not None and B[i].get("pros", {}).get(k) is not None]
+			if len(ok) < 5:
+				continue
+			pa, pb = np.array([A[i]["pros"][k] for i in ok]), np.array([B[i]["pros"][k] for i in ok])
+			dd = (pb - pa)[rng.integers(len(ok), size=(n, len(ok)))].mean(1)
+			better = np.mean(dd > 0) if HIGHER[k] else np.mean(dd < 0)
+			parts.append(f"{k} {pa.mean():.3f}->{pb.mean():.3f} P(B better) {better:.2f}")
+		if parts:
+			print("        prosody: " + "  ".join(parts))
 
 
 if __name__ == "__main__":
@@ -445,6 +516,10 @@ if __name__ == "__main__":
 	s.add_argument("--set", type=Path, required=True)
 	s.add_argument("--out", type=Path, required=True)
 	s.add_argument("--gt", type=Path, default=Path("training/evals/gt"))
+	pr = sub.add_parser("prosody", help="add prosody metrics to scored runs (emb/prosody.py)")
+	pr.add_argument("runs", nargs="+", type=Path)
+	pr.add_argument("--set", type=Path, default=Path("evalsets/v3-eval.json"))
+	pr.add_argument("--gt", type=Path, default=Path("training/evals/gt"))
 	x = sub.add_parser("extras", help="add UTMOS and bandwidth to existing scored runs (no re-transcription)")
 	x.add_argument("runs", type=Path, nargs="+")
 	t = sub.add_parser("report", help="summaries of runs, leaving out bad-reference items")
@@ -463,6 +538,10 @@ if __name__ == "__main__":
 			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt, task=args.task, snr=args.snr)
 	elif args.cmd == "score":
 		score(args.set, args.out, gt=args.gt)
+	elif args.cmd == "prosody":
+		for d in args.runs:
+			add_prosody(args.set, d, args.gt)
+			print(f"{d}: prosody added")
 	elif args.cmd == "extras":
 		for d in args.runs:
 			add_extras(d)
