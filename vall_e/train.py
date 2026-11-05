@@ -66,6 +66,31 @@ def step_loss(model, b, smoothing, predict=True, stop_weight=0.5, null_p=0.1, st
 	return loss, pred, tgt
 
 
+ROW_KEYS = ("text_ids", "digits", "kind", "masked", "lang", "mode", "prefix_len")
+
+
+def distill_loss(model, teacher, b, cfg, cfg_prompt, repeats=4):
+	"""Guidance distillation: on the full-condition rows, the student's flow velocity matches the teacher's guided one,
+	v_null + cfg (v_cond - v_null) + cfg_prompt (v_cond - v_noprompt), at the same noisy values and times, so sampling
+	without guidance (one backbone pass per step instead of three) gives what guided sampling gave. b: a Collator(distill=True)
+	batch, [cond rows | null rows | promptless rows]."""
+	B = int(b["n_cond"])
+	n1 = int((b["kind"][:B] == 3).sum())  # target positions of the cond rows: the first n1 of tgt_index
+	m1 = b["tgt_masked"][:n1]
+	with torch.no_grad():
+		hc, hn, hp = teacher.hidden(b)[b["tgt_index"]][b["tgt_masked"]].chunk(3)
+	hs = model.hidden({k: b[k][:B] for k in ROW_KEYS})[b["tgt_index"][:n1]][m1]
+	x1 = fsq.digits_to_values(b["tgt"].long()[:n1][m1]).repeat(repeats, 1)
+	x0 = torch.randn_like(x1)
+	t = torch.sigmoid(torch.randn(len(x1), device=x1.device))
+	xt = ((1 - t[:, None]) * x0 + t[:, None] * x1).to(hs.dtype)
+	with torch.no_grad():
+		R = lambda h: h.repeat(repeats, 1)
+		vc, vn, vp = teacher.flow(torch.cat([xt] * 3), torch.cat([t] * 3), torch.cat([R(hc), R(hn), R(hp)])).float().chunk(3)
+		target = vn + cfg * (vc - vn) + cfg_prompt * (vc - vp)
+	return F.mse_loss(model.flow(xt, t, R(hs)).float(), target)
+
+
 def ctc_loss(model, b, h):
 	"""CTC of each NAR row's phonemes over its target positions (all of them, masked or not), or None if no row has
 	both text and a target."""
@@ -243,6 +268,9 @@ def main():
 	ap.add_argument("--pad-p", type=float, default=0.0, help="share of targets padded with trailing silence")
 	ap.add_argument("--min-rate", type=float, default=None, help="drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
+	ap.add_argument("--distill-from", type=Path, default=None, help="guidance distillation from this teacher (see distill_loss)")
+	ap.add_argument("--distill-cfg", type=float, default=6.0)
+	ap.add_argument("--distill-cfg-prompt", type=float, default=2.0)
 	ap.add_argument("--min-s", type=float, default=2.0, help="shortest target, seconds")
 	ap.add_argument("--max-s", type=float, default=12.0, help="longest target, seconds")
 	ap.add_argument("--long-p", type=float, default=0.0, help="share of draws from targets over --long-s (0: as they come)")
@@ -311,8 +339,19 @@ def main():
 		model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); step = st["step"]
 		print(f"resumed at step {step}")
 
+	teacher = None
+	if args.distill_from:
+		from .export import load_checkpoint
+		tstate, tconfig, _ = load_checkpoint(args.distill_from)
+		teacher = V3(**tconfig).eval()
+		teacher.load_state_dict(tstate)
+		teacher.to(device)
+		for p in teacher.parameters():
+			p.requires_grad_(False)
+		args.text_drop = args.prompt_drop = args.cond_drop = 0.0  # the collator adds the unconditional rows itself
+		print(f"distilling guidance (cfg {args.distill_cfg}, speaker {args.distill_cfg_prompt}) from {args.distill_from}")
 	collator = Collator(args.patch, prompt_f, text_drop=args.text_drop, prompt_drop=args.prompt_drop, cond_drop=args.cond_drop, span_p=args.span_p, mask_ratio=args.mask_ratio,
-		ar_frac=args.ar_frac, len_frac=args.len_frac, lang_drop=args.lang_drop)
+		ar_frac=args.ar_frac, len_frac=args.len_frac, lang_drop=args.lang_drop, distill=teacher is not None)
 	loader_kw = dict(collate_fn=collator, num_workers=args.workers, persistent_workers=True, prefetch_factor=4, pin_memory=True)
 	if args.subset:
 		sampler = torch.utils.data.RandomSampler(train_ds, replacement=True, num_samples=(args.steps - step) * args.batch)
@@ -340,8 +379,11 @@ def main():
 		with torch.autocast("cuda", dtype=torch.bfloat16):
 			b = {k: v.to(device, non_blocking=True) for k, v in b.items()}
 			stats = {}
-			loss, pred, tgt = step_loss(model, b, args.smoothing, predict=False, stop_weight=args.stop_weight, stats=stats,
-				len_weight=args.len_weight * min(1.0, step / max(1, args.len_ramp)), stop_pos_cap=args.stop_pos_cap, ctc_weight=args.ctc_weight)
+			if teacher is not None:
+				loss, pred, tgt = distill_loss(model, teacher, b, args.distill_cfg, args.distill_cfg_prompt), None, None
+			else:
+				loss, pred, tgt = step_loss(model, b, args.smoothing, predict=False, stop_weight=args.stop_weight, stats=stats,
+					len_weight=args.len_weight * min(1.0, step / max(1, args.len_ramp)), stop_pos_cap=args.stop_pos_cap, ctc_weight=args.ctc_weight)
 		opt.zero_grad(set_to_none=True)
 		loss.backward()
 		gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

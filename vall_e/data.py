@@ -99,7 +99,7 @@ class Collator:
 	mask_ratio: None draws cos(u * pi / 2) per sample (covers every ratio the demasking loop visits); a float fixes it
 	(AutoNAT, arXiv 2406.05478, found a fixed 0.8 on par with or slightly better than the cosine draw for images)."""
 	def __init__(self, patch, prompt_f, text_drop=0.1, prompt_drop=0.1, mask_ratio=0.8, ar_frac=0.0, len_frac=0.0, lang_drop=0.2,
-			cond_drop=0.0, span_p=0.0):
+			cond_drop=0.0, span_p=0.0, distill=False):
 		"""ar_frac / len_frac: shares of samples trained in AR and LEN mode (the rest NAR-demask). cond_drop: share with
 		both text and prompt dropped (CFG's null); the rest drop each independently with text_drop / prompt_drop.
 		span_p: share of NAR-demask targets masked as one contiguous span (a middle stretch, as in editing, or a suffix,
@@ -108,6 +108,9 @@ class Collator:
 		self.patch, self.prompt_f, self.mask_ratio, self.ar_frac, self.len_frac = patch, prompt_f, mask_ratio, ar_frac, len_frac
 		self.text_drop, self.prompt_drop, self.lang_drop, self.cond_drop = text_drop, prompt_drop, lang_drop, cond_drop
 		self.span_p = span_p
+		# guidance distillation (train.py --distill-from): every row is followed, after the batch, by its unconditional
+		# copy and its promptless copy (same target and mask), the passes the teacher's guided velocity needs
+		self.distill = distill
 
 	def _mask(self, La, rng, span):
 		if span:
@@ -146,6 +149,14 @@ class Collator:
 			u = rng.random()
 			modes.append(1 if u < self.ar_frac else 2 if u < self.ar_frac + self.len_frac else 0)
 			langs.append(0 if rng.random() < self.lang_drop else it.get("lang", 0))
+		if self.distill:
+			B = len(text)
+			text = text + [t[:0] for t in text] + text
+			prompt = prompt + [p[:0] for p in prompt] * 2
+			target, masked, modes, langs = target * 3, masked * 3, modes * 3, langs * 3
+			b = pack(text, prompt, target, masked, modes, langs=langs)
+			b["n_cond"] = torch.tensor(B)
+			return b
 		return pack(text, prompt, target, masked, modes, langs=langs)
 
 
