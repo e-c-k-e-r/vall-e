@@ -137,18 +137,34 @@ class FlowHead(nn.Module):
 		return self.out(self.final_norm(x) * (1 + scale) + shift)
 
 
+class ConvNeXtBlock(nn.Module):
+	"""Depthwise conv (kernel 7) + LayerNorm + MLP, residual, over a [B, L, d] sequence (F5-TTS's text pre-net blocks)."""
+	def __init__(self, d, mult=2):
+		super().__init__()
+		self.dw = nn.Conv1d(d, d, 7, padding=3, groups=d)
+		self.norm = nn.LayerNorm(d)
+		self.mlp = nn.Sequential(nn.Linear(d, d * mult), nn.GELU(), nn.Linear(d * mult, d))
+
+	def forward(self, x):
+		return x + self.mlp(self.norm(self.dw(x.transpose(1, 2)).transpose(1, 2)))
+
+
 class V3(nn.Module):
 	def __init__(self, n_text, d_model=512, layers=12, heads=8, patch=2, rot_frac=1.0, gated=True, qk_norm=True, rope_theta=10000.0,
-			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False, ctc=False, n_modes=3):
+			head="classifier", flow_width=512, flow_depth=4, ar=False, n_lang=0, length=False, ctc=False, n_modes=3, text_prenet=0):
 		super().__init__()
 		self.config = dict(n_text=n_text, d_model=d_model, layers=layers, heads=heads, patch=patch, rot_frac=rot_frac,
 			gated=gated, qk_norm=qk_norm, rope_theta=rope_theta, head=head, flow_width=flow_width, flow_depth=flow_depth, ar=ar,
 			n_lang=n_lang, length=length, ctc=ctc, n_modes=n_modes)
+		if text_prenet:
+			self.config["text_prenet"] = text_prenet
 		self.ar = ar
 		self.head_type = head
 		self.patch = patch
 		self.values = patch * fsq.SCALARS
 		self.text = nn.Embedding(n_text, d_model)
+		# optional ConvNeXt blocks over the text embeddings before the transformer (F5-TTS credits them with alignment)
+		self.text_prenet = nn.ModuleList(ConvNeXtBlock(d_model) for _ in range(text_prenet)) if text_prenet else None
 		self.audio_in = nn.Linear(self.values, d_model)
 		self.mask_emb = nn.Parameter(torch.randn(d_model) * 0.02)
 		self.segment = nn.Embedding(3, d_model)
@@ -204,7 +220,17 @@ class V3(nn.Module):
 		lands in it)."""
 		kind = b["kind"]
 		dtype = self.audio_in.weight.dtype
-		x = torch.where((kind == 1)[..., None], self.text(b["text_ids"]).to(dtype), self.audio_in(fsq.digits_to_values(b["digits"]).to(dtype)))
+		t = self.text(b["text_ids"]).to(dtype)
+		if self.text_prenet is not None:
+			# text is each row's prefix: the blocks run over the longest one, with everything else zeroed between blocks
+			Lt = int((kind == 1).sum(1).max())
+			if Lt:
+				is_text = (kind[:, :Lt] == 1)[..., None].to(dtype)
+				h = t[:, :Lt] * is_text
+				for blk in self.text_prenet:
+					h = blk(h) * is_text
+				t = torch.cat([h, t[:, Lt:]], 1)
+		x = torch.where((kind == 1)[..., None], t, self.audio_in(fsq.digits_to_values(b["digits"]).to(dtype)))
 		x = torch.where(b["masked"][..., None], self.mask_emb.to(x.dtype), x)
 		if self.ar:
 			x = torch.where((kind == 4)[..., None], self.bos.to(x.dtype), x)

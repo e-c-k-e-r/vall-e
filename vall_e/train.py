@@ -91,6 +91,23 @@ def distill_loss(model, teacher, b, cfg, cfg_prompt, repeats=4):
 	return F.mse_loss(model.flow(xt, t, R(hs)).float(), target)
 
 
+class Repa:
+	"""REPA (arXiv 2410.06940; for TTS, AG-REPA 2603.01006): a shallow block's output at the target positions, through
+	a small training-only projector, is pulled (cosine) toward frozen speech-model features of the target audio
+	(vall_e/repa.py bakes them for a fixed subset; the batch carries them as repa_tgt, in tgt_index order). The early
+	layers then carry the speech model's phonetic structure, meant to speed up and firm up learning the alignment."""
+	def __init__(self, model, dim, layer=3, device="cuda"):
+		self.tap = {}
+		model.blocks[layer].register_forward_hook(lambda m, i, o: self.tap.__setitem__("h", o))
+		d = model.config["d_model"]
+		self.proj = torch.nn.Sequential(torch.nn.Linear(d, 2048), torch.nn.SiLU(), torch.nn.Linear(2048, 2048), torch.nn.SiLU(),
+			torch.nn.Linear(2048, dim)).to(device)
+
+	def loss(self, b):
+		z = self.tap["h"].flatten(0, 1)[b["tgt_index"]].float()
+		return 1 - F.cosine_similarity(self.proj(z), b["repa_tgt"].float(), dim=-1).mean()
+
+
 def ctc_loss(model, b, h):
 	"""CTC of each NAR row's phonemes over its target positions (all of them, masked or not), or None if no row has
 	both text and a target."""
@@ -268,6 +285,11 @@ def main():
 	ap.add_argument("--pad-p", type=float, default=0.0, help="share of targets padded with trailing silence")
 	ap.add_argument("--min-rate", type=float, default=None, help="drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
+	ap.add_argument("--repa-weight", type=float, default=0.0, help="REPA alignment loss weight (see Repa); > 0 enables it")
+	ap.add_argument("--repa-layer", type=int, default=3, help="the block whose output is aligned")
+	ap.add_argument("--repa-feats", type=Path, default=None, help="baked REPA targets (vall_e/repa.py bake); training uses only their utterances")
+	ap.add_argument("--items-from", type=Path, default=None, help="train only on these store utterances (an ids.npy, e.g. a REPA bake's, for paired ablations)")
+	ap.add_argument("--text-prenet", type=int, default=0, help="ConvNeXt blocks over the text embeddings")
 	ap.add_argument("--distill-from", type=Path, default=None, help="guidance distillation from this teacher (see distill_loss)")
 	ap.add_argument("--distill-cfg", type=float, default=6.0)
 	ap.add_argument("--distill-cfg-prompt", type=float, default=2.0)
@@ -290,7 +312,8 @@ def main():
 
 	train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages,
 		min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
-		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p)
+		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p,
+		only=np.load(args.items_from or args.repa_feats / "ids.npy") if (args.items_from or args.repa_feats) else None, repa=args.repa_feats)
 	if (args.ns_p or args.sr_p) and train_ds.pairs is None:
 		raise SystemExit("--ns-p / --sr-p need <store>/noisy-targets (python -m vall_e.noisy bake-targets)")
 	val_ds = StoreUtterances(train_ds.store, "val", seed=1, groups=args.groups, languages=args.languages)
@@ -308,7 +331,7 @@ def main():
 	model = V3(n_text, args.d_model, args.layers, args.heads, args.patch, args.rot_frac,
 		gated=not args.no_gate, qk_norm=not args.no_qk_norm, head=args.head, ar=args.ar_frac > 0,
 		n_lang=train_ds.n_lang if args.accent else 0, length=args.len_frac > 0, ctc=args.ctc_weight > 0,
-		n_modes=args.n_modes or (5 if (args.ns_p or args.sr_p) else 3)).to(device)
+		n_modes=args.n_modes or (5 if (args.ns_p or args.sr_p) else 3), text_prenet=args.text_prenet).to(device)
 	if args.init_from and not (args.out / "last.pt").exists():
 		init = torch.load(args.init_from, map_location=device, weights_only=False)["model"]
 		own = model.state_dict()
@@ -331,12 +354,19 @@ def main():
 	params = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
 	decay = [p for n, p in params if p.ndim >= 2 and "text" not in n]
 	no_decay = [p for n, p in params if not (p.ndim >= 2 and "text" not in n)]
-	opt = torch.optim.AdamW([dict(params=decay, weight_decay=0.1), dict(params=no_decay, weight_decay=0.0)],
-		lr=args.lr, betas=(0.9, 0.95), fused=True)
+	groups = [dict(params=decay, weight_decay=0.1), dict(params=no_decay, weight_decay=0.0)]
+	repa = None
+	if args.repa_weight:
+		repa = Repa(model, train_ds.repa["feats"].shape[1], args.repa_layer, device)
+		groups.append(dict(params=list(repa.proj.parameters()), weight_decay=0.0))
+		print(f"REPA: block {args.repa_layer} -> {args.repa_feats}, weight {args.repa_weight}")
+	opt = torch.optim.AdamW(groups, lr=args.lr, betas=(0.9, 0.95), fused=True)
 	step = 0
 	if (args.out / "last.pt").exists():
 		st = torch.load(args.out / "last.pt", map_location=device, weights_only=False)
 		model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"]); step = st["step"]
+		if repa is not None and "repa" in st:
+			repa.proj.load_state_dict(st["repa"])
 		print(f"resumed at step {step}")
 
 	teacher = None
@@ -384,6 +414,10 @@ def main():
 			else:
 				loss, pred, tgt = step_loss(model, b, args.smoothing, predict=False, stop_weight=args.stop_weight, stats=stats,
 					len_weight=args.len_weight * min(1.0, step / max(1, args.len_ramp)), stop_pos_cap=args.stop_pos_cap, ctc_weight=args.ctc_weight)
+				if repa is not None:
+					rl = repa.loss(b)
+					loss = loss + args.repa_weight * rl
+					stats["repa_loss"] = rl.item()
 		opt.zero_grad(set_to_none=True)
 		loss.backward()
 		gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -401,7 +435,8 @@ def main():
 			res = evaluate(model, val_items, args.patch, device, args.smoothing) | dict(step=step)
 			log.write(json.dumps(res) + "\n"); log.flush()
 			print("[eval] " + " ".join(f"{k} {v:.4g}" for k, v in res.items()), flush=True)
-			torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), step=step, config=model.config, vocab=vocab, **source), args.out / "last.pt.tmp")
+			torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), step=step, config=model.config, vocab=vocab, **source,
+				**({"repa": repa.proj.state_dict()} if repa is not None else {})), args.out / "last.pt.tmp")
 			(args.out / "last.pt.tmp").replace(args.out / "last.pt")
 			if args.keep_every and step % args.keep_every == 0:
 				shutil.copyfile(args.out / "last.pt", args.out / f"step-{step}.pt")

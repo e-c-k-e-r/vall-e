@@ -149,6 +149,10 @@ class Collator:
 			u = rng.random()
 			modes.append(1 if u < self.ar_frac else 2 if u < self.ar_frac + self.len_frac else 0)
 			langs.append(0 if rng.random() < self.lang_drop else it.get("lang", 0))
+		if all("repa" in it for it in items) and not self.distill:
+			b = pack(text, prompt, target, masked, modes, langs=langs)
+			b["repa_tgt"] = torch.cat([it["repa"][: len(a)] for it, a in zip(items, target)])
+			return b
 		if self.distill:
 			B = len(text)
 			text = text + [t[:0] for t in text] + text
@@ -220,7 +224,8 @@ class StoreUtterances(torch.utils.data.Dataset):
 	random one of the speaker's; with noisy_p, the speaker's noised prompt instead (if the store has one, from another
 	utterance). lang is the store's language id + 1 (0 is unknown)."""
 	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None,
-			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5), ns_p=0.0, sr_p=0.0):
+			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5), ns_p=0.0, sr_p=0.0,
+			only=None, repa=None):
 		"""min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
 		segments often run past their transcript into the next sentence (ground-truth WER 10-13%, 2.5% for LibriVox
 		at >= 13 / s), which taught the model to babble past the text.
@@ -248,7 +253,16 @@ class StoreUtterances(torch.utils.data.Dataset):
 			if min_rate_groups:
 				slow &= np.isin(st.group, [i for i, g in enumerate(st.m["groups"]) if any(g == x or g.startswith(x + "/") for x in min_rate_groups)])
 			ok &= ~slow
+		if only is not None:  # a fixed subset of utterances (store indices)
+			keep = np.zeros(len(ok), dtype=bool); keep[np.asarray(only)] = True
+			ok &= keep
 		self.items = np.nonzero(ok)[0]
+		# baked REPA targets (vall_e/repa.py): each item carries its utterance's features as "repa"
+		self.repa = None
+		if repa is not None:
+			from pathlib import Path
+			d = Path(repa)
+			self.repa = dict(ids=np.load(d / "ids.npy"), off=np.load(d / "offsets.npy"), feats=np.load(d / "feats.npy", mmap_mode="r"))
 		self.frames = st.frames[self.items].tolist()
 		phon_len = np.concatenate([np.diff(np.asarray(sh["phoneme_offsets"])) for sh in st.shards])
 		self.text_len = phon_len[self.items].tolist()
@@ -349,5 +363,11 @@ class StoreUtterances(torch.utils.data.Dataset):
 			lead = int(n * 0.2) if rng.random() < 0.5 else 0
 			target = torch.cat([self.silence.expand(lead, -1), target, self.silence.expand(n, -1)])
 		text = torch.from_numpy(st.phonemes(u).astype(np.int64) + 1)
-		return dict(text=text, prompt=prompt, target=target, speaker=st.speaker_key(u), path=f"{st.root}#{u}", text_raw=st.text(u),
+		it = dict(text=text, prompt=prompt, target=target, speaker=st.speaker_key(u), path=f"{st.root}#{u}", text_raw=st.text(u),
 			lang=int(st.language[u]) + 1)
+		if self.repa is not None:
+			R = self.repa
+			k = int(np.searchsorted(R["ids"], u))
+			if k < len(R["ids"]) and R["ids"][k] == u:
+				it["repa"] = torch.from_numpy(np.asarray(R["feats"][R["off"][k] : R["off"][k + 1]], dtype=np.float16))
+		return it
