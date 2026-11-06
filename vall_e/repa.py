@@ -54,19 +54,31 @@ def bake(store, out, count, groups=None, min_rate=13, min_rate_groups=("LibriVox
 			res.append(F.interpolate(hs[j, :n].t()[None], size=La, mode="linear", align_corners=False)[0].t())
 		return res
 
-	# PCA from the first 2000 utterances
-	sample = torch.cat([f for i in range(0, min(2000, len(ids)), chunk) for f in feats_of(ids[i : i + chunk])])
-	mean = sample.mean(0)
-	_, _, V = torch.linalg.svd(sample - mean, full_matrices=False)
-	W = V[:dim].t().contiguous()  # [768, dim]
-	scale = ((sample - mean) @ W).std(0).mean()
-	np.savez(out / "pca.npz", mean=mean.cpu().numpy(), W=W.cpu().numpy(), scale=float(scale))
-	print(f"PCA: {dim} of {sample.shape[1]} dims keep {float(((sample - mean) @ W).var(0).sum() / (sample - mean).var(0).sum()):.1%} of the variance", flush=True)
-	mm = np.lib.format.open_memmap(out / "feats.npy", mode="w+", dtype=np.float16, shape=(int(offsets[-1]), dim))
-	for i in range(0, len(ids), chunk):
+	# resumable: the PCA and a progress marker (utterances written) survive an interrupted bake
+	start = int((out / "progress.txt").read_text()) if (out / "progress.txt").exists() and (out / "pca.npz").exists() and (out / "feats.npy").exists() else 0
+	if start:
+		z = np.load(out / "pca.npz")
+		mean, W, scale = (torch.from_numpy(z["mean"]).to(device), torch.from_numpy(z["W"]).to(device), float(z["scale"]))
+		mm = np.load(out / "feats.npy", mmap_mode="r+")
+		assert mm.shape == (int(offsets[-1]), dim), "feats.npy doesn't match this bake's subset"
+		print(f"resuming at {start}/{len(ids)}", flush=True)
+	else:
+		# PCA from the first 2000 utterances
+		sample = torch.cat([f for i in range(0, min(2000, len(ids)), chunk) for f in feats_of(ids[i : i + chunk])])
+		mean = sample.mean(0)
+		_, _, V = torch.linalg.svd(sample - mean, full_matrices=False)
+		W = V[:dim].t().contiguous()  # [768, dim]
+		scale = ((sample - mean) @ W).std(0).mean()
+		np.savez(out / "pca.npz", mean=mean.cpu().numpy(), W=W.cpu().numpy(), scale=float(scale))
+		print(f"PCA: {dim} of {sample.shape[1]} dims keep {float(((sample - mean) @ W).var(0).sum() / (sample - mean).var(0).sum()):.1%} of the variance", flush=True)
+		mm = np.lib.format.open_memmap(out / "feats.npy", mode="w+", dtype=np.float16, shape=(int(offsets[-1]), dim))
+	for i in range(start, len(ids), chunk):
 		for j, f in enumerate(feats_of(ids[i : i + chunk])):
 			k = i + j
 			mm[offsets[k] : offsets[k + 1]] = (((f - mean) @ W) / scale).cpu().numpy().astype(np.float16)
+		if (i + chunk) % 2000 < chunk:
+			mm.flush()
+			(out / "progress.txt").write_text(str(i + chunk))
 		if i % 10000 == 0:
 			print(f"{i}/{len(ids)}", flush=True)
 	mm.flush()
