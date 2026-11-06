@@ -10,7 +10,7 @@ PY=${VALL_E_EVAL_PY:-venv/bin/python}
 E=training/evals; R=${REPA_FEATS:-training/repa-mhubert}
 [ -f $R/done ] || $PY -m vall_e.repa bake --store $S "${GROUPS_ARGS[@]}" --out $R --count ${REPA_COUNT:-60000} >> $R.log 2>&1
 BASE=(--store $S "${GROUPS_ARGS[@]}" --min-rate 13 --min-rate-groups LibriVox Audiobooks --head flow --steps 20000 --batch 32
-	--workers 6 --eval-every 2000 --val-size 128 --mask-ratio cos --cond-drop 0.1 --text-drop 0 --prompt-drop 0 --max-tokens 32000 --compile)
+	--workers 6 --eval-every 2000 --val-size 128 --mask-ratio cos --cond-drop 0.1 --text-drop 0 --prompt-drop 0 --max-tokens 32000)
 arm() {  # arm <name> <train.py args...>
 	local name=$1; shift
 	local out=training/v3-align-$name
@@ -24,7 +24,8 @@ arm() {  # arm <name> <train.py args...>
 	$PY -m vall_e.evalset report $E/align-$name --gt $E/gt 2>&1 | grep "  all\|  en " | cut -c1-200
 	[ $name != base ] && $PY -m vall_e.evalset compare $E/align-base $E/align-$name --gt $E/gt 2>&1 | grep "  all\|  en "
 }
-arm base --items-from $R/ids.npy
-arm repa --repa-weight 0.5 --repa-feats $R
+arm base --items-from $R/ids.npy --compile
+arm repa --repa-weight 0.5 --repa-feats $R --compile
+# uncompiled: with the pre-net's dynamic-length slice ahead of them, the compiled blocks' backward failed on every step
 arm prenet --text-prenet 4 --items-from $R/ids.npy
 echo "$(date) alignment ablation done"
