@@ -111,6 +111,7 @@ def main():
 	ap.add_argument("--cfg", type=float, default=6.0)
 	ap.add_argument("--cfg-prompt", type=float, default=2.0)
 	ap.add_argument("--seed", type=int, default=0)
+	ap.add_argument("--fp32", action="store_true", help="compute in FP32 (the export's FP16 weights, upcast) instead of bf16 autocast: closer to an engine's FP16 GEMMs with FP32 accumulation")
 	args = ap.parse_args()
 	from safetensors.torch import save_file
 	from .model import demask_flow
@@ -120,14 +121,15 @@ def main():
 	args.out.mkdir(parents=True, exist_ok=True)
 	prompt = tts.encode_prompt(args.prompt)
 	meta = dict(ckpt=str(args.ckpt), prompt=args.prompt, cfg=args.cfg, cfg_prompt=args.cfg_prompt, steps=25, flow_steps=8, sway=-1.0,
-		seed=args.seed, config=model.config, cases=CASES)
+		seed=args.seed, precision="fp32" if args.fp32 else "bf16 autocast", config=model.config, cases=CASES)
 	for case in CASES:
 		text = tts.phonemes(case["text"], case["language"])
-		with torch.autocast(dev, dtype=torch.bfloat16):
+		amp = lambda: torch.autocast(dev, dtype=torch.bfloat16, enabled=not args.fp32)
+		with amp():
 			n = predict_length(model, text, prompt)
 		order, noises = draws(model, n, 25, args.seed, dev)
 		dump = {}
-		with torch.autocast(dev, dtype=torch.bfloat16):
+		with amp():
 			digits = reference(model, text, prompt, n, order, noises, cfg=args.cfg, cfg_prompt=args.cfg_prompt, dump=dump)
 			torch.manual_seed(args.seed)
 			check = demask_flow(model, text, prompt, n, cfg=args.cfg, cfg_prompt=args.cfg_prompt)
