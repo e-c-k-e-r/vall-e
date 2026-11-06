@@ -235,7 +235,7 @@ class StoreUtterances(torch.utils.data.Dataset):
 		self.store = store if isinstance(store, Store) else Store(store)
 		st = self.store
 		keys = [f"{st.m['groups'][g]}/{s}" for s, g in zip(st.m["speakers"], st.m["speaker_group"])]
-		spk_ok = np.array([is_val(k) == (split == "val") for k in keys])
+		spk_ok = np.array([split == "all" or is_val(k) == (split == "val") for k in keys])  # "all": both splits (eval sets of seen speakers)
 		ok = spk_ok[st.speaker]
 		if groups:
 			unknown = [x for x in groups if not any(g == x or g.startswith(x + "/") for g in st.m["groups"])]

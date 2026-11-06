@@ -46,13 +46,13 @@ STRATA = {"en": {"LibriTTS-R": 25, "LibriVox": 25, "Audiobooks": 25, "Emilia/EN"
 	"fr": {"Emilia/FR": 30}, "de": {"Emilia/DE": 30}, "ja": {"Emilia/JA": 30}, "zh": {"Emilia/ZH": 30}, "ko": {"Emilia/KO": 30}}
 
 
-def build(store, out, strata=None, groups=None, prompt_s=6.0, seed=0, min_s=2.0, max_s=12.0, per_speaker=2):
+def build(store, out, strata=None, groups=None, prompt_s=6.0, seed=0, min_s=2.0, max_s=12.0, per_speaker=2, split="val"):
 	"""Samples items from the store's validation speakers: strata {language: {group: count}}, at most per_speaker items
 	per speaker, LibriVox / Audiobooks under 13 phonemes / s excluded as in training (overrunning segments). Prompts come
 	from another utterance of the same speaker (not a near-duplicate line), cropped to prompt_s at a fixed offset."""
 	from .data import StoreUtterances
 	strata = strata or STRATA
-	val = StoreUtterances(store, "val", groups=groups, min_s=min_s, max_s=max_s, min_rate=13, min_rate_groups=["LibriVox", "Audiobooks"])
+	val = StoreUtterances(store, split, groups=groups, min_s=min_s, max_s=max_s, min_rate=13, min_rate_groups=["LibriVox", "Audiobooks"])
 	st = val.store
 	rng = random.Random(seed)
 	frames = st.frames[val.items]
@@ -84,7 +84,7 @@ def build(store, out, strata=None, groups=None, prompt_s=6.0, seed=0, min_s=2.0,
 				taken += 1; per[spk] = per.get(spk, 0) + 1
 			print(f"{code} {gname}: {taken} items")
 	Path(out).parent.mkdir(parents=True, exist_ok=True)
-	Path(out).write_text(json.dumps(dict(store=str(store), groups=groups, prompt_s=prompt_s, items=items), indent=1, ensure_ascii=False))
+	Path(out).write_text(json.dumps(dict(store=str(store), groups=groups, prompt_s=prompt_s, split=split, items=items), indent=1, ensure_ascii=False))
 	print(f"wrote {len(items)} items to {out}")
 
 
@@ -497,6 +497,10 @@ if __name__ == "__main__":
 	b.add_argument("--max-s", type=float, default=12.0)
 	b.add_argument("--scale", type=float, default=1.0, help="scale every stratum's item count (e.g. 0.5 for a smaller long-form set)")
 	b.add_argument("--seed", type=int, default=0)
+	b.add_argument("--strata", default=None, help='JSON {language: {group: count}} instead of the default mix (e.g. a game-audio set)')
+	b.add_argument("--per-speaker", type=int, default=2)
+	b.add_argument("--prompt-s", type=float, default=6.0, help="prompt clip length (game lines are short: 6 s leaves several groups empty)")
+	b.add_argument("--split", choices=["val", "train", "all"], default="val", help="speakers to draw from: validation only (unseen), or also / only trained ones")
 	r = sub.add_parser("run")
 	r.add_argument("--set", type=Path, required=True)
 	r.add_argument("--ckpt", type=Path, required=True, help="a checkpoint, or `gt` for the decoded ground truth")
@@ -531,8 +535,9 @@ if __name__ == "__main__":
 	c.add_argument("--gt", type=Path, default=None, help="a `run --ckpt gt` directory: leave out items with bad references")
 	args = ap.parse_args()
 	if args.cmd == "build":
-		strata = {l: {g: max(1, round(n * args.scale)) for g, n in gs.items()} for l, gs in STRATA.items()}
-		build(args.store, args.out, strata=strata, groups=args.groups, seed=args.seed, min_s=args.min_s, max_s=args.max_s)
+		base = json.loads(args.strata) if args.strata else STRATA
+		strata = {l: {g: max(1, round(n * args.scale)) for g, n in gs.items()} for l, gs in base.items()}
+		build(args.store, args.out, strata=strata, groups=args.groups, seed=args.seed, min_s=args.min_s, max_s=args.max_s, per_speaker=args.per_speaker, split=args.split, prompt_s=args.prompt_s)
 	elif args.cmd == "run":
 		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed,
 			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt, task=args.task, snr=args.snr)
