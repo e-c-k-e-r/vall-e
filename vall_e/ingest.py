@@ -50,7 +50,7 @@ def _download(repo, i, n, dest):
 	return Path(hf_hub_download(repo, name, repo_type="dataset", local_dir=dest))
 
 
-def ingest_genshin(out, vocab_from, languages=("en", "ja"), files=(0, 75), batch=12, device="cuda", max_row_groups=None, keep_download=False):
+def ingest_genshin(out, vocab_from, languages=("en", "ja"), files=(0, 75), batch=12, device="cuda", max_row_groups=None, keep_download=False, budget_s=60.0):
 	import pyarrow.parquet as pq
 	import soundfile as sf
 	import torchaudio
@@ -117,14 +117,31 @@ def ingest_genshin(out, vocab_from, languages=("en", "ja"), files=(0, 75), batch
 					stats["duration"] += 1; continue
 				items.append((w, j, lang, text))
 			items.sort(key=lambda x: len(x[0]))
-			for b in range(0, len(items), batch):
-				part = items[b : b + batch]
+			# batches of at most `batch` items and budget_s seconds of padded audio (12 lines of 30 s ran out of 24 GB)
+			parts, cur = [], []
+			for x in items:
+				if cur and (len(cur) >= batch or len(x[0]) * (len(cur) + 1) > budget_s * CODEC["sample_rate"]):
+					parts.append(cur); cur = []
+				cur.append(x)
+			if cur:
+				parts.append(cur)
+			while parts:
+				part = parts.pop(0)
 				T = max(len(x[0]) for x in part)
 				T = -(-T // (CODEC["samples_per_frame"] * 87)) * CODEC["samples_per_frame"] * 87  # ~1 s buckets: few conv shapes
-				audio = torch.stack([torch.nn.functional.pad(x[0], (0, T - len(x[0]))) for x in part]).to(device)
-				lens = torch.tensor([len(x[0]) for x in part], device=device)
-				with torch.no_grad():
-					codes, n = codec.encode(audio=audio, audio_len=lens)
+				audio = None
+				try:
+					audio = torch.stack([torch.nn.functional.pad(x[0], (0, T - len(x[0]))) for x in part]).to(device)
+					lens = torch.tensor([len(x[0]) for x in part], device=device)
+					with torch.no_grad():
+						codes, n = codec.encode(audio=audio, audio_len=lens)
+				except torch.OutOfMemoryError:
+					del audio
+					torch.cuda.empty_cache()
+					if len(part) == 1:
+						raise
+					parts[:0] = [part[: len(part) // 2], part[len(part) // 2 :]]  # halve and retry
+					continue
 				codes, n = codes.cpu().numpy(), n.cpu().numpy()
 				for (w, j, lang, text), c, nn in zip(part, codes, n):
 					ph = g2p(text, language=lang)
