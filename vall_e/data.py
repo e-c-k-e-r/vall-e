@@ -291,6 +291,10 @@ class StoreUtterances(torch.utils.data.Dataset):
 			frame = torch.from_numpy(np.load(st.root / "silence.npy")[:1].astype(np.int64)).t()
 			self.silence = fsq.codes_to_digits(frame)  # [1, 32]
 
+	def item_groups(self):
+		"""Each item's group name."""
+		return np.asarray(self.store.m["groups"], dtype=object)[self.store.group[self.items]]
+
 	def speaker_weights(self, alpha=0.5):
 		"""Per-item draw weights n_speaker ** -alpha within each group, rescaled so every group keeps its share of
 		utterances: speakers are evened out inside a group without changing the group / language mix. (Balancing across
@@ -374,3 +378,37 @@ class StoreUtterances(torch.utils.data.Dataset):
 			if k < len(R["ids"]) and R["ids"][k] == u:
 				it["repa"] = torch.from_numpy(np.asarray(R["feats"][R["off"][k] : R["off"][k + 1]], dtype=np.float16))
 		return it
+
+
+class ConcatUtterances(torch.utils.data.Dataset):
+	"""Several StoreUtterances (stores) as one training set: frames / text_len / items concatenated, the first one's
+	settings (length range, prompt range, vocabulary) for the whole. The stores must share the phoneme vocabulary as a
+	prefix (ingest.py seeds a new store with the main store's), so ids mean the same in all of them."""
+	def __init__(self, parts):
+		self.parts = parts
+		base = parts[0].store.m["vocab"]
+		for p in parts[1:]:
+			v = p.store.m["vocab"]
+			if v[: len(base)] != base[: len(v)] or len(v) > len(base):
+				raise ValueError(f"{p.store.root}: its phoneme vocabulary doesn't extend the main store's")
+		self.store = parts[0].store
+		self.cum = np.cumsum([0] + [len(p) for p in parts])
+		self.frames = [f for p in parts for f in p.frames]
+		self.text_len = [n for p in parts for n in p.text_len]
+		self.min_f, self.max_f, self.prompt_f = parts[0].min_f, parts[0].max_f, parts[0].prompt_f
+		self.vocab_size, self.n_lang = parts[0].vocab_size, parts[0].n_lang
+		self.pairs, self.repa = None, None
+
+	def __len__(self):
+		return int(self.cum[-1])
+
+	def __getitem__(self, i):
+		k = int(np.searchsorted(self.cum, i, side="right")) - 1
+		return self.parts[k][i - int(self.cum[k])]
+
+	def speaker_weights(self, alpha=0.5):
+		return np.concatenate([p.speaker_weights(alpha) for p in self.parts])
+
+	def item_groups(self):
+		"""Each item's group name."""
+		return np.concatenate([np.asarray(p.store.m["groups"], dtype=object)[p.store.group[p.items]] for p in self.parts])

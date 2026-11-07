@@ -293,6 +293,7 @@ def main():
 	ap.add_argument("--distill-from", type=Path, default=None, help="guidance distillation from this teacher (see distill_loss)")
 	ap.add_argument("--distill-cfg", type=float, default=6.0)
 	ap.add_argument("--distill-cfg-prompt", type=float, default=2.0)
+	ap.add_argument("--extra-store", type=Path, nargs="*", default=None, help="more stores to train on (e.g. an ingest.py store; same phoneme vocabulary)")
 	ap.add_argument("--holdout-speakers", type=Path, default=None, help='JSON list of "group/speaker" never trained on (a zero-shot test set)')
 	ap.add_argument("--oversample-groups", nargs="*", default=None, help="groups to draw as --oversample-p of all draws")
 	ap.add_argument("--oversample-p", type=float, default=0.3)
@@ -318,6 +319,13 @@ def main():
 		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p,
 		only=np.load(args.items_from or args.repa_feats / "ids.npy") if (args.items_from or args.repa_feats) else None, repa=args.repa_feats,
 		exclude_speakers=json.loads(args.holdout_speakers.read_text()) if args.holdout_speakers else None)
+	if args.extra_store:
+		# more stores (ingest.py), with the same length / rate filters and held-out speakers
+		from .data import ConcatUtterances
+		extra = [StoreUtterances(x, "train", crop_prompt=False, min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s),
+			exclude_speakers=json.loads(args.holdout_speakers.read_text()) if args.holdout_speakers else None) for x in args.extra_store]
+		print(f"extra stores: {[(str(x), len(e)) for x, e in zip(args.extra_store, extra)]}")
+		train_ds = ConcatUtterances([train_ds] + extra)
 	if (args.ns_p or args.sr_p) and train_ds.pairs is None:
 		raise SystemExit("--ns-p / --sr-p need <store>/noisy-targets (python -m vall_e.noisy bake-targets)")
 	val_ds = StoreUtterances(train_ds.store, "val", seed=1, groups=args.groups, languages=args.languages)
@@ -395,9 +403,10 @@ def main():
 		weights = train_ds.speaker_weights(args.speaker_alpha) if args.speaker_alpha else None
 		if args.oversample_groups:
 			# the named groups drawn as --oversample-p of all draws (e.g. game audio, under 1% of the store)
-			G = train_ds.store.m["groups"]
-			gids = [i for i, g in enumerate(G) if any(g == x or g.startswith(x + "/") for x in args.oversample_groups)]
-			inside = np.isin(train_ds.store.group[train_ds.items], gids)
+			names = train_ds.item_groups()
+			hit = {g for g in set(names) if any(g == x or g.startswith(x + "/") for x in args.oversample_groups)}
+			inside = np.array([g in hit for g in names])
+			gids = sorted(hit)
 			w = np.ones(len(inside)) if weights is None else np.asarray(weights, dtype=np.float64)
 			weights = np.where(inside, w * args.oversample_p / w[inside].sum(), w * (1 - args.oversample_p) / w[~inside].sum())
 			print(f"oversampling {len(gids)} groups ({int(inside.sum())} utterances) to {args.oversample_p:.0%} of draws")
