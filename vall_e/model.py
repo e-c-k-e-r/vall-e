@@ -146,7 +146,13 @@ class ConvNeXtBlock(nn.Module):
 		self.mlp = nn.Sequential(nn.Linear(d, d * mult), nn.GELU(), nn.Linear(d * mult, d))
 
 	def forward(self, x):
-		return x + self.mlp(self.norm(self.dw(x.transpose(1, 2)).transpose(1, 2)))
+		# the depthwise conv as 7 shifted multiply-adds (same weights as self.dw): through MIOpen (ROCm) every new text length
+		# is a new conv shape to benchmark, and training stalled for hours without a step
+		k = self.dw.kernel_size[0]
+		xp = F.pad(x, (0, 0, k // 2, k // 2))
+		w = self.dw.weight[:, 0, :]  # [d, k]
+		y = sum(xp[:, j : j + x.shape[1]] * w[:, j] for j in range(k)) + self.dw.bias
+		return x + self.mlp(self.norm(y))
 
 
 class V3(nn.Module):
