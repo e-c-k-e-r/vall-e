@@ -225,7 +225,7 @@ class StoreUtterances(torch.utils.data.Dataset):
 	utterance). lang is the store's language id + 1 (0 is unknown)."""
 	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None,
 			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5), ns_p=0.0, sr_p=0.0,
-			only=None, repa=None):
+			only=None, repa=None, exclude_speakers=None):
 		"""min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
 		segments often run past their transcript into the next sentence (ground-truth WER 10-13%, 2.5% for LibriVox
 		at >= 13 / s), which taught the model to babble past the text.
@@ -236,6 +236,9 @@ class StoreUtterances(torch.utils.data.Dataset):
 		st = self.store
 		keys = [f"{st.m['groups'][g]}/{s}" for s, g in zip(st.m["speakers"], st.m["speaker_group"])]
 		spk_ok = np.array([split == "all" or is_val(k) == (split == "val") for k in keys])  # "all": both splits (eval sets of seen speakers)
+		if exclude_speakers:  # held-out speakers ("group/speaker"), e.g. game voices kept out of training to test on
+			held = set(exclude_speakers)
+			spk_ok &= np.array([k not in held for k in keys])
 		ok = spk_ok[st.speaker]
 		if groups:
 			unknown = [x for x in groups if not any(g == x or g.startswith(x + "/") for g in st.m["groups"])]

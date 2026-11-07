@@ -293,6 +293,9 @@ def main():
 	ap.add_argument("--distill-from", type=Path, default=None, help="guidance distillation from this teacher (see distill_loss)")
 	ap.add_argument("--distill-cfg", type=float, default=6.0)
 	ap.add_argument("--distill-cfg-prompt", type=float, default=2.0)
+	ap.add_argument("--holdout-speakers", type=Path, default=None, help='JSON list of "group/speaker" never trained on (a zero-shot test set)')
+	ap.add_argument("--oversample-groups", nargs="*", default=None, help="groups to draw as --oversample-p of all draws")
+	ap.add_argument("--oversample-p", type=float, default=0.3)
 	ap.add_argument("--min-s", type=float, default=2.0, help="shortest target, seconds")
 	ap.add_argument("--max-s", type=float, default=12.0, help="longest target, seconds")
 	ap.add_argument("--long-p", type=float, default=0.0, help="share of draws from targets over --long-s (0: as they come)")
@@ -313,7 +316,8 @@ def main():
 	train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages,
 		min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
 		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p,
-		only=np.load(args.items_from or args.repa_feats / "ids.npy") if (args.items_from or args.repa_feats) else None, repa=args.repa_feats)
+		only=np.load(args.items_from or args.repa_feats / "ids.npy") if (args.items_from or args.repa_feats) else None, repa=args.repa_feats,
+		exclude_speakers=json.loads(args.holdout_speakers.read_text()) if args.holdout_speakers else None)
 	if (args.ns_p or args.sr_p) and train_ds.pairs is None:
 		raise SystemExit("--ns-p / --sr-p need <store>/noisy-targets (python -m vall_e.noisy bake-targets)")
 	val_ds = StoreUtterances(train_ds.store, "val", seed=1, groups=args.groups, languages=args.languages)
@@ -389,6 +393,14 @@ def main():
 	else:
 		# similar-length batches (about 90% real positions instead of about 55% with random batches)
 		weights = train_ds.speaker_weights(args.speaker_alpha) if args.speaker_alpha else None
+		if args.oversample_groups:
+			# the named groups drawn as --oversample-p of all draws (e.g. game audio, under 1% of the store)
+			G = train_ds.store.m["groups"]
+			gids = [i for i, g in enumerate(G) if any(g == x or g.startswith(x + "/") for x in args.oversample_groups)]
+			inside = np.isin(train_ds.store.group[train_ds.items], gids)
+			w = np.ones(len(inside)) if weights is None else np.asarray(weights, dtype=np.float64)
+			weights = np.where(inside, w * args.oversample_p / w[inside].sum(), w * (1 - args.oversample_p) / w[~inside].sum())
+			print(f"oversampling {len(gids)} groups ({int(inside.sum())} utterances) to {args.oversample_p:.0%} of draws")
 		if args.long_p:
 			# utterances over --long-s drawn as --long-p of all draws (they're 7% of the store over 12 s)
 			long = np.asarray(train_ds.frames) > args.long_s * FPS

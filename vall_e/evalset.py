@@ -46,7 +46,7 @@ STRATA = {"en": {"LibriTTS-R": 25, "LibriVox": 25, "Audiobooks": 25, "Emilia/EN"
 	"fr": {"Emilia/FR": 30}, "de": {"Emilia/DE": 30}, "ja": {"Emilia/JA": 30}, "zh": {"Emilia/ZH": 30}, "ko": {"Emilia/KO": 30}}
 
 
-def build(store, out, strata=None, groups=None, prompt_s=6.0, seed=0, min_s=2.0, max_s=12.0, per_speaker=2, split="val"):
+def build(store, out, strata=None, groups=None, prompt_s=6.0, seed=0, min_s=2.0, max_s=12.0, per_speaker=2, split="val", speakers=None):
 	"""Samples items from the store's validation speakers: strata {language: {group: count}}, at most per_speaker items
 	per speaker, LibriVox / Audiobooks under 13 phonemes / s excluded as in training (overrunning segments). Prompts come
 	from another utterance of the same speaker (not a near-duplicate line), cropped to prompt_s at a fixed offset."""
@@ -69,7 +69,7 @@ def build(store, out, strata=None, groups=None, prompt_s=6.0, seed=0, min_s=2.0,
 				if taken == count:
 					break
 				spk = int(st.speaker[u])
-				if per.get(spk, 0) >= per_speaker:
+				if per.get(spk, 0) >= per_speaker or ( speakers is not None and st.speaker_key( u ) not in speakers ):
 					continue
 				others = [int(v) for v in st.utterances_of(spk) if int(v) != u]
 				key = _dup_key(st.text(u))
@@ -499,6 +499,7 @@ if __name__ == "__main__":
 	b.add_argument("--seed", type=int, default=0)
 	b.add_argument("--strata", default=None, help='JSON {language: {group: count}} instead of the default mix (e.g. a game-audio set)')
 	b.add_argument("--per-speaker", type=int, default=2)
+	b.add_argument("--speakers", type=Path, default=None, help='JSON list of "group/speaker" to draw from only (e.g. data/holdout-speakers.json)')
 	b.add_argument("--prompt-s", type=float, default=6.0, help="prompt clip length (game lines are short: 6 s leaves several groups empty)")
 	b.add_argument("--split", choices=["val", "train", "all"], default="val", help="speakers to draw from: validation only (unseen), or also / only trained ones")
 	r = sub.add_parser("run")
@@ -537,7 +538,8 @@ if __name__ == "__main__":
 	if args.cmd == "build":
 		base = json.loads(args.strata) if args.strata else STRATA
 		strata = {l: {g: max(1, round(n * args.scale)) for g, n in gs.items()} for l, gs in base.items()}
-		build(args.store, args.out, strata=strata, groups=args.groups, seed=args.seed, min_s=args.min_s, max_s=args.max_s, per_speaker=args.per_speaker, split=args.split, prompt_s=args.prompt_s)
+		build(args.store, args.out, strata=strata, groups=args.groups, seed=args.seed, min_s=args.min_s, max_s=args.max_s, per_speaker=args.per_speaker, split=args.split, prompt_s=args.prompt_s,
+			speakers=set(json.loads(args.speakers.read_text())) if args.speakers else None)
 	elif args.cmd == "run":
 		run(args.set, args.ckpt, args.out, args.length, args.length_scale, args.steps, args.cfg, args.seed,
 			prompt_s=args.prompt_seconds, temperature=args.temperature, cfg_prompt=args.cfg_prompt, gt=args.gt, task=args.task, snr=args.snr)
