@@ -134,6 +134,15 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 			pn = it["prompt_frames"] if prompt_s is None else int(prompt_s * FPS)
 			pstart = min(it["prompt_start"], max(0, int(st.frames[it["prompt_utt"]]) - pn))
 			pc = st.codes(it["prompt_utt"])[pstart : pstart + pn]
+			if it.get("prompts"):
+				# a multi-clip prompt: [utt, start, frames] clips joined with 0.15 s of the codec's digital silence
+				sil = np.load(Path(es["store"]) / "silence.npy")[:1]
+				parts = []
+				for k, (pu, ps, pf) in enumerate(it["prompts"]):
+					if k:
+						parts.append(np.repeat(sil, int(0.15 * FPS), 0))
+					parts.append(np.asarray(st.codes(pu)[ps : ps + pf]))
+				pc = np.concatenate(parts)
 			prompt = to_patches(digits_of(pc), model.patch).to(device)
 			lang = 0
 			if getattr(model, "lang", None) is not None:
