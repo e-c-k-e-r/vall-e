@@ -410,22 +410,27 @@ def build_exclude(root, rules=None):
 	print(summary, flush=True)
 
 
-def rephonemize(root, dry_run=False, chunk=5000):
+def rephonemize(root, dry_run=False, chunk=1000, extend_vocab=False, force=False, languages=None):
 	"""Re-phonemizes every utterance from its stored text with the current front-end (vall_e.emb.g2p, as inference
 	runs it), shard by shard: phonemes.npy / phoneme_offsets.npy rewritten, the old ones kept as *.npy.bak, a
 	rephonemized.json per shard with its stats (and as the resume marker). Characters outside the vocabulary are
 	dropped (and counted); a text that comes out empty keeps its old phonemes. Codes, text and names are untouched.
-	exclude.npy reads the phonemes (letter readings): rebuild it afterwards (store exclude)."""
+	exclude.npy reads the phonemes (letter readings): rebuild it afterwards (store exclude).
+	extend_vocab: characters outside the vocabulary are appended to it (manifest.json, the old one kept as
+	manifest.json.bak) instead of dropped; existing ids keep their meaning. force: redo shards already marked done.
+	languages: only these languages' utterances are redone (the rest keep their phonemes)."""
 	import os
+	import unicodedata
 	from .emb.g2p import encode_batch
 	root = Path(root)
 	m = json.loads((root / "manifest.json").read_text())
 	lut = {c: i for i, c in enumerate(m["vocab"])}
+	n_vocab = len(m["vocab"])
 	langs = [("en" if l == "auto" else l) for l in m["languages"]]
 	total = {}
 	for sh in m["shards"]:
 		d = root / sh["name"]
-		if (d / "rephonemized.json").exists() and not dry_run:
+		if (d / "rephonemized.json").exists() and not dry_run and not force:
 			continue
 		# the old arrays: from .bak if an interrupted run already swapped one in
 		ld = lambda k: np.load(d / f"{k}.npy.bak") if (d / f"{k}.npy.bak").exists() else np.load(d / f"{k}.npy")
@@ -435,12 +440,23 @@ def rephonemize(root, dry_run=False, chunk=5000):
 		n = len(language)
 		new = [None] * n
 		stats = dict(utterances=n, changed=0, dropped_chars=0, empty_kept=0, by_language={})
+		# utterances not redone keep their current phonemes (not the .bak ones)
+		cur, coff = np.load(d / "phonemes.npy"), np.load(d / "phoneme_offsets.npy")
+		for i in range(n):
+			new[i] = np.asarray(cur[coff[i] : coff[i + 1]])
 		for lid in np.unique(language):
+			if languages and langs[lid] not in languages:
+				continue
 			idx = np.nonzero(language == lid)[0]
 			for a in range(0, len(idx), chunk):
 				part = idx[a : a + chunk]
 				texts = [bytes(text[toff[i] : toff[i + 1]]).decode() for i in part]
 				for i, ph in zip(part, encode_batch(texts, langs[lid])):
+					if extend_vocab:
+						for c in ph:
+							# not CJK / kana / Hangul (category Lo): those are text espeak passed through, not phonemes
+							if c not in lut and unicodedata.category(c) != "Lo":
+								lut[c] = len(m["vocab"]); m["vocab"].append(c)
 					ids = [lut[c] for c in ph if c in lut]
 					stats["dropped_chars"] += len(ph) - len(ids)
 					old = phon[poff[i] : poff[i + 1]]
@@ -459,6 +475,11 @@ def rephonemize(root, dry_run=False, chunk=5000):
 				total[k] = total.get(k, 0) + v
 		if dry_run:
 			continue
+		if len(m["vocab"]) > n_vocab:  # before any shard uses the new ids
+			if not (root / "manifest.json.bak").exists():
+				shutil.copy(root / "manifest.json", root / "manifest.json.bak")
+			(root / "manifest.json").write_text(json.dumps(m)); n_vocab = len(m["vocab"])
+			print(f"vocabulary extended to {n_vocab}: {m['vocab'][-5:]}", flush=True)
 		np.save(d / "phonemes.new.npy", np.concatenate(new).astype(np.uint16) if n else np.zeros(0, np.uint16))
 		np.save(d / "phoneme_offsets.new.npy", offsets)
 		for k in ("phonemes", "phoneme_offsets"):
@@ -491,12 +512,15 @@ if __name__ == "__main__":
 	r = sub.add_parser("rephonemize", help="phonemes re-derived from the stored text with the current front-end (old arrays kept as .bak)")
 	r.add_argument("--store", type=Path, required=True)
 	r.add_argument("--dry-run", action="store_true", help="stats only, nothing written")
+	r.add_argument("--extend-vocab", action="store_true", help="append characters outside the vocabulary instead of dropping them")
+	r.add_argument("--force", action="store_true", help="redo shards already done")
+	r.add_argument("--languages", nargs="*", default=None)
 	args = ap.parse_args()
 	if args.cmd == "convert":
 		convert(args.meta, args.data, args.out, args.groups, args.workers, args.limit_speakers, resume=args.resume, supplement=args.supplement)
 	elif args.cmd == "similar":
 		build_similar(args.store, args.meta, args.workers)
 	elif args.cmd == "rephonemize":
-		rephonemize(args.store, args.dry_run)
+		rephonemize(args.store, args.dry_run, extend_vocab=args.extend_vocab, force=args.force, languages=args.languages)
 	else:
 		build_exclude(args.store, args.rules)
