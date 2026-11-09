@@ -259,6 +259,7 @@ def main():
 	ap.add_argument("--val-size", type=int, default=256)
 	ap.add_argument("--subset", type=int, default=0, help="train and evaluate on this many fixed utterances (overfit check)")
 	ap.add_argument("--compile", action="store_true", help="torch.compile each transformer block")
+	ap.add_argument("--grad-ckpt", action="store_true", help="activation checkpointing per transformer block (bigger models in 24 GB, ~30%% slower)")
 	# fixed 0.8 from scratch (v3-main to step 124k) never trains generation without audio anchors: teacher-forced
 	# metrics matched v3-flow-large, but sampled WER was 59% against its 4%
 	ap.add_argument("--mask-ratio", type=lambda v: None if v == "cos" else float(v), default=None,
@@ -355,6 +356,7 @@ def main():
 		missing, unexpected = model.load_state_dict(init, strict=False)
 		print(f"initialised from {args.init_from}; new parameters: {missing}; unused: {unexpected}")
 	print(f"params {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M")
+	model.grad_ckpt = args.grad_ckpt
 	if args.compile:
 		for block in model.blocks:
 			block.compile(dynamic=True)  # in place, so state_dict keys are unchanged

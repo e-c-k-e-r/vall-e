@@ -4,6 +4,7 @@
 import math
 
 import torch
+import torch.utils.checkpoint
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
@@ -259,7 +260,11 @@ class V3(nn.Module):
 		else:
 			mask = keys[:, None]
 		for i, block in enumerate(self.blocks):
-			x = block(x, cos, sin, mask, cache[i] if cache else None)
+			if getattr(self, "grad_ckpt", False) and self.training and cache is None and torch.is_grad_enabled():
+				# activation checkpointing (train.py --grad-ckpt): the block's activations recomputed in the backward pass
+				x = torch.utils.checkpoint.checkpoint(block, x, cos, sin, mask, None, use_reentrant=False)
+			else:
+				x = block(x, cos, sin, mask, cache[i] if cache else None)
 		return self.norm(x.flatten(0, 1))
 
 	def step(self, digits, pos, cache, lang=0):
