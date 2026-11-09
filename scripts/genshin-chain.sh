@@ -35,7 +35,8 @@ run() {  # <set> <ckpt> <out> <gt>: retried (ROCm segfaults; a run resumes)
 gt() {  # <set> <out>
 	for try in 1 2 3; do [ -f $2/scores.json ] && return; $P -m vall_e.evalset run --set $1 --ckpt gt --out $2 >> $2.log 2>&1; done
 }
-SETS=("genshin evalsets/v3-genshin-holdout.json $E/genshin-gt" "games evalsets/v3-games-holdout.json $E/holdout-gt")
+# "hgames", not "games": $E/games-<model> holds runs on v3-games.json (a different set), which run() would take as done
+SETS=("genshin evalsets/v3-genshin-holdout.json $E/genshin-gt" "hgames evalsets/v3-games-holdout.json $E/holdout-gt")
 held() {  # <ckpt> <name>: both held-out sets, with their own prompt and 3-clip prompts
 	for s in "${SETS[@]}"; do
 		set -- $s; n=$1 set=$2 g=$3
@@ -58,8 +59,8 @@ for a in 1.0 0.7 0.5; do
 		lenhead $init training/v3-$NAME-len
 	fi
 	held
-	for s in genshin genshin-c3 games games-c3; do
-		g=$E/genshin-gt; [[ $s == games* ]] && g=$E/holdout-gt
+	for s in genshin genshin-c3 hgames hgames-c3; do
+		g=$E/genshin-gt; [[ $s == hgames* ]] && g=$E/holdout-gt
 		echo "== $NAME, held-out $s (A: v1.2):"; $P -m vall_e.evalset compare $E/$s-v1.2 $E/$s-$NAME --gt $g 2>&1 | grep "  all\|  en \|  ja "
 	done
 	echo "== $NAME, main set (A: v1.2):"; scripts/evaluate.sh $CK $E/$NAME $E/long-soup0.7-regular | grep "  all\|  en " | tail -2
