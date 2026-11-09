@@ -1,5 +1,6 @@
 import argparse
 import random
+import re
 import string
 import torch
 
@@ -64,6 +65,27 @@ def coerce_language( lang ):
 	"""
 	return lang
 
+# English abbreviations spelled out before espeak: it reads several letter by letter ("Ms." as "em ess") and keeps
+# every abbreviation's period as a sentence end ("Mr. Smith" -> "mˈɪstɚ. smˈɪθ")
+ABBREVIATIONS = dict(Mr="Mister", Mrs="Missus", Ms="Miz", Dr="Doctor", Jr="Junior", Sr="Senior", Lt="Lieutenant", Sgt="Sergeant",
+	Capt="Captain", Prof="Professor", Mt="Mount", vs="versus", etc="et cetera")
+_ABBREV = re.compile(r"\b(" + "|".join(ABBREVIATIONS) + r"|St)\.(\s+(?=\S)|$)")
+
+def normalize_en( text ):
+	def sub( m ):
+		word, gap = m.group(1), m.group(2)
+		nxt = text[m.end():m.end() + 1]
+		if word == "St":
+			# "Baker St." / "Main St. Then": after a name it's a street; "on St. Patrick" / "St. Louis": a saint
+			prev = text[:m.start()].rstrip().split(" ")[-1:]
+			word = "Street" if (prev and prev[0][:1].isupper()) or not nxt.isupper() else "Saint"
+		else:
+			word = ABBREVIATIONS[word]
+		# the period stays only where the sentence ends: the end of the text, or "etc." / "St." before a capital
+		end = not nxt or (m.group(1) in ("etc", "St") and word != "Saint" and nxt.isupper())
+		return word + ("." if end else "") + (gap if gap else "")
+	return _ABBREV.sub( sub, text )
+
 cached_backends = {}
 def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=True, strip=True ):
 	key = f'{language}_{backend}'
@@ -71,7 +93,8 @@ def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=T
 		return cached_backends[key]
 
 	if backend == 'espeak':
-		phonemizer = BACKENDS[backend]( language, preserve_punctuation=punctuation, with_stress=stress)
+		# remove-flags: no "(en)...(de)" markers around words espeak reads in another language (the dataset has none)
+		phonemizer = BACKENDS[backend]( language, preserve_punctuation=punctuation, with_stress=stress, language_switch="remove-flags")
 	elif backend == 'espeak-mbrola':
 		phonemizer = BACKENDS[backend]( language )
 	else: 
@@ -86,6 +109,8 @@ def encode(text: str, language="auto", backend="auto", punctuation=True, stress=
 		language = detect_language( text )
 
 	language = coerce_language( language )
+	if language[:2] == "en":
+		text = normalize_en( text )
 
 	#
 	if backend == "auto":
@@ -126,6 +151,19 @@ def encode(text: str, language="auto", backend="auto", punctuation=True, stress=
 			phonemes = phonemes.replace(k, v)
 
 	return phonemes
+
+def encode_batch(texts: list[str], language: str) -> list[str]:
+	"""encode() over many texts of one language in one espeak call (the store's rephonemize)."""
+	language = coerce_language( language )
+	if language[:2] == "en":
+		texts = [ normalize_en( t ) for t in texts ]
+	elif language[:2] == "ja":
+		texts = [ coerce_to_hiragana( t ) for t in texts ]
+	out = _get_backend(language=language, backend="espeak").phonemize( texts, strip=True )
+	if language == "cmn-latn-pinyin":
+		tones = { "1": "ˇ", "2": "ˉ", "3": "ˊ", "4": "ˋ", "5": "_" }
+		out = [ "".join( tones.get(c, c) for c in o ) for o in out ]
+	return out
 
 # Helper function to debug phonemizer
 if __name__ == "__main__":

@@ -410,6 +410,65 @@ def build_exclude(root, rules=None):
 	print(summary, flush=True)
 
 
+def rephonemize(root, dry_run=False, chunk=5000):
+	"""Re-phonemizes every utterance from its stored text with the current front-end (vall_e.emb.g2p, as inference
+	runs it), shard by shard: phonemes.npy / phoneme_offsets.npy rewritten, the old ones kept as *.npy.bak, a
+	rephonemized.json per shard with its stats (and as the resume marker). Characters outside the vocabulary are
+	dropped (and counted); a text that comes out empty keeps its old phonemes. Codes, text and names are untouched.
+	exclude.npy reads the phonemes (letter readings): rebuild it afterwards (store exclude)."""
+	import os
+	from .emb.g2p import encode_batch
+	root = Path(root)
+	m = json.loads((root / "manifest.json").read_text())
+	lut = {c: i for i, c in enumerate(m["vocab"])}
+	langs = [("en" if l == "auto" else l) for l in m["languages"]]
+	total = {}
+	for sh in m["shards"]:
+		d = root / sh["name"]
+		if (d / "rephonemized.json").exists() and not dry_run:
+			continue
+		# the old arrays: from .bak if an interrupted run already swapped one in
+		ld = lambda k: np.load(d / f"{k}.npy.bak") if (d / f"{k}.npy.bak").exists() else np.load(d / f"{k}.npy")
+		phon, poff = ld("phonemes"), ld("phoneme_offsets")
+		text, toff = np.load(d / "text.npy", mmap_mode="r"), np.load(d / "text_offsets.npy")
+		language = np.load(d / "language.npy")
+		n = len(language)
+		new = [None] * n
+		stats = dict(utterances=n, changed=0, dropped_chars=0, empty_kept=0, by_language={})
+		for lid in np.unique(language):
+			idx = np.nonzero(language == lid)[0]
+			for a in range(0, len(idx), chunk):
+				part = idx[a : a + chunk]
+				texts = [bytes(text[toff[i] : toff[i + 1]]).decode() for i in part]
+				for i, ph in zip(part, encode_batch(texts, langs[lid])):
+					ids = [lut[c] for c in ph if c in lut]
+					stats["dropped_chars"] += len(ph) - len(ids)
+					old = phon[poff[i] : poff[i + 1]]
+					if not ids:
+						stats["empty_kept"] += 1; ids = old
+					else:
+						ids = np.asarray(ids, dtype=np.uint16)
+						stats["changed"] += not np.array_equal(ids, old)
+					new[i] = ids
+			stats["by_language"][langs[lid]] = int(len(idx))
+		lens = np.array([len(x) for x in new], dtype=np.int64)
+		offsets = np.concatenate([[0], np.cumsum(lens)]).astype(np.int64)
+		print(f"{sh['name']}: {stats}", flush=True)
+		for k, v in stats.items():
+			if isinstance(v, int):
+				total[k] = total.get(k, 0) + v
+		if dry_run:
+			continue
+		np.save(d / "phonemes.new.npy", np.concatenate(new).astype(np.uint16) if n else np.zeros(0, np.uint16))
+		np.save(d / "phoneme_offsets.new.npy", offsets)
+		for k in ("phonemes", "phoneme_offsets"):
+			if not (d / f"{k}.npy.bak").exists():
+				os.replace(d / f"{k}.npy", d / f"{k}.npy.bak")
+			os.replace(d / f"{k}.new.npy", d / f"{k}.npy")
+		(d / "rephonemized.json").write_text(json.dumps(stats))
+	print(f"total: {total}", flush=True)
+
+
 if __name__ == "__main__":
 	ap = argparse.ArgumentParser()
 	sub = ap.add_subparsers(dest="cmd", required=True)
@@ -429,10 +488,15 @@ if __name__ == "__main__":
 	e = sub.add_parser("exclude", help="build exclude.npy (bad transcripts and labels)")
 	e.add_argument("--store", type=Path, required=True)
 	e.add_argument("--rules", type=Path, default=None, help="exclusion rules (default data/exclude-rules.json; see RULES)")
+	r = sub.add_parser("rephonemize", help="phonemes re-derived from the stored text with the current front-end (old arrays kept as .bak)")
+	r.add_argument("--store", type=Path, required=True)
+	r.add_argument("--dry-run", action="store_true", help="stats only, nothing written")
 	args = ap.parse_args()
 	if args.cmd == "convert":
 		convert(args.meta, args.data, args.out, args.groups, args.workers, args.limit_speakers, resume=args.resume, supplement=args.supplement)
 	elif args.cmd == "similar":
 		build_similar(args.store, args.meta, args.workers)
+	elif args.cmd == "rephonemize":
+		rephonemize(args.store, args.dry_run)
 	else:
 		build_exclude(args.store, args.rules)
