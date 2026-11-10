@@ -23,6 +23,9 @@ if [ -n "$SMOKE" ]; then  # one log interval of the base stage, then of the long
 		--lr 7e-5 --warmup 1000 --steps 520 --eval-every 1000000
 	exit
 fi
+done_at() {  # <run dir> <steps>: the run's log reached its last step
+	[ -f $1/last.pt ] && [ "$(python3 -c "import json; print(int(json.loads(open('$1/log.jsonl').readlines()[-1])['step']))" 2>/dev/null)" = $2 ]
+}
 run() {  # <set> <ckpt> <out> [gt]: retried (ROCm segfaults; a run resumes)
 	for try in 1 2 3 4; do
 		[ -f $3/scores.json ] && return
@@ -40,20 +43,21 @@ evals() {  # <ckpt> <name>: the main, long, held-out game and held-out Genshin s
 # baseline: v1.3 on the rephonemized store (the earlier runs read the old phonemes)
 evals data/models/nemo-44khz-nar-flow-225m-v1.3.sft v1.3r
 echo "$(date) baselines done"
-[ -f training/v4-base/last.pt ] || {
-	nohup scripts/textuse-gate.sh training/v4-base 20000 0.015 >> training/v4-base-gate.log 2>&1 &
+done_at training/v4-base 300000 || {
+	# the recipe's gate: the 225M run was at 0.023 by 30k (0.005 at 20k, so a 20k gate would stop a healthy run)
+	nohup scripts/textuse-gate.sh training/v4-base 30000 0.015 >> training/v4-base-gate.log 2>&1 &
 	scripts/train.sh training/v4-base "${DATA[@]}" "${MODEL[@]}" "${NAR[@]}" "${BASE[@]}" --steps 300000 --keep-every 100000 > /dev/null 2>&1; }
-[ -f training/v4-base/last.pt ] && [ "$(python3 -c "import json; print(json.loads(open('training/v4-base/log.jsonl').readlines()[-1])['step'])")" = 300000 ] || { echo "$(date) base FAILED"; exit 1; }
+done_at training/v4-base 300000 || { echo "$(date) base FAILED"; exit 1; }
 echo "$(date) base done"
-[ -f training/v4-prompts/last.pt ] || scripts/train.sh training/v4-prompts "${DATA[@]}" "${MODEL[@]}" "${NAR[@]}" --prompt-drop 0 --prompt-s 3 10 \
+done_at training/v4-prompts 30000 || scripts/train.sh training/v4-prompts "${DATA[@]}" "${MODEL[@]}" "${NAR[@]}" --prompt-drop 0 --prompt-s 3 10 \
 	--init-from training/v4-base/last.pt --lr 7e-5 --warmup 500 --steps 30000 --decay-frac 0.3 > /dev/null 2>&1
 echo "$(date) prompts done"
-[ -f training/v4-more/last.pt ] || {
+done_at training/v4-more 300000 || {
 	nohup scripts/textuse-gate.sh training/v4-more 10000 0.04 >> training/v4-more-gate.log 2>&1 &
 	scripts/train.sh training/v4-more "${DATA[@]}" "${MODEL[@]}" "${NAR[@]}" "${MORE[@]}" \
 		--init-from training/v4-prompts/last.pt --lr 7e-5 --warmup 1000 --steps 300000 --decay-frac 0.2 --keep-every 100000 > /dev/null 2>&1; }
 echo "$(date) more done"
-[ -f training/v4-len/last.pt ] || scripts/train.sh training/v4-len "${DATA[@]}" "${MODEL[@]}" --init-from training/v4-more/last.pt --train-only len_q length \
+done_at training/v4-len 6000 || scripts/train.sh training/v4-len "${DATA[@]}" "${MODEL[@]}" --init-from training/v4-more/last.pt --train-only len_q length \
 	--batch 32 --max-tokens 32000 --lr 1e-3 --warmup 200 --steps 6000 --decay-frac 0.3 --eval-every 1000 --val-size 256 \
 	--len-frac 1.0 --len-ramp 1 --len-weight 1.0 --cond-drop 0 --text-drop 0 --prompt-drop 0 --prompt-s 3 10 --max-s 30 > /dev/null 2>&1
 echo "$(date) length head done"
