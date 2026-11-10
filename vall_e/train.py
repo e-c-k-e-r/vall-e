@@ -349,10 +349,11 @@ def main():
 		init = torch.load(args.init_from, map_location=device, weights_only=False)["model"]
 		own = model.state_dict()
 		for k, v in list(init.items()):
-			if k in own and own[k].shape != v.shape and k == "mode.weight" and v.shape[0] < own[k].shape[0]:
-				# more modes than the checkpoint: its rows carry over, the new ones keep their initialisation
+			if k in own and own[k].shape != v.shape and k in ("mode.weight", "text.weight") and v.shape[0] < own[k].shape[0]:
+				# more modes / phonemes (an extended vocabulary) than the checkpoint: its rows carry over, the new ones keep
+				# their initialisation
 				grown = own[k].clone(); grown[: v.shape[0]] = v; init[k] = grown
-				print(f"mode embedding: {v.shape[0]} -> {own[k].shape[0]} modes")
+				print(f"{k}: {v.shape[0]} -> {own[k].shape[0]} rows")
 		missing, unexpected = model.load_state_dict(init, strict=False)
 		print(f"initialised from {args.init_from}; new parameters: {missing}; unused: {unexpected}")
 	print(f"params {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M")
