@@ -2,7 +2,7 @@
 # v4: the recipe (scripts/recipe.sh) from scratch at 746M (d1536 x 24, activation checkpointing), on the main store
 # (rephonemized with the current front-end) plus the Genshin store, games and Genshin at 15% of draws from step 0,
 # the held-out game speakers and Genshin characters (data/holdout-speakers-v2.json) never trained on. Long-form
-# targets (up to 30 s) are folded into the second stage instead of a separate fine-tune. About 8.3 days.
+# targets (up to 30 s, at their natural rate) are folded into the second stage instead of a separate fine-tune. About 8.3 days.
 #   GENSHIN=<store> scripts/v4-chain.sh        SMOKE=1: the base stage's first 520 steps into training/v4-smoke
 # Stages resume (scripts/train.sh) and are skipped once their last.pt is in place.
 cd "$(dirname "$0")/.."
@@ -16,7 +16,9 @@ DATA=(--store $S "${GROUPS_ARGS[@]}" --extra-store $G --min-rate 13 --min-rate-g
 	--holdout-speakers data/holdout-speakers-v2.json --oversample-groups "${OVER[@]}" --oversample-p 0.15)
 NAR=(--batch 16 --max-tokens 16000 --mask-ratio cos --cond-drop 0.1 --text-drop 0)
 BASE=(--prompt-drop 0 --lr 2e-4 --warmup 2000 --decay-frac 0.2)
-MORE=(--prompt-drop 0.1 --prompt-s 3 10 --max-s 30 --long-p 0.25)
+# long-form at its natural rate (7.7% of utterances over 12 s, ~21% of the audio): already ~2x the long training of
+# v1.2's fine-tune over 300k steps; --long-p 0.25 would spend half the stage's audio on them at the cost of coverage
+MORE=(--prompt-drop 0.1 --prompt-s 3 10 --max-s 30)
 if [ -n "$SMOKE" ]; then  # one log interval of the base stage, then of the long-form stage from it (the most memory)
 	scripts/train.sh training/v4-smoke "${DATA[@]}" "${MODEL[@]}" "${NAR[@]}" "${BASE[@]}" --steps 520 --eval-every 1000000
 	scripts/train.sh training/v4-smoke-more "${DATA[@]}" "${MODEL[@]}" "${NAR[@]}" "${MORE[@]}" --init-from training/v4-smoke/last.pt \
