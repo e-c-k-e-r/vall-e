@@ -31,9 +31,12 @@ MAX_PHONEMES = 160  # about 10 s of speech: longer texts are split into sentence
 class TTS:
 	def __init__(self, ckpt=None, device="cuda"):
 		"""ckpt: a training checkpoint or an export (export.py); None for the default model (downloaded on first use)."""
-		from .export import load_checkpoint
+		from .export import load_checkpoint, recommended_guidance
 		from .evalset import load_codec
 		state, config, vocab = load_checkpoint(ckpt)
+		# the guidance the export was tuned for (v2.0: 3.0 / 2.0; a distilled model: 0 / 0), else the 225M models' 6.0 / 2.0
+		g = recommended_guidance(ckpt) or dict(cfg=6.0, cfg_prompt=2.0)
+		self.cfg, self.cfg_prompt = g["cfg"], g["cfg_prompt"]
 		self.model = V3(**config).eval()
 		self.model.load_state_dict(state)
 		self.model.to(device)
@@ -101,14 +104,16 @@ class TTS:
 		return wav.float().cpu()
 
 	@torch.no_grad()
-	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=6.0, flow_steps=8, sway=-1.0,
-			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True, cfg_prompt=2.0):
+	def generate(self, text, prompt=None, language="en", duration=None, steps=25, cfg=None, flow_steps=8, sway=-1.0,
+			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True, cfg_prompt=None):
 		"""prompt: a wav path (or None for an unconditioned voice). duration (s): the whole utterance's length, else
 		predicted per sentence and multiplied by length_scale (a little under 1 if outputs trail off into extra words,
 		as an overestimated length gets filled with speech). About 1.2 suits models trained with silence padding
 		(--pad-p), which fill spare time with silence; trim drops that trailing silence. cfg_prompt: speaker guidance
 		(models trained with prompt-only dropout, as v3-main6; eval set: SIM 0.700 -> 0.722 at 2.0, WER unchanged; set 0
 		for checkpoints trained without it). Returns [1, samples]."""
+		cfg = self.cfg if cfg is None else cfg
+		cfg_prompt = self.cfg_prompt if cfg_prompt is None else cfg_prompt
 		if seed is not None:
 			torch.manual_seed(seed)
 		p = self.encode_prompt(prompt) if prompt else torch.zeros(0, self.model.values, dtype=torch.long, device=self.device)
@@ -151,12 +156,14 @@ class TTS:
 		return _trim_silence(w) if trim else w
 
 	@torch.no_grad()
-	def continue_speech(self, audio, said, new, language="en", prompt=None, duration=None, steps=25, cfg=6.0, cfg_prompt=2.0,
+	def continue_speech(self, audio, said, new, language="en", prompt=None, duration=None, steps=25, cfg=None, cfg_prompt=None,
 			seed=None, trim=True):
 		"""Continues a recording that says `said` with `new`: the recording is kept as is and the new part is generated in
 		the same voice. duration (s): the new part's length, else predicted on its own (predicting the whole from the
 		full text undershot and squeezed the new part). prompt: a voice clip, else the recording itself. Returns
 		[1, samples], the recording included."""
+		cfg = self.cfg if cfg is None else cfg
+		cfg_prompt = self.cfg_prompt if cfg_prompt is None else cfg_prompt
 		known = self.encode_audio(audio)
 		p = self.encode_prompt(prompt) if prompt else to_patches(known[-int(PROMPT_S * FPS):], self.model.patch)
 		with torch.autocast(self.device, dtype=torch.bfloat16, enabled=self.device == "cuda"):
@@ -167,11 +174,13 @@ class TTS:
 		return self._fill(text, language, full, torch.arange(n, device=full.device) < len(known), n, p, steps, cfg, cfg_prompt, seed, trim)
 
 	@torch.no_grad()
-	def edit(self, audio, text, start, end, old_text=None, language="en", prompt=None, steps=25, cfg=6.0, cfg_prompt=2.0,
+	def edit(self, audio, text, start, end, old_text=None, language="en", prompt=None, steps=25, cfg=None, cfg_prompt=None,
 			seed=None, trim=False):
 		"""Re-speaks the part of a recording between `start` and `end` (seconds) so the whole says `text`. Without
 		old_text (what the recording said) the span keeps its length; with it, the span is scaled by the change in
 		phoneme count. prompt: a voice clip, else the recording itself. Returns [1, samples], the whole recording."""
+		cfg = self.cfg if cfg is None else cfg
+		cfg_prompt = self.cfg_prompt if cfg_prompt is None else cfg_prompt
 		known = self.encode_audio(audio)
 		T = len(known)
 		s0, s1 = max(0, int(start * FPS)), min(T, int(end * FPS))
@@ -221,9 +230,9 @@ def main():
 	ap.add_argument("--duration", type=float, default=None, help="seconds (default: predicted)")
 	ap.add_argument("--out", type=Path, default=Path("out.wav"))
 	ap.add_argument("--steps", type=int, default=25)
-	ap.add_argument("--cfg", type=float, default=6.0, help="guidance strength (6.0 beat 2.5 on the eval set: SIM +0.028, WER -2.6 points)")
+	ap.add_argument("--cfg", type=float, default=None, help="guidance strength (default: what the export was tuned for, else 6.0; 6.0 beat 2.5 on the 225M model: SIM +0.028, WER -2.6 points)")
 	ap.add_argument("--seed", type=int, default=None)
-	ap.add_argument("--cfg-prompt", type=float, default=2.0, help="speaker guidance (0 for checkpoints trained without prompt-only dropout)")
+	ap.add_argument("--cfg-prompt", type=float, default=None, help="speaker guidance (default: what the export was tuned for, else 2.0; 0 for checkpoints trained without prompt-only dropout)")
 	ap.add_argument("--length-scale", type=float, default=1.0, help="scale the predicted length (about 1.2 for silence-padded models)")
 	ap.add_argument("--device", default="cuda")
 	args = ap.parse_args()
