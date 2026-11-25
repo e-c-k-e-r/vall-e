@@ -284,6 +284,9 @@ def main():
 	ap.add_argument("--ns-p", type=float, default=0.0, help="share of items that are noise suppression (needs noisy-targets in the store)")
 	ap.add_argument("--sr-p", type=float, default=0.0, help="share of items that are speech removal")
 	ap.add_argument("--pad-p", type=float, default=0.0, help="share of targets padded with trailing silence")
+	ap.add_argument("--cont-p", type=float, default=0.0,
+		help="share of items made continuations (tts-c): another utterance of the speaker known in front, only the target generated")
+	ap.add_argument("--cont-s", type=float, default=8.0, help="longest utterance put in front of a continuation (s)")
 	ap.add_argument("--min-rate", type=float, default=None, help="drop items under this many phonemes / s (misaligned segments)")
 	ap.add_argument("--min-rate-groups", nargs="*", default=None, help="groups --min-rate applies to (default all)")
 	ap.add_argument("--repa-weight", type=float, default=0.0, help="REPA alignment loss weight (see Repa); > 0 enables it")
@@ -317,13 +320,13 @@ def main():
 
 	train_ds = StoreUtterances(args.store, "train", crop_prompt=False, groups=args.groups, languages=args.languages,
 		min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s), similar_p=args.similar_p, noisy_p=args.noisy_p, min_rate=args.min_rate,
-		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p,
+		min_rate_groups=args.min_rate_groups, pad_p=args.pad_p, ns_p=args.ns_p, sr_p=args.sr_p, cont_p=args.cont_p, cont_s=args.cont_s,
 		only=np.load(args.items_from or args.repa_feats / "ids.npy") if (args.items_from or args.repa_feats) else None, repa=args.repa_feats,
 		exclude_speakers=json.loads(args.holdout_speakers.read_text()) if args.holdout_speakers else None)
 	if args.extra_store:
 		# more stores (ingest.py), with the same length / rate filters and held-out speakers
 		from .data import ConcatUtterances
-		extra = [StoreUtterances(x, "train", crop_prompt=False, min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s),
+		extra = [StoreUtterances(x, "train", crop_prompt=False, min_s=args.min_s, max_s=args.max_s, prompt_s=tuple(args.prompt_s), cont_p=args.cont_p, cont_s=args.cont_s,
 			exclude_speakers=json.loads(args.holdout_speakers.read_text()) if args.holdout_speakers else None) for x in args.extra_store]
 		print(f"extra stores: {[(str(x), len(e)) for x, e in zip(args.extra_store, extra)]}")
 		train_ds = ConcatUtterances([train_ds] + extra)

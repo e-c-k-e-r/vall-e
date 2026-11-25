@@ -136,6 +136,16 @@ class Collator:
 				s = rng.randrange(len(p) - n)
 				p = p[s : s + n]
 			a = to_patches(it["target"], self.patch)
+			if it.get("known"):
+				# continuation: the patches wholly inside the known utterance are given, the rest generated (as
+				# demask_flow holds known frames)
+				m = torch.arange(len(a)) >= it["known"] // self.patch
+				both = rng.random() < self.cond_drop
+				text.append(it["text"][:0] if both or rng.random() < self.text_drop else it["text"])
+				prompt.append(to_patches(p, self.patch)[:0] if both or rng.random() < self.prompt_drop else to_patches(p, self.patch))
+				target.append(a); masked.append(m); modes.append(0)
+				langs.append(0 if rng.random() < self.lang_drop else it.get("lang", 0))
+				continue
 			m = self._mask(len(a), rng, span=task is None and rng.random() < self.span_p)
 			both = rng.random() < self.cond_drop
 			text.append(it["text"][:0] if both or rng.random() < self.text_drop else it["text"])
@@ -225,8 +235,12 @@ class StoreUtterances(torch.utils.data.Dataset):
 	utterance). lang is the store's language id + 1 (0 is unknown)."""
 	def __init__(self, store, split, min_s=2.0, max_s=12.0, prompt_s=(3.0, 6.0), seed=0, crop_prompt=True, groups=None, languages=None,
 			similar_p=0.0, similar_k=3, noisy_p=0.0, min_rate=None, min_rate_groups=None, pad_p=0.0, pad_s=(0.2, 1.5), ns_p=0.0, sr_p=0.0,
-			only=None, repa=None, exclude_speakers=None):
-		"""min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
+			only=None, repa=None, exclude_speakers=None, cont_p=0.0, cont_s=8.0):
+		"""cont_p: share of items made continuations (the old tts-c, non-naive): another utterance of the speaker (up to
+		cont_s seconds, the store's previous row half the time) in front of the target, its text in front of the target's
+		with a space, and its frames marked known (item["known"]) so only the target is masked, as TTS.stream generates
+		each chunk after the ones before it.
+		min_rate (phonemes / s) drops items of min_rate_groups (default all) slower than it: LibriVox and Audiobooks
 		segments often run past their transcript into the next sentence (ground-truth WER 10-13%, 2.5% for LibriVox
 		at >= 13 / s), which taught the model to babble past the text.
 		pad_p: share of targets given pad_s seconds of trailing silence (and a fifth of that leading, half the time), so
@@ -276,6 +290,7 @@ class StoreUtterances(torch.utils.data.Dataset):
 		self.similar_p, self.similar_k, self.noisy_p = similar_p, similar_k, noisy_p
 		self.n_lang = len(st.m["languages"]) + 1
 		self.pad_p, self.pad_s = pad_p, pad_s
+		self.cont_p, self.cont_f = cont_p, int(cont_s * FPS)
 		# noise suppression / speech removal: pairs from <store>/noisy-targets (noisy.py bake-targets), by length so a
 		# substituted item fits its length bucket
 		self.ns_p, self.sr_p, self.pairs = ns_p, sr_p, None
@@ -323,6 +338,22 @@ class StoreUtterances(torch.utils.data.Dataset):
 		others = others[others != u]
 		return int(others[rng.randrange(len(others))]) if len(others) else None
 
+	def _cont_source(self, u, rng):
+		"""An utterance of u's speaker to put in front of it (continuation), at most cont_f frames and with the pair
+		within max_f, or None."""
+		st = self.store
+		spk = int(st.speaker[u])
+		ok = lambda v: v != u and int(st.speaker[v]) == spk and 22 <= st.frames[v] <= min(self.cont_f, self.max_f - st.frames[u]) \
+			and not (st.exclude is not None and st.exclude[v])
+		if u > 0 and rng.random() < 0.5 and ok(u - 1):
+			return u - 1
+		others = st.utterances_of(spk)
+		for _ in range(8):
+			v = int(others[rng.randrange(len(others))])
+			if ok(v):
+				return v
+		return None
+
 	def __len__(self):
 		return len(self.items)
 
@@ -356,7 +387,12 @@ class StoreUtterances(torch.utils.data.Dataset):
 			if x < self.ns_p + self.sr_p:
 				return self._pair(u, rng, "ns" if x < self.ns_p else "sr")
 		target = fsq.codes_to_digits(torch.from_numpy(st.codes(u).astype(np.int64)).t())
+		prev = self._cont_source(u, rng) if self.cont_p and rng.random() < self.cont_p else None
 		src = self._prompt_source(u, rng)
+		for _ in range(3):  # the prompt is never the continued utterance
+			if prev is None or src != prev:
+				break
+			src = self._prompt_source(u, rng)
 		prompt = target[:0]
 		if src is not None:
 			codes = st.noisy_codes(src[1]) if isinstance(src, tuple) else st.codes(src)
@@ -372,6 +408,12 @@ class StoreUtterances(torch.utils.data.Dataset):
 		text = torch.from_numpy(st.phonemes(u).astype(np.int64) + 1)
 		it = dict(text=text, prompt=prompt, target=target, speaker=st.speaker_key(u), path=f"{st.root}#{u}", text_raw=st.text(u),
 			lang=int(st.language[u]) + 1)
+		if prev is not None:
+			pd = fsq.codes_to_digits(torch.from_numpy(st.codes(prev).astype(np.int64)).t())
+			it["text"] = torch.cat([torch.from_numpy(st.phonemes(prev).astype(np.int64) + 1), torch.tensor([1]), text])  # 1: space
+			it["target"], it["known"] = torch.cat([pd, target]), len(pd)
+			it["text_raw"] = f"{st.text(prev)} {st.text(u)}"
+			return it
 		if self.repa is not None:
 			R = self.repa
 			k = int(np.searchsorted(R["ids"], u))
