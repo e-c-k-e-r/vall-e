@@ -194,6 +194,51 @@ class TTS:
 		keep[s0 : s0 + span] = False
 		return self._fill(text, language, full, keep, len(full), p, steps, cfg, cfg_prompt, seed, trim)
 
+	@torch.no_grad()
+	def stream(self, text, prompt=None, language="en", clauses=False, continuation=True, context_s=8.0, steps=25, cfg=None,
+			cfg_prompt=None, length_scale=1.0, seed=None, pause=0.25):
+		"""Yields the speech for `text` a chunk at a time ([1, samples] each), as soon as each is generated: chunks are
+		sentences (clauses=True: also clauses, at , ; :). With continuation, each chunk is generated as the continuation
+		of the chunks before it (their frames kept as known audio, up to context_s seconds of whole chunks, their text
+		in front of the new chunk's), so voice and prosody carry across; without it, each chunk is generated on its own
+		and chunks are joined with `pause` seconds of silence. Each chunk is decoded with up to a second of the audio
+		before it, so the codec's decoder sees the join."""
+		cfg = self.cfg if cfg is None else cfg
+		cfg_prompt = self.cfg_prompt if cfg_prompt is None else cfg_prompt
+		if seed is not None:
+			torch.manual_seed(seed)
+		p = self.encode_prompt(prompt) if prompt else None
+		done = []  # (digits [T, 32], text) of the chunks so far
+		chunks = _chunks(text, clauses)
+		for k, chunk in enumerate(chunks):
+			ids = self.phonemes(chunk, language)
+			pp = p if p is not None else (to_patches(done[0][0], self.model.patch) if done else
+				torch.zeros(0, self.model.values, dtype=torch.long, device=self.device))
+			ctx, ctx_text = [], []
+			if continuation:
+				for d, t in reversed(done):
+					if ctx and sum(len(x) for x in ctx) + len(d) > context_s * FPS:
+						break
+					ctx.insert(0, d); ctx_text.insert(0, t)
+			with torch.autocast(self.device, dtype=torch.bfloat16, enabled=self.device == "cuda"):
+				n = max(44, int(predict_length(self.model, ids, pp) * length_scale))
+				if ctx:
+					known = torch.cat(ctx)
+					full = torch.cat([known, known[-1:].expand(n, -1)])
+					keep = torch.arange(len(full), device=full.device) < len(known)
+					digits = demask_flow(self.model, self.phonemes(" ".join(ctx_text + [chunk]), language), pp, len(full), steps=steps,
+						cfg=cfg, cfg_prompt=cfg_prompt, known=full, keep=keep)[len(known):]
+				else:
+					digits = demask_flow(self.model, ids, pp, n, steps=steps, cfg=cfg, cfg_prompt=cfg_prompt)
+			tail = done[-1][0][-int(FPS):] if (done and continuation) else digits[:0]
+			w = self.decode(torch.cat([tail, digits]))[:, len(tail) * 512 :]  # 512 samples per frame
+			if k == len(chunks) - 1:
+				w = _trim_silence(w)
+			elif not continuation:
+				w = torch.cat([_trim_silence(w), torch.zeros(1, int(pause * self.sample_rate))], -1)
+			done.append((digits, chunk))
+			yield w
+
 	def _split(self, text, language):
 		"""Phoneme ids per sentence, merging sentences up to MAX_PHONEMES."""
 		ids = self.phonemes(text, language)
@@ -208,6 +253,22 @@ class TTS:
 		if cur:
 			parts.append(cur)
 		return [self.phonemes(p, language) for p in parts if p.strip()]
+
+
+def _chunks(text, clauses=False, min_words=3):
+	"""Sentences (clauses=True: also clauses, split after , ; :), pieces under min_words merged into the next."""
+	pat = r"(?<=[.!?。！？])\s+" if not clauses else r"(?<=[.!?。！？,;:、，；：])\s+"
+	out, cur = [], ""
+	for s in re.split(pat, text.strip()):
+		cur = f"{cur} {s}".strip()
+		if len(cur.split()) >= min_words:
+			out.append(cur); cur = ""
+	if cur:
+		if out:
+			out[-1] = f"{out[-1]} {cur}"
+		else:
+			out.append(cur)
+	return out
 
 
 def _trim_silence(wav, threshold=0.003, window=882, keep=0.05):
