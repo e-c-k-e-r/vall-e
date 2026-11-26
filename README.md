@@ -7,10 +7,11 @@
 Zero-shot text-to-speech at 44.1 kHz: give it text and a few seconds of someone's voice, and it speaks the text in that
 voice. Multilingual (English, French, German, Japanese, Chinese, Korean).
 
-This is the third design of the project ("v3"). Audio is [NVIDIA's 44.1 kHz FSQ codec](https://huggingface.co/nvidia/audio-codec-44khz),
-read and generated as continuous values rather than tokens: a transformer over `[text][voice prompt][target]` and a
-flow-matching head that generates each position's audio values jointly, filling the target in by masked generation
-(`docs/model.md`). The EnCodec models and the earlier architectures are in the `v2-final` tag.
+Audio is [NVIDIA's 44.1 kHz FSQ codec](https://huggingface.co/nvidia/audio-codec-44khz), read and generated as continuous values rather than tokens: a transformer over `[text][voice prompt][target]` and a flow-matching head that generates each position's audio values jointly, filling the target in by masked generation (`docs/model.md`).
+
+This is the third design of the project ("v3") with *heavy* LLM assistance to identify pitfalls from my notes of the previous iterations, without consideration of maintaining interop with prior versions.
+
+Code and documentation for the EnCodec models and the earlier architectures are in the [`v2-final`](https://github.com/e-c-k-e-r/vall-e/tree/v2-final) tag.
 
 ## Results
 
