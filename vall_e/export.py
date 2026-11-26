@@ -1,6 +1,6 @@
 # Release checkpoints: a training checkpoint (last.pt: weights, optimizer state, config, vocabulary) exported to a
 # safetensors file with just what inference needs (fp16 weights; the config and phoneme vocabulary in its metadata),
-# and loading either kind. The default model downloads on first use.
+# and loading either kind. The released models download on first use, by name (RELEASES; the default is the 746M v2.0).
 #
 #   python -m vall_e.export training/v3-main6-len/last.pt data/models/nemo-44khz-nar-flow-225m.sft
 #   python -m vall_e.export codec data/models/nemo-44khz-codec.sft      (the codec, for engines)
@@ -11,8 +11,11 @@ from pathlib import Path
 
 import torch
 
-DEFAULT_MODEL = "nemo-44khz-nar-flow-225m.sft"
-DEFAULT_URL = os.environ.get("VALL_E_MODEL_URL", "https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/nemo-44khz-nar-flow-225m/fp16.sft")
+# the released files, in one folder ($VALL_E_MODEL_URL): the 746M v2.0 (guidance 3.0 / 2.0 in its metadata), its guidance-distilled v2.0-fast,
+# the 225M v1.3, and the codec for engines (python -m vall_e.export codec)
+RELEASES = ("nemo-44khz-nar-flow-746m-v2.0.sft", "nemo-44khz-nar-flow-746m-v2.0-fast.sft", "nemo-44khz-nar-flow-225m-v1.3.sft", "nemo-44khz-codec.sft")
+DEFAULT_MODEL = RELEASES[0]
+RELEASE_URL = os.environ.get("VALL_E_MODEL_URL", "https://huggingface.co/ecker/vall-e/resolve/main/models/ckpt/nemo-44khz")
 MODEL_DIR = Path(os.environ.get("VALL_E_MODELS", Path(__file__).resolve().parents[1] / "data" / "models"))
 FORMAT = "vall-e-v3"
 
@@ -62,11 +65,9 @@ def export_codec(out):
 
 
 def load_checkpoint(path):
-	"""A training checkpoint (.pt) or an export (.sft / .safetensors) -> (state dict, config, vocabulary). None (or the
-	default model's name) gives the default model, downloaded on first use."""
-	if path is None or str(path) == DEFAULT_MODEL:
-		path = default_model()
-	path = Path(path)
+	"""A training checkpoint (.pt) or an export (.sft / .safetensors) -> (state dict, config, vocabulary). None gives the
+	default model and a released model's name (RELEASES) that one, downloaded on first use."""
+	path = resolve(path)
 	if path.suffix in (".sft", ".safetensors"):
 		from safetensors import safe_open
 		with safe_open(str(path), framework="pt") as f:
@@ -84,9 +85,8 @@ def load_checkpoint(path):
 
 def recommended_guidance(path):
 	"""The guidance an export was tuned for ({"cfg", "cfg_prompt"}), or None (older exports, training checkpoints)."""
-	if path is None or str(path) == DEFAULT_MODEL:
-		path = default_model()
-	if Path(path).suffix not in (".sft", ".safetensors"):
+	path = resolve(path)
+	if path.suffix not in (".sft", ".safetensors"):
 		return None
 	from safetensors import safe_open
 	with safe_open(str(path), framework="pt") as f:
@@ -94,16 +94,30 @@ def recommended_guidance(path):
 	return json.loads(g) if g else None
 
 
+def resolve(path):
+	"""A checkpoint path as given; None: the default model; a released model's bare name (RELEASES) that isn't a file here:
+	its copy in MODEL_DIR, downloaded the first time."""
+	if path is None:
+		return release(DEFAULT_MODEL)
+	if str(path) in RELEASES and not Path(path).exists():
+		return release(str(path))
+	return Path(path)
+
+
 def default_model():
-	"""The default model's local path, downloading it from DEFAULT_URL ($VALL_E_MODEL_URL) the first time."""
-	path = MODEL_DIR / DEFAULT_MODEL
+	return release(DEFAULT_MODEL)
+
+
+def release(name):
+	"""A released file's local path (MODEL_DIR / name), downloading it from RELEASE_URL ($VALL_E_MODEL_URL) the first time."""
+	path = MODEL_DIR / name
 	if not path.exists():
 		import requests
 		from tqdm import tqdm
 		path.parent.mkdir(parents=True, exist_ok=True)
-		with requests.get(DEFAULT_URL, stream=True) as r:
+		with requests.get(f"{RELEASE_URL}/{name}", stream=True) as r:
 			r.raise_for_status()
-			bar = tqdm(total=int(r.headers.get("content-length", 0)), unit="B", unit_scale=True, desc=f"downloading {DEFAULT_MODEL}")
+			bar = tqdm(total=int(r.headers.get("content-length", 0)), unit="B", unit_scale=True, desc=f"downloading {name}")
 			with open(path.with_suffix(".tmp"), "wb") as f:
 				for chunk in r.iter_content(1 << 20):
 					f.write(chunk); bar.update(len(chunk))

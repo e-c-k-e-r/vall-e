@@ -41,7 +41,7 @@ python -m vall_e.tts --text "Hello there." --prompt voice.wav --out out.wav
 
 ```python
 from vall_e.tts import TTS
-tts = TTS()   # the default model, downloaded to data/models/ on first use; or TTS("<checkpoint or export>")
+tts = TTS()   # the default model (v2.0), downloaded to data/models/ on first use; or TTS("<released name, checkpoint or export>")
 wav = tts.generate("Hello there.", prompt="voice.wav", language="en")   # [1, samples] at 44.1 kHz
 ```
 
@@ -55,7 +55,19 @@ python -m vall_e.webui [--ckpt <checkpoint or export>] [--models training] [--li
 (re-speak a stretch of it).
 
 The length is predicted unless `--duration` is given; long texts are generated sentence by sentence; `--prompt` can be
-left out for an unconditioned voice. Defaults: 25 steps, guidance 6.0, speaker guidance 2.0.
+left out for an unconditioned voice. Defaults: 25 steps, and the guidance the model was tuned for.
+
+## Models
+
+The released models ([`models/ckpt/nemo-44khz`](https://huggingface.co/ecker/vall-e/tree/main/models/ckpt/nemo-44khz)) download on first use when
+named (`--ckpt nemo-44khz-nar-flow-746m-v2.0-fast.sft`, `TTS("nemo-44khz-nar-flow-225m-v1.3.sft")`):
+
+| File | | Guidance (text / speaker) |
+|---|---|---|
+| `nemo-44khz-nar-flow-746m-v2.0.sft` | 746M, the default | 3.0 / 2.0 |
+| `nemo-44khz-nar-flow-746m-v2.0-fast.sft` | v2.0 guidance-distilled: one pass per step, about twice as fast | none |
+| `nemo-44khz-nar-flow-225m-v1.3.sft` | 225M | 6.0 / 2.0 |
+| `nemo-44khz-codec.sft` | the codec, exported for engines (volta-engine) | |
 
 ## Layout
 
