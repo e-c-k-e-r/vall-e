@@ -67,7 +67,7 @@ def choose(st, seed=0, min_s=3.0):
 def bake(root, batch=32, snr=(3.0, 20.0), seed=0, limit=None, speakers=None, amp=False, device="cuda"):
 	"""speakers: bake prompts for this many random speakers (default all); limit: only the first `limit` of those, into
 	noisy-test (a quick check). amp: run the codec in bf16."""
-	from .emb.nemo import AudioCodecModel
+	from .emb.codec import AudioCodecModel
 	root = Path(root)
 	st = Store(root)
 	fps = CODEC["sample_rate"] / CODEC["samples_per_frame"]

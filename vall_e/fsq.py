@@ -1,6 +1,6 @@
 # nvidia/audio-codec-44khz quantizes a frame as 8 groups of 4 scalars at [8, 5, 5, 5] levels (1000 codes per group).
 # These convert between its code indices, per-scalar level indices ("digits") and the [-1, 1] values its decoder sees,
-# matching FiniteScalarQuantizer in vall_e/emb/nemo.py.
+# matching FiniteScalarQuantizer in vall_e/emb/codec.py.
 import torch
 
 GROUPS = 8

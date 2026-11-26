@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 
 import torch
+from .audio import load as load_audio, save as save_audio
 import torchaudio
 
 from . import fsq
@@ -52,7 +53,7 @@ class TTS:
 		return torch.tensor(ids, dtype=torch.long, device=self.device)
 
 	def _load(self, path):
-		wav, sr = torchaudio.load(str(path))
+		wav, sr = load_audio(path)
 		wav = wav.mean(0, keepdim=True)
 		return torchaudio.functional.resample(wav, sr, self.sample_rate) if sr != self.sample_rate else wav
 
@@ -138,7 +139,7 @@ class TTS:
 	@torch.no_grad()
 	def encode_audio(self, path):
 		"""A whole recording as frame digits [T, 32] (mono, 44.1 kHz)."""
-		wav, sr = torchaudio.load(str(path))
+		wav, sr = load_audio(path)
 		wav = wav.mean(0, keepdim=True)
 		if sr != self.sample_rate:
 			wav = torchaudio.functional.resample(wav, sr, self.sample_rate)
@@ -300,7 +301,7 @@ def main():
 	tts = TTS(args.ckpt, args.device)
 	wav = tts.generate(args.text, args.prompt, args.language, args.duration, steps=args.steps, cfg=args.cfg, seed=args.seed,
 		length_scale=args.length_scale, cfg_prompt=args.cfg_prompt)
-	torchaudio.save(str(args.out), wav, tts.sample_rate)
+	save_audio(str(args.out), wav, tts.sample_rate)
 	print(f"wrote {args.out} ({wav.shape[-1] / tts.sample_rate:.1f} s)")
 
 

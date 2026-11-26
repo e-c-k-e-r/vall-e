@@ -11,6 +11,7 @@ from functools import cache
 
 import numpy as np
 import torch
+from ..audio import load as load_audio
 import torchaudio
 
 SR = 16000
@@ -18,7 +19,7 @@ HOP = 160  # 10 ms frames
 
 
 def load(path):
-	wav, sr = torchaudio.load(str(path))
+	wav, sr = load_audio(path)
 	return torchaudio.functional.resample(wav.mean(0, keepdim=True), sr, SR)
 
 

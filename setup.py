@@ -41,13 +41,11 @@ setup(
 		"numpy",
 		"tqdm",
 		"requests",
-		# the codec (vall_e/emb/nemo.py, a trimmed copy of NeMo's AudioCodecModel)
-		"nemo-toolkit",
-		"hydra-core",
-		"lightning",
-		"sentencepiece",
-		"einops",
-		"librosa",
+		# the codec (vall_e/emb/codec.py: NVIDIA's 44.1 kHz codec in plain PyTorch, read from its .nemo release)
+		"pyyaml",
+		"huggingface_hub",
+		"librosa",  # prosody features (vall_e/emb/prosody.py)
+		"soundfile",  # audio files (vall_e/audio.py; torchaudio 2.9+ reads them only through torchcodec and FFmpeg)
 		# text
 		"phonemizer>=2.1.0",  # needs espeak-ng installed
 		"langdetect",

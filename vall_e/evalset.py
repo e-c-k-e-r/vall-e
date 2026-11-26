@@ -22,18 +22,16 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 
 def load_codec(device):
-	"""The NeMo codec from its cached .nemo file (NeMo's from_pretrained won't fall back to the cache when offline)."""
-	import glob
-	from .emb.nemo import AudioCodecModel
-	cached = sorted(glob.glob(os.path.expanduser("~/.cache/huggingface/hub/models--nvidia--audio-codec-44khz/snapshots/*/audio-codec-44khz.nemo")))
-	model = AudioCodecModel.restore_from(cached[-1]) if cached else AudioCodecModel.from_pretrained("nvidia/audio-codec-44khz")
-	return model.to(device).eval()
+	"""NVIDIA's 44.1 kHz codec (vall_e/emb/codec.py; its cached copy when there is one, so it works offline)."""
+	from .emb.codec import AudioCodecModel
+	return AudioCodecModel.from_pretrained().to(device).eval()
 
 # without it MIOpen (ROCm) benchmarks kernels for every new convolution shape (every utterance / clip length)
 os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
 
 import numpy as np
 import torch
+from .audio import load as load_audio, save as save_audio
 
 from .data import FPS, _dup_key, to_patches
 
@@ -103,7 +101,6 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 	from . import fsq
 	from .model import V3, demask_flow, predict_length
 	from .store import Store
-	from .emb.nemo import AudioCodecModel
 	es = json.loads(Path(setfile).read_text())
 	out = Path(out); out.mkdir(parents=True, exist_ok=True)
 	st = Store(es["store"])
@@ -162,7 +159,7 @@ def run(setfile, ckpt, out, length="ref", length_scale=1.0, steps=25, cfg=6.0, s
 					gen = demask_flow(model, text, prompt, n, steps=steps, cfg=cfg, lang=lang, temperature=temperature, cfg_prompt=cfg_prompt)
 			codes = fsq.digits_to_codes(gen).unsqueeze(0).to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
-			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
+			save_audio(str(out / f"{it['id']:04d}.wav"), wav, 44100)
 			rows.write(json.dumps(dict(id=it["id"], language=it["language"], frames=n, ref_frames=it["frames"])) + "\n"); rows.flush()
 			if it["id"] % 20 == 0:
 				print(f"generated {it['id'] + 1}/{len(es['items'])}", flush=True)
@@ -176,17 +173,16 @@ def run_gt(es, st, out, device, batch, setfile):
 	"""The codec-decoded ground truth: its errors are the ceiling, and items whose reference is itself wrong (an
 	overrunning segment, a bad transcript) can be excluded from comparisons with --gt."""
 	import torchaudio
-	from .emb.nemo import AudioCodecModel
 	codec = load_codec(device)
 	with open(out / "items.jsonl", "w") as rows:
 		for it in es["items"]:
 			codes = torch.from_numpy(np.asarray(st.codes(it["utt"])).astype(np.int64)).t()[None].to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
-			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
+			save_audio(str(out / f"{it['id']:04d}.wav"), wav, 44100)
 			# the set's prompt clip, decoded: the fixed reference every run's SIM is measured against
 			pc = torch.from_numpy(np.asarray(st.codes(it["prompt_utt"])[it["prompt_start"] : it["prompt_start"] + it["prompt_frames"]]).astype(np.int64)).t()[None].to(device)
 			pw = codec.decode(tokens=pc, tokens_len=torch.tensor([pc.shape[-1]], device=device))[0].float().cpu()
-			torchaudio.save(str(out / f"{it['id']:04d}_prompt.wav"), pw, 44100)
+			save_audio(str(out / f"{it['id']:04d}_prompt.wav"), pw, 44100)
 			rows.write(json.dumps(dict(id=it["id"], language=it["language"], frames=it["frames"], ref_frames=it["frames"])) + "\n")
 	del codec
 	torch.cuda.empty_cache()
@@ -235,7 +231,7 @@ def run_noisy(es, st, out, device, batch, setfile, snr, gt):
 			mix = _mixture(st, codec, it, noise, snr, device)
 			codes = fsq.digits_to_codes(mix).unsqueeze(0).to(device)
 			wav = codec.decode(tokens=codes, tokens_len=torch.tensor([codes.shape[-1]], device=device))[0].float().cpu()
-			torchaudio.save(str(out / f"{it['id']:04d}.wav"), wav, 44100)
+			save_audio(str(out / f"{it['id']:04d}.wav"), wav, 44100)
 			rows.write(json.dumps(dict(id=it["id"], language=it["language"], frames=len(mix), ref_frames=it["frames"])) + "\n")
 	del codec
 	torch.cuda.empty_cache()
@@ -250,7 +246,7 @@ def utmos(path, device="cuda"):
 	import torchaudio
 	if device not in _UTMOS:
 		_UTMOS[device] = torch.hub.load("tarepan/SpeechMOS:v1.2.0", "utmos22_strong", trust_repo=True).to(device).eval()
-	w, sr = torchaudio.load(str(path))
+	w, sr = load_audio(path)
 	w = torchaudio.functional.resample(w.mean(0, keepdim=True), sr, 16000).to(device)
 	with torch.no_grad():
 		return float(_UTMOS[device](w, 16000).item())
@@ -262,7 +258,7 @@ def bandwidth(path, floor=50.0, split=12000.0):
 	low-pass (11-16 kHz); most of the training audio is one or the other, so outputs may leave the codec's top octave
 	empty."""
 	import torchaudio
-	w, sr = torchaudio.load(str(path))
+	w, sr = load_audio(path)
 	w = w.mean(0)
 	if len(w) < 2048:
 		return 0.0, -99.0

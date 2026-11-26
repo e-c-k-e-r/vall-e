@@ -5,6 +5,7 @@ from functools import cache
 from pathlib import Path
 
 import torch
+from ..audio import load as load_audio
 import torch.nn.functional as F
 import torchaudio
 
@@ -39,7 +40,7 @@ def _model(device="cuda", dtype="float32"):
 @torch.no_grad()
 def embedding(path, device="cuda", dtype="float32"):
 	"""Speaker embedding of an audio file (mono, resampled to 16 kHz)."""
-	wav, sr = torchaudio.load(str(path))
+	wav, sr = load_audio(path)
 	wav = torchaudio.transforms.Resample(sr, 16000)(wav.mean(0, keepdim=True))
 	return _model(device, dtype)(wav.to(device=device, dtype=getattr(torch, dtype)))
 
