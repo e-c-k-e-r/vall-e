@@ -35,6 +35,7 @@ setup(
 	long_description=long_description,
 	long_description_content_type="text/markdown",
 	packages=find_packages(include=["vall_e", "vall_e.*"]),
+	package_data={"vall_e": ["harvard_sentences.txt"]},
 	install_requires=[
 		"torch>=2.4",
 		"torchaudio",

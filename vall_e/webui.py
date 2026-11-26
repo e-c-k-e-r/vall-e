@@ -28,11 +28,32 @@ def _tts(ckpt, device):
 	return _loaded[ckpt]
 
 
+def _is_export(path):
+	"""A vall-e export (older .sft files, the codec's export and other formats aren't)."""
+	from .export import FORMAT
+	try:
+		from safetensors import safe_open
+		with safe_open(str(path), framework="pt") as f:
+			return f.metadata().get("format") == FORMAT
+	except Exception:
+		return False
+
+
 def _checkpoints(root, current):
-	"""Checkpoints under root (<run>/last.pt), most recent first, with the current one included."""
-	found = sorted([*Path(root).glob("*/last.pt"), *Path(root).glob("*.sft")], key=lambda p: p.stat().st_mtime, reverse=True) if root else []
-	names = [str(p) for p in found]
+	"""The released models (by name: downloaded on first use), the other vall-e exports in the models folder, then
+	the runs under root (<run>/last.pt, most recent first); the current one included."""
+	from .export import MODEL_DIR, RELEASES
+	names = [r for r in RELEASES if r.startswith("nemo-44khz-nar-")]
+	names += sorted(str(p) for p in MODEL_DIR.glob("*.sft") if p.name not in RELEASES and _is_export(p))
+	if root:
+		names += [str(p) for p in sorted(Path(root).glob("*/last.pt"), key=lambda p: p.stat().st_mtime, reverse=True)]
 	return ([current] if current and current not in names else []) + names
+
+
+def _harvard():
+	"""A random Harvard sentence (IEEE 1969's phonetically balanced lists), the text box's starting text."""
+	lines = [l.strip() for l in (Path(__file__).parent / "harvard_sentences.txt").read_text(encoding="utf-8").splitlines()]
+	return random.choice([l for l in lines if l])
 
 
 def synthesize(ckpt, text, prompt, language, duration, steps, cfg, cfg_prompt, length_scale, seed, device="cuda"):
@@ -66,7 +87,7 @@ def build(ckpt, models=None, device="cuda"):
 		gr.Markdown("# VALL-E\nText and a few seconds of a voice in, that voice speaking the text out (44.1 kHz).")
 		with gr.Row():
 			with gr.Column():
-				text = gr.Textbox(label="Text", lines=4, placeholder="What should be said")
+				text = gr.Textbox(label="Text", lines=4, value=_harvard, placeholder="What should be said")
 				prompt = gr.Audio(label="Voice prompt (about 6 s works best; up to 10 s is used)", sources=["upload", "microphone"], type="filepath")
 				with gr.Row():
 					language = gr.Dropdown(LANGUAGES, value="en", label="Language (auto: detected, unreliable on short texts)")
@@ -98,8 +119,8 @@ def main():
 	ap.add_argument("--port", type=int, default=7860)
 	ap.add_argument("--share", action="store_true")
 	args = ap.parse_args()
-	from .export import default_model
-	ckpt = args.ckpt or str(default_model())
+	from .export import DEFAULT_MODEL
+	ckpt = args.ckpt or DEFAULT_MODEL  # a released model's name: downloaded on first use
 	_tts(ckpt, args.device)  # load before serving
 	build(ckpt, args.models, args.device).queue().launch(server_name=args.listen, server_port=args.port, share=args.share)
 
