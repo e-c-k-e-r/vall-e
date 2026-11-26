@@ -4,7 +4,7 @@
 #   python -m vall_e.golden --ckpt data/models/nemo-44khz-nar-flow-225m-v1.2.sft --out training/golden/v1.2
 #
 # Per case, <out>/<case>.safetensors holds:
-#   text [Lt] phoneme ids, prompt [Lp, 64] prompt patches (digits), lang, n_frames (from the length head, fp32) and
+#   text [Lt] phoneme ids, prompt [Lp, 64] prompt patches (digits) and prompt_wav [samples] the audio they encode, lang, n_frames (from the length head, fp32) and
 #   log_patches (its raw output);
 #   order [N] the reveal order, noise_<s> [k_s, 64] the flow head's starting noise at demask step s;
 #   step0_hidden_<l> [3, L, d] the input to block l (0..layers) at demask step 0, for the cond / null / promptless rows
@@ -130,6 +130,8 @@ def main():
 	model, dev = tts.model, tts.device
 	args.out.mkdir(parents=True, exist_ok=True)
 	prompt = tts.encode_prompt(args.prompt)
+	from .tts import PROMPT_S
+	prompt_wav = tts._load(args.prompt)[0, : int(PROMPT_S * tts.sample_rate)].float()  # what encode_prompt gives the codec
 	meta = dict(ckpt=str(args.ckpt), prompt=args.prompt, cfg=args.cfg, cfg_prompt=args.cfg_prompt, steps=25, flow_steps=8, sway=-1.0,
 		seed=args.seed, precision="fp32" if args.fp32 else "bf16 autocast", config=model.config, cases=CASES)
 	for case in CASES:
@@ -146,7 +148,7 @@ def main():
 			check = demask_flow(model, text, prompt, n, cfg=args.cfg, cfg_prompt=args.cfg_prompt)
 		same = float((check == digits).float().mean())
 		wav = tts.decode(digits)[0]
-		t = dict(text=text, prompt=prompt, n_frames=torch.tensor(n), log_patches=torch.tensor([log_patches], dtype=torch.float32), order=order, digits=digits, codes=fsq.digits_to_codes(digits), wav=wav,
+		t = dict(text=text, prompt=prompt, n_frames=torch.tensor(n), log_patches=torch.tensor([log_patches], dtype=torch.float32), prompt_wav=prompt_wav, order=order, digits=digits, codes=fsq.digits_to_codes(digits), wav=wav,
 			**{f"noise_{s}": x for s, x in enumerate(noises)}, **dump)
 		save_file({k: v.detach().cpu().contiguous() for k, v in t.items()}, str(args.out / f"{case['name']}.safetensors"))
 		print(f"{case['name']}: {n} frames; matches demask_flow on {same:.1%} of digits", flush=True)
