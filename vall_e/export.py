@@ -3,6 +3,7 @@
 # and loading either kind. The default model downloads on first use.
 #
 #   python -m vall_e.export training/v3-main6-len/last.pt data/models/nemo-44khz-nar-flow-225m.sft
+#   python -m vall_e.export codec data/models/nemo-44khz-codec-decoder.sft      (the codec's decoder, for engines)
 import argparse
 import json
 import os
@@ -28,6 +29,29 @@ def export(ckpt, out, dtype=torch.float16, cfg=None, cfg_prompt=None):
 		meta["guidance"] = json.dumps(dict(cfg=cfg, cfg_prompt=cfg_prompt if cfg_prompt is not None else 2.0))
 	Path(out).parent.mkdir(parents=True, exist_ok=True)
 	save_file(weights, str(out), metadata=meta)
+	return out
+
+
+def export_codec(out):
+	"""The NeMo 44 kHz codec's decoder (HiFi-GAN) for engines: FP32 weights with the weight norm folded in (NeMo's own
+	remove_weight_norm), the layout (channels, up-sample rates, residual kernels and dilations, Snake alphas) in the metadata."""
+	from safetensors.torch import save_file
+	from .evalset import load_codec
+	codec = load_codec("cpu")
+	dec = codec.audio_decoder
+	dec.remove_weight_norm()
+	dec.post_conv.remove_weight_norm()  # HiFiGANDecoder.remove_weight_norm leaves the output conv's
+	assert not any(k.endswith(("weight_g", "weight_v")) for k in dec.state_dict())
+	weights = {k: v.float().contiguous() for k, v in dec.state_dict().items()}
+	r0 = dec.res_layers[0]
+	config = dict(sample_rate=int(codec.sample_rate), input_dim=dec.pre_conv.conv.in_channels, base_channels=dec.pre_conv.conv.out_channels,
+		in_kernel_size=dec.pre_conv.conv.kernel_size[0], out_kernel_size=dec.post_conv.conv.kernel_size[0], up_sample_rates=list(dec.up_sample_rates),
+		resblock_kernel_sizes=[b.res_blocks[0].input_conv.conv.kernel_size[0] for b in r0.res_blocks],
+		resblock_dilation_sizes=[r.input_conv.conv.dilation[0] for r in r0.res_blocks[0].res_blocks],
+		activation="half_snake", output_activation=type(dec.out_activation).__name__, levels=[int(x) for x in codec.vector_quantizer.fsqs[0].num_levels.flatten()],
+		groups=int(codec.vector_quantizer.num_groups))
+	Path(out).parent.mkdir(parents=True, exist_ok=True)
+	save_file(weights, str(out), metadata=dict(format="nemo-codec-decoder", config=json.dumps(config)))
 	return out
 
 
@@ -83,13 +107,16 @@ def default_model():
 
 def main():
 	ap = argparse.ArgumentParser()
-	ap.add_argument("ckpt", type=Path, help="a training checkpoint (last.pt)")
+	ap.add_argument("ckpt", type=Path, help="a training checkpoint (last.pt), or `codec` for the NeMo codec's decoder")
 	ap.add_argument("out", type=Path, help="the export (.sft)")
 	ap.add_argument("--dtype", choices=["float16", "bfloat16", "float32"], default="float16")
 	ap.add_argument("--cfg", type=float, default=None, help="the guidance the model was tuned for (stored; tts.py's default)")
 	ap.add_argument("--cfg-prompt", type=float, default=None, help="the speaker guidance it was tuned for")
 	args = ap.parse_args()
-	export(args.ckpt, args.out, getattr(torch, args.dtype), args.cfg, args.cfg_prompt)
+	if str(args.ckpt) == "codec":
+		export_codec(args.out)
+	else:
+		export(args.ckpt, args.out, getattr(torch, args.dtype), args.cfg, args.cfg_prompt)
 	print(f"wrote {args.out} ({args.out.stat().st_size / 2**20:.0f} MB)")
 
 
