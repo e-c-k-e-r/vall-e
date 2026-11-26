@@ -1,9 +1,38 @@
 # Training
 
 `python -m vall_e.train --store <root> --out training/<run> ...` (`vall_e/train.py`); `scripts/train.sh <out> <args>`
-wraps it with resume-on-crash. `scripts/recipe.sh` has the flagship's stages with their exact settings.
+wraps it with resume-on-crash. `scripts/v4-chain.sh` has v2.0's stages with their exact settings, `scripts/recipe.sh`
+the 225M's.
 
-## The recipe
+## v2.0 (746M)
+
+| Stage | Steps | What |
+|---|---|---|
+| `base` | 300k from scratch | as the 225M's, lr 2e-4; voiced game dialogue and Genshin (`--extra-store`) at 15% of draws; held-out speakers (`data/holdout-speakers-v2.json`) never trained on; the text-use gate at 30k |
+| `prompts` | 30k | 3-10 s prompts |
+| `more` | 300k | prompt-only dropout 10%, targets up to 30 s at the store's natural share of long lines |
+| `length` | 6k | a length head on the frozen model |
+
+1536 wide, 24 layers, 24 heads, activation checkpointing (`--grad-ckpt`; without it 518M already ran out of 24 GB):
+1.1-1.25 s per step on an RX 7900 XTX, peaking at 19 GB, about 8 days in all. Before it, both stores were
+re-phonemized (`python -m vall_e.store rephonemize`): they had been phonemized by an older espeak (15% of English lines
+differed from what inference produces) and without the abbreviation handling.
+
+Then the release steps:
+
+* **Averaging** (`scripts/avg.py`, `scripts/v4-polish.sh`): the mean of `more`'s 100k, 200k and 300k checkpoints, then a
+  new length head: UTMOS +0.12 to +0.30 over the last checkpoint, SIM level or better. This is v2.0. (300k more steps
+  instead lost to it, `scripts/v4-more2.sh`.)
+* **Guidance distillation** (`scripts/v4-distill.sh`): v2.0 as the teacher at guidance 3.0 / 2.0, 20k steps at lr 2e-5:
+  v2.0-fast.
+* **Length heads** (`scripts/len-promptless.sh`): every released head trained on 3k more steps with 20% of prompts
+  dropped, so promptless lengths are right.
+
+## v1.x (225M)
+
+v1.0 is the recipe below (`v3-main6-len`); v1.1 averaged its last checkpoints; v1.2 is 0.7 of a long-form fine-tune
+mixed with 0.3 of v1.1, and v1.3 a Genshin fine-tune mixed half and half with v1.2 (`scripts/mix.py`, WiSE-FT weight
+mixing; `scripts/genshin-chain.sh`), each with a new length head, the last one promptless-aware.
 
 | Stage | Steps | What | Result |
 |---|---|---|---|
@@ -12,7 +41,7 @@ wraps it with resume-on-crash. `scripts/recipe.sh` has the flagship's stages wit
 | `more` | 300k | prompt-only dropout 10% added, lr 1e-4 (+ the recovered Emilia/DE) | WER 7.4%, SIM 0.722 with speaker guidance |
 | `length` | 6k | a length head on the frozen model | predicted lengths within ~15% |
 
-225M parameters, batch 16 (up to 16k positions), bf16, AdamW (0.9 / 0.95, weight decay 0.1), gradient clipping 1.0,
+Batch 16 (up to 16k positions), bf16, AdamW (0.9 / 0.95, weight decay 0.1), gradient clipping 1.0,
 `torch.compile` per block: about 0.32 s per step on an RX 7900 XTX, about 2.5 days in all.
 
 ## What was learned getting there

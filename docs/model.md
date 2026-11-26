@@ -23,7 +23,8 @@ level indices and values).
 ## Backbone
 
 RMSNorm pre-norm, SwiGLU, rotary embeddings, plus QK-norm and a sigmoid gate on the attention output (as recent LLMs
-use: bounded activations, no attention sinks). The flagship is 225M parameters: 1024 wide, 16 layers, 16 heads.
+use: bounded activations, no attention sinks). The flagship (v2.0) is 746M parameters: 1536 wide, 24 layers, 24
+heads; v1.3 is 225M: 1024 wide, 16 layers, 16 heads.
 
 Segment and mode embeddings mark text / prompt / target positions and the mode (NAR-demask, AR, LEN).
 
@@ -32,18 +33,24 @@ Segment and mode embeddings mark text / prompt / target positions and the mode (
 The target starts fully masked; over 25 steps, positions are revealed in random order on a cosine schedule, each
 sampled by the flow head from the current hidden states. Guidance:
 
-* **CFG** (`cfg`, default 6.0): the velocity is pushed away from an unconditional pass with text and prompt dropped
-  (trained with both dropped together 10% of the time). 6.0 beat 2.5 on both WER and SIM.
-* **Speaker guidance** (`cfg_prompt`, default 2.0 in `tts.py`): a third pass with the text but no prompt, pushing
-  towards the voice specifically. Needs a model trained with prompt-only dropout (`--prompt-drop`). +0.022 SIM at 2.0
-  on the flagship; at 3.0 SIM rises further but German and Chinese WER start to climb.
+* **CFG** (`cfg`): the velocity is pushed away from an unconditional pass with text and prompt dropped (trained with
+  both dropped together 10% of the time). Each export stores the guidance it was tuned for, which `tts.py` uses by
+  default: 3.0 for the 746M (it needs less), 6.0 for the 225M (6.0 beat 2.5 on both WER and SIM there).
+* **Speaker guidance** (`cfg_prompt`, 2.0): a third pass with the text but no prompt, pushing towards the voice
+  specifically. Needs a model trained with prompt-only dropout (`--prompt-drop`). +0.022 SIM at 2.0 on the 225M; higher
+  raises SIM further but costs naturalness and some WER (`docs/eval.md`).
+* **Guidance distillation** (v2.0-fast): a copy of the model trained to output the guided velocity of v2.0 at 3.0 / 2.0
+  directly (`--distill-from`), so it samples with one backbone pass per step instead of three, unguided: about twice
+  as fast, SIM 0.01-0.03 lower, UTMOS higher.
 * Lower flow temperature and longer prompts than 6 s did not help (see `docs/eval.md`).
 
 ## Length
 
 The target length is an input. A length head (`length=True`: a query position after text + prompt regresses the log
-length) predicts it; on the flagship it is trained on the frozen backbone (`--train-only len_q length`), so it cannot
-affect generation. Predicted lengths are within ~15% of the true ones and cost nothing against reference lengths.
+length) predicts it; it is trained on the frozen backbone (`--train-only len_q length`), so it cannot affect generation.
+Predicted lengths are within ~15% of the true ones and cost nothing against reference lengths. The released heads are
+trained with 20% of prompts dropped: heads that never saw a promptless input predicted it 1.3-1.85x too long, and the
+model fills extra length with extra words (repeating the end of the sentence).
 
 ## AR mode (optional)
 
@@ -62,6 +69,13 @@ NAR only.
 * **Silence-padded targets** against over-long lengths: robust to 1.4x lengths, but worse at normal ones.
 * **Hybrid linear attention, MTP, MoE, sparse attention**: not needed at this size and sequence length (30 s is about
   1300 positions). `fla-core` 0.5.2 does train Gated DeltaNet / KDA on ROCm if streaming AR comes back.
+
+* **More training at 746M**: 300k more steps on the same data (after averaging) lowered naturalness (UTMOS -0.15 to
+  -0.28 on held-out voices) and more than doubled Nikke WER; averaging the last checkpoints (+0.12 to +0.30 UTMOS) was the win.
+* **Chunked streaming** (`TTS.stream`, experimental): sentences generated as continuations of the ones before them.
+  The 225M continues cleanly (WER level with whole lines); v2.0 repeats the end of the previous chunk (WER +9). A
+  continuation fine-tune (`--cont-p`, the old `tts-c` task) fixed joins but cost whole-line quality. Independent
+  sentence chunks match whole lines but can't stream within a sentence.
 
 ## Literature that shaped it
 

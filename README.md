@@ -15,14 +15,18 @@ Code and documentation for the EnCodec models and the earlier architectures are 
 
 ## Results
 
-On a frozen 237-item evaluation set of unseen speakers (`docs/eval.md`):
+On a frozen 237-item evaluation set of unseen speakers in six languages (`docs/eval.md`):
 
-| | WER / CER | Speaker similarity |
-|---|---|---|
-| real recordings (the ceiling) | 7.3% | 0.717 |
-| **v3** | **7.4%** | **0.722** |
+| | WER / CER | Speaker similarity | UTMOS |
+|---|---|---|---|
+| real recordings (the ceiling) | 7.3% | 0.717 | 3.14 |
+| **v2.0** (746M) | **7.1%** | **0.744** | **3.42** |
+| v2.0-fast (746M, distilled) | 7.2% | 0.733 | 3.50 |
+| v1.3 (225M) | 6.0% | 0.739 | 3.27 |
 
-English: 3.9% WER, similarity 0.686. 225M parameters, trained on ~16k hours (`docs/train.md`).
+English: v2.0 5.1% WER, similarity 0.709. On held-out game, Genshin and Nikke characters v2.0 has the highest
+similarity of the three (0.611 / 0.689 / 0.538 against v1.3's 0.587 / 0.675 / 0.513). Trained on ~16.7k hours plus
+voiced game dialogue (`docs/train.md`).
 
 ## Requirements
 
@@ -62,12 +66,12 @@ left out for an unconditioned voice. Defaults: 25 steps, and the guidance the mo
 The released models ([`models/ckpt/nemo-44khz`](https://huggingface.co/ecker/vall-e/tree/main/models/ckpt/nemo-44khz)) download on first use when
 named (`--ckpt nemo-44khz-nar-flow-746m-v2.0-fast.sft`, `TTS("nemo-44khz-nar-flow-225m-v1.3.sft")`):
 
-| File | | Guidance (text / speaker) |
-|---|---|---|
-| `nemo-44khz-nar-flow-746m-v2.0.sft` | 746M, the default | 3.0 / 2.0 |
-| `nemo-44khz-nar-flow-746m-v2.0-fast.sft` | v2.0 guidance-distilled: one pass per step, about twice as fast | none |
-| `nemo-44khz-nar-flow-225m-v1.3.sft` | 225M | 6.0 / 2.0 |
-| `nemo-44khz-codec.sft` | the codec, exported for engines (volta-engine) | |
+| File | | Guidance (text / speaker) | Speed (RX 7900 XTX) |
+|---|---|---|---|
+| `nemo-44khz-nar-flow-746m-v2.0.sft` | 746M, the default | 3.0 / 2.0 | 2.6x real time |
+| `nemo-44khz-nar-flow-746m-v2.0-fast.sft` | v2.0 guidance-distilled: one pass per step | none | 4.8x |
+| `nemo-44khz-nar-flow-225m-v1.3.sft` | 225M | 6.0 / 2.0 | 5.3x |
+| `nemo-44khz-codec.sft` | the codec, exported for engines (volta-engine) | | |
 
 ## Layout
 
