@@ -16,7 +16,10 @@
 import argparse
 import json
 import math
+import re
 from pathlib import Path
+
+import numpy as np
 
 import torch
 
@@ -113,6 +116,34 @@ def draws(model, n_frames, steps, seed, device):
 	return order, noises
 
 
+def g2p_cases(store, out, n, seed=0):
+	"""n random texts per language of the store with g2p.encode's phonemes, as JSONL {text, language, phonemes}. Japanese
+	takes kana-only texts (engines don't port pykakasi's kanji readings)."""
+	import random
+	from .emb.g2p import encode
+	from .store import Store
+	st = Store(store)
+	rng = random.Random(seed)
+	kanji = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+	out.parent.mkdir(parents=True, exist_ok=True)
+	with open(out, "w") as f:
+		for li, lang in enumerate(st.m["languages"]):
+			if lang == "auto":  # langdetect, not ported either
+				continue
+			us = np.nonzero(np.asarray(st.language) == li)[0]
+			got = 0
+			for u in rng.sample(list(us), min(len(us), n * 20)):
+				text = st.text(int(u))
+				if lang == "ja" and kanji.search(text):
+					continue
+				f.write(json.dumps(dict(text=text, language=lang, phonemes=encode(text, language=lang)), ensure_ascii=False) + "\n")
+				got += 1
+				if got == n:
+					break
+			print(lang, got)
+	return out
+
+
 def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--ckpt", default=None)
@@ -122,7 +153,11 @@ def main():
 	ap.add_argument("--cfg-prompt", type=float, default=2.0)
 	ap.add_argument("--seed", type=int, default=0)
 	ap.add_argument("--fp32", action="store_true", help="compute in FP32 (the export's FP16 weights, upcast) instead of bf16 autocast: closer to an engine's FP16 GEMMs with FP32 accumulation")
+	ap.add_argument("--g2p", type=int, default=0, help="instead: <out>/g2p.jsonl, this many random --store texts per language with g2p.encode's phonemes (an engine's text front-end checks against it)")
+	ap.add_argument("--store", type=Path, default=None)
 	args = ap.parse_args()
+	if args.g2p:
+		return g2p_cases(args.store, args.out / "g2p.jsonl", args.g2p, args.seed)
 	from safetensors.torch import save_file
 	from .model import demask_flow
 	from .tts import TTS
