@@ -14,7 +14,9 @@ from pathlib import Path
 
 # without it MIOpen (ROCm) benchmarks kernels for every new convolution shape (every utterance / clip length)
 os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
-os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
+from .alloc import expandable_segments
+
+expandable_segments()  # not on HIP 7.15+, where it hangs (vall_e/alloc.py)
 
 import numpy as np
 import torch

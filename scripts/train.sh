@@ -13,8 +13,13 @@ export TMPDIR="$PWD/$out/tmp"; mkdir -p "$TMPDIR"
 until [ "$(rocm-smi --showmemuse 2>/dev/null | grep -oP 'VRAM%\): \K[0-9]+')" -lt 20 ] 2>/dev/null; do sleep 30; done
 echo "$(date) VRAM free, starting" >> "$out/run.log"
 
+# expandable segments (less fragmentation with varying batch shapes), except from HIP 7.15 (torch's ROCm 10 wheels), where
+# they hang the first GPU allocation (HIP 6.3 and 7.1 run with them); a PYTORCH_CUDA_ALLOC_CONF already set wins
+new_hip=$("$PY" -c "import torch; v = torch.version.hip; print(int(bool(v) and tuple(int(x) for x in v.split('.')[:2]) >= (7, 15)))" 2>/dev/null)
+[ "${new_hip:-0}" = 1 ] || export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+
 for attempt in $(seq 1 20); do
-	MIOPEN_FIND_MODE=FAST PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH="$PWD" \
+	MIOPEN_FIND_MODE=FAST PYTHONPATH="$PWD" \
 		"$PY" -m vall_e.train --out "$out" "$@" >> "$out/run.log" 2>&1
 	rc=$?  # before anything else runs: "$(date)" below would reset $?
 	[ $rc -eq 0 ] && break
