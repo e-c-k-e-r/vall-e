@@ -4,7 +4,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchaudio.transforms as trans
 
 #from .utils import UpstreamExpert
 
@@ -243,6 +242,7 @@ class ECAPA_TDNN(nn.Module):
 		self.sr = sr
 
 		if feat_type == "fbank" or feat_type == "mfcc":
+			import torchaudio.transforms as trans
 			self.update_extract = False
 
 		win_len = int(sr * 0.025)
@@ -281,7 +281,8 @@ class ECAPA_TDNN(nn.Module):
 			else:
 				self.feature_extract = UpstreamExpert(config_path)
 			"""
-			self.feature_extract = torch.hub.load("s3prl/s3prl", feat_type)
+			from .wavlm import UpstreamExpert  # vall_e/emb/wavlm: WavLM itself (the checkpoint below holds its weights)
+			self.feature_extract = UpstreamExpert(feat_type)
 			if len(self.feature_extract.model.encoder.layers) == 24 and hasattr(
 				self.feature_extract.model.encoder.layers[23].self_attn,
 				"fp32_attention",

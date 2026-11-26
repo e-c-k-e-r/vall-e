@@ -37,6 +37,16 @@ package manager; Windows: the installer, and possibly `PHONEMIZER_ESPEAK_LIBRARY
 pip install -e .            # [ja] for Japanese text, [eval] for number expansion when scoring
 ```
 
+On ROCm, install PyTorch from its ROCm index first, then torchaudio from the CPU index without dependencies (PyPI's
+torchaudio is built against CUDA and won't import beside a ROCm torch; torchaudio has no ROCm build for recent PyTorch,
+and its small CPU extension works with any backend):
+
+```
+pip install torch --index-url https://download.pytorch.org/whl/rocm<version>
+pip install torchaudio --no-deps --index-url https://download.pytorch.org/whl/cpu
+pip install -e .
+```
+
 ## Use
 
 ```
