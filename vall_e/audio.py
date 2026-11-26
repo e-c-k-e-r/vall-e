@@ -7,7 +7,10 @@ import torch
 
 def load(path):
 	"""-> ([channels, samples] float32 in [-1, 1], sample rate), as torchaudio.load."""
+	import os
 	import soundfile as sf
+	if not os.path.exists(path):
+		raise FileNotFoundError(path)
 	try:
 		data, sr = sf.read(str(path), dtype="float32", always_2d=True)
 	except sf.LibsndfileError:

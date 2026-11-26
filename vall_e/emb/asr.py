@@ -7,7 +7,8 @@ import torch
 @cache
 def _pipeline(model_name="openai/whisper-large-v3-turbo", device="cuda", dtype="float16"):
 	from transformers import pipeline
-	return pipeline("automatic-speech-recognition", model=model_name, torch_dtype=getattr(torch, dtype), device=device,
+	from .hub import snapshot
+	return pipeline("automatic-speech-recognition", model=snapshot(model_name), torch_dtype=getattr(torch, dtype), device=device,
 		model_kwargs={"attn_implementation": "sdpa"})
 
 

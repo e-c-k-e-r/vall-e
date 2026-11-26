@@ -16,9 +16,8 @@ import os
 import random
 from pathlib import Path
 
-# the codec, Whisper and WavLM are all cached locally: don't let a network hiccup fail a run (one did, at
-# huggingface.co, during v3-main6's step-200k eval)
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# the hub's models (the codec, Whisper) load cache first, downloading only on a first run (vall_e/emb/hub.py), so a network
+# hiccup can't fail a run (one did, at huggingface.co, during v3-main6's step-200k eval)
 
 
 def load_codec(device):

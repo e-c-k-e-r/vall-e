@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from .alloc import expandable_segments
 
 expandable_segments()  # not on HIP 7.15+, where it hangs (vall_e/alloc.py)
@@ -40,7 +39,8 @@ def bake(store, out, count, groups=None, min_rate=13, min_rate_groups=("LibriVox
 	offsets = np.concatenate([[0], np.cumsum(patches)]).astype(np.int64)
 	np.save(out / "ids.npy", ids); np.save(out / "offsets.npy", offsets)
 	codec = load_codec(device)
-	ssl = HubertModel.from_pretrained(model_name).to(device).eval().half()
+	from .emb.hub import snapshot
+	ssl = HubertModel.from_pretrained(snapshot(model_name, ("*.json", "*.txt", "*.safetensors", "*.bin"))).to(device).eval().half()
 
 	def feats_of(us):
 		cs = [torch.from_numpy(np.asarray(st.codes(int(u))).astype(np.int64)).t() for u in us]  # [8, T]

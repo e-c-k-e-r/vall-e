@@ -29,7 +29,6 @@ import time
 from pathlib import Path
 
 os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from .alloc import expandable_segments
 
 expandable_segments()  # not on HIP 7.15+, where it hangs (vall_e/alloc.py)
