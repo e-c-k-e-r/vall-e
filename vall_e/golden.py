@@ -89,6 +89,16 @@ def _flow(model, h, x, guided, cfg, cfg_prompt, steps, sway, dump):
 	return x
 
 
+def length_head(model, text, prompt):
+	"""The length head's raw output (log patches) for this text and prompt, as model.predict_length computes it."""
+	from .data import pack
+	from .model import LEN
+	b = pack([text], [prompt], [prompt[:1]], [torch.zeros(1, dtype=torch.bool, device=text.device)], modes=[LEN])
+	h = model.hidden(b, LEN)[b["len_index"]]
+	with torch.autocast(h.device.type, enabled=False):
+		return model.length(h.float()).item()
+
+
 def draws(model, n_frames, steps, seed, device):
 	"""The reveal order and per-step noise in the order demask_flow draws them (randperm, then one randn per step)."""
 	torch.manual_seed(seed)
@@ -127,6 +137,7 @@ def main():
 		amp = lambda: torch.autocast(dev, dtype=torch.bfloat16, enabled=not args.fp32)
 		with amp():
 			n = predict_length(model, text, prompt)
+			log_patches = length_head(model, text, prompt)
 		order, noises = draws(model, n, 25, args.seed, dev)
 		dump = {}
 		with amp():
@@ -135,7 +146,7 @@ def main():
 			check = demask_flow(model, text, prompt, n, cfg=args.cfg, cfg_prompt=args.cfg_prompt)
 		same = float((check == digits).float().mean())
 		wav = tts.decode(digits)[0]
-		t = dict(text=text, prompt=prompt, n_frames=torch.tensor(n), order=order, digits=digits, codes=fsq.digits_to_codes(digits), wav=wav,
+		t = dict(text=text, prompt=prompt, n_frames=torch.tensor(n), log_patches=torch.tensor([log_patches], dtype=torch.float32), order=order, digits=digits, codes=fsq.digits_to_codes(digits), wav=wav,
 			**{f"noise_{s}": x for s, x in enumerate(noises)}, **dump)
 		save_file({k: v.detach().cpu().contiguous() for k, v in t.items()}, str(args.out / f"{case['name']}.safetensors"))
 		print(f"{case['name']}: {n} frames; matches demask_flow on {same:.1%} of digits", flush=True)
