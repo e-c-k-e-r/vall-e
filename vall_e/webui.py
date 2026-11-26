@@ -51,8 +51,17 @@ def synthesize(ckpt, text, prompt, language, duration, steps, cfg, cfg_prompt, l
 	return (tts.sample_rate, wav[0].numpy()), info
 
 
+def _guidance(ckpt):
+	"""The guidance a checkpoint was tuned for (its export's metadata: v2.0 3.0 / 2.0, v2.0-fast 0 / 0), else the 225M's
+	6.0 / 2.0, as tts.py defaults."""
+	from .export import recommended_guidance
+	g = recommended_guidance(ckpt) or dict(cfg=6.0, cfg_prompt=2.0)
+	return g["cfg"], g["cfg_prompt"]
+
+
 def build(ckpt, models=None, device="cuda"):
 	import gradio as gr
+	cfg0, cfg_prompt0 = _guidance(ckpt)
 	with gr.Blocks(title="VALL-E") as app:
 		gr.Markdown("# VALL-E\nText and a few seconds of a voice in, that voice speaking the text out (44.1 kHz).")
 		with gr.Row():
@@ -60,7 +69,7 @@ def build(ckpt, models=None, device="cuda"):
 				text = gr.Textbox(label="Text", lines=4, placeholder="What should be said")
 				prompt = gr.Audio(label="Voice prompt (about 6 s works best; up to 10 s is used)", sources=["upload", "microphone"], type="filepath")
 				with gr.Row():
-					language = gr.Dropdown(LANGUAGES, value="auto", label="Language")
+					language = gr.Dropdown(LANGUAGES, value="en", label="Language (auto: detected, unreliable on short texts)")
 					duration = gr.Number(value=0, label="Duration, s (0: predicted)", minimum=0)
 				button = gr.Button("Generate", variant="primary")
 			with gr.Column():
@@ -69,10 +78,12 @@ def build(ckpt, models=None, device="cuda"):
 				with gr.Accordion("Settings", open=False):
 					checkpoint = gr.Dropdown(_checkpoints(models, ckpt), value=ckpt, label="Checkpoint", allow_custom_value=True)
 					steps = gr.Slider(4, 64, value=25, step=1, label="Steps (WER is flat past ~25)")
-					cfg = gr.Slider(1.0, 10.0, value=6.0, step=0.5, label="Guidance")
-					cfg_prompt = gr.Slider(0.0, 4.0, value=2.0, step=0.25, label="Speaker guidance (0 for checkpoints trained without it)")
+					cfg = gr.Slider(0.0, 10.0, value=cfg0, step=0.5, label="Guidance (the checkpoint's own to start with)")
+					cfg_prompt = gr.Slider(0.0, 4.0, value=cfg_prompt0, step=0.25, label="Speaker guidance (0 for checkpoints trained without it)")
 					length_scale = gr.Slider(0.7, 1.4, value=1.0, step=0.05, label="Length scale (speaking rate)")
 					seed = gr.Number(value=-1, label="Seed (-1: random)", precision=0)
+		# a checkpoint chosen in the page brings its own guidance
+		checkpoint.change(lambda c: tuple(gr.update(value=v) for v in _guidance(c)), [checkpoint], [cfg, cfg_prompt])
 		button.click(lambda *a: synthesize(*a, device=device),
 			[checkpoint, text, prompt, language, duration, steps, cfg, cfg_prompt, length_scale, seed], [audio, info])
 	return app

@@ -27,6 +27,9 @@ from .model import V3, demask_flow, predict_length
 
 PROMPT_S = 10.0  # the longest prompt in training
 MAX_PHONEMES = 160  # about 10 s of speech: longer texts are split into sentences
+# without a prompt the length heads still run ~10% long (median 1.12x) and v2.0 fills the slack with extra words; 0.9 on
+# promptless lengths: English WER 5.3% -> 3.3%, inserted words 3.5% -> 1.4% (with a prompt 0.9 changes nothing, so it isn't applied there)
+PROMPTLESS_LENGTH = 0.9
 
 
 class TTS:
@@ -109,7 +112,7 @@ class TTS:
 			temperature=1.0, seed=None, pause=0.25, length_scale=1.0, trim=True, cfg_prompt=None):
 		"""prompt: a wav path (or None for an unconditioned voice). duration (s): the whole utterance's length, else
 		predicted per sentence and multiplied by length_scale (a little under 1 if outputs trail off into extra words,
-		as an overestimated length gets filled with speech). About 1.2 suits models trained with silence padding
+		as an overestimated length gets filled with speech; without a prompt, also by PROMPTLESS_LENGTH). About 1.2 suits models trained with silence padding
 		(--pad-p), which fill spare time with silence; trim drops that trailing silence. cfg_prompt: speaker guidance
 		(models trained with prompt-only dropout, as v3-main6; eval set: SIM 0.700 -> 0.722 at 2.0, WER unchanged; set 0
 		for checkpoints trained without it). Returns [1, samples]."""
@@ -126,7 +129,7 @@ class TTS:
 				if duration is not None:
 					n = max(44, int(duration * FPS * len(t) / max(1, total_ph)))
 				elif getattr(self.model, "len_q", None) is not None:
-					n = max(44, int(predict_length(self.model, t, p) * length_scale))
+					n = max(44, int(predict_length(self.model, t, p) * length_scale * (PROMPTLESS_LENGTH if not len(p) else 1.0)))
 				else:
 					raise ValueError("this checkpoint has no length head: pass a duration")
 				digits = demask_flow(self.model, t, p, n, steps=steps, cfg=cfg, temperature=temperature, flow_steps=flow_steps, sway=sway,
