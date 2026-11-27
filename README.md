@@ -30,8 +30,9 @@ voiced game dialogue (`docs/train.md`).
 
 ## Requirements
 
-A PyTorch environment, and [`espeak-ng`](https://github.com/espeak-ng/espeak-ng/) for phonemizing text (Linux: your
-package manager; Windows: the installer, and possibly `PHONEMIZER_ESPEAK_LIBRARY` pointing at `libespeak-ng.dll`).
+A PyTorch environment, and CMake with a C++17 compiler: text is phonemized by
+[`propan2ol`](https://github.com/e-c-k-e-r/propan2ol), a standalone port of espeak-ng's phonemizing (its data built in,
+no espeak-ng install), which pip builds from source.
 
 ```
 pip install -e .            # [ja] for Japanese text, [eval] for number expansion when scoring
@@ -92,6 +93,6 @@ named (`--ckpt nemo-44khz-nar-flow-746m-v2.0-fast.sft`, `TTS("nemo-44khz-nar-flo
 | `vall_e/train.py`, `vall_e/data.py` | training, batching |
 | `vall_e/store.py`, `vall_e/noisy.py` | the data store, and baked noisy prompts (`docs/data.md`) |
 | `vall_e/evalset.py` | the evaluation set: WER / CER, speaker similarity, paired comparisons |
-| `vall_e/fsq.py`, `vall_e/emb/` | the codec's quantizer, the codec, phonemizer, ASR and speaker models |
+| `vall_e/fsq.py`, `vall_e/emb/` | the codec's quantizer, the codec, the phonemizer front-end, ASR and speaker models |
 | `vall_e/export.py` | release exports (fp16 safetensors, config in the metadata) and the default model download |
 | `scripts/` | `recipe.sh` (how the model was trained), `train.sh`, `evaluate.sh`, `textuse-gate.sh` |

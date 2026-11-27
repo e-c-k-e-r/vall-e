@@ -48,9 +48,11 @@ setup(
 		"librosa",  # prosody features (vall_e/emb/prosody.py)
 		"soundfile",  # audio files (vall_e/audio.py; torchaudio 2.9+ reads them only through torchcodec and FFmpeg)
 		# text
-		"phonemizer>=2.1.0",  # needs espeak-ng installed
+		# phonemizing: espeak-ng 1.52's text to phonemes and phonemizer 3.3's espeak backend, standalone, with the data built in
+		# (built from source: needs CMake and a C++17 compiler)
+		"propan2ol @ git+https://github.com/e-c-k-e-r/propan2ol#subdirectory=python",
 		"langdetect",
-		# scoring: Whisper (WER / CER) and WavLM speaker similarity (fetched through torch.hub's s3prl)
+		# scoring: Whisper (WER / CER) and WavLM speaker similarity (vall_e/emb/wavlm)
 		"transformers",
 	],
 	extras_require={

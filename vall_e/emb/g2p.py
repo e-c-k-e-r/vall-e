@@ -6,8 +6,8 @@ import torch
 
 from functools import cache
 from pathlib import Path
-from phonemizer import phonemize
-from phonemizer.backend import BACKENDS
+# espeak-ng 1.52's phonemizing and phonemizer 3.3's espeak backend, standalone (no espeak-ng install): the same output
+from propan2ol import EspeakBackend
 
 from tqdm import tqdm
 
@@ -92,13 +92,10 @@ def _get_backend( language="en-us", backend="espeak", punctuation=True, stress=T
 	if key in cached_backends:
 		return cached_backends[key]
 
-	if backend == 'espeak':
-		# remove-flags: no "(en)...(de)" markers around words espeak reads in another language (the dataset has none)
-		phonemizer = BACKENDS[backend]( language, preserve_punctuation=punctuation, with_stress=stress, language_switch="remove-flags")
-	elif backend == 'espeak-mbrola':
-		phonemizer = BACKENDS[backend]( language )
-	else: 
-		phonemizer = BACKENDS[backend]( language, preserve_punctuation=punctuation )
+	if backend != 'espeak':
+		raise ValueError(f"unsupported phonemizer backend: {backend} (only espeak)")
+	# remove-flags: no "(en)...(de)" markers around words espeak reads in another language (the dataset has none)
+	phonemizer = EspeakBackend( language, preserve_punctuation=punctuation, with_stress=stress, language_switch="remove-flags")
 
 	cached_backends[key] = phonemizer
 	return phonemizer
@@ -127,10 +124,7 @@ def encode(text: str, language="auto", backend="auto", punctuation=True, stress=
 		backend = "espeak" # if language[:2] != "en" else "festival"
 
 	backend = _get_backend(language=language, backend=backend, stress=stress, strip=strip, punctuation=punctuation)
-	if backend is not None:
-		phonemes = backend.phonemize( [ text ], strip=strip )
-	else:
-		phonemes = phonemize( [ text ], language=language, strip=strip, preserve_punctuation=punctuation, with_stress=stress )
+	phonemes = backend.phonemize( [ text ], strip=strip )
 	
 	if not len(phonemes):
 		raise Exception(f"Failed to phonemize, received empty string: {text}")
